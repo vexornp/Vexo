@@ -1,7 +1,16 @@
 [package]
-name = "ui_platform"
+name = "vexo"      
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+[lib]
+name = "vexo"
+path = "src/lib.rs"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "vexo_demo"
+path = "src/main.rs"
 
 [dependencies]
 wgpu = "27.0.1"
