@@ -1,0 +1,16 @@
+[package]
+name = "ui_platform"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wgpu = "27.0.1"
+winit = "0.30.12"
+taffy = "0.9.1"
+pollster = "0.4.0"
+bytemuck = "1.24.0"
+env_logger = "0.10"
+log = "0.4"
+anyhow = "1.0"
+glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
+
