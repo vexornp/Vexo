@@ -1,0 +1,16 @@
+[package]
+name = "shared_app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"] # staticlib for iOS, rlib for Desktop
+
+[dependencies]
+vexo = { path = "../vexo" } # Depend on the framework
+uniffi = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+
+[build-dependencies]
+uniffi = { version = "0.30.0", features = ["build"] }

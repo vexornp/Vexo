@@ -1,25 +1,41 @@
-[package]
-name = "vexo"      
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
 
-[lib]
-name = "vexo"
-path = "src/lib.rs"
-crate-type = ["rlib", "staticlib", "cdylib"]
+members = [
+    # 1. The core Vexo framework library
+    "vexo",
 
-[[bin]]
-name = "vexo_demo"
-path = "src/main.rs"
+    # 2. The platform-agnostic application logic (for desktop and mobile exports)
+    "shared_app",
 
-[dependencies]
+    # 3. The executable that runs the shared_app logic on the desktop
+    "desktop_demo",
+]
+
+# ------------------------------------------------------------------------
+# [workspace.dependencies]
+# ------------------------------------------------------------------------
+# This section centralizes common dependency versions. Member crates can
+# now reference these versions using a syntax like `wgpu = { workspace = true }`
+# or `winit = { workspace = true }`.
+
+[workspace.dependencies]
+# Graphics & Windowing
 wgpu = "27.0.1"
 winit = "0.30.12"
+
+# Layout Engine
 taffy = "0.9.1"
+
+# Utility
 pollster = "0.4.0"
 bytemuck = "1.24.0"
-env_logger = "0.10"
-log = "0.4"
 anyhow = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+# Text Rendering 
 glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
 
+# Foreign Function Interface (for mobile exports)
+uniffi = "0.30.0"

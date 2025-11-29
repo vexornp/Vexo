@@ -1,0 +1,9 @@
+[package]
+name = "desktop_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vexo = { path = "../vexo" }
+shared_app = { path = "../shared_app" } # Import the user's logic
+anyhow = { workspace = true }

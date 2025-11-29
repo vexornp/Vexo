@@ -1,6 +1,7 @@
 use glyphon::{cosmic_text, Metrics, TextBounds, Viewport};
 use std::sync::Arc;
 use taffy::prelude::*;
+use wgpu::wgc::instance;
 use winit::event::*;
 use winit::{
     application::ApplicationHandler,
@@ -9,7 +10,27 @@ use winit::{
     window::Window,
 };
 
+pub use uniffi;
+
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
+
+mod shaders {
+    // Use include_str! to load separate "shader.wgsl" file at compile time.
+    // This ensures it works on iOS/Android without complex file IO.
+    // Assumes shader.wgsl is in the project root (parent of src/).
+    pub const WGSL: &str = include_str!("./shader.wgsl");
+}
+
+
+
+#[macro_export]
+macro_rules! run_app {
+    ($app_type:ty) => {
+        fn main() -> anyhow::Result<()> {
+            $create::run_desktop_demo()
+        }
+    };
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -37,7 +58,7 @@ pub struct FrameworkState<A: Application + 'static> {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
-    window: Arc<Window>,
+    window: Option<Arc<Window>>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -63,11 +84,53 @@ pub struct FrameworkState<A: Application + 'static> {
 impl<A: Application + 'static> FrameworkState<A> {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
+        let scale_factor = window.scale_factor() as f32;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         });
         let surface = instance.create_surface(window.clone()).unwrap();
+
+        Self::init(
+            surface,
+            instance,
+            size.width,
+            size.height,
+            scale_factor,
+            Some(window),
+        )
+        .await
+    }
+
+    pub async fn new_with_ios(
+        metal_layer_ptr: *mut std::ffi::c_void,
+        width: u32,
+        height: u32,
+        scale_factor: f32,
+    ) -> anyhow::Result<Self> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+        let surface = unsafe {
+            instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(
+                    metal_layer_ptr,
+                ))
+                .unwrap()
+        };
+
+        Self::init(surface, instance, width, height, scale_factor, None).await
+    }
+
+    async fn init(
+        surface: wgpu::Surface<'static>,
+        instance: wgpu::Instance,
+        width: u32,
+        height: u32,
+        scale_factor: f32,
+        window: Option<Arc<Window>>,
+    ) -> anyhow::Result<Self> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptionsBase {
                 power_preference: wgpu::PowerPreference::default(),
@@ -95,8 +158,8 @@ impl<A: Application + 'static> FrameworkState<A> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width,
-            height: size.height,
+            width: width,
+            height: height,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -105,7 +168,7 @@ impl<A: Application + 'static> FrameworkState<A> {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::WGSL.into()),
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -177,7 +240,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             wgpu::MultisampleState::default(),
             None,
         );
-        let scale_factor = window.scale_factor() as f32;
 
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
@@ -190,7 +252,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             queue,
             config,
             is_surface_configured: false,
-            window,
+            window: window,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -220,7 +282,10 @@ impl<A: Application + 'static> FrameworkState<A> {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.window.request_redraw();
+        if let Some(win) = &self.window {
+            win.request_redraw();
+        }
+
         if !self.is_surface_configured {
             return Ok(());
         }
@@ -402,7 +467,9 @@ impl<A: Application + 'static> FrameworkState<A> {
 
     fn update(&mut self, message: A::Message) {
         A::update(&mut self.user_app_state, message);
-        self.window.request_redraw();
+        if let Some(win) = &self.window {
+            win.request_redraw();
+        }
     }
 
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
@@ -486,8 +553,10 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
             WindowEvent::RedrawRequested => match state.render() {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    let size = state.window.inner_size();
-                    state.resize(size.width, size.height);
+                    if let Some(win) = &state.window {
+                        let size = win.inner_size();
+                        state.resize(size.width, size.height);
+                    }
                 }
                 Err(e) => {
                     log::error!("Unable to render {}", e);

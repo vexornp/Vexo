@@ -1,5 +1,6 @@
+use std::cell::RefCell;
 use vexo::run_desktop_demo;
-use vexo::{Application, Button, Column, Rectangle, Row, Text, Widget};
+use vexo::{Application, Button, Column, FrameworkState, Rectangle, Row, Text, Widget};
 
 // --- The User's Code ---
 #[derive(Debug, Clone, Copy)]
@@ -67,6 +68,39 @@ impl Application for State {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    run_desktop_demo::<State>()
-}
+// uniffi::setup_scaffolding!();
+
+// #[derive(uniffi::Object)]
+// pub struct MobileApp {
+//     framework_state: RefCell<vexo::FrameworkState<State>>,
+// }
+
+// #[uniffi::export]
+// impl MobileApp {
+//     #[uniffi::constructor]
+//     pub fn new(
+//         view_ptr: *mut std::ffi::c_void,
+//         width: u32,
+//         height: u32,
+//         scale_factor: f32,
+//     ) -> Self {
+//         let app_state = State::new();
+//         let framework_state = pollster::block_on(vexo::FrameworkState::new_with_ios(
+//             view_ptr,
+//             width,
+//             height,
+//             scale_factor,
+//         ))
+//         .unwrap();
+//         Self {
+//             framework_state: RefCell::new(framework_state),
+//         }
+//     }
+
+//     pub fn render(&self) {
+//         let mut value = self.framework_state.borrow_mut();
+//         if let Err(e) = (*value).render() {
+//             println!("Render error: {:?}", e);
+//         }
+//     }
+// }
