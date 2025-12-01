@@ -46,18 +46,18 @@ impl Application for State {
             }));
 
         let clm = Column::new()
-            // .push(Box::new(
-            //     Button::new(
-            //         Box::new(Text::new(text_content).size(24.0)),
-            //         Message::Clicked,
-            //     )
-            //     .color([0.1, 0.4, 0.1]),
-            // ))
             .push(Box::new(Rectangle {
                 width: 150.0,
-                height: 50.0,
-                color: [0.0, 1.0, 0.0],
+                height: 150.0,
+                color: [0.0, 0.7, 0.0],
             }))
+            .push(Box::new(
+                Button::new(
+                    Box::new(Text::new(text_content).size(24.0)),
+                    Message::Clicked,
+                )
+                .color([0.1, 0.4, 0.1]),
+            ))
             .push(Box::new(Rectangle {
                 width: 150.0,
                 height: 50.0,

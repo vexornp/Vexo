@@ -227,7 +227,13 @@ impl<A: Application + 'static> FrameworkState<A> {
         });
 
         // --- Glyphone Initialization ---
-        let font_system = glyphon::FontSystem::new();
+        let mut font_system = glyphon::FontSystem::new();
+
+        // Embed a font so we are guaranteed to have one available.
+        // Eg: we can't get the system font on ios platform
+        let font_data = include_bytes!("../font.ttf").to_vec();
+        font_system.db_mut().load_font_data(font_data);
+
         let swash_cache = glyphon::SwashCache::new();
         let cache = glyphon::Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
