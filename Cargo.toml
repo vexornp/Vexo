@@ -38,4 +38,4 @@ env_logger = "0.10"
 glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
 
 # Foreign Function Interface (for mobile exports)
-uniffi = "0.30.0"
+uniffi = {version = "0.30.0", features = ["cli"] }

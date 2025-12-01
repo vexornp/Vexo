@@ -1,0 +1,3 @@
+module shared_app {
+    header "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/include/shared_app-Swift.h"
+}

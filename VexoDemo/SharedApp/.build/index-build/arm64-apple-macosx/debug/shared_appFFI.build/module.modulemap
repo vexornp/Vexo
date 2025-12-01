@@ -1,0 +1,4 @@
+module shared_appFFI {
+    umbrella header "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_appFFI/include/shared_appFFI.h"
+    export *
+}

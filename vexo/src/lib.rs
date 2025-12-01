@@ -12,7 +12,7 @@ use winit::{
 
 pub use uniffi;
 
-const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
+const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
 
 mod shaders {
     // Use include_str! to load separate "shader.wgsl" file at compile time.
@@ -20,8 +20,6 @@ mod shaders {
     // Assumes shader.wgsl is in the project root (parent of src/).
     pub const WGSL: &str = include_str!("./shader.wgsl");
 }
-
-
 
 #[macro_export]
 macro_rules! run_app {
