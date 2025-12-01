@@ -49,7 +49,7 @@ impl Application for State {
             .push(Box::new(Rectangle {
                 width: 150.0,
                 height: 150.0,
-                color: [0.0, 0.7, 0.0],
+                color: [0.0, 0.1, 0.0],
             }))
             .push(Box::new(
                 Button::new(
@@ -100,7 +100,7 @@ impl MobileApp {
         scale_factor: f32,
     ) {
         let view_ptr = view_ptr_as_u64 as *mut std::ffi::c_void;
-        let fut = FrameworkState::new_with_ios(view_ptr, width, height, scale_factor);
+        let fut = FrameworkState::new_with_ios(view_ptr, width as f32, height as f32, scale_factor);
         let fs = pollster::block_on(fut).unwrap();
         ui_thread_main(fs, self.rx.clone());
     }
@@ -121,8 +121,7 @@ fn ui_thread_main(mut state: FrameworkState<State>, rx: Receiver<Command>) {
                 state.render();
             }
             Command::Resized(width, height) => {
-                state.resize(width, height);
-                state.render();
+                state.resize_by_logical_point(width as f32, height as f32);
             }
         }
     }

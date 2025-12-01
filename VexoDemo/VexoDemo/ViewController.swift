@@ -29,13 +29,15 @@ class VexoView: MTKView {
         let layerPtr = unsafeBitCast(self.layer, to: UInt64.self)
         let engine = MobileApp()
         self.uiEngine = engine
+        let scale = self.traitCollection.displayScale
+        print("scale: \(scale)")
         
         Task {
             engine.startUiThread(
                 viewPtrAsU64: layerPtr,
                 width: UInt32(self.bounds.size.width),
                 height: UInt32(self.bounds.size.height),
-                scaleFactor: Float(window?.windowScene?.screen.scale ?? 1.0)
+                scaleFactor: Float(scale)
             )
         }
         self.mtkView(self, drawableSizeWillChange: self.drawableSize)
@@ -48,6 +50,7 @@ extension VexoView: MTKViewDelegate {
             return
         }
         uiEngine.resize(width: UInt32(size.width), height: UInt32(size.height))
+        uiEngine.render()
         view.setNeedsDisplay()
     }
     
@@ -68,6 +71,8 @@ class ViewController: UIViewController {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
         vexoView = VexoView(frame: self.view.bounds, device: MTLCreateSystemDefaultDevice())
+        vexoView.isPaused = false
+        vexoView.preferredFramesPerSecond = 60
         vexoView.translatesAutoresizingMaskIntoConstraints = false
         self.view .addSubview(vexoView)
         NSLayoutConstraint.activate([

@@ -89,11 +89,14 @@ impl<A: Application + 'static> FrameworkState<A> {
         });
         let surface = instance.create_surface(window.clone()).unwrap();
 
+        let physical_width = size.width as f32;
+        let physical_height = size.height as f32;
+
         Self::init(
             surface,
             instance,
-            size.width,
-            size.height,
+            physical_width,
+            physical_height,
             scale_factor,
             Some(window),
         )
@@ -102,8 +105,8 @@ impl<A: Application + 'static> FrameworkState<A> {
 
     pub async fn new_with_ios(
         metal_layer_ptr: *mut std::ffi::c_void,
-        width: u32,
-        height: u32,
+        logical_width: f32,
+        logical_height: f32,
         scale_factor: f32,
     ) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -118,14 +121,25 @@ impl<A: Application + 'static> FrameworkState<A> {
                 .unwrap()
         };
 
-        Self::init(surface, instance, width, height, scale_factor, None).await
+        let physical_width = logical_width * scale_factor;
+        let physical_height = logical_height * scale_factor;
+
+        Self::init(
+            surface,
+            instance,
+            physical_width,
+            physical_height,
+            scale_factor,
+            None,
+        )
+        .await
     }
 
     async fn init(
         surface: wgpu::Surface<'static>,
         instance: wgpu::Instance,
-        width: u32,
-        height: u32,
+        physical_width: f32,
+        physical_height: f32,
         scale_factor: f32,
         window: Option<Arc<Window>>,
     ) -> anyhow::Result<Self> {
@@ -156,8 +170,8 @@ impl<A: Application + 'static> FrameworkState<A> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: width,
-            height: height,
+            width: physical_width as u32,
+            height: physical_height as u32,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -276,12 +290,19 @@ impl<A: Application + 'static> FrameworkState<A> {
         })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.config.width = width;
-            self.config.height = height;
+    pub fn resize_by_logical_point(&mut self, width: f32, height: f32) {
+        self.resize_by_pixel_point(width * self.scale_factor, height * self.scale_factor);
+    }
+
+    pub fn resize_by_pixel_point(&mut self, width: f32, height: f32) {
+        if width > 0.0 && height > 0.0 {
+            self.config.width = width as u32;
+            self.config.height = height as u32;
             self.surface.configure(&self.device, &self.config);
             self.is_surface_configured = true;
+
+            //Force re-layout
+            self.root_node_id = self.taffy.new_leaf(Style::default()).unwrap();
         }
     }
 
@@ -298,19 +319,21 @@ impl<A: Application + 'static> FrameworkState<A> {
         self.taffy.clear();
         self.batcher.clear();
 
+        // Taffy should layout in logical points so that 24.0 size means 24 points.
+        let logical_width = self.config.width as f32 / self.scale_factor;
+        let logical_height = self.config.height as f32 / self.scale_factor;
+
         // Set screen size once per frame
-        self.batcher
-            .set_screen_size(self.config.width, self.config.height);
+        self.batcher.set_screen_size(logical_width, logical_height);
 
         let new_root_node_id = new_root_widget.layout(&mut self.taffy);
-        let window_width = self.config.width as f32;
-        let window_height = self.config.height as f32;
+
         self.taffy
             .compute_layout(
                 new_root_node_id,
                 Size {
-                    width: AvailableSpace::Definite(window_width),
-                    height: AvailableSpace::Definite(window_height),
+                    width: AvailableSpace::Definite(logical_width),
+                    height: AvailableSpace::Definite(logical_height),
                 },
             )
             .unwrap();
@@ -329,8 +352,8 @@ impl<A: Application + 'static> FrameworkState<A> {
         self.viewport.update(
             &self.queue,
             glyphon::Resolution {
-                width: window_width as u32,
-                height: window_height as u32,
+                width: self.config.width,
+                height: self.config.height,
             },
         );
 
@@ -365,14 +388,16 @@ impl<A: Application + 'static> FrameworkState<A> {
         let text_areas: Vec<glyphon::TextArea> = processed_texts
             .iter_mut()
             .map(|(buffer, req)| {
-                // Use Taffy's calculated position and scale for high-DPI
+                // Taffy (req.position) gives Logical coordinates.
+                // Glyphon expects Physical coordinates.
+                // So we multiply by scale_factor.
                 let left_pos = req.position.0 * self.scale_factor;
                 let top_pos = req.position.1 * self.scale_factor;
 
                 let bounds_left: i32 = left_pos.floor() as i32;
                 let bounds_top = top_pos.floor() as i32;
-                let bounds_right = (window_width * self.scale_factor) as i32;
-                let bounds_bottom: i32 = (window_height * self.scale_factor) as i32;
+                let bounds_right = self.config.width as i32;
+                let bounds_bottom: i32 = self.config.height as i32;
 
                 let color_rgba_u8 = cosmic_text::Color::rgba(
                     (req.color[0] * 255.0) as u8,
@@ -553,13 +578,15 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => state.resize(size.width, size.height),
+            WindowEvent::Resized(size) => {
+                state.resize_by_pixel_point(size.width as f32, size.height as f32)
+            }
             WindowEvent::RedrawRequested => match state.render() {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     if let Some(win) = &state.window {
                         let size = win.inner_size();
-                        state.resize(size.width, size.height);
+                        state.resize_by_pixel_point(size.width as f32, size.height as f32);
                     }
                 }
                 Err(e) => {
@@ -1055,8 +1082,8 @@ pub struct UiBatcher {
     pub indices: Vec<u16>,
     pub text_requests: Vec<TextRequest>,
 
-    screen_width: u32,
-    screen_height: u32,
+    screen_width: f32,  // Logical width: pixel_width * scale_factor
+    screen_height: f32, // Logical height: pixel_height * scale_factor
 }
 
 impl UiBatcher {
@@ -1065,8 +1092,8 @@ impl UiBatcher {
             vertices: Vec::new(),
             indices: Vec::new(),
             text_requests: Vec::new(),
-            screen_width: 1,
-            screen_height: 1,
+            screen_width: 1.0,
+            screen_height: 1.0,
         }
     }
 
@@ -1076,14 +1103,15 @@ impl UiBatcher {
         self.text_requests.clear();
     }
 
-    pub fn set_screen_size(&mut self, width: u32, height: u32) {
+    // Set logical size
+    pub fn set_screen_size(&mut self, width: f32, height: f32) {
         self.screen_width = width;
         self.screen_height = height;
     }
 
     pub fn add_rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 3]) {
-        let sw = self.screen_width as f32;
-        let sh = self.screen_height as f32;
+        let sw = self.screen_width;
+        let sh = self.screen_height;
 
         let normalize =
             |px: f32, py: f32| -> [f32; 3] { [(px / sw) * 2.0 - 1.0, 1.0 - (py / sh) * 2.0, 0.0] };
