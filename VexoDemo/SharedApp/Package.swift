@@ -17,7 +17,7 @@ let package = Package(
         .target(
             name: "shared_app",
             dependencies: ["shared_appFFI"],
-            path: "Sources/shared_app"
+            path: "Sources"
         ),
     ]
 )

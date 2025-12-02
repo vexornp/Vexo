@@ -24,7 +24,7 @@
       "inputs" : [
         {
           "kind" : "file",
-          "name" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app/shared_app.swift"
+          "name" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app.swift"
         },
         {
           "kind" : "file",
@@ -111,7 +111,7 @@
       ],
       "prepareForIndexing" : true,
       "sources" : [
-        "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app/shared_app.swift"
+        "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app.swift"
       ],
       "tempsPath" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build",
       "wholeModuleOptimization" : false
@@ -128,7 +128,7 @@
       "-package-name",
       "sharedapp",
       "-c",
-      "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app/shared_app.swift",
+      "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app.swift",
       "-I",
       "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/Modules",
       "-target",
@@ -220,7 +220,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app/shared_app.swift"
+          "name" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app.swift"
         }
       ],
       "outputFilePath" : "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/sources"

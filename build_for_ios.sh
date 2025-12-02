@@ -19,7 +19,7 @@ cargo build --target aarch64-apple-ios --release
 
 # 2. Generate Swift bindings
 echo "Generating Swift bindings (shared_app.swift)..."
-target/debug/uniffi-bindgen-swift --headers "$TARGET_DIR/libshared_app.a" "$OUT_DIR"
+target/debug/uniffi-bindgen-swift --swift-sources "$TARGET_DIR/libshared_app.a" "$OUT_DIR"
 
 echo "Generating C headers (shared_appFFI.h)..."
 target/debug/uniffi-bindgen-swift --headers "$TARGET_DIR/libshared_app.a" "$OUT_DIR"

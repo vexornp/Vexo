@@ -534,6 +534,16 @@ impl<A: Application + 'static> FrameworkState<A> {
     fn view(&self) -> Box<dyn Widget<A::Message>> {
         A::view(&self.user_app_state)
     }
+
+    pub fn handle_tap(&mut self, x: f32, y: f32) {
+        //Convert the mobile platform input logical size to Winit's PhysicalPosition
+        let physical_x = x * self.scale_factor;
+        let physical_y = y * self.scale_factor;
+        self.cursor_pos = (physical_x, physical_y);
+
+        // Simulate Press Event (Mouse Down)
+        self.handle_mouse_click(ElementState::Pressed, MouseButton::Left);
+    }
 }
 
 pub struct MyApp<A: Application + 'static> {

@@ -73,55 +73,59 @@ impl Application for State {
     }
 }
 
-enum Command {
-    Render,
-    Resized(u32, u32),
-}
-
 #[derive(uniffi::Object)]
-pub struct MobileApp {
-    tx: crossbeam::channel::Sender<Command>,
-    rx: crossbeam::channel::Receiver<Command>,
-}
+pub struct MobileApp {}
+
+static mut GLOBAL_FS: Option<FrameworkState<State>> = None;
 
 #[uniffi::export]
 impl MobileApp {
     #[uniffi::constructor]
     pub fn new() -> Self {
-        let (tx, rx) = crossbeam::channel::unbounded();
-        Self { tx, rx }
+        Self {}
     }
 
-    pub fn start_ui_thread(
-        &self,
-        view_ptr_as_u64: u64,
-        width: u32,
-        height: u32,
-        scale_factor: f32,
-    ) {
+    pub fn init_renderer(&self, view_ptr_as_u64: u64, width: u32, height: u32, scale_factor: f32) {
         let view_ptr = view_ptr_as_u64 as *mut std::ffi::c_void;
         let fut = FrameworkState::new_with_ios(view_ptr, width as f32, height as f32, scale_factor);
         let fs = pollster::block_on(fut).unwrap();
-        ui_thread_main(fs, self.rx.clone());
+        unsafe {
+            GLOBAL_FS = Some(fs);
+        }
     }
 
     pub fn render(&self) {
-        let _ = self.tx.send(Command::Render);
-    }
-
-    pub fn resize(&self, width: u32, height: u32) {
-        let _ = self.tx.send(Command::Resized(width, height));
-    }
-}
-
-fn ui_thread_main(mut state: FrameworkState<State>, rx: Receiver<Command>) {
-    while let Ok(cmd) = rx.recv() {
-        match cmd {
-            Command::Render => {
-                state.render();
+        unsafe {
+            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
+            let rp = &mut *&raw mut GLOBAL_FS;
+            if let Some(val) = rp {
+                let _ = val.render();
+            } else {
+                print!("Global fs not init");
             }
-            Command::Resized(width, height) => {
-                state.resize_by_logical_point(width as f32, height as f32);
+        }
+    }
+
+    pub fn resize(&self, width: f32, height: f32) {
+        unsafe {
+            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
+            let rp = &mut *&raw mut GLOBAL_FS;
+            if let Some(val) = rp {
+                let _ = val.resize_by_logical_point(width, height);
+            } else {
+                print!("Global fs not init");
+            }
+        }
+    }
+
+    pub fn on_tap(&self, x: f32, y: f32) {
+        unsafe {
+            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
+            let rp = &mut *&raw mut GLOBAL_FS;
+            if let Some(val) = rp {
+                let _ = val.handle_tap(x, y);
+            } else {
+                print!("Global fs not init");
             }
         }
     }

@@ -510,11 +510,13 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol MobileAppProtocol: AnyObject, Sendable {
     
+    func initRenderer(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float) 
+    
+    func onTap(x: Float, y: Float) 
+    
     func render() 
     
-    func resize(width: UInt32, height: UInt32) 
-    
-    func startUiThread(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float) 
+    func resize(width: Float, height: Float) 
     
 }
 open class MobileApp: MobileAppProtocol, @unchecked Sendable {
@@ -572,6 +574,26 @@ public convenience init() {
     
 
     
+open func initRenderer(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float)  {try! rustCall() {
+    uniffi_shared_app_fn_method_mobileapp_init_renderer(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(viewPtrAsU64),
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),
+        FfiConverterFloat.lower(scaleFactor),$0
+    )
+}
+}
+    
+open func onTap(x: Float, y: Float)  {try! rustCall() {
+    uniffi_shared_app_fn_method_mobileapp_on_tap(
+            self.uniffiCloneHandle(),
+        FfiConverterFloat.lower(x),
+        FfiConverterFloat.lower(y),$0
+    )
+}
+}
+    
 open func render()  {try! rustCall() {
     uniffi_shared_app_fn_method_mobileapp_render(
             self.uniffiCloneHandle(),$0
@@ -579,22 +601,11 @@ open func render()  {try! rustCall() {
 }
 }
     
-open func resize(width: UInt32, height: UInt32)  {try! rustCall() {
+open func resize(width: Float, height: Float)  {try! rustCall() {
     uniffi_shared_app_fn_method_mobileapp_resize(
             self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(width),
-        FfiConverterUInt32.lower(height),$0
-    )
-}
-}
-    
-open func startUiThread(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float)  {try! rustCall() {
-    uniffi_shared_app_fn_method_mobileapp_start_ui_thread(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(viewPtrAsU64),
-        FfiConverterUInt32.lower(width),
-        FfiConverterUInt32.lower(height),
-        FfiConverterFloat.lower(scaleFactor),$0
+        FfiConverterFloat.lower(width),
+        FfiConverterFloat.lower(height),$0
     )
 }
 }
@@ -661,13 +672,16 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_shared_app_checksum_method_mobileapp_init_renderer() != 46217) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_shared_app_checksum_method_mobileapp_on_tap() != 47734) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_shared_app_checksum_method_mobileapp_render() != 55385) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_shared_app_checksum_method_mobileapp_resize() != 15477) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_shared_app_checksum_method_mobileapp_start_ui_thread() != 17740) {
+    if (uniffi_shared_app_checksum_method_mobileapp_resize() != 7054) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_shared_app_checksum_constructor_mobileapp_new() != 22793) {

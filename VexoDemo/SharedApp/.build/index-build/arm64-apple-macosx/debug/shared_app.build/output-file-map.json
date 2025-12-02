@@ -2,7 +2,7 @@
   "": {
     "swift-dependencies": "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/master.swiftdeps"
   },
-  "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app/shared_app.swift": {
+  "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/Sources/shared_app.swift": {
     "dependencies": "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/shared_app.d",
     "object": "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/shared_app.swift.o",
     "swiftmodule": "/Users/peiyan_wang/Workspace/ui_platform/VexoDemo/SharedApp/.build/index-build/arm64-apple-macosx/debug/shared_app.build/shared_app~partial.swiftmodule",
