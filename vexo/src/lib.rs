@@ -1,15 +1,10 @@
-use glyphon::cosmic_text::BorrowedWithFontSystem;
 use glyphon::{
-    cosmic_text, Attrs, Buffer, Color, Edit, Editor, Font, FontSystem, LayoutGlyph, Metrics,
-    Shaping, SwashCache, TextArea, TextBounds, Viewport,
+    cosmic_text, Attrs, Buffer, Color, Edit, Editor, FontSystem, Metrics, Shaping, SwashCache,
+    TextArea, TextBounds, Viewport,
 };
-use std::default;
-use std::f32::consts::E;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use taffy::{prelude::*, style_helpers};
-use wgpu::wgc::id;
-use wgpu::ComputePassTimestampWrites;
+use taffy::prelude::*;
 use winit::event::*;
 use winit::{
     application::ApplicationHandler,
@@ -252,6 +247,8 @@ impl<A: Application + 'static> FrameworkState<A> {
         });
 
         // --- Glyphone Initialization ---
+        // FontSystem::new() is an extremely expensive operation.
+        // It scans your operating system's disk for installed fonts, parses their headers, and builds a database.
         let mut font_system = glyphon::FontSystem::new();
 
         // Embed a font so we are guaranteed to have one available.
@@ -273,7 +270,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
         let mut root_widget = Box::new(Column::new());
-        let root_node_id = root_widget.layout(&mut taffy);
+        let root_node_id = root_widget.layout(&mut taffy, &mut font_system);
 
         Ok(Self {
             surface,
@@ -338,7 +335,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
 
-        let new_root_node_id = new_root_widget.layout(&mut self.taffy);
+        let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.font_system);
 
         self.taffy
             .compute_layout(
@@ -359,6 +356,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             &mut self.batcher,
             (0.0, 0.0),
             self.focused_widget_id,
+            &mut self.font_system,
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
@@ -689,7 +687,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Widget unique ID. (Used for focus tracking)
     fn id(&self) -> WidgetId;
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId;
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId;
 
     fn draw(
         &self,
@@ -698,6 +696,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
+        font_system: &mut FontSystem,
     );
 
     fn on_event(
@@ -735,7 +734,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         WidgetId(0)
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
         taffy
             .new_leaf(Style {
                 size: Size {
@@ -754,6 +753,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -799,11 +799,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
             .iter_mut()
-            .map(|child| child.layout(taffy))
+            .map(|child| child.layout(taffy, font_system))
             .collect();
 
         taffy
@@ -829,13 +829,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y), focused_id);
+            child_widget.draw(
+                taffy,
+                child_node_id,
+                renderer,
+                (my_x, my_y),
+                focused_id,
+                font_system,
+            );
         }
     }
 
@@ -897,11 +905,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
             .iter_mut()
-            .map(|child| child.layout(taffy))
+            .map(|child| child.layout(taffy, font_system))
             .collect();
 
         taffy
@@ -927,13 +935,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y), focused_id);
+            child_widget.draw(
+                taffy,
+                child_node_id,
+                renderer,
+                (my_x, my_y),
+                focused_id,
+                font_system,
+            );
         }
     }
 
@@ -1001,8 +1017,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
-        let content_node = self.content.layout(taffy);
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+        let content_node = self.content.layout(taffy, font_system);
         taffy
             .new_with_children(
                 Style {
@@ -1033,6 +1049,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1048,8 +1065,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {
             let content_offset = (x, y);
-            self.content
-                .draw(taffy, *content_node, renderer, content_offset, focused_id);
+            self.content.draw(
+                taffy,
+                *content_node,
+                renderer,
+                content_offset,
+                focused_id,
+                font_system,
+            );
         }
     }
 
@@ -1152,7 +1175,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
         // Glyphon calculation: This is where we calculate the precise bounds.
         // NOTE: In a final structure, FontSystem should be passed here,
 
@@ -1181,6 +1204,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1206,28 +1230,18 @@ pub struct TextEdit {
     pub editor: Editor<'static>,
     pub swash_cache: SwashCache,
     pub text_color: [f32; 3],
-    pub font_system: FontSystem,
     pub style: taffy::Style,
 }
 
 impl TextEdit {
     pub fn new(font_size: f32) -> Self {
         let metrics = Metrics::new(font_size, font_size * 1.25);
-        let mut editor = Editor::new(Buffer::new_empty(metrics));
-        editor.with_buffer_mut(|b| {
-            b.set_text(
-                &mut FontSystem::new(),
-                "I am a text editor",
-                &Attrs::new(),
-                Shaping::Advanced,
-            );
-        });
+        let editor = Editor::new(Buffer::new_empty(metrics));
         Self {
             widget_id: next_widget_id(),
             editor,
             swash_cache: SwashCache::new(),
             text_color: [1.0, 1.0, 1.0],
-            font_system: FontSystem::new(),
             style: Style::default(),
         }
     }
@@ -1270,16 +1284,17 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
         let node_id = taffy.new_leaf(self.style.clone()).unwrap();
         let layout = taffy.layout(node_id).unwrap();
         let w = layout.size.width;
         let h = layout.size.height;
 
+        self.set_text("I am a text edit", font_system);
         self.editor.with_buffer_mut(|buffer| {
-            buffer.set_size(&mut FontSystem::new(), Some(w), Some(h));
+            buffer.set_size(font_system, Some(w), Some(h));
         });
-        self.editor.shape_as_needed(&mut FontSystem::new(), true);
+        self.editor.shape_as_needed(font_system, true);
 
         node_id
     }
@@ -1291,10 +1306,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
+        font_system: &mut FontSystem,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
+
+        // For-Debug
+        let w = layout.size.width;
+        let h = layout.size.height;
+        renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
 
         fn get_text_from_buffer(buffer: &cosmic_text::Buffer) -> String {
             let mut text_content = String::new();
@@ -1320,12 +1341,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
         let selection_color = Color::rgba(0xFF, 0xFF, 0xFF, 0x33);
         let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
-        let mut font_system = FontSystem::new();
+
         let mut cache = SwashCache::new();
 
         // Draw other components for the editor, like: cursor, selection...
         self.editor.draw(
-            &mut font_system,
+            font_system,
             &mut cache,
             text_color,
             cursor_color,
