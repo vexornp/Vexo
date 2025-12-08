@@ -1,11 +1,19 @@
-use glyphon::{cosmic_text, Metrics, TextBounds, Viewport};
+use glyphon::cosmic_text::BorrowedWithFontSystem;
+use glyphon::{
+    cosmic_text, Attrs, Buffer, Color, Edit, Editor, Font, FontSystem, LayoutGlyph, Metrics,
+    Shaping, SwashCache, TextArea, TextBounds, Viewport,
+};
+use std::default;
+use std::f32::consts::E;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use taffy::prelude::*;
-use wgpu::wgc::instance;
+use taffy::{prelude::*, style_helpers};
+use wgpu::wgc::id;
+use wgpu::ComputePassTimestampWrites;
 use winit::event::*;
 use winit::{
     application::ApplicationHandler,
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
@@ -77,6 +85,9 @@ pub struct FrameworkState<A: Application + 'static> {
     // User's application state
     user_app_state: A::State,
     _phantom: std::marker::PhantomData<A>,
+
+    // Editor
+    focused_widget_id: Option<WidgetId>,
 }
 
 impl<A: Application + 'static> FrameworkState<A> {
@@ -261,7 +272,7 @@ impl<A: Application + 'static> FrameworkState<A> {
 
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
-        let root_widget = Box::new(Column::new());
+        let mut root_widget = Box::new(Column::new());
         let root_node_id = root_widget.layout(&mut taffy);
 
         Ok(Self {
@@ -287,6 +298,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             viewport,
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
+            focused_widget_id: None,
         })
     }
 
@@ -315,7 +327,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             return Ok(());
         }
 
-        let new_root_widget = self.view();
+        let mut new_root_widget = self.view();
         self.taffy.clear();
         self.batcher.clear();
 
@@ -346,6 +358,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             self.root_node_id,
             &mut self.batcher,
             (0.0, 0.0),
+            self.focused_widget_id,
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
@@ -438,7 +451,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             );
         }
 
-        // Prepare Glyphon's resources
+        // Prepare renderer for Text
         self.text_renderer
             .prepare(
                 &self.device,
@@ -519,13 +532,16 @@ impl<A: Application + 'static> FrameworkState<A> {
                 button,
             };
 
-            if let Some(msg) = self.root_widget.on_event(
+            let widget_response = self.root_widget.on_event(
                 &self.taffy,
                 self.root_node_id,
                 (0.0, 0.0),
                 &event,
                 self.cursor_pos,
-            ) {
+                self.focused_widget_id,
+            );
+
+            if let Some(msg) = widget_response.message {
                 self.update(msg);
             }
         }
@@ -639,33 +655,87 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WidgetId(pub u64);
+
+pub struct WidgetResponse<M> {
+    /// The user-defined message
+    pub message: Option<M>,
+
+    /// If Some(id), this widget want to grab the keyboard focus.
+    pub focus_request: Option<WidgetId>,
+
+    /// Did the widget consume this event? (Stops propagation)
+    pub handled: bool,
+}
+
+impl<M> Default for WidgetResponse<M> {
+    fn default() -> Self {
+        Self {
+            message: None,
+            focus_request: None,
+            handled: false,
+        }
+    }
+}
+
+static WIDGET_ID_GENERATER: AtomicU64 = AtomicU64::new(0);
+
+fn next_widget_id() -> WidgetId {
+    WidgetId(WIDGET_ID_GENERATER.fetch_add(1, Ordering::SeqCst))
+}
+
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId;
+    /// Widget unique ID. (Used for focus tracking)
+    fn id(&self) -> WidgetId;
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId;
+
     fn draw(
         &self,
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
     );
+
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M>;
+        focused_id: Option<WidgetId>, // Current focused widget (if have one)
+    ) -> WidgetResponse<M>;
 }
 
 pub struct Rectangle {
+    pub widget_id: WidgetId,
     pub width: f32,
     pub height: f32,
     pub color: [f32; 3],
 }
 
+impl Rectangle {
+    pub fn new(width: f32, height: f32, color: [f32; 3]) -> Self {
+        let widget_id = next_widget_id();
+        Self {
+            widget_id,
+            width,
+            height,
+            color,
+        }
+    }
+}
+
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn id(&self) -> WidgetId {
+        WidgetId(0)
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
         taffy
             .new_leaf(Style {
                 size: Size {
@@ -683,6 +753,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -691,24 +762,28 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
     }
 
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M> {
-        None
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
     }
 }
 
 pub struct Column<M: Clone + std::fmt::Debug + Send> {
+    pub widget_id: WidgetId,
     pub children: Vec<Box<dyn Widget<M>>>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Column<M> {
     pub fn new() -> Self {
+        let widget_id = next_widget_id();
         Self {
+            widget_id,
             children: Vec::new(),
         }
     }
@@ -720,10 +795,14 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn id(&self) -> WidgetId {
+        self.widget_id
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
-            .iter()
+            .iter_mut()
             .map(|child| child.layout(taffy))
             .collect();
 
@@ -749,45 +828,60 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y));
+            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y), focused_id);
         }
     }
 
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M> {
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
+        let my_offset = (my_x, my_y);
 
-        for (child, child_node) in self.children.iter().zip(child_ids) {
-            if let Some(msg) = child.on_event(taffy, child_node, (my_x, my_y), event, cursor_pos) {
-                return Some(msg);
+        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+            let child_response = child.on_event(
+                taffy,
+                child_node_id,
+                my_offset,
+                event,
+                cursor_pos,
+                focused_id,
+            );
+
+            // If a child handled it or request focus, return imediately
+            if child_response.handled || child_response.focus_request.is_some() {
+                return child_response;
             }
         }
-        None
+        WidgetResponse::default()
     }
 }
 
 pub struct Row<M: Clone + std::fmt::Debug + Send> {
+    pub widget_id: WidgetId,
     pub children: Vec<Box<dyn Widget<M>>>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Row<M> {
     pub fn new() -> Self {
         Self {
+            widget_id: next_widget_id(),
             children: Vec::new(),
         }
     }
@@ -799,10 +893,14 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn id(&self) -> WidgetId {
+        self.widget_id
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
-            .iter()
+            .iter_mut()
             .map(|child| child.layout(taffy))
             .collect();
 
@@ -828,29 +926,53 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y));
+            child_widget.draw(taffy, child_node_id, renderer, (my_x, my_y), focused_id);
         }
     }
 
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M> {
-        None
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
+        let child_ids = taffy.children(node).unwrap();
+        let layout = taffy.layout(node).unwrap();
+        let my_x = offset.0 + layout.location.x;
+        let my_y = offset.1 + layout.location.y;
+        let my_offset = (my_x, my_y);
+
+        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+            let child_response = child.on_event(
+                taffy,
+                child_node_id,
+                my_offset,
+                event,
+                cursor_pos,
+                focused_id,
+            );
+
+            // If a child handled it or request focus, return imediately
+            if child_response.handled || child_response.focus_request.is_some() {
+                return child_response;
+            }
+        }
+        WidgetResponse::default()
     }
 }
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
+    pub widget_id: WidgetId,
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
     pub background_color: [f32; 3],
@@ -860,6 +982,7 @@ pub struct Button<M: Clone + std::fmt::Debug + Send> {
 impl<M: Clone + std::fmt::Debug + Send> Button<M> {
     pub fn new(content: Box<dyn Widget<M>>, on_press: M) -> Self {
         Self {
+            widget_id: next_widget_id(),
             content,
             on_press,
             background_color: [0.2, 0.2, 0.2],
@@ -874,7 +997,11 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn id(&self) -> WidgetId {
+        self.widget_id
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
         let content_node = self.content.layout(taffy);
         taffy
             .new_with_children(
@@ -905,6 +1032,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -921,18 +1049,19 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         if let Some(content_node) = child_ids.get(0) {
             let content_offset = (x, y);
             self.content
-                .draw(taffy, *content_node, renderer, content_offset);
+                .draw(taffy, *content_node, renderer, content_offset, focused_id);
         }
     }
 
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M> {
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
@@ -952,7 +1081,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 ..
             } = event
             {
-                return Some(self.on_press.clone());
+                return WidgetResponse {
+                    message: Some(self.on_press.clone()),
+                    focus_request: None,
+                    handled: true,
+                };
             }
         }
 
@@ -966,14 +1099,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 content_offset,
                 event,
                 cursor_pos,
+                focused_id,
             );
         }
 
-        None
+        WidgetResponse::default()
     }
 }
 
 pub struct Text {
+    pub widget_id: WidgetId,
     pub content: String,
     pub size: f32,
     pub color: [f32; 3],
@@ -983,6 +1118,7 @@ pub struct Text {
 impl Text {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
+            widget_id: next_widget_id(),
             content: content.into(),
             size: 24.0,
             color: [0.0, 0.0, 0.0],
@@ -1012,7 +1148,11 @@ impl Text {
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
-    fn layout(&self, taffy: &mut taffy::TaffyTree) -> NodeId {
+    fn id(&self) -> WidgetId {
+        self.widget_id
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
         // Glyphon calculation: This is where we calculate the precise bounds.
         // NOTE: In a final structure, FontSystem should be passed here,
 
@@ -1040,6 +1180,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
+        focused_id: Option<WidgetId>,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1048,14 +1189,187 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     }
 
     fn on_event(
-        &self,
+        &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
-    ) -> Option<M> {
-        None
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
+    }
+}
+
+pub struct TextEdit {
+    pub widget_id: WidgetId,
+    pub editor: Editor<'static>,
+    pub swash_cache: SwashCache,
+    pub text_color: [f32; 3],
+    pub font_system: FontSystem,
+    pub style: taffy::Style,
+}
+
+impl TextEdit {
+    pub fn new(font_size: f32) -> Self {
+        let metrics = Metrics::new(font_size, font_size * 1.25);
+        let mut editor = Editor::new(Buffer::new_empty(metrics));
+        editor.with_buffer_mut(|b| {
+            b.set_text(
+                &mut FontSystem::new(),
+                "I am a text editor",
+                &Attrs::new(),
+                Shaping::Advanced,
+            );
+        });
+        Self {
+            widget_id: next_widget_id(),
+            editor,
+            swash_cache: SwashCache::new(),
+            text_color: [1.0, 1.0, 1.0],
+            font_system: FontSystem::new(),
+            style: Style::default(),
+        }
+    }
+
+    pub fn set_text(&mut self, text: &str, fs: &mut FontSystem) {
+        self.editor.with_buffer_mut(|buffer| {
+            buffer.set_text(fs, text, &Attrs::new(), Shaping::Advanced);
+        });
+        self.editor.shape_as_needed(fs, true);
+    }
+
+    pub fn get_text(&self) -> String {
+        self.editor.with_buffer(|b| {
+            b.lines
+                .iter()
+                .map(|line| line.text())
+                .collect::<Vec<&str>>()
+                .join("\n")
+        })
+    }
+
+    pub fn style(mut self, style: taffy::Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn size(self, size: (f32, f32)) -> Self {
+        self.style(Style {
+            size: Size {
+                width: Dimension::length(size.0),
+                height: Dimension::length(size.1),
+            },
+            ..Default::default()
+        })
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
+    fn id(&self) -> WidgetId {
+        self.widget_id
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree) -> NodeId {
+        let node_id = taffy.new_leaf(self.style.clone()).unwrap();
+        let layout = taffy.layout(node_id).unwrap();
+        let w = layout.size.width;
+        let h = layout.size.height;
+
+        self.editor.with_buffer_mut(|buffer| {
+            buffer.set_size(&mut FontSystem::new(), Some(w), Some(h));
+        });
+        self.editor.shape_as_needed(&mut FontSystem::new(), true);
+
+        node_id
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: (f32, f32),
+        focused_id: Option<WidgetId>,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let x = offset.0 + layout.location.x;
+        let y = offset.1 + layout.location.y;
+
+        fn get_text_from_buffer(buffer: &cosmic_text::Buffer) -> String {
+            let mut text_content = String::new();
+            for line in buffer.lines.iter() {
+                text_content.push_str(line.text());
+                text_content.push('\n');
+            }
+
+            if text_content.ends_with('\n') {
+                text_content.pop();
+            }
+
+            text_content
+        }
+
+        //Convert eidtor into a text widget with it's content
+        self.editor.with_buffer(|buffer| {
+            let content = get_text_from_buffer(buffer);
+            renderer.add_text(content, x, y, 24.0, self.text_color);
+        });
+
+        let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
+        let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
+        let selection_color = Color::rgba(0xFF, 0xFF, 0xFF, 0x33);
+        let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
+        let mut font_system = FontSystem::new();
+        let mut cache = SwashCache::new();
+
+        // Draw other components for the editor, like: cursor, selection...
+        self.editor.draw(
+            &mut font_system,
+            &mut cache,
+            text_color,
+            cursor_color,
+            selection_color,
+            selected_text_color,
+            |x, y, w, h, color| {
+                renderer.add_rect(
+                    x as f32,
+                    y as f32,
+                    w as f32,
+                    h as f32,
+                    [
+                        color.r() as f32 / 255.0,
+                        color.g() as f32 / 255.0,
+                        color.b() as f32 / 255.0,
+                    ],
+                );
+            },
+        );
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: (f32, f32),
+        event: &winit::event::WindowEvent,
+        cursor_pos: (f32, f32),
+        focused_id: Option<WidgetId>,
+    ) -> WidgetResponse<M> {
+        // Check if WE are the focused widget
+        if focused_id != Some(self.widget_id) {
+            return WidgetResponse::default();
+        }
+
+        // Handle keyboard input
+
+        // Handle text inpu (Char typing)
+
+        WidgetResponse {
+            message: None,
+            focus_request: Some(self.widget_id),
+            handled: true,
+        }
     }
 }
 
@@ -1087,10 +1401,17 @@ pub struct TextRequest {
     pub color: [f32; 4],
 }
 
+pub struct EditorRequest<'a> {
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub editor: Editor<'a>,
+}
+
 pub struct UiBatcher {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
-    pub text_requests: Vec<TextRequest>,
+    pub text_requests: Vec<TextRequest>, // For normal Text widget
+    pub editor_request: Option<EditorRequest<'static>>, // For TextEdit widget
 
     screen_width: f32,  // Logical width: pixel_width * scale_factor
     screen_height: f32, // Logical height: pixel_height * scale_factor
@@ -1102,6 +1423,7 @@ impl UiBatcher {
             vertices: Vec::new(),
             indices: Vec::new(),
             text_requests: Vec::new(),
+            editor_request: None,
             screen_width: 1.0,
             screen_height: 1.0,
         }
