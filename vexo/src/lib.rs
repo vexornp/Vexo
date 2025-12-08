@@ -2,8 +2,9 @@ use glyphon::{
     cosmic_text, Attrs, Buffer, Color, Edit, Editor, FontSystem, Metrics, Shaping, SwashCache,
     TextArea, TextBounds, Viewport,
 };
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use taffy::prelude::*;
 use winit::event::*;
 use winit::{
@@ -53,6 +54,39 @@ impl Vertex {
         }
     }
 }
+
+pub struct WidgetContext {
+    pub editors: HashMap<String, Arc<Mutex<Editor<'static>>>>,
+}
+
+impl WidgetContext {
+    fn new() -> Self {
+        Self {
+            editors: HashMap::new(),
+        }
+    }
+
+    pub fn get_or_create_editor(
+        &mut self,
+        id: &str,
+        initial_text: &str,
+        font_system: &mut FontSystem,
+        font_size: f32,
+    ) -> Arc<Mutex<Editor<'static>>> {
+        self.editors
+            .entry(id.to_string())
+            .or_insert_with(|| {
+                let metrics = Metrics::new(font_size, font_size * 1.25);
+                let mut editor = Editor::new(Buffer::new_empty(metrics));
+                editor.with_buffer_mut(|buffer| {
+                    buffer.set_text(font_system, initial_text, &Attrs::new(), Shaping::Advanced);
+                });
+                Arc::new(Mutex::new(editor))
+            })
+            .clone()
+    }
+}
+
 pub struct FrameworkState<A: Application + 'static> {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -83,6 +117,7 @@ pub struct FrameworkState<A: Application + 'static> {
 
     // Editor
     focused_widget_id: Option<WidgetId>,
+    widget_context: WidgetContext,
 }
 
 impl<A: Application + 'static> FrameworkState<A> {
@@ -270,7 +305,8 @@ impl<A: Application + 'static> FrameworkState<A> {
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
         let mut root_widget = Box::new(Column::new());
-        let root_node_id = root_widget.layout(&mut taffy, &mut font_system);
+        let mut ctx = WidgetContext::new();
+        let root_node_id = root_widget.layout(&mut taffy, &mut font_system, &mut ctx);
 
         Ok(Self {
             surface,
@@ -296,6 +332,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             focused_widget_id: None,
+            widget_context: ctx,
         })
     }
 
@@ -335,7 +372,11 @@ impl<A: Application + 'static> FrameworkState<A> {
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
 
-        let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.font_system);
+        let new_root_node_id = new_root_widget.layout(
+            &mut self.taffy,
+            &mut self.font_system,
+            &mut self.widget_context,
+        );
 
         self.taffy
             .compute_layout(
@@ -357,6 +398,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             (0.0, 0.0),
             self.focused_widget_id,
             &mut self.font_system,
+            &mut self.widget_context,
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
@@ -537,6 +579,7 @@ impl<A: Application + 'static> FrameworkState<A> {
                 &event,
                 self.cursor_pos,
                 self.focused_widget_id,
+                &mut self.widget_context,
             );
 
             if let Some(msg) = widget_response.message {
@@ -687,7 +730,12 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Widget unique ID. (Used for focus tracking)
     fn id(&self) -> WidgetId;
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId;
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId;
 
     fn draw(
         &self,
@@ -697,6 +745,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         offset: (f32, f32),
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     );
 
     fn on_event(
@@ -707,6 +756,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M>;
 }
 
@@ -734,7 +784,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         WidgetId(0)
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
         taffy
             .new_leaf(Style {
                 size: Size {
@@ -754,6 +809,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -769,6 +825,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }
@@ -799,11 +856,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
             .iter_mut()
-            .map(|child| child.layout(taffy, font_system))
+            .map(|child| child.layout(taffy, font_system, ctx))
             .collect();
 
         taffy
@@ -830,6 +892,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
@@ -843,6 +906,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 (my_x, my_y),
                 focused_id,
                 font_system,
+                ctx,
             );
         }
     }
@@ -855,6 +919,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
@@ -870,6 +935,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 event,
                 cursor_pos,
                 focused_id,
+                ctx,
             );
 
             // If a child handled it or request focus, return imediately
@@ -905,11 +971,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
         let child_nodes: Vec<NodeId> = self
             .children
             .iter_mut()
-            .map(|child| child.layout(taffy, font_system))
+            .map(|child| child.layout(taffy, font_system, ctx))
             .collect();
 
         taffy
@@ -936,6 +1007,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let my_x = offset.0 + layout.location.x;
@@ -949,6 +1021,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 (my_x, my_y),
                 focused_id,
                 font_system,
+                ctx,
             );
         }
     }
@@ -961,6 +1034,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
@@ -976,6 +1050,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 event,
                 cursor_pos,
                 focused_id,
+                ctx,
             );
 
             // If a child handled it or request focus, return imediately
@@ -1017,8 +1092,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
-        let content_node = self.content.layout(taffy, font_system);
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
+        let content_node = self.content.layout(taffy, font_system, ctx);
         taffy
             .new_with_children(
                 Style {
@@ -1050,6 +1130,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1072,6 +1153,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 content_offset,
                 focused_id,
                 font_system,
+                ctx,
             );
         }
     }
@@ -1084,6 +1166,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1123,6 +1206,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 event,
                 cursor_pos,
                 focused_id,
+                ctx,
             );
         }
 
@@ -1175,7 +1259,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
         // Glyphon calculation: This is where we calculate the precise bounds.
         // NOTE: In a final structure, FontSystem should be passed here,
 
@@ -1205,6 +1294,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1220,6 +1310,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }
@@ -1227,41 +1318,34 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
 
 pub struct TextEdit {
     pub widget_id: WidgetId,
-    pub editor: Editor<'static>,
+    pub editor_id: String,
+    pub initial_text: String,
     pub swash_cache: SwashCache,
     pub text_color: [f32; 3],
     pub style: taffy::Style,
 }
 
 impl TextEdit {
-    pub fn new(font_size: f32) -> Self {
-        let metrics = Metrics::new(font_size, font_size * 1.25);
-        let editor = Editor::new(Buffer::new_empty(metrics));
+    pub fn new(id: impl Into<String>, initial_text: impl Into<String>) -> Self {
         Self {
             widget_id: next_widget_id(),
-            editor,
+            editor_id: id.into(),
+            initial_text: initial_text.into(),
             swash_cache: SwashCache::new(),
             text_color: [1.0, 1.0, 1.0],
             style: Style::default(),
         }
     }
 
-    pub fn set_text(&mut self, text: &str, fs: &mut FontSystem) {
-        self.editor.with_buffer_mut(|buffer| {
-            buffer.set_text(fs, text, &Attrs::new(), Shaping::Advanced);
-        });
-        self.editor.shape_as_needed(fs, true);
-    }
-
-    pub fn get_text(&self) -> String {
-        self.editor.with_buffer(|b| {
-            b.lines
-                .iter()
-                .map(|line| line.text())
-                .collect::<Vec<&str>>()
-                .join("\n")
-        })
-    }
+    // pub fn get_text(&self) -> String {
+    //     self.editor.with_buffer(|b| {
+    //         b.lines
+    //             .iter()
+    //             .map(|line| line.text())
+    //             .collect::<Vec<&str>>()
+    //             .join("\n")
+    //     })
+    // }
 
     pub fn style(mut self, style: taffy::Style) -> Self {
         self.style = style;
@@ -1284,17 +1368,25 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.widget_id
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, font_system: &mut FontSystem) -> NodeId {
+    fn layout(
+        &mut self,
+        taffy: &mut taffy::TaffyTree,
+        font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
+    ) -> NodeId {
         let node_id = taffy.new_leaf(self.style.clone()).unwrap();
         let layout = taffy.layout(node_id).unwrap();
         let w = layout.size.width;
         let h = layout.size.height;
 
-        self.set_text("I am a text edit", font_system);
-        self.editor.with_buffer_mut(|buffer| {
+        let editor_arc =
+            ctx.get_or_create_editor(&self.editor_id, &self.initial_text, font_system, 24.0);
+        let mut editor = editor_arc.lock().unwrap();
+
+        editor.with_buffer_mut(|buffer| {
             buffer.set_size(font_system, Some(w), Some(h));
         });
-        self.editor.shape_as_needed(font_system, true);
+        editor.shape_as_needed(font_system, true);
 
         node_id
     }
@@ -1307,6 +1399,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
+        ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
@@ -1331,8 +1424,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             text_content
         }
 
-        //Convert eidtor into a text widget with it's content
-        self.editor.with_buffer(|buffer| {
+        // Retrieve Editor
+        let editor_arc =
+            ctx.get_or_create_editor(&self.editor_id, &self.initial_text, font_system, 24.0);
+        let mut editor = editor_arc.lock().unwrap();
+
+        //Draw Text Content
+        editor.with_buffer(|buffer| {
             let content = get_text_from_buffer(buffer);
             renderer.add_text(content, x, y, 24.0, self.text_color);
         });
@@ -1344,8 +1442,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
         let mut cache = SwashCache::new();
 
-        // Draw other components for the editor, like: cursor, selection...
-        self.editor.draw(
+        // Draw Selection/Cursor
+        editor.draw(
             font_system,
             &mut cache,
             text_color,
@@ -1376,6 +1474,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         event: &winit::event::WindowEvent,
         cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Check if WE are the focused widget
         if focused_id != Some(self.widget_id) {

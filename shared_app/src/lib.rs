@@ -44,7 +44,8 @@ impl Application for State {
         let rect3 = state.create_rect_box(150.0, 150.0, [0.0, 0.1, 0.0]);
         let rect4 = state.create_rect_box(150.0, 50.0, [0.0, 0.0, 1.0]);
         let rect5 = state.create_rect_box(110.0, 30.0, [0.0, 1.0, 1.0]);
-        let text_edit = Box::new(vexo::TextEdit::new(24.0).size((100.0, 50.0)));
+        let text_edit =
+            Box::new(vexo::TextEdit::new("editor_id_input", "Type here...").size((100.0, 50.0)));
 
         let row = Row::new().push(rect1).push(rect2);
 
