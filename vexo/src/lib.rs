@@ -1388,7 +1388,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: (f32, f32),
-        focused_id: Option<WidgetId>,
+        _focused_id: Option<WidgetId>,
         font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
@@ -1401,30 +1401,25 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let h = layout.size.height;
         renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
 
-        fn get_text_from_buffer(buffer: &cosmic_text::Buffer) -> String {
-            let mut text_content = String::new();
-            for line in buffer.lines.iter() {
-                text_content.push_str(line.text());
-                text_content.push('\n');
-            }
-
-            if text_content.ends_with('\n') {
-                text_content.pop();
-            }
-
-            text_content
-        }
-
         // Retrieve Editor
         let editor_arc =
             ctx.get_or_create_editor(&self.editor_id, &self.initial_text, font_system, 24.0);
-        let mut editor = editor_arc.lock().unwrap();
+        let editor = editor_arc.lock().unwrap();
 
-        //Draw Text Content
-        editor.with_buffer(|buffer| {
-            let content = get_text_from_buffer(buffer);
-            renderer.add_text(content, x, y, 24.0, self.text_color);
+        // Extract text content from buffer
+        let text_content = editor.with_buffer(|buffer| {
+            let mut content = String::new();
+            for line in buffer.lines.iter() {
+                content.push_str(line.text());
+                content.push('\n');
+            }
+            if content.ends_with('\n') {
+                content.pop();
+            }
+            content
         });
+
+        renderer.add_text(text_content, x, y, 24.0, self.text_color);
 
         let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
         let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -1459,13 +1454,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
+        _taffy: &taffy::TaffyTree,
+        _node: NodeId,
+        _offset: (f32, f32),
+        _event: &winit::event::WindowEvent,
+        _cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        _ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Check if WE are the focused widget
         if focused_id != Some(self.widget_id) {
