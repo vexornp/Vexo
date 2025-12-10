@@ -25,15 +25,6 @@ mod shaders {
     pub const WGSL: &str = include_str!("./shader.wgsl");
 }
 
-#[macro_export]
-macro_rules! run_app {
-    ($app_type:ty) => {
-        fn main() -> anyhow::Result<()> {
-            $create::run_desktop_demo()
-        }
-    };
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
