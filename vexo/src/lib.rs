@@ -3,7 +3,6 @@ use glyphon::{
     SwashCache, TextArea, TextBounds, Viewport,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use taffy::prelude::*;
 use wgpu::naga::proc::NameKey;
@@ -29,7 +28,7 @@ mod shaders {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
+pub struct Vertex {
     pos: [f32; 3],
     color: [f32; 3],
 }
@@ -50,13 +49,65 @@ impl Vertex {
 
 pub struct WidgetContext {
     pub editors: HashMap<String, Arc<Mutex<Editor<'static>>>>,
+    // id stack for deterministic widget id generation
+    pub id_stack: Vec<u64>,
+    // Mapping from layout NodeId -> computed WidgetId for this frame
+    pub node_to_widget: HashMap<NodeId, WidgetId>,
 }
 
 impl WidgetContext {
     fn new() -> Self {
         Self {
             editors: HashMap::new(),
+            id_stack: vec![0x9E3779B97F4A7C15u64],
+            node_to_widget: HashMap::new(),
         }
+    }
+
+    pub fn reset_id_stack(&mut self) {
+        self.id_stack.clear();
+        self.id_stack.push(0x9E3779B97F4A7C15u64);
+        // clear per-frame node->widget mapping
+        self.node_to_widget.clear();
+    }
+
+    pub fn push_index(&mut self, idx: usize) {
+        let parent = *self.id_stack.last().unwrap();
+        let child = parent
+            .wrapping_mul(0x9E3779B97F4A7C15u64)
+            .wrapping_add(idx as u64 + 1);
+        self.id_stack.push(child);
+    }
+
+    pub fn push_key(&mut self, key: &str) {
+        use std::hash::{Hash, Hasher};
+        let mut s = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut s);
+        let key_hash = s.finish();
+        let parent = *self.id_stack.last().unwrap();
+        let child = parent
+            .wrapping_mul(0x9E3779B97F4A7C15u64)
+            .wrapping_add(key_hash);
+        self.id_stack.push(child);
+    }
+
+    pub fn pop(&mut self) {
+        if self.id_stack.len() > 1 {
+            self.id_stack.pop();
+        }
+    }
+
+    pub fn current_widget_id(&self) -> WidgetId {
+        WidgetId(*self.id_stack.last().unwrap())
+    }
+
+    pub fn record_node_widget(&mut self, node: NodeId) {
+        let wid = self.current_widget_id();
+        self.node_to_widget.insert(node, wid);
+    }
+
+    pub fn get_widget_id(&self, node: NodeId) -> Option<WidgetId> {
+        self.node_to_widget.get(&node).copied()
     }
 
     pub fn get_or_create_editor(
@@ -358,6 +409,11 @@ impl<A: Application + 'static> FrameworkState<A> {
         self.taffy.clear();
         self.batcher.clear();
 
+        // Reset deterministic id stack before building widget tree
+        self.widget_context.reset_id_stack();
+        // push root slot
+        self.widget_context.push_index(0);
+
         // Taffy should layout in logical points so that 24.0 size means 24 points.
         let logical_width = self.config.width as f32 / self.scale_factor;
         let logical_height = self.config.height as f32 / self.scale_factor;
@@ -370,6 +426,9 @@ impl<A: Application + 'static> FrameworkState<A> {
             &mut self.font_system,
             &mut self.widget_context,
         );
+
+        // pop the root slot
+        self.widget_context.pop();
 
         self.taffy
             .compute_layout(
@@ -701,6 +760,45 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WidgetId(pub u64);
 
+impl WidgetId {
+    /// Create a WidgetId deterministically from a stable `key` string.
+    ///
+    /// This uses the default std hasher to produce a 64-bit value.
+    /// Prefer using the framework-provided path-mixing (via `WidgetContext`) when
+    /// deriving ids from traversal paths, but this helper is convenient when
+    /// you only have a developer-provided key and want a `WidgetId`.
+    pub fn from_key(key: &str) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut s = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut s);
+        WidgetId(s.finish())
+    }
+
+    /// Mix this id with a child index to derive a child WidgetId along the
+    /// deterministic path (same mixing constant used in `WidgetContext`).
+    pub fn mix_with_index(&self, idx: usize) -> Self {
+        WidgetId(
+            self.0
+                .wrapping_mul(0x9E3779B97F4A7C15u64)
+                .wrapping_add(idx as u64 + 1),
+        )
+    }
+
+    /// Mix this id with a key string to derive a child WidgetId along the
+    /// deterministic path (same mixing constant used in `WidgetContext`).
+    pub fn mix_with_key(&self, key: &str) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut s = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut s);
+        let key_hash = s.finish();
+        WidgetId(
+            self.0
+                .wrapping_mul(0x9E3779B97F4A7C15u64)
+                .wrapping_add(key_hash),
+        )
+    }
+}
+
 pub struct WidgetResponse<M> {
     /// The user-defined message
     pub message: Option<M>,
@@ -722,15 +820,20 @@ impl<M> Default for WidgetResponse<M> {
     }
 }
 
-static WIDGET_ID_GENERATER: AtomicU64 = AtomicU64::new(0);
-
-fn next_widget_id() -> WidgetId {
-    WidgetId(WIDGET_ID_GENERATER.fetch_add(1, Ordering::SeqCst))
-}
+// The deterministic id stack + NodeId->WidgetId mapping is used instead of
+// a global incremental id generator.
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Widget unique ID. (Used for focus tracking)
-    fn id(&self) -> WidgetId;
+    /// Default implementation returns `WidgetId(0)`; prefer using the
+    /// NodeId->WidgetId mapping stored in `WidgetContext` instead.
+    fn id(&self) -> WidgetId {
+        WidgetId(0)
+    }
+    /// Optional stable key for identity across reorders.
+    fn key(&self) -> Option<&str> {
+        None
+    }
 
     fn layout(
         &mut self,
@@ -763,27 +866,31 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
 }
 
 pub struct Rectangle {
-    pub widget_id: WidgetId,
     pub width: f32,
     pub height: f32,
     pub color: [f32; 3],
+    pub key: Option<String>,
 }
 
 impl Rectangle {
     pub fn new(width: f32, height: f32, color: [f32; 3]) -> Self {
-        let widget_id = next_widget_id();
         Self {
-            widget_id,
             width,
             height,
             color,
+            key: None,
         }
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
     }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
-    fn id(&self) -> WidgetId {
-        WidgetId(0)
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -792,7 +899,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) -> NodeId {
-        taffy
+        let node = taffy
             .new_leaf(Style {
                 size: Size {
                     width: length(self.width),
@@ -800,7 +907,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
                 },
                 ..Default::default()
             })
-            .unwrap()
+            .unwrap();
+
+        // record the mapping node -> computed WidgetId for this frame
+        ctx.record_node_widget(node);
+        node
     }
 
     fn draw(
@@ -834,16 +945,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
 }
 
 pub struct Column<M: Clone + std::fmt::Debug + Send> {
-    pub widget_id: WidgetId,
     pub children: Vec<Box<dyn Widget<M>>>,
+    pub key: Option<String>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Column<M> {
     pub fn new() -> Self {
-        let widget_id = next_widget_id();
         Self {
-            widget_id,
             children: Vec::new(),
+            key: None,
         }
     }
 
@@ -851,11 +961,16 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
         self.children.push(widget);
         self
     }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
-    fn id(&self) -> WidgetId {
-        self.widget_id
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -864,13 +979,18 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) -> NodeId {
-        let child_nodes: Vec<NodeId> = self
-            .children
-            .iter_mut()
-            .map(|child| child.layout(taffy, font_system, ctx))
-            .collect();
-
-        taffy
+        let mut child_nodes: Vec<NodeId> = Vec::new();
+        for (i, child) in self.children.iter_mut().enumerate() {
+            if let Some(k) = child.key() {
+                ctx.push_key(k);
+            } else {
+                ctx.push_index(i);
+            }
+            let node = child.layout(taffy, font_system, ctx);
+            child_nodes.push(node);
+            ctx.pop();
+        }
+        let node = taffy
             .new_with_children(
                 Style {
                     display: Display::Flex,
@@ -883,7 +1003,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 },
                 &child_nodes,
             )
-            .unwrap()
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
     }
 
     fn draw(
@@ -950,15 +1073,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
 }
 
 pub struct Row<M: Clone + std::fmt::Debug + Send> {
-    pub widget_id: WidgetId,
     pub children: Vec<Box<dyn Widget<M>>>,
+    pub key: Option<String>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Row<M> {
     pub fn new() -> Self {
         Self {
-            widget_id: next_widget_id(),
             children: Vec::new(),
+            key: None,
         }
     }
 
@@ -966,11 +1089,16 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
         self.children.push(widget);
         self
     }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
-    fn id(&self) -> WidgetId {
-        self.widget_id
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -979,13 +1107,18 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) -> NodeId {
-        let child_nodes: Vec<NodeId> = self
-            .children
-            .iter_mut()
-            .map(|child| child.layout(taffy, font_system, ctx))
-            .collect();
-
-        taffy
+        let mut child_nodes: Vec<NodeId> = Vec::new();
+        for (i, child) in self.children.iter_mut().enumerate() {
+            if let Some(k) = child.key() {
+                ctx.push_key(k);
+            } else {
+                ctx.push_index(i);
+            }
+            let node = child.layout(taffy, font_system, ctx);
+            child_nodes.push(node);
+            ctx.pop();
+        }
+        let node = taffy
             .new_with_children(
                 Style {
                     display: Display::Flex,
@@ -998,7 +1131,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 },
                 &child_nodes,
             )
-            .unwrap()
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
     }
 
     fn draw(
@@ -1065,21 +1201,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
 }
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
-    pub widget_id: WidgetId,
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
     pub background_color: [f32; 3],
     pub padding: f32,
+    pub key: Option<String>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Button<M> {
     pub fn new(content: Box<dyn Widget<M>>, on_press: M) -> Self {
         Self {
-            widget_id: next_widget_id(),
             content,
             on_press,
             background_color: [0.2, 0.2, 0.2],
             padding: 10.0,
+            key: None,
         }
     }
 
@@ -1087,11 +1223,16 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
         self.background_color = color;
         self
     }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
-    fn id(&self) -> WidgetId {
-        self.widget_id
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -1100,8 +1241,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) -> NodeId {
+        // push content index (single child)
+        ctx.push_index(1);
         let content_node = self.content.layout(taffy, font_system, ctx);
-        taffy
+        ctx.pop();
+        let node = taffy
             .new_with_children(
                 Style {
                     display: Display::Flex,
@@ -1121,7 +1265,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 },
                 &[content_node],
             )
-            .unwrap()
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
     }
 
     fn draw(
@@ -1217,21 +1364,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 }
 
 pub struct Text {
-    pub widget_id: WidgetId,
     pub content: String,
     pub size: f32,
     pub color: [f32; 3],
     pub style: taffy::Style,
+    pub key: Option<String>,
 }
 
 impl Text {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
-            widget_id: next_widget_id(),
             content: content.into(),
             size: 24.0,
             color: [0.0, 0.0, 0.0],
             style: Style::default(),
+            key: None,
         }
     }
 
@@ -1254,11 +1401,16 @@ impl Text {
         self.style.size.height = dim;
         self
     }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
-    fn id(&self) -> WidgetId {
-        self.widget_id
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -1285,7 +1437,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
             _ => style.size.height,
         };
 
-        taffy.new_leaf(style).unwrap()
+        let node = taffy.new_leaf(style).unwrap();
+        ctx.record_node_widget(node);
+        node
     }
 
     fn draw(
@@ -1319,24 +1473,29 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
 }
 
 pub struct TextEdit {
-    pub widget_id: WidgetId,
     pub editor_id: String,
     pub initial_text: String,
     pub swash_cache: SwashCache,
     pub text_color: [f32; 3],
     pub style: taffy::Style,
+    pub key: Option<String>,
 }
 
 impl TextEdit {
     pub fn new(id: impl Into<String>, initial_text: impl Into<String>) -> Self {
         Self {
-            widget_id: next_widget_id(),
             editor_id: id.into(),
             initial_text: initial_text.into(),
             swash_cache: SwashCache::new(),
             text_color: [1.0, 1.0, 1.0],
             style: Style::default(),
+            key: None,
         }
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
     }
 
     pub fn style(mut self, style: taffy::Style) -> Self {
@@ -1356,8 +1515,8 @@ impl TextEdit {
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
-    fn id(&self) -> WidgetId {
-        self.widget_id
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
     }
 
     fn layout(
@@ -1367,6 +1526,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         ctx: &mut WidgetContext,
     ) -> NodeId {
         let node_id = taffy.new_leaf(self.style.clone()).unwrap();
+        // record mapping for this TextEdit node
+        ctx.record_node_widget(node_id);
         let layout = taffy.layout(node_id).unwrap();
         let w = layout.size.width;
         let h = layout.size.height;
@@ -1463,8 +1624,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         focused_id: Option<WidgetId>,
         _ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // Check if WE are the focused widget
-        let is_focused = focused_id == Some(self.widget_id);
+        // Determine our widget id from the node->widget mapping
+        let my_id = _ctx.get_widget_id(_node);
+        let is_focused = focused_id == my_id;
 
         if !is_focused {
             // Check for click to grab focus
@@ -1489,7 +1651,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     // Request focus
                     return WidgetResponse {
                         message: None,
-                        focus_request: Some(self.widget_id),
+                        focus_request: my_id,
                         handled: true,
                     };
                 }
