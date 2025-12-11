@@ -1,18 +1,20 @@
 use glyphon::{
-    cosmic_text, Attrs, Buffer, Color, Edit, Editor, FontSystem, Metrics, Shaping, SwashCache,
-    TextArea, TextBounds, Viewport,
+    cosmic_text, Action, Attrs, Buffer, Color, Edit, Editor, Font, FontSystem, Metrics, Shaping,
+    SwashCache, TextArea, TextBounds, Viewport,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use taffy::prelude::*;
-use winit::event::*;
+use wgpu::naga::proc::NameKey;
+use winit::keyboard::{Key, NamedKey};
 use winit::{
     application::ApplicationHandler,
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
+use winit::{event::*, window};
 
 pub use uniffi;
 
@@ -545,6 +547,65 @@ impl<A: Application + 'static> FrameworkState<A> {
         }
     }
 
+    fn handle_window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: &winit::event::WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+                println!("Window closed by user");
+                return;
+            }
+            WindowEvent::Resized(size) => {
+                self.resize_by_pixel_point(size.width as f32, size.height as f32);
+                println!("Window resized to: {}x{}", size.width, size.height);
+                return;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                // Convert logical position to physical position
+                self.cursor_pos = (
+                    position.x as f32 / self.scale_factor,
+                    position.y as f32 / self.scale_factor,
+                );
+                return;
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(e) = self.render() {
+                    log::error!("Render error: {}", e);
+                }
+            }
+            _ => {
+                println!("Unhandled window event: {:?}", event);
+            }
+        }
+
+        // Pass the event to the root widget (which passes it down)
+        let widget_response = self.root_widget.on_event(
+            &self.taffy,
+            self.root_node_id,
+            (0.0, 0.0),
+            event,
+            self.cursor_pos,
+            self.focused_widget_id,
+            &mut self.widget_context,
+        );
+
+        // Handle Framework Logic
+        if let Some(focus_request) = widget_response.focus_request {
+            self.focused_widget_id = Some(focus_request);
+            println!("Focus requested by widget: {:?}", focus_request);
+        }
+
+        //  Handle User Logic
+        if let Some(msg) = widget_response.message {
+            println!("User message received: {:?}", msg);
+            self.update(msg);
+        }
+    }
+
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
@@ -633,57 +694,7 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
             Some(canvas) => canvas,
             None => return,
         };
-
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                state.resize_by_pixel_point(size.width as f32, size.height as f32)
-            }
-            WindowEvent::RedrawRequested => match state.render() {
-                Ok(_) => {}
-                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    if let Some(win) = &state.window {
-                        let size = win.inner_size();
-                        state.resize_by_pixel_point(size.width as f32, size.height as f32);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Unable to render {}", e);
-                }
-            },
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
-                        state: key_state,
-                        ..
-                    },
-                ..
-            } => state.handle_key(event_loop, code, key_state.is_pressed()),
-            WindowEvent::MouseWheel {
-                device_id: _,
-                delta,
-                phase: _,
-            } => match delta {
-                MouseScrollDelta::LineDelta(x, y) => {
-                    println!("Mouse scroll: {}, {}", x, y);
-                }
-                _ => {
-                    println!("Unkonwn mouse event");
-                }
-            },
-            WindowEvent::CursorMoved { position, .. } => {
-                state.cursor_pos = (position.x as f32, position.y as f32);
-            }
-            WindowEvent::MouseInput {
-                state: m_state,
-                button,
-                ..
-            } => {
-                state.handle_mouse_click(m_state, button);
-            }
-            _ => {}
-        }
+        state.handle_window_event(event_loop, window_id, &event);
     }
 }
 
@@ -1328,16 +1339,6 @@ impl TextEdit {
         }
     }
 
-    // pub fn get_text(&self) -> String {
-    //     self.editor.with_buffer(|b| {
-    //         b.lines
-    //             .iter()
-    //             .map(|line| line.text())
-    //             .collect::<Vec<&str>>()
-    //             .join("\n")
-    //     })
-    // }
-
     pub fn style(mut self, style: taffy::Style) -> Self {
         self.style = style;
         self
@@ -1463,17 +1464,183 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         _ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Check if WE are the focused widget
-        if focused_id != Some(self.widget_id) {
+        let is_focused = focused_id == Some(self.widget_id);
+
+        if !is_focused {
+            // Check for click to grab focus
+            if let WindowEvent::MouseInput {
+                state: winit::event::ElementState::Pressed,
+                button: winit::event::MouseButton::Left,
+                ..
+            } = _event
+            {
+                let layout = _taffy.layout(_node).unwrap();
+                let x = _offset.0 + layout.location.x;
+                let y = _offset.1 + layout.location.y;
+                let width = layout.size.width;
+                let height = layout.size.height;
+
+                let is_over = _cursor_pos.0 >= x
+                    && _cursor_pos.0 <= x + width
+                    && _cursor_pos.1 >= y
+                    && _cursor_pos.1 <= y + height;
+
+                if is_over {
+                    // Request focus
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: Some(self.widget_id),
+                        handled: true,
+                    };
+                }
+            }
             return WidgetResponse::default();
         }
 
-        // Handle keyboard input
+        // We are focused, so handle keyboard input
+        let editor_arc = _ctx.get_or_create_editor(
+            &self.editor_id,
+            &self.initial_text,
+            &mut FontSystem::new(),
+            24.0,
+        );
+        let mut editor = editor_arc.lock().unwrap();
+        let mut ctrl_pressed = false;
+        let mut mouse_x: f64 = 0.0;
+        let mut mouse_y: f64 = 0.0;
+        let mut mouse_left = ElementState::Released;
 
-        // Handle text inpu (Char typing)
+        match _event {
+            WindowEvent::ModifiersChanged(modifiers) => {
+                ctrl_pressed = modifiers.state().control_key();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let KeyEvent {
+                    logical_key, state, ..
+                } = event;
+
+                if state.is_pressed() {
+                    match logical_key {
+                        Key::Named(NamedKey::ArrowLeft) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::Left),
+                            );
+                        }
+                        Key::Named(NamedKey::ArrowRight) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::Right),
+                            );
+                        }
+                        Key::Named(NamedKey::ArrowUp) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::Up),
+                            );
+                        }
+                        Key::Named(NamedKey::ArrowDown) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::Down),
+                            );
+                        }
+                        Key::Named(NamedKey::Home) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::Home),
+                            );
+                        }
+                        Key::Named(NamedKey::End) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::End),
+                            );
+                        }
+                        Key::Named(NamedKey::PageUp) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::PageUp),
+                            );
+                        }
+                        Key::Named(NamedKey::PageDown) => {
+                            editor.action(
+                                &mut FontSystem::new(),
+                                Action::Motion(cosmic_text::Motion::PageDown),
+                            );
+                        }
+                        Key::Named(NamedKey::Escape) => {
+                            editor.action(&mut FontSystem::new(), Action::Escape);
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            editor.action(&mut FontSystem::new(), Action::Enter);
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            editor.action(&mut FontSystem::new(), Action::Backspace);
+                        }
+                        Key::Named(NamedKey::Delete) => {
+                            editor.action(&mut FontSystem::new(), Action::Delete);
+                        }
+                        Key::Character(text) => {
+                            if ctrl_pressed {
+                                // Handle Ctrl + Char
+                                match text.as_str() {
+                                    "c" => {
+                                        // TODO: Copy
+                                    }
+                                    "v" => {
+                                        // TOOD: Paste
+                                    }
+                                    "x" => {
+                                        // TODO: Cut
+                                    }
+                                    _ => {
+                                        // Ignore other Ctrl + Char combinations
+                                    }
+                                }
+                            } else {
+                                // Normal character input
+                                for c in text.chars() {
+                                    if c.is_control() {
+                                        // Ignore control characters
+                                        continue;
+                                    }
+                                    editor.action(&mut FontSystem::new(), Action::Insert(c));
+                                }
+                            }
+                        }
+                        _ => {
+                            // Ignore other keys
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            } => {
+                // Update saved mouse position for use when handling click events
+                // This is used to handle mouse click events later
+                mouse_x = position.x;
+                mouse_y = position.y;
+
+                if mouse_left.is_pressed() {
+                    // Update selection
+                    editor.action(
+                        &mut FontSystem::new(),
+                        Action::Drag {
+                            x: position.x as i32,
+                            y: position.y as i32,
+                        },
+                    );
+                }
+            }
+            _ => {}
+        }
 
         WidgetResponse {
             message: None,
-            focus_request: Some(self.widget_id),
+            focus_request: None,
             handled: true,
         }
     }
