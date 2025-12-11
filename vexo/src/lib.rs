@@ -1,19 +1,15 @@
 use glyphon::{
-    cosmic_text, Action, Attrs, Buffer, Color, Edit, Editor, Font, FontSystem, Metrics, Shaping,
-    SwashCache, TextArea, TextBounds, Viewport,
+    cosmic_text, Action, Attrs, Buffer, Color, Edit, Editor, FontSystem, Metrics, Shaping,
+    SwashCache, TextBounds, Viewport,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use taffy::prelude::*;
-use wgpu::naga::proc::NameKey;
+use winit::event::*;
 use winit::keyboard::{Key, NamedKey};
 use winit::{
-    application::ApplicationHandler,
-    event_loop::ActiveEventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::Window,
+    application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
 };
-use winit::{event::*, window};
 
 pub use uniffi;
 
@@ -665,6 +661,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         }
     }
 
+    #[allow(dead_code)]
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
@@ -739,21 +736,21 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
         self.framework_state = Some(pollster::block_on(FrameworkState::new(window)).unwrap());
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: FrameworkState<A>) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: FrameworkState<A>) {
         self.framework_state = Some(event);
     }
 
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
         let state = match &mut self.framework_state {
             Some(canvas) => canvas,
             None => return,
         };
-        state.handle_window_event(event_loop, window_id, &event);
+        state.handle_window_event(event_loop, _window_id, &event);
     }
 }
 
@@ -888,6 +885,7 @@ impl Rectangle {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -968,6 +966,7 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -1096,6 +1095,7 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -1230,6 +1230,7 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -1408,6 +1409,7 @@ impl Text {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -1514,6 +1516,7 @@ impl TextEdit {
     }
 }
 
+#[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
@@ -1667,14 +1670,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             24.0,
         );
         let mut editor = editor_arc.lock().unwrap();
-        let mut ctrl_pressed = false;
-        let mut mouse_x: f64 = 0.0;
-        let mut mouse_y: f64 = 0.0;
-        let mut mouse_left = ElementState::Released;
+        let mut _ctrl_pressed = false;
+        let mut _mouse_x: f64 = 0.0;
+        let mut _mouse_y: f64 = 0.0;
+        let _mouse_left = ElementState::Released;
 
         match _event {
             WindowEvent::ModifiersChanged(modifiers) => {
-                ctrl_pressed = modifiers.state().control_key();
+                _ctrl_pressed = modifiers.state().control_key();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let KeyEvent {
@@ -1744,7 +1747,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                             editor.action(&mut FontSystem::new(), Action::Delete);
                         }
                         Key::Character(text) => {
-                            if ctrl_pressed {
+                            if _ctrl_pressed {
                                 // Handle Ctrl + Char
                                 match text.as_str() {
                                     "c" => {
@@ -1778,15 +1781,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 }
             }
             WindowEvent::CursorMoved {
-                device_id,
+                device_id: _,
                 position,
             } => {
                 // Update saved mouse position for use when handling click events
                 // This is used to handle mouse click events later
-                mouse_x = position.x;
-                mouse_y = position.y;
+                _mouse_x = position.x;
+                _mouse_y = position.y;
 
-                if mouse_left.is_pressed() {
+                if _mouse_left.is_pressed() {
                     // Update selection
                     editor.action(
                         &mut FontSystem::new(),
