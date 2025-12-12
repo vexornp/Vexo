@@ -49,14 +49,26 @@ pub struct WidgetContext {
     pub id_stack: Vec<u64>,
     // Mapping from layout NodeId -> computed WidgetId for this frame
     pub node_to_widget: HashMap<NodeId, WidgetId>,
+
+    pub font_system: FontSystem,
 }
+
+extern crate alloc;
 
 impl WidgetContext {
     fn new() -> Self {
+        // Embed a font so we are guaranteed to have one available.
+        // Eg: we can't get the system font on ios platform
+        let font_data = include_bytes!("../font.ttf").to_vec();
+        let binary = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(font_data));
+        // font_system.db_mut().load_font_data(font_data);
+        let font_system = FontSystem::new_with_fonts([binary]);
+
         Self {
             editors: HashMap::new(),
             id_stack: vec![0x9E3779B97F4A7C15u64],
             node_to_widget: HashMap::new(),
+            font_system,
         }
     }
 
@@ -110,7 +122,6 @@ impl WidgetContext {
         &mut self,
         id: &str,
         initial_text: &str,
-        font_system: &mut FontSystem,
         font_size: f32,
     ) -> Arc<Mutex<Editor<'static>>> {
         self.editors
@@ -119,7 +130,12 @@ impl WidgetContext {
                 let metrics = Metrics::new(font_size, font_size * 1.25);
                 let mut editor = Editor::new(Buffer::new_empty(metrics));
                 editor.with_buffer_mut(|buffer| {
-                    buffer.set_text(font_system, initial_text, &Attrs::new(), Shaping::Advanced);
+                    buffer.set_text(
+                        &mut self.font_system,
+                        initial_text,
+                        &Attrs::new(),
+                        Shaping::Advanced,
+                    );
                 });
                 Arc::new(Mutex::new(editor))
             })
@@ -144,7 +160,6 @@ pub struct FrameworkState<A: Application + 'static> {
     root_node_id: NodeId,
 
     // --- Text Rendering Fields --
-    font_system: glyphon::FontSystem,
     atlas: glyphon::TextAtlas,
     text_renderer: glyphon::TextRenderer,
     swash_cache: glyphon::SwashCache,
@@ -322,14 +337,6 @@ impl<A: Application + 'static> FrameworkState<A> {
         });
 
         // --- Glyphone Initialization ---
-        // FontSystem::new() is an extremely expensive operation.
-        // It scans your operating system's disk for installed fonts, parses their headers, and builds a database.
-        let mut font_system = glyphon::FontSystem::new();
-
-        // Embed a font so we are guaranteed to have one available.
-        // Eg: we can't get the system font on ios platform
-        let font_data = include_bytes!("../font.ttf").to_vec();
-        font_system.db_mut().load_font_data(font_data);
 
         let swash_cache = glyphon::SwashCache::new();
         let cache = glyphon::Cache::new(&device);
@@ -346,7 +353,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         let mut taffy = taffy::TaffyTree::new();
         let mut root_widget = Box::new(Column::new());
         let mut ctx = WidgetContext::new();
-        let root_node_id = root_widget.layout(&mut taffy, &mut font_system, &mut ctx);
+        let root_node_id = root_widget.layout(&mut taffy, &mut ctx);
 
         Ok(Self {
             surface,
@@ -363,7 +370,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             taffy,
             root_widget,
             root_node_id,
-            font_system,
             atlas,
             text_renderer,
             swash_cache,
@@ -417,11 +423,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
 
-        let new_root_node_id = new_root_widget.layout(
-            &mut self.taffy,
-            &mut self.font_system,
-            &mut self.widget_context,
-        );
+        let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.widget_context);
 
         // pop the root slot
         self.widget_context.pop();
@@ -445,7 +447,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             &mut self.batcher,
             (0.0, 0.0),
             self.focused_widget_id,
-            &mut self.font_system,
             &mut self.widget_context,
         );
 
@@ -463,7 +464,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         for req in self.batcher.text_requests.drain(..) {
             // Create the Glyphon text buffer
             let mut buffer = glyphon::Buffer::new(
-                &mut self.font_system,
+                &mut self.widget_context.font_system,
                 Metrics::new(req.size, req.size * 1.2),
             );
 
@@ -476,12 +477,12 @@ impl<A: Application + 'static> FrameworkState<A> {
             );
 
             buffer.set_text(
-                &mut self.font_system,
+                &mut self.widget_context.font_system,
                 &req.content,
                 &glyphon::Attrs::new().color(color_rgba_u8),
                 glyphon::Shaping::Advanced,
             );
-            buffer.shape_until_scroll(&mut self.font_system, true);
+            buffer.shape_until_scroll(&mut self.widget_context.font_system, true);
             processed_texts.push((buffer, req));
         }
 
@@ -544,7 +545,7 @@ impl<A: Application + 'static> FrameworkState<A> {
             .prepare(
                 &self.device,
                 &self.queue,
-                &mut self.font_system,
+                &mut self.widget_context.font_system,
                 &mut self.atlas,
                 &self.viewport,
                 text_areas,
@@ -832,12 +833,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         None
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId;
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId;
 
     fn draw(
         &self,
@@ -846,7 +842,6 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     );
 
@@ -891,12 +886,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let node = taffy
             .new_leaf(Style {
                 size: Size {
@@ -919,7 +909,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -972,12 +961,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let mut child_nodes: Vec<NodeId> = Vec::new();
         for (i, child) in self.children.iter_mut().enumerate() {
             if let Some(k) = child.key() {
@@ -985,7 +969,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
             } else {
                 ctx.push_index(i);
             }
-            let node = child.layout(taffy, font_system, ctx);
+            let node = child.layout(taffy, ctx);
             child_nodes.push(node);
             ctx.pop();
         }
@@ -1015,7 +999,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
+
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1029,7 +1013,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 renderer,
                 (my_x, my_y),
                 focused_id,
-                font_system,
                 ctx,
             );
         }
@@ -1101,12 +1084,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let mut child_nodes: Vec<NodeId> = Vec::new();
         for (i, child) in self.children.iter_mut().enumerate() {
             if let Some(k) = child.key() {
@@ -1114,7 +1092,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
             } else {
                 ctx.push_index(i);
             }
-            let node = child.layout(taffy, font_system, ctx);
+            let node = child.layout(taffy, ctx);
             child_nodes.push(node);
             ctx.pop();
         }
@@ -1144,7 +1122,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1158,7 +1135,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 renderer,
                 (my_x, my_y),
                 focused_id,
-                font_system,
                 ctx,
             );
         }
@@ -1236,15 +1212,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         // push content index (single child)
         ctx.push_index(1);
-        let content_node = self.content.layout(taffy, font_system, ctx);
+        let content_node = self.content.layout(taffy, ctx);
         ctx.pop();
         let node = taffy
             .new_with_children(
@@ -1279,7 +1250,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1302,7 +1272,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 renderer,
                 content_offset,
                 focused_id,
-                font_system,
                 ctx,
             );
         }
@@ -1415,12 +1384,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         // Glyphon calculation: This is where we calculate the precise bounds.
         // NOTE: In a final structure, FontSystem should be passed here,
 
@@ -1451,7 +1415,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1522,12 +1485,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.key.as_deref()
     }
 
-    fn layout(
-        &mut self,
-        taffy: &mut taffy::TaffyTree,
-        font_system: &mut FontSystem,
-        ctx: &mut WidgetContext,
-    ) -> NodeId {
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let node_id = taffy.new_leaf(self.style.clone()).unwrap();
         // record mapping for this TextEdit node
         ctx.record_node_widget(node_id);
@@ -1535,14 +1493,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let w = layout.size.width;
         let h = layout.size.height;
 
-        let editor_arc =
-            ctx.get_or_create_editor(&self.editor_id, &self.initial_text, font_system, 24.0);
+        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
         let mut editor = editor_arc.lock().unwrap();
 
         editor.with_buffer_mut(|buffer| {
-            buffer.set_size(font_system, Some(w), Some(h));
+            buffer.set_size(&mut ctx.font_system, Some(w), Some(h));
         });
-        editor.shape_as_needed(font_system, true);
+        editor.shape_as_needed(&mut ctx.font_system, true);
 
         node_id
     }
@@ -1554,7 +1511,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         _focused_id: Option<WidgetId>,
-        font_system: &mut FontSystem,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1567,8 +1523,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
 
         // Retrieve Editor
-        let editor_arc =
-            ctx.get_or_create_editor(&self.editor_id, &self.initial_text, font_system, 24.0);
+        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
         let editor = editor_arc.lock().unwrap();
 
         // Extract text content from buffer
@@ -1592,29 +1547,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
 
         let mut cache = SwashCache::new();
-
-        // Draw Selection/Cursor
-        editor.draw(
-            font_system,
-            &mut cache,
-            text_color,
-            cursor_color,
-            selection_color,
-            selected_text_color,
-            |x, y, w, h, color| {
-                renderer.add_rect(
-                    x as f32,
-                    y as f32,
-                    w as f32,
-                    h as f32,
-                    [
-                        color.r() as f32 / 255.0,
-                        color.g() as f32 / 255.0,
-                        color.b() as f32 / 255.0,
-                    ],
-                );
-            },
-        );
     }
 
     fn on_event(
@@ -1625,10 +1557,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         _event: &winit::event::WindowEvent,
         _cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
-        _ctx: &mut WidgetContext,
+        ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Determine our widget id from the node->widget mapping
-        let my_id = _ctx.get_widget_id(_node);
+        let my_id = ctx.get_widget_id(_node);
         let is_focused = focused_id == my_id;
 
         if !is_focused {
@@ -1663,12 +1595,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         }
 
         // We are focused, so handle keyboard input
-        let editor_arc = _ctx.get_or_create_editor(
-            &self.editor_id,
-            &self.initial_text,
-            &mut FontSystem::new(),
-            24.0,
-        );
+        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
         let mut editor = editor_arc.lock().unwrap();
         let mut _ctrl_pressed = false;
         let mut _mouse_x: f64 = 0.0;
@@ -1688,63 +1615,63 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     match logical_key {
                         Key::Named(NamedKey::ArrowLeft) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Left),
                             );
                         }
                         Key::Named(NamedKey::ArrowRight) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Right),
                             );
                         }
                         Key::Named(NamedKey::ArrowUp) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Up),
                             );
                         }
                         Key::Named(NamedKey::ArrowDown) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Down),
                             );
                         }
                         Key::Named(NamedKey::Home) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Home),
                             );
                         }
                         Key::Named(NamedKey::End) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::End),
                             );
                         }
                         Key::Named(NamedKey::PageUp) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::PageUp),
                             );
                         }
                         Key::Named(NamedKey::PageDown) => {
                             editor.action(
-                                &mut FontSystem::new(),
+                                &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::PageDown),
                             );
                         }
                         Key::Named(NamedKey::Escape) => {
-                            editor.action(&mut FontSystem::new(), Action::Escape);
+                            editor.action(&mut ctx.font_system, Action::Escape);
                         }
                         Key::Named(NamedKey::Enter) => {
-                            editor.action(&mut FontSystem::new(), Action::Enter);
+                            editor.action(&mut ctx.font_system, Action::Enter);
                         }
                         Key::Named(NamedKey::Backspace) => {
-                            editor.action(&mut FontSystem::new(), Action::Backspace);
+                            editor.action(&mut ctx.font_system, Action::Backspace);
                         }
                         Key::Named(NamedKey::Delete) => {
-                            editor.action(&mut FontSystem::new(), Action::Delete);
+                            editor.action(&mut ctx.font_system, Action::Delete);
                         }
                         Key::Character(text) => {
                             if _ctrl_pressed {
@@ -1770,7 +1697,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                                         // Ignore control characters
                                         continue;
                                     }
-                                    editor.action(&mut FontSystem::new(), Action::Insert(c));
+                                    editor.action(&mut ctx.font_system, Action::Insert(c));
                                 }
                             }
                         }
@@ -1792,7 +1719,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 if _mouse_left.is_pressed() {
                     // Update selection
                     editor.action(
-                        &mut FontSystem::new(),
+                        &mut ctx.font_system,
                         Action::Drag {
                             x: position.x as i32,
                             y: position.y as i32,
