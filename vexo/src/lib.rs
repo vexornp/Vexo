@@ -3,7 +3,8 @@ use glyphon::{
     SwashCache, TextBounds, Viewport,
 };
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Arc;
 use taffy::prelude::*;
 use winit::event::*;
 use winit::keyboard::{Key, NamedKey};
@@ -21,6 +22,7 @@ mod shaders {
     // Assumes shader.wgsl is in the project root (parent of src/).
     pub const WGSL: &str = include_str!("./shader.wgsl");
 }
+mod editor;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -43,8 +45,10 @@ impl Vertex {
     }
 }
 
+type EditorRef = Rc<std::cell::RefCell<editor::Editor>>;
+
 pub struct WidgetContext {
-    pub editors: HashMap<String, Arc<Mutex<Editor<'static>>>>,
+    pub editors: HashMap<String, EditorRef>,
     // id stack for deterministic widget id generation
     pub id_stack: Vec<u64>,
     // Mapping from layout NodeId -> computed WidgetId for this frame
@@ -118,15 +122,11 @@ impl WidgetContext {
         self.node_to_widget.get(&node).copied()
     }
 
-    pub fn get_or_create_editor(
-        &mut self,
-        id: &str,
-        initial_text: &str,
-        font_size: f32,
-    ) -> Arc<Mutex<Editor<'static>>> {
+    pub fn get_or_create_editor(&mut self, id: &str, initial_text: &str) -> EditorRef {
         self.editors
             .entry(id.to_string())
             .or_insert_with(|| {
+                let font_size = 16.0;
                 let metrics = Metrics::new(font_size, font_size * 1.25);
                 let mut editor = Editor::new(Buffer::new_empty(metrics));
                 editor.with_buffer_mut(|buffer| {
@@ -137,7 +137,8 @@ impl WidgetContext {
                         Shaping::Advanced,
                     );
                 });
-                Arc::new(Mutex::new(editor))
+                editor.shape_as_needed(&mut self.font_system, true);
+                Rc::new(std::cell::RefCell::new(editor::Editor::new(editor)))
             })
             .clone()
     }
@@ -525,6 +526,85 @@ impl<A: Application + 'static> FrameworkState<A> {
             })
             .collect();
 
+        // For editor text areas we must provide a `&Buffer` that lives long
+        // enough for `text_renderer.prepare`. To do that without changing
+        // glyphon's API we clone each editor `Buffer` into a local Vec and
+        // then create `TextArea` instances that borrow from that Vec. The
+        // `editor_buffers` Vec must stay alive until after `prepare`/`render`.
+        // Collect owned editor buffers and metadata first, then create
+        // `TextArea` instances in a separate pass to avoid holding
+        // simultaneous mutable/immutable borrows of `editor_buffers`.
+        let mut editor_buffers: Vec<glyphon::Buffer> = Vec::new();
+        // Metadata: (left, top, left_i, top_i, right_i, bottom_i, color)
+        let mut editor_meta: Vec<(f32, f32, i32, i32, i32, i32, cosmic_text::Color)> = Vec::new();
+
+        for req in self.batcher.editor_requests.iter_mut() {
+            // req.bounds is (x, y, width, height) in logical points (taffy layout)
+            // Convert to physical pixels and compute absolute bounds (left..right, top..bottom)
+            let (bx, by, bw, bh) = req.bounds;
+            let left_pos = bx * self.scale_factor;
+            let top_pos = by * self.scale_factor;
+
+            let bounds_left: i32 = left_pos.floor() as i32;
+            let bounds_top: i32 = top_pos.floor() as i32;
+            let bounds_right: i32 = ((bx + bw) * self.scale_factor).ceil() as i32;
+            let bounds_bottom: i32 = ((by + bh) * self.scale_factor).ceil() as i32;
+
+            let color_rgba_u8 = cosmic_text::Color::rgba(
+                (req.color[0] * 255.0) as u8,
+                (req.color[1] * 255.0) as u8,
+                (req.color[2] * 255.0) as u8,
+                (req.color[3] * 255.0) as u8,
+            );
+
+            let editor_ref = self
+                .widget_context
+                .get_or_create_editor(&req.id, "initial_text");
+            let editor = editor_ref.borrow();
+            let buf = editor.buffer().clone();
+            editor_buffers.push(buf);
+            editor_meta.push((
+                left_pos,
+                top_pos,
+                bounds_left,
+                bounds_top,
+                bounds_right,
+                bounds_bottom,
+                color_rgba_u8,
+            ));
+        }
+
+        // Now build TextArea instances borrowing from the owned `editor_buffers`.
+        let mut editor_areas: Vec<glyphon::TextArea> = Vec::new();
+        for (i, buf) in editor_buffers.iter_mut().enumerate() {
+            let (left_pos, top_pos, bounds_left, bounds_top, bounds_right, bounds_bottom, color) =
+                editor_meta[i];
+            buf.shape_until_scroll(&mut self.widget_context.font_system, true);
+
+            let text = buf
+                .layout_runs()
+                .into_iter()
+                .fold(String::new(), |mut acc, run| {
+                    acc.push_str(&run.text);
+                    acc
+                });
+
+            editor_areas.push(glyphon::TextArea {
+                buffer: buf,
+                left: left_pos,
+                top: top_pos,
+                scale: self.scale_factor,
+                bounds: TextBounds {
+                    left: bounds_left,
+                    top: bounds_top,
+                    right: bounds_right,
+                    bottom: bounds_bottom,
+                },
+                default_color: color,
+                custom_glyphs: &[],
+            });
+        }
+
         // --- WGPU Drawing Phase ---
         // Upload rectangle geometry
         if !self.batcher.vertices.is_empty() {
@@ -540,7 +620,10 @@ impl<A: Application + 'static> FrameworkState<A> {
             );
         }
 
-        // Prepare renderer for Text
+        // Combine text areas (regular + editor) and prepare glyphon once.
+        let mut combined_text_areas = text_areas;
+        combined_text_areas.extend(editor_areas.into_iter());
+
         self.text_renderer
             .prepare(
                 &self.device,
@@ -548,7 +631,7 @@ impl<A: Application + 'static> FrameworkState<A> {
                 &mut self.widget_context.font_system,
                 &mut self.atlas,
                 &self.viewport,
-                text_areas,
+                combined_text_areas,
                 &mut self.swash_cache,
             )
             .unwrap();
@@ -632,10 +715,9 @@ impl<A: Application + 'static> FrameworkState<A> {
                 if let Err(e) = self.render() {
                     log::error!("Render error: {}", e);
                 }
+                return;
             }
-            _ => {
-                println!("Unhandled window event: {:?}", event);
-            }
+            _ => {}
         }
 
         // Pass the event to the root widget (which passes it down)
@@ -826,6 +908,9 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Default implementation returns `WidgetId(0)`; prefer using the
     /// NodeId->WidgetId mapping stored in `WidgetContext` instead.
     fn id(&self) -> WidgetId {
+        if let Some(k) = self.key() {
+            return WidgetId::from_key(k);
+        }
         WidgetId(0)
     }
     /// Optional stable key for identity across reorders.
@@ -999,7 +1084,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         renderer: &mut UiBatcher,
         offset: (f32, f32),
         focused_id: Option<WidgetId>,
-
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -1493,14 +1577,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let w = layout.size.width;
         let h = layout.size.height;
 
-        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
-        let mut editor = editor_arc.lock().unwrap();
-
-        editor.with_buffer_mut(|buffer| {
-            buffer.set_size(&mut ctx.font_system, Some(w), Some(h));
-        });
-        editor.shape_as_needed(&mut ctx.font_system, true);
-
         node_id
     }
 
@@ -1522,24 +1598,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let h = layout.size.height;
         renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
 
-        // Retrieve Editor
-        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
-        let editor = editor_arc.lock().unwrap();
+        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let mut eidtor_ref = editor_arc.borrow_mut();
 
-        // Extract text content from buffer
-        let text_content = editor.with_buffer(|buffer| {
-            let mut content = String::new();
-            for line in buffer.lines.iter() {
-                content.push_str(line.text());
-                content.push('\n');
-            }
-            if content.ends_with('\n') {
-                content.pop();
-            }
-            content
-        });
+        eidtor_ref.set_size(&mut ctx.font_system, w, h);
+        eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
 
-        renderer.add_text(text_content, x, y, 24.0, self.text_color);
+        renderer.add_editor_request(&self.editor_id, (x, y, w, h));
 
         let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
         let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -1595,8 +1660,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         }
 
         // We are focused, so handle keyboard input
-        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text, 24.0);
-        let mut editor = editor_arc.lock().unwrap();
+        let editor_rc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let mut editor_ref = editor_rc.borrow_mut();
+
         let mut _ctrl_pressed = false;
         let mut _mouse_x: f64 = 0.0;
         let mut _mouse_y: f64 = 0.0;
@@ -1606,6 +1672,35 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             WindowEvent::ModifiersChanged(modifiers) => {
                 _ctrl_pressed = modifiers.state().control_key();
             }
+            WindowEvent::MouseInput {
+                device_id: _,
+                state,
+                button,
+            } => {
+                if *button == MouseButton::Left {
+                    if state.is_pressed() {
+                        let layout = _taffy.layout(_node).unwrap();
+                        let x = _offset.0 + layout.location.x;
+                        let y = _offset.1 + layout.location.y;
+                        let width = layout.size.width;
+                        let height = layout.size.height;
+
+                        let relative_physical_x =
+                            (_mouse_x.round() as i32).saturating_sub(width as i32);
+                        let relative_physical_y =
+                            (_mouse_y.round() as i32).saturating_sub(height as i32);
+
+                        // Handle mouse click
+                        editor_ref.action(
+                            &mut ctx.font_system,
+                            Action::Click {
+                                x: relative_physical_x,
+                                y: relative_physical_y,
+                            },
+                        );
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 let KeyEvent {
                     logical_key, state, ..
@@ -1614,64 +1709,64 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 if state.is_pressed() {
                     match logical_key {
                         Key::Named(NamedKey::ArrowLeft) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Left),
                             );
                         }
                         Key::Named(NamedKey::ArrowRight) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Right),
                             );
                         }
                         Key::Named(NamedKey::ArrowUp) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Up),
                             );
                         }
                         Key::Named(NamedKey::ArrowDown) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Down),
                             );
                         }
                         Key::Named(NamedKey::Home) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::Home),
                             );
                         }
                         Key::Named(NamedKey::End) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::End),
                             );
                         }
                         Key::Named(NamedKey::PageUp) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::PageUp),
                             );
                         }
                         Key::Named(NamedKey::PageDown) => {
-                            editor.action(
+                            editor_ref.action(
                                 &mut ctx.font_system,
                                 Action::Motion(cosmic_text::Motion::PageDown),
                             );
                         }
                         Key::Named(NamedKey::Escape) => {
-                            editor.action(&mut ctx.font_system, Action::Escape);
+                            editor_ref.action(&mut ctx.font_system, Action::Escape);
                         }
                         Key::Named(NamedKey::Enter) => {
-                            editor.action(&mut ctx.font_system, Action::Enter);
+                            editor_ref.action(&mut ctx.font_system, Action::Enter);
                         }
                         Key::Named(NamedKey::Backspace) => {
-                            editor.action(&mut ctx.font_system, Action::Backspace);
+                            editor_ref.action(&mut ctx.font_system, Action::Backspace);
                         }
                         Key::Named(NamedKey::Delete) => {
-                            editor.action(&mut ctx.font_system, Action::Delete);
+                            editor_ref.action(&mut ctx.font_system, Action::Delete);
                         }
                         Key::Character(text) => {
                             if _ctrl_pressed {
@@ -1697,7 +1792,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                                         // Ignore control characters
                                         continue;
                                     }
-                                    editor.action(&mut ctx.font_system, Action::Insert(c));
+                                    editor_ref.action(&mut ctx.font_system, Action::Insert(c));
                                 }
                             }
                         }
@@ -1707,28 +1802,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     }
                 }
             }
-            WindowEvent::CursorMoved {
-                device_id: _,
-                position,
-            } => {
-                // Update saved mouse position for use when handling click events
-                // This is used to handle mouse click events later
-                _mouse_x = position.x;
-                _mouse_y = position.y;
-
-                if _mouse_left.is_pressed() {
-                    // Update selection
-                    editor.action(
-                        &mut ctx.font_system,
-                        Action::Drag {
-                            x: position.x as i32,
-                            y: position.y as i32,
-                        },
-                    );
-                }
-            }
             _ => {}
         }
+
+        editor_ref.shape_as_needed(&mut ctx.font_system, true);
 
         WidgetResponse {
             message: None,
@@ -1766,17 +1843,17 @@ pub struct TextRequest {
     pub color: [f32; 4],
 }
 
-pub struct EditorRequest<'a> {
-    pub origin_x: f32,
-    pub origin_y: f32,
-    pub editor: Editor<'a>,
+pub struct EditorRequest {
+    id: String,
+    bounds: (f32, f32, f32, f32), // x, y, width, height
+    color: [f32; 4],
 }
 
 pub struct UiBatcher {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
     pub text_requests: Vec<TextRequest>, // For normal Text widget
-    pub editor_request: Option<EditorRequest<'static>>, // For TextEdit widget
+    pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
 
     screen_width: f32,  // Logical width: pixel_width * scale_factor
     screen_height: f32, // Logical height: pixel_height * scale_factor
@@ -1788,7 +1865,7 @@ impl UiBatcher {
             vertices: Vec::new(),
             indices: Vec::new(),
             text_requests: Vec::new(),
-            editor_request: None,
+            editor_requests: Vec::new(),
             screen_width: 1.0,
             screen_height: 1.0,
         }
@@ -1798,6 +1875,7 @@ impl UiBatcher {
         self.vertices.clear();
         self.indices.clear();
         self.text_requests.clear();
+        self.editor_requests.clear();
     }
 
     // Set logical size
@@ -1841,6 +1919,14 @@ impl UiBatcher {
             position: (x, y),
             size,
             color: color_rgba,
+        });
+    }
+
+    pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: (f32, f32, f32, f32)) {
+        self.editor_requests.push(EditorRequest {
+            id: id.into(),
+            bounds,
+            color: [1.0, 1.0, 1.0, 1.0],
         });
     }
 }
