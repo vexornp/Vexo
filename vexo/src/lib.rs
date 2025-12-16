@@ -541,7 +541,11 @@ impl<A: Application + 'static> FrameworkState<A> {
         for req in self.batcher.editor_requests.iter_mut() {
             // req.bounds is (x, y, width, height) in logical points (taffy layout)
             // Convert to physical pixels and compute absolute bounds (left..right, top..bottom)
-            let (bx, by, bw, bh) = req.bounds;
+            let bx = req.bounds.x;
+            let by = req.bounds.y;
+            let bw = req.bounds.width;
+            let bh = req.bounds.height;
+
             let left_pos = bx * self.scale_factor;
             let top_pos = by * self.scale_factor;
 
@@ -580,14 +584,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             let (left_pos, top_pos, bounds_left, bounds_top, bounds_right, bounds_bottom, color) =
                 editor_meta[i];
             buf.shape_until_scroll(&mut self.widget_context.font_system, true);
-
-            let text = buf
-                .layout_runs()
-                .into_iter()
-                .fold(String::new(), |mut acc, run| {
-                    acc.push_str(&run.text);
-                    acc
-                });
 
             editor_areas.push(glyphon::TextArea {
                 buffer: buf,
@@ -1604,7 +1600,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         eidtor_ref.set_size(&mut ctx.font_system, w, h);
         eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
 
-        renderer.add_editor_request(&self.editor_id, (x, y, w, h));
+        renderer.add_editor_request(
+            &self.editor_id,
+            Bounds {
+                x,
+                y,
+                width: w,
+                height: h,
+            },
+        );
 
         let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
         let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -1843,9 +1847,16 @@ pub struct TextRequest {
     pub color: [f32; 4],
 }
 
+pub struct Bounds {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
 pub struct EditorRequest {
     id: String,
-    bounds: (f32, f32, f32, f32), // x, y, width, height
+    bounds: Bounds, // x, y, width, height
     color: [f32; 4],
 }
 
@@ -1922,7 +1933,7 @@ impl UiBatcher {
         });
     }
 
-    pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: (f32, f32, f32, f32)) {
+    pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: Bounds) {
         self.editor_requests.push(EditorRequest {
             id: id.into(),
             bounds,

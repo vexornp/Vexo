@@ -1,5 +1,3 @@
-use std::os::macos::raw::stat;
-
 use vexo::{Application, Button, Column, FrameworkState, Rectangle, Row, Text, TextEdit, Widget};
 uniffi::setup_scaffolding!();
 
