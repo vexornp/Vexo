@@ -259,24 +259,9 @@ uint64_t uniffi_shared_app_fn_constructor_mobileapp_new(RustCallStatus *_Nonnull
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_INIT_RENDERER
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_INIT_RENDERER
-void uniffi_shared_app_fn_method_mobileapp_init_renderer(uint64_t ptr, uint64_t view_ptr_as_u64, uint32_t width, uint32_t height, float scale_factor, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_ON_TAP
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_ON_TAP
-void uniffi_shared_app_fn_method_mobileapp_on_tap(uint64_t ptr, float x, float y, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_RENDER
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_RENDER
-void uniffi_shared_app_fn_method_mobileapp_render(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_RESIZE
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_RESIZE
-void uniffi_shared_app_fn_method_mobileapp_resize(uint64_t ptr, float width, float height, RustCallStatus *_Nonnull out_status
+#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_START_APP
+#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_FN_METHOD_MOBILEAPP_START_APP
+void uniffi_shared_app_fn_method_mobileapp_start_app(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_SHARED_APP_RUSTBUFFER_ALLOC
@@ -539,27 +524,9 @@ void ffi_shared_app_rust_future_free_void(uint64_t handle
 void ffi_shared_app_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_INIT_RENDERER
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_INIT_RENDERER
-uint16_t uniffi_shared_app_checksum_method_mobileapp_init_renderer(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_ON_TAP
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_ON_TAP
-uint16_t uniffi_shared_app_checksum_method_mobileapp_on_tap(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_RENDER
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_RENDER
-uint16_t uniffi_shared_app_checksum_method_mobileapp_render(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_RESIZE
-#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_RESIZE
-uint16_t uniffi_shared_app_checksum_method_mobileapp_resize(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_START_APP
+#define UNIFFI_FFIDEF_UNIFFI_SHARED_APP_CHECKSUM_METHOD_MOBILEAPP_START_APP
+uint16_t uniffi_shared_app_checksum_method_mobileapp_start_app(void
     
 );
 #endif

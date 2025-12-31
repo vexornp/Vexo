@@ -1,4 +1,7 @@
-use vexo::{Application, Button, Column, FrameworkState, Rectangle, Row, Text, TextEdit, Widget};
+use vexo::{
+    widgets::{Button, Column, Rectangle, Row, Text, TextEdit, Widget},
+    Application, FrameworkState,
+};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -43,7 +46,7 @@ impl Application for State {
         let rect4 = state.create_rect_box(150.0, 50.0, [0.0, 0.0, 1.0]);
         let rect5 = state.create_rect_box(110.0, 30.0, [0.0, 1.0, 1.0]);
         let text_edit =
-            Box::new(vexo::TextEdit::new("editor_id_input", "Type here...").size((100.0, 50.0)));
+            Box::new(TextEdit::new("editor_id_input", "Type here...").size((100.0, 50.0)));
 
         let row = Row::new().push(rect1).push(rect2);
 
@@ -76,48 +79,11 @@ impl MobileApp {
         Self {}
     }
 
-    pub fn init_renderer(&self, view_ptr_as_u64: u64, width: u32, height: u32, scale_factor: f32) {
-        let view_ptr = view_ptr_as_u64 as *mut std::ffi::c_void;
-        let fut = FrameworkState::new_with_ios(view_ptr, width as f32, height as f32, scale_factor);
-        let fs = pollster::block_on(fut).unwrap();
-        unsafe {
-            GLOBAL_FS = Some(fs);
-        }
-    }
-
-    pub fn render(&self) {
-        unsafe {
-            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
-            let rp = &mut *&raw mut GLOBAL_FS;
-            if let Some(val) = rp {
-                let _ = val.render();
-            } else {
-                print!("Global fs not init");
-            }
-        }
-    }
-
-    pub fn resize(&self, width: f32, height: f32) {
-        unsafe {
-            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
-            let rp = &mut *&raw mut GLOBAL_FS;
-            if let Some(val) = rp {
-                let _ = val.resize_by_logical_point(width, height);
-            } else {
-                print!("Global fs not init");
-            }
-        }
-    }
-
-    pub fn on_tap(&self, x: f32, y: f32) {
-        unsafe {
-            // https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html
-            let rp = &mut *&raw mut GLOBAL_FS;
-            if let Some(val) = rp {
-                let _ = val.handle_tap(x, y);
-            } else {
-                print!("Global fs not init");
-            }
+    pub fn start_app(&self) {
+        let rt = vexo::run_desktop_demo::<State>();
+        match rt {
+            Ok(_) => println!("App exited normally"),
+            Err(e) => println!("App exited with error: {:?}", e),
         }
     }
 }

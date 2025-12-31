@@ -419,54 +419,6 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
-    typealias FfiType = UInt32
-    typealias SwiftType = UInt32
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
-        return try lift(readInt(&buf))
-    }
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
-    typealias FfiType = UInt64
-    typealias SwiftType = UInt64
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
-        return try lift(readInt(&buf))
-    }
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
-    typealias FfiType = Float
-    typealias SwiftType = Float
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
-        return try lift(readFloat(&buf))
-    }
-
-    public static func write(_ value: Float, into buf: inout [UInt8]) {
-        writeFloat(&buf, lower(value))
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -510,13 +462,7 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol MobileAppProtocol: AnyObject, Sendable {
     
-    func initRenderer(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float) 
-    
-    func onTap(x: Float, y: Float) 
-    
-    func render() 
-    
-    func resize(width: Float, height: Float) 
+    func startApp() 
     
 }
 open class MobileApp: MobileAppProtocol, @unchecked Sendable {
@@ -574,38 +520,9 @@ public convenience init() {
     
 
     
-open func initRenderer(viewPtrAsU64: UInt64, width: UInt32, height: UInt32, scaleFactor: Float)  {try! rustCall() {
-    uniffi_shared_app_fn_method_mobileapp_init_renderer(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(viewPtrAsU64),
-        FfiConverterUInt32.lower(width),
-        FfiConverterUInt32.lower(height),
-        FfiConverterFloat.lower(scaleFactor),$0
-    )
-}
-}
-    
-open func onTap(x: Float, y: Float)  {try! rustCall() {
-    uniffi_shared_app_fn_method_mobileapp_on_tap(
-            self.uniffiCloneHandle(),
-        FfiConverterFloat.lower(x),
-        FfiConverterFloat.lower(y),$0
-    )
-}
-}
-    
-open func render()  {try! rustCall() {
-    uniffi_shared_app_fn_method_mobileapp_render(
+open func startApp()  {try! rustCall() {
+    uniffi_shared_app_fn_method_mobileapp_start_app(
             self.uniffiCloneHandle(),$0
-    )
-}
-}
-    
-open func resize(width: Float, height: Float)  {try! rustCall() {
-    uniffi_shared_app_fn_method_mobileapp_resize(
-            self.uniffiCloneHandle(),
-        FfiConverterFloat.lower(width),
-        FfiConverterFloat.lower(height),$0
     )
 }
 }
@@ -672,16 +589,7 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_shared_app_checksum_method_mobileapp_init_renderer() != 46217) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_shared_app_checksum_method_mobileapp_on_tap() != 47734) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_shared_app_checksum_method_mobileapp_render() != 55385) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_shared_app_checksum_method_mobileapp_resize() != 7054) {
+    if (uniffi_shared_app_checksum_method_mobileapp_start_app() != 16753) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_shared_app_checksum_constructor_mobileapp_new() != 22793) {

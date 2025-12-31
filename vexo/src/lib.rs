@@ -1,13 +1,8 @@
-use glyphon::{
-    cosmic_text, Action, Attrs, Buffer, Color, Edit, Editor, FontSystem, Metrics, Shaping,
-    SwashCache, TextBounds, Viewport,
-};
-use std::collections::HashMap;
-use std::rc::Rc;
+use glyphon::{cosmic_text, Metrics, TextBounds, Viewport};
 use std::sync::Arc;
 use taffy::prelude::*;
 use winit::event::*;
-use winit::keyboard::{Key, NamedKey};
+
 use winit::{
     application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
 };
@@ -16,133 +11,15 @@ pub use uniffi;
 
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
 
-mod shaders {
-    // Use include_str! to load separate "shader.wgsl" file at compile time.
-    // This ensures it works on iOS/Android without complex file IO.
-    // Assumes shader.wgsl is in the project root (parent of src/).
-    pub const WGSL: &str = include_str!("./shader.wgsl");
-}
 mod editor;
+mod renderer;
+mod resource;
+pub mod widgets;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pos: [f32; 3],
-    color: [f32; 3],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-type EditorRef = Rc<std::cell::RefCell<editor::Editor>>;
-
-pub struct WidgetContext {
-    pub editors: HashMap<String, EditorRef>,
-    // id stack for deterministic widget id generation
-    pub id_stack: Vec<u64>,
-    // Mapping from layout NodeId -> computed WidgetId for this frame
-    pub node_to_widget: HashMap<NodeId, WidgetId>,
-
-    pub font_system: FontSystem,
-}
+use renderer::{TextRequest, UiBatcher, Vertex};
+use widgets::{Column, Widget, WidgetContext, WidgetId};
 
 extern crate alloc;
-
-impl WidgetContext {
-    fn new() -> Self {
-        // Embed a font so we are guaranteed to have one available.
-        // Eg: we can't get the system font on ios platform
-        let font_data = include_bytes!("../font.ttf").to_vec();
-        let binary = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(font_data));
-        // font_system.db_mut().load_font_data(font_data);
-        let font_system = FontSystem::new_with_fonts([binary]);
-
-        Self {
-            editors: HashMap::new(),
-            id_stack: vec![0x9E3779B97F4A7C15u64],
-            node_to_widget: HashMap::new(),
-            font_system,
-        }
-    }
-
-    pub fn reset_id_stack(&mut self) {
-        self.id_stack.clear();
-        self.id_stack.push(0x9E3779B97F4A7C15u64);
-        // clear per-frame node->widget mapping
-        self.node_to_widget.clear();
-    }
-
-    pub fn push_index(&mut self, idx: usize) {
-        let parent = *self.id_stack.last().unwrap();
-        let child = parent
-            .wrapping_mul(0x9E3779B97F4A7C15u64)
-            .wrapping_add(idx as u64 + 1);
-        self.id_stack.push(child);
-    }
-
-    pub fn push_key(&mut self, key: &str) {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        let key_hash = s.finish();
-        let parent = *self.id_stack.last().unwrap();
-        let child = parent
-            .wrapping_mul(0x9E3779B97F4A7C15u64)
-            .wrapping_add(key_hash);
-        self.id_stack.push(child);
-    }
-
-    pub fn pop(&mut self) {
-        if self.id_stack.len() > 1 {
-            self.id_stack.pop();
-        }
-    }
-
-    pub fn current_widget_id(&self) -> WidgetId {
-        WidgetId(*self.id_stack.last().unwrap())
-    }
-
-    pub fn record_node_widget(&mut self, node: NodeId) {
-        let wid = self.current_widget_id();
-        self.node_to_widget.insert(node, wid);
-    }
-
-    pub fn get_widget_id(&self, node: NodeId) -> Option<WidgetId> {
-        self.node_to_widget.get(&node).copied()
-    }
-
-    pub fn get_or_create_editor(&mut self, id: &str, initial_text: &str) -> EditorRef {
-        self.editors
-            .entry(id.to_string())
-            .or_insert_with(|| {
-                let font_size = 16.0;
-                let metrics = Metrics::new(font_size, font_size * 1.25);
-                let mut editor = Editor::new(Buffer::new_empty(metrics));
-                editor.with_buffer_mut(|buffer| {
-                    buffer.set_text(
-                        &mut self.font_system,
-                        initial_text,
-                        &Attrs::new(),
-                        Shaping::Advanced,
-                    );
-                });
-                editor.shape_as_needed(&mut self.font_system, true);
-                Rc::new(std::cell::RefCell::new(editor::Editor::new(editor)))
-            })
-            .clone()
-    }
-}
 
 pub struct FrameworkState<A: Application + 'static> {
     surface: wgpu::Surface<'static>,
@@ -200,38 +77,6 @@ impl<A: Application + 'static> FrameworkState<A> {
         .await
     }
 
-    pub async fn new_with_ios(
-        metal_layer_ptr: *mut std::ffi::c_void,
-        logical_width: f32,
-        logical_height: f32,
-        scale_factor: f32,
-    ) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(
-                    metal_layer_ptr,
-                ))
-                .unwrap()
-        };
-
-        let physical_width = logical_width * scale_factor;
-        let physical_height = logical_height * scale_factor;
-
-        Self::init(
-            surface,
-            instance,
-            physical_width,
-            physical_height,
-            scale_factor,
-            None,
-        )
-        .await
-    }
-
     async fn init(
         surface: wgpu::Surface<'static>,
         instance: wgpu::Instance,
@@ -277,7 +122,7 @@ impl<A: Application + 'static> FrameworkState<A> {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(shaders::WGSL.into()),
+            source: wgpu::ShaderSource::Wgsl(resource::file::WGSL.into()),
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -353,8 +198,13 @@ impl<A: Application + 'static> FrameworkState<A> {
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
         let mut root_widget = Box::new(Column::new());
-        let mut ctx = WidgetContext::new();
+        let mut ctx = WidgetContext::new(window.clone());
         let root_node_id = root_widget.layout(&mut taffy, &mut ctx);
+
+        if physical_width > 0.0 && physical_height > 0.0 {
+            // Necessary for android, which does not get resize event later:
+            surface.configure(&device, &config);
+        }
 
         Ok(Self {
             surface,
@@ -381,10 +231,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             focused_widget_id: None,
             widget_context: ctx,
         })
-    }
-
-    pub fn resize_by_logical_point(&mut self, width: f32, height: f32) {
-        self.resize_by_pixel_point(width * self.scale_factor, height * self.scale_factor);
     }
 
     pub fn resize_by_pixel_point(&mut self, width: f32, height: f32) {
@@ -688,34 +534,6 @@ impl<A: Application + 'static> FrameworkState<A> {
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
-        match event {
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-                println!("Window closed by user");
-                return;
-            }
-            WindowEvent::Resized(size) => {
-                self.resize_by_pixel_point(size.width as f32, size.height as f32);
-                println!("Window resized to: {}x{}", size.width, size.height);
-                return;
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                // Convert logical position to physical position
-                self.cursor_pos = (
-                    position.x as f32 / self.scale_factor,
-                    position.y as f32 / self.scale_factor,
-                );
-                return;
-            }
-            WindowEvent::RedrawRequested => {
-                if let Err(e) = self.render() {
-                    log::error!("Render error: {}", e);
-                }
-                return;
-            }
-            _ => {}
-        }
-
         // Pass the event to the root widget (which passes it down)
         let widget_response = self.root_widget.on_event(
             &self.taffy,
@@ -731,6 +549,11 @@ impl<A: Application + 'static> FrameworkState<A> {
         if let Some(focus_request) = widget_response.focus_request {
             self.focused_widget_id = Some(focus_request);
             println!("Focus requested by widget: {:?}", focus_request);
+        }
+
+        // Check if event if handled, notify if needed
+        if widget_response.handled {
+            println!("Event handled by widget");
         }
 
         //  Handle User Logic
@@ -778,26 +601,32 @@ impl<A: Application + 'static> FrameworkState<A> {
     fn view(&self) -> Box<dyn Widget<A::Message>> {
         A::view(&self.user_app_state)
     }
-
-    pub fn handle_tap(&mut self, x: f32, y: f32) {
-        //Convert the mobile platform input logical size to Winit's PhysicalPosition
-        let physical_x = x * self.scale_factor;
-        let physical_y = y * self.scale_factor;
-        self.cursor_pos = (physical_x, physical_y);
-
-        // Simulate Press Event (Mouse Down)
-        self.handle_mouse_click(ElementState::Pressed, MouseButton::Left);
-    }
 }
 
 pub struct MyApp<A: Application + 'static> {
+    window: Option<Arc<Window>>,
     framework_state: Option<FrameworkState<A>>,
 }
 
 impl<A: Application + 'static> MyApp<A> {
     pub fn new() -> Self {
         Self {
+            window: None,
             framework_state: None,
+        }
+    }
+
+    pub fn try_init_framework_state(&mut self) {
+        if let Some(window) = &self.window {
+            let size = window.inner_size();
+            let width = size.width;
+            let height = size.height;
+            if width > 0 && height > 0 && self.framework_state.is_none() {
+                println!("SUCCESS: Window ready at {}x{}", size.width, size.height);
+                let mut state = pollster::block_on(FrameworkState::new(window.clone())).unwrap();
+                state.resize_by_pixel_point(width as f32, height as f32);
+                self.framework_state = Some(state);
+            }
         }
     }
 }
@@ -808,11 +637,11 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
             return;
         }
 
-        #[allow(unused_mut)]
-        let mut window_attributes = Window::default_attributes();
+        println!("window resumed");
+        let window_attributes = Window::default_attributes();
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-
-        self.framework_state = Some(pollster::block_on(FrameworkState::new(window)).unwrap());
+        self.window = Some(window.clone());
+        self.try_init_framework_state();
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: FrameworkState<A>) {
@@ -825,996 +654,48 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let state = match &mut self.framework_state {
-            Some(canvas) => canvas,
-            None => return,
-        };
-        state.handle_window_event(event_loop, _window_id, &event);
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WidgetId(pub u64);
-
-impl WidgetId {
-    /// Create a WidgetId deterministically from a stable `key` string.
-    ///
-    /// This uses the default std hasher to produce a 64-bit value.
-    /// Prefer using the framework-provided path-mixing (via `WidgetContext`) when
-    /// deriving ids from traversal paths, but this helper is convenient when
-    /// you only have a developer-provided key and want a `WidgetId`.
-    pub fn from_key(key: &str) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        WidgetId(s.finish())
-    }
-
-    /// Mix this id with a child index to derive a child WidgetId along the
-    /// deterministic path (same mixing constant used in `WidgetContext`).
-    pub fn mix_with_index(&self, idx: usize) -> Self {
-        WidgetId(
-            self.0
-                .wrapping_mul(0x9E3779B97F4A7C15u64)
-                .wrapping_add(idx as u64 + 1),
-        )
-    }
-
-    /// Mix this id with a key string to derive a child WidgetId along the
-    /// deterministic path (same mixing constant used in `WidgetContext`).
-    pub fn mix_with_key(&self, key: &str) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        let key_hash = s.finish();
-        WidgetId(
-            self.0
-                .wrapping_mul(0x9E3779B97F4A7C15u64)
-                .wrapping_add(key_hash),
-        )
-    }
-}
-
-pub struct WidgetResponse<M> {
-    /// The user-defined message
-    pub message: Option<M>,
-
-    /// If Some(id), this widget want to grab the keyboard focus.
-    pub focus_request: Option<WidgetId>,
-
-    /// Did the widget consume this event? (Stops propagation)
-    pub handled: bool,
-}
-
-impl<M> Default for WidgetResponse<M> {
-    fn default() -> Self {
-        Self {
-            message: None,
-            focus_request: None,
-            handled: false,
-        }
-    }
-}
-
-// The deterministic id stack + NodeId->WidgetId mapping is used instead of
-// a global incremental id generator.
-
-pub trait Widget<M: Clone + std::fmt::Debug + Send> {
-    /// Widget unique ID. (Used for focus tracking)
-    /// Default implementation returns `WidgetId(0)`; prefer using the
-    /// NodeId->WidgetId mapping stored in `WidgetContext` instead.
-    fn id(&self) -> WidgetId {
-        if let Some(k) = self.key() {
-            return WidgetId::from_key(k);
-        }
-        WidgetId(0)
-    }
-    /// Optional stable key for identity across reorders.
-    fn key(&self) -> Option<&str> {
-        None
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId;
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
-        ctx: &mut WidgetContext,
-    );
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>, // Current focused widget (if have one)
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M>;
-}
-
-pub struct Rectangle {
-    pub width: f32,
-    pub height: f32,
-    pub color: [f32; 3],
-    pub key: Option<String>,
-}
-
-impl Rectangle {
-    pub fn new(width: f32, height: f32, color: [f32; 3]) -> Self {
-        Self {
-            width,
-            height,
-            color,
-            key: None,
-        }
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let node = taffy
-            .new_leaf(Style {
-                size: Size {
-                    width: length(self.width),
-                    height: length(self.height),
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        // record the mapping node -> computed WidgetId for this frame
-        ctx.record_node_widget(node);
-        node
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        renderer.add_rect(x, y, layout.size.width, layout.size.height, self.color);
-    }
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        WidgetResponse::default()
-    }
-}
-
-pub struct Column<M: Clone + std::fmt::Debug + Send> {
-    pub children: Vec<Box<dyn Widget<M>>>,
-    pub key: Option<String>,
-}
-
-impl<M: Clone + std::fmt::Debug + Send> Column<M> {
-    pub fn new() -> Self {
-        Self {
-            children: Vec::new(),
-            key: None,
-        }
-    }
-
-    pub fn push(mut self, widget: Box<dyn Widget<M>>) -> Self {
-        self.children.push(widget);
-        self
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let mut child_nodes: Vec<NodeId> = Vec::new();
-        for (i, child) in self.children.iter_mut().enumerate() {
-            if let Some(k) = child.key() {
-                ctx.push_key(k);
-            } else {
-                ctx.push_index(i);
+        match event {
+            WindowEvent::Resized(_) => {
+                self.try_init_framework_state();
             }
-            let node = child.layout(taffy, ctx);
-            child_nodes.push(node);
-            ctx.pop();
-        }
-        let node = taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Column,
-                    gap: Size {
-                        width: length(0.0),
-                        height: length(10.0),
-                    },
-                    ..Default::default()
-                },
-                &child_nodes,
-            )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let my_x = offset.0 + layout.location.x;
-        let my_y = offset.1 + layout.location.y;
-        let child_ids = taffy.children(node).unwrap();
-        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(
-                taffy,
-                child_node_id,
-                renderer,
-                (my_x, my_y),
-                focused_id,
-                ctx,
-            );
-        }
-    }
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        let child_ids = taffy.children(node).unwrap();
-        let layout = taffy.layout(node).unwrap();
-        let my_x = offset.0 + layout.location.x;
-        let my_y = offset.1 + layout.location.y;
-        let my_offset = (my_x, my_y);
-
-        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response = child.on_event(
-                taffy,
-                child_node_id,
-                my_offset,
-                event,
-                cursor_pos,
-                focused_id,
-                ctx,
-            );
-
-            // If a child handled it or request focus, return imediately
-            if child_response.handled || child_response.focus_request.is_some() {
-                return child_response;
-            }
-        }
-        WidgetResponse::default()
-    }
-}
-
-pub struct Row<M: Clone + std::fmt::Debug + Send> {
-    pub children: Vec<Box<dyn Widget<M>>>,
-    pub key: Option<String>,
-}
-
-impl<M: Clone + std::fmt::Debug + Send> Row<M> {
-    pub fn new() -> Self {
-        Self {
-            children: Vec::new(),
-            key: None,
-        }
-    }
-
-    pub fn push(mut self, widget: Box<dyn Widget<M>>) -> Self {
-        self.children.push(widget);
-        self
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let mut child_nodes: Vec<NodeId> = Vec::new();
-        for (i, child) in self.children.iter_mut().enumerate() {
-            if let Some(k) = child.key() {
-                ctx.push_key(k);
-            } else {
-                ctx.push_index(i);
-            }
-            let node = child.layout(taffy, ctx);
-            child_nodes.push(node);
-            ctx.pop();
-        }
-        let node = taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Row,
-                    gap: Size {
-                        width: length(10.0),
-                        height: length(0.0),
-                    },
-                    ..Default::default()
-                },
-                &child_nodes,
-            )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let my_x = offset.0 + layout.location.x;
-        let my_y = offset.1 + layout.location.y;
-        let child_ids = taffy.children(node).unwrap();
-        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(
-                taffy,
-                child_node_id,
-                renderer,
-                (my_x, my_y),
-                focused_id,
-                ctx,
-            );
-        }
-    }
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        let child_ids = taffy.children(node).unwrap();
-        let layout = taffy.layout(node).unwrap();
-        let my_x = offset.0 + layout.location.x;
-        let my_y = offset.1 + layout.location.y;
-        let my_offset = (my_x, my_y);
-
-        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response = child.on_event(
-                taffy,
-                child_node_id,
-                my_offset,
-                event,
-                cursor_pos,
-                focused_id,
-                ctx,
-            );
-
-            // If a child handled it or request focus, return imediately
-            if child_response.handled || child_response.focus_request.is_some() {
-                return child_response;
-            }
-        }
-        WidgetResponse::default()
-    }
-}
-
-pub struct Button<M: Clone + std::fmt::Debug + Send> {
-    pub content: Box<dyn Widget<M>>,
-    pub on_press: M,
-    pub background_color: [f32; 3],
-    pub padding: f32,
-    pub key: Option<String>,
-}
-
-impl<M: Clone + std::fmt::Debug + Send> Button<M> {
-    pub fn new(content: Box<dyn Widget<M>>, on_press: M) -> Self {
-        Self {
-            content,
-            on_press,
-            background_color: [0.2, 0.2, 0.2],
-            padding: 10.0,
-            key: None,
-        }
-    }
-
-    pub fn color(mut self, color: [f32; 3]) -> Self {
-        self.background_color = color;
-        self
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // push content index (single child)
-        ctx.push_index(1);
-        let content_node = self.content.layout(taffy, ctx);
-        ctx.pop();
-        let node = taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    padding: Rect {
-                        left: length(self.padding),
-                        right: length(self.padding),
-                        top: length(self.padding),
-                        bottom: length(self.padding),
-                    },
-                    size: Size {
-                        width: auto(),
-                        height: auto(),
-                    },
-                    ..Default::default()
-                },
-                &[content_node],
-            )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        renderer.add_rect(
-            x,
-            y,
-            layout.size.width,
-            layout.size.height,
-            self.background_color,
-        );
-
-        let child_ids = taffy.children(node).unwrap();
-        if let Some(content_node) = child_ids.get(0) {
-            let content_offset = (x, y);
-            self.content.draw(
-                taffy,
-                *content_node,
-                renderer,
-                content_offset,
-                focused_id,
-                ctx,
-            );
-        }
-    }
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        let width = layout.size.width;
-        let height = layout.size.height;
-
-        let is_over = cursor_pos.0 >= x
-            && cursor_pos.0 <= x + width
-            && cursor_pos.1 >= y
-            && cursor_pos.1 <= y + height;
-
-        // 1. CLICK HANDLING
-        if is_over {
-            if let WindowEvent::MouseInput {
-                state: winit::event::ElementState::Pressed,
-                button: winit::event::MouseButton::Left,
-                ..
-            } = event
-            {
-                return WidgetResponse {
-                    message: Some(self.on_press.clone()),
-                    focus_request: None,
-                    handled: true,
-                };
-            }
-        }
-
-        // 2. CHILD EVENT PROPAGATION
-        let child_ids = taffy.children(node).unwrap();
-        if let Some(content_node) = child_ids.get(0) {
-            let content_offset = (x, y);
-            return self.content.on_event(
-                taffy,
-                *content_node, // Pass event to the content node
-                content_offset,
-                event,
-                cursor_pos,
-                focused_id,
-                ctx,
-            );
-        }
-
-        WidgetResponse::default()
-    }
-}
-
-pub struct Text {
-    pub content: String,
-    pub size: f32,
-    pub color: [f32; 3],
-    pub style: taffy::Style,
-    pub key: Option<String>,
-}
-
-impl Text {
-    pub fn new(content: impl Into<String>) -> Self {
-        Self {
-            content: content.into(),
-            size: 24.0,
-            color: [0.0, 0.0, 0.0],
-            style: Style::default(),
-            key: None,
-        }
-    }
-
-    pub fn size(mut self, size: f32) -> Self {
-        self.size = size;
-        self
-    }
-
-    pub fn flex_grow(mut self, value: f32) -> Self {
-        self.style.flex_grow = value;
-        self
-    }
-
-    pub fn width(mut self, dim: taffy::Dimension) -> Self {
-        self.style.size.width = dim;
-        self
-    }
-
-    pub fn height(mut self, dim: Dimension) -> Self {
-        self.style.size.height = dim;
-        self
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // Glyphon calculation: This is where we calculate the precise bounds.
-        // NOTE: In a final structure, FontSystem should be passed here,
-
-        let mut style: Style = self.style.clone();
-        let width_guess = self.content.len() as f32 * (self.size * 0.5);
-        let height_guess = self.size * 1.2;
-
-        // If the user's style is Auto, use the calculated intrinsic width.
-        // Otherwise, use the user's custom width (Percent, Length, etc.).
-        style.size.width = match style.size.width {
-            Dimension::AUTO => length(width_guess),
-            _ => style.size.width,
-        };
-        style.size.height = match style.size.height {
-            Dimension::AUTO => length(height_guess),
-            _ => style.size.height,
-        };
-
-        let node = taffy.new_leaf(style).unwrap();
-        ctx.record_node_widget(node);
-        node
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        renderer.add_text(self.content.clone(), x, y, self.size, self.color);
-    }
-
-    fn on_event(
-        &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
-        offset: (f32, f32),
-        event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        WidgetResponse::default()
-    }
-}
-
-pub struct TextEdit {
-    pub editor_id: String,
-    pub initial_text: String,
-    pub swash_cache: SwashCache,
-    pub text_color: [f32; 3],
-    pub style: taffy::Style,
-    pub key: Option<String>,
-}
-
-impl TextEdit {
-    pub fn new(id: impl Into<String>, initial_text: impl Into<String>) -> Self {
-        Self {
-            editor_id: id.into(),
-            initial_text: initial_text.into(),
-            swash_cache: SwashCache::new(),
-            text_color: [1.0, 1.0, 1.0],
-            style: Style::default(),
-            key: None,
-        }
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-
-    pub fn style(mut self, style: taffy::Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    pub fn size(self, size: (f32, f32)) -> Self {
-        self.style(Style {
-            size: Size {
-                width: Dimension::length(size.0),
-                height: Dimension::length(size.1),
-            },
-            ..Default::default()
-        })
-    }
-}
-
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let node_id = taffy.new_leaf(self.style.clone()).unwrap();
-        // record mapping for this TextEdit node
-        ctx.record_node_widget(node_id);
-        let layout = taffy.layout(node_id).unwrap();
-        let w = layout.size.width;
-        let h = layout.size.height;
-
-        node_id
-    }
-
-    fn draw(
-        &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
-        renderer: &mut UiBatcher,
-        offset: (f32, f32),
-        _focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-
-        // For-Debug
-        let w = layout.size.width;
-        let h = layout.size.height;
-        renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
-
-        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
-        let mut eidtor_ref = editor_arc.borrow_mut();
-
-        eidtor_ref.set_size(&mut ctx.font_system, w, h);
-        eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
-
-        renderer.add_editor_request(
-            &self.editor_id,
-            Bounds {
-                x,
-                y,
-                width: w,
-                height: h,
-            },
-        );
-
-        let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
-        let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
-        let selection_color = Color::rgba(0xFF, 0xFF, 0xFF, 0x33);
-        let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
-
-        let mut cache = SwashCache::new();
-    }
-
-    fn on_event(
-        &mut self,
-        _taffy: &taffy::TaffyTree,
-        _node: NodeId,
-        _offset: (f32, f32),
-        _event: &winit::event::WindowEvent,
-        _cursor_pos: (f32, f32),
-        focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        // Determine our widget id from the node->widget mapping
-        let my_id = ctx.get_widget_id(_node);
-        let is_focused = focused_id == my_id;
-
-        if !is_focused {
-            // Check for click to grab focus
-            if let WindowEvent::MouseInput {
-                state: winit::event::ElementState::Pressed,
-                button: winit::event::MouseButton::Left,
-                ..
-            } = _event
-            {
-                let layout = _taffy.layout(_node).unwrap();
-                let x = _offset.0 + layout.location.x;
-                let y = _offset.1 + layout.location.y;
-                let width = layout.size.width;
-                let height = layout.size.height;
-
-                let is_over = _cursor_pos.0 >= x
-                    && _cursor_pos.0 <= x + width
-                    && _cursor_pos.1 >= y
-                    && _cursor_pos.1 <= y + height;
-
-                if is_over {
-                    // Request focus
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: my_id,
-                        handled: true,
-                    };
-                }
-            }
-            return WidgetResponse::default();
-        }
-
-        // We are focused, so handle keyboard input
-        let editor_rc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
-        let mut editor_ref = editor_rc.borrow_mut();
-
-        let mut _ctrl_pressed = false;
-        let mut _mouse_x: f64 = 0.0;
-        let mut _mouse_y: f64 = 0.0;
-        let _mouse_left = ElementState::Released;
-
-        match _event {
-            WindowEvent::ModifiersChanged(modifiers) => {
-                _ctrl_pressed = modifiers.state().control_key();
-            }
-            WindowEvent::MouseInput {
-                device_id: _,
-                state,
-                button,
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                inner_size_writer: _,
             } => {
-                if *button == MouseButton::Left {
-                    if state.is_pressed() {
-                        let layout = _taffy.layout(_node).unwrap();
-                        let x = _offset.0 + layout.location.x;
-                        let y = _offset.1 + layout.location.y;
-                        let width = layout.size.width;
-                        let height = layout.size.height;
-
-                        let relative_physical_x =
-                            (_mouse_x.round() as i32).saturating_sub(width as i32);
-                        let relative_physical_y =
-                            (_mouse_y.round() as i32).saturating_sub(height as i32);
-
-                        // Handle mouse click
-                        editor_ref.action(
-                            &mut ctx.font_system,
-                            Action::Click {
-                                x: relative_physical_x,
-                                y: relative_physical_y,
-                            },
-                        );
+                if let Some(state) = &mut self.framework_state {
+                    state.scale_factor = scale_factor as f32;
+                    // let size = inner_size_writer.downgrate();
+                    // state.resize_by_pixel_point(size.width as f32, size.height as f32);
+                }
+                println!("Scale factor changed to {}", scale_factor);
+            }
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+            } => {
+                if let Some(state) = &mut self.framework_state {
+                    state.cursor_pos = (
+                        position.x as f32 / state.scale_factor,
+                        position.y as f32 / state.scale_factor,
+                    );
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                if let Some(state) = &mut self.framework_state {
+                    if let Err(e) = state.render() {
+                        log::error!("Render error: {}", e);
                     }
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                let KeyEvent {
-                    logical_key, state, ..
-                } = event;
-
-                if state.is_pressed() {
-                    match logical_key {
-                        Key::Named(NamedKey::ArrowLeft) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::Left),
-                            );
-                        }
-                        Key::Named(NamedKey::ArrowRight) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::Right),
-                            );
-                        }
-                        Key::Named(NamedKey::ArrowUp) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::Up),
-                            );
-                        }
-                        Key::Named(NamedKey::ArrowDown) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::Down),
-                            );
-                        }
-                        Key::Named(NamedKey::Home) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::Home),
-                            );
-                        }
-                        Key::Named(NamedKey::End) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::End),
-                            );
-                        }
-                        Key::Named(NamedKey::PageUp) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::PageUp),
-                            );
-                        }
-                        Key::Named(NamedKey::PageDown) => {
-                            editor_ref.action(
-                                &mut ctx.font_system,
-                                Action::Motion(cosmic_text::Motion::PageDown),
-                            );
-                        }
-                        Key::Named(NamedKey::Escape) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Escape);
-                        }
-                        Key::Named(NamedKey::Enter) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Enter);
-                        }
-                        Key::Named(NamedKey::Backspace) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Backspace);
-                        }
-                        Key::Named(NamedKey::Delete) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Delete);
-                        }
-                        Key::Character(text) => {
-                            if _ctrl_pressed {
-                                // Handle Ctrl + Char
-                                match text.as_str() {
-                                    "c" => {
-                                        // TODO: Copy
-                                    }
-                                    "v" => {
-                                        // TOOD: Paste
-                                    }
-                                    "x" => {
-                                        // TODO: Cut
-                                    }
-                                    _ => {
-                                        // Ignore other Ctrl + Char combinations
-                                    }
-                                }
-                            } else {
-                                // Normal character input
-                                for c in text.chars() {
-                                    if c.is_control() {
-                                        // Ignore control characters
-                                        continue;
-                                    }
-                                    editor_ref.action(&mut ctx.font_system, Action::Insert(c));
-                                }
-                            }
-                        }
-                        _ => {
-                            // Ignore other keys
-                        }
-                    }
-                }
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+                println!("Window closed by user");
             }
-            _ => {}
+            _ => (),
         }
 
-        editor_ref.shape_as_needed(&mut ctx.font_system, true);
-
-        WidgetResponse {
-            message: None,
-            focus_request: None,
-            handled: true,
+        if let Some(state) = &mut self.framework_state {
+            state.handle_window_event(event_loop, _window_id, &event);
         }
     }
 }
@@ -1837,108 +718,6 @@ pub struct Renderer {
 impl Renderer {
     pub fn fill_quad(&mut self, bounds: taffy::Rect<f32>, color: [f32; 4]) {
         self.primitives.push(Primitive::Quad { bounds, color });
-    }
-}
-
-pub struct TextRequest {
-    pub content: String,
-    pub position: (f32, f32),
-    pub size: f32,
-    pub color: [f32; 4],
-}
-
-pub struct Bounds {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-pub struct EditorRequest {
-    id: String,
-    bounds: Bounds, // x, y, width, height
-    color: [f32; 4],
-}
-
-pub struct UiBatcher {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
-    pub text_requests: Vec<TextRequest>, // For normal Text widget
-    pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
-
-    screen_width: f32,  // Logical width: pixel_width * scale_factor
-    screen_height: f32, // Logical height: pixel_height * scale_factor
-}
-
-impl UiBatcher {
-    pub fn new() -> Self {
-        Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
-            text_requests: Vec::new(),
-            editor_requests: Vec::new(),
-            screen_width: 1.0,
-            screen_height: 1.0,
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.vertices.clear();
-        self.indices.clear();
-        self.text_requests.clear();
-        self.editor_requests.clear();
-    }
-
-    // Set logical size
-    pub fn set_screen_size(&mut self, width: f32, height: f32) {
-        self.screen_width = width;
-        self.screen_height = height;
-    }
-
-    pub fn add_rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 3]) {
-        let sw = self.screen_width;
-        let sh = self.screen_height;
-
-        let normalize =
-            |px: f32, py: f32| -> [f32; 3] { [(px / sw) * 2.0 - 1.0, 1.0 - (py / sh) * 2.0, 0.0] };
-        let i = self.vertices.len() as u16;
-        let tl = normalize(x, y);
-        let tr = normalize(x + width, y);
-        let br = normalize(x + width, y + height);
-        let bl = normalize(x, y + height);
-
-        self.vertices.push(Vertex { pos: tl, color });
-        self.vertices.push(Vertex { pos: tr, color });
-        self.vertices.push(Vertex { pos: br, color });
-        self.vertices.push(Vertex { pos: bl, color });
-
-        self.indices.extend_from_slice(&[
-            i,
-            i + 1,
-            i + 2, // First Triangle
-            i,
-            i + 2,
-            i + 3, // Secode Triangle
-        ]);
-    }
-
-    pub fn add_text(&mut self, content: String, x: f32, y: f32, size: f32, color: [f32; 3]) {
-        let color_rgba = [color[0], color[1], color[2], 1.0];
-
-        self.text_requests.push(TextRequest {
-            content,
-            position: (x, y),
-            size,
-            color: color_rgba,
-        });
-    }
-
-    pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: Bounds) {
-        self.editor_requests.push(EditorRequest {
-            id: id.into(),
-            bounds,
-            color: [1.0, 1.0, 1.0, 1.0],
-        });
     }
 }
 

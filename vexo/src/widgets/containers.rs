@@ -1,0 +1,249 @@
+use crate::renderer::UiBatcher;
+use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
+use crate::Widget;
+use taffy::prelude::{length, Display, FlexDirection, NodeId, Size};
+use taffy::Style;
+
+pub struct Column<M: Clone + std::fmt::Debug + Send> {
+    pub children: Vec<Box<dyn Widget<M>>>,
+    pub key: Option<String>,
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Column<M> {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            key: None,
+        }
+    }
+
+    pub fn push(mut self, widget: Box<dyn Widget<M>>) -> Self {
+        self.children.push(widget);
+        self
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        let mut child_nodes: Vec<NodeId> = Vec::new();
+        for (i, child) in self.children.iter_mut().enumerate() {
+            if let Some(k) = child.key() {
+                ctx.push_key(k);
+            } else {
+                ctx.push_index(i);
+            }
+            let node = child.layout(taffy, ctx);
+            child_nodes.push(node);
+            ctx.pop();
+        }
+        let node = taffy
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    gap: Size {
+                        width: length(0.0),
+                        height: length(10.0),
+                    },
+                    ..Default::default()
+                },
+                &child_nodes,
+            )
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let my_x = offset.0 + layout.location.x;
+        let my_y = offset.1 + layout.location.y;
+        let child_ids = taffy.children(node).unwrap();
+        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+            child_widget.draw(
+                taffy,
+                child_node_id,
+                renderer,
+                (my_x, my_y),
+                focused_id,
+                ctx,
+            );
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: (f32, f32),
+        event: &winit::event::WindowEvent,
+        cursor_pos: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        let child_ids = taffy.children(node).unwrap();
+        let layout = taffy.layout(node).unwrap();
+        let my_x = offset.0 + layout.location.x;
+        let my_y = offset.1 + layout.location.y;
+        let my_offset = (my_x, my_y);
+
+        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+            let child_response = child.on_event(
+                taffy,
+                child_node_id,
+                my_offset,
+                event,
+                cursor_pos,
+                focused_id,
+                ctx,
+            );
+
+            // If a child handled it or request focus, return imediately
+            if child_response.handled || child_response.focus_request.is_some() {
+                return child_response;
+            }
+        }
+        WidgetResponse::default()
+    }
+}
+
+pub struct Row<M: Clone + std::fmt::Debug + Send> {
+    pub children: Vec<Box<dyn Widget<M>>>,
+    pub key: Option<String>,
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Row<M> {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            key: None,
+        }
+    }
+
+    pub fn push(mut self, widget: Box<dyn Widget<M>>) -> Self {
+        self.children.push(widget);
+        self
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        let mut child_nodes: Vec<NodeId> = Vec::new();
+        for (i, child) in self.children.iter_mut().enumerate() {
+            if let Some(k) = child.key() {
+                ctx.push_key(k);
+            } else {
+                ctx.push_index(i);
+            }
+            let node = child.layout(taffy, ctx);
+            child_nodes.push(node);
+            ctx.pop();
+        }
+        let node = taffy
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Row,
+                    gap: Size {
+                        width: length(10.0),
+                        height: length(0.0),
+                    },
+                    ..Default::default()
+                },
+                &child_nodes,
+            )
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let my_x = offset.0 + layout.location.x;
+        let my_y = offset.1 + layout.location.y;
+        let child_ids = taffy.children(node).unwrap();
+        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+            child_widget.draw(
+                taffy,
+                child_node_id,
+                renderer,
+                (my_x, my_y),
+                focused_id,
+                ctx,
+            );
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: (f32, f32),
+        event: &winit::event::WindowEvent,
+        cursor_pos: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        let child_ids = taffy.children(node).unwrap();
+        let layout = taffy.layout(node).unwrap();
+        let my_x = offset.0 + layout.location.x;
+        let my_y = offset.1 + layout.location.y;
+        let my_offset = (my_x, my_y);
+
+        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+            let child_response = child.on_event(
+                taffy,
+                child_node_id,
+                my_offset,
+                event,
+                cursor_pos,
+                focused_id,
+                ctx,
+            );
+
+            // If a child handled it or request focus, return imediately
+            if child_response.handled || child_response.focus_request.is_some() {
+                return child_response;
+            }
+        }
+        WidgetResponse::default()
+    }
+}

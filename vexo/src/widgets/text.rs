@@ -1,0 +1,394 @@
+use crate::renderer::{Bounds, UiBatcher};
+use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
+use crate::Widget;
+use glyphon::{cosmic_text::Motion, Action, Color, SwashCache};
+use taffy::prelude::{length, Dimension, NodeId, Size, TaffyAuto};
+use taffy::Style;
+// use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+use winit::{
+    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    keyboard::{Key, NamedKey},
+};
+
+pub struct Text {
+    pub content: String,
+    pub size: f32,
+    pub color: [f32; 3],
+    pub style: taffy::Style,
+    pub key: Option<String>,
+}
+
+impl Text {
+    pub fn new(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            size: 24.0,
+            color: [0.0, 0.0, 0.0],
+            style: Style::default(),
+            key: None,
+        }
+    }
+
+    pub fn size(mut self, size: f32) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.style.flex_grow = value;
+        self
+    }
+
+    pub fn width(mut self, dim: taffy::Dimension) -> Self {
+        self.style.size.width = dim;
+        self
+    }
+
+    pub fn height(mut self, dim: Dimension) -> Self {
+        self.style.size.height = dim;
+        self
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        // Glyphon calculation: This is where we calculate the precise bounds.
+        // NOTE: In a final structure, FontSystem should be passed here,
+
+        let mut style: Style = self.style.clone();
+        let width_guess = self.content.len() as f32 * (self.size * 0.5);
+        let height_guess = self.size * 1.2;
+
+        // If the user's style is Auto, use the calculated intrinsic width.
+        // Otherwise, use the user's custom width (Percent, Length, etc.).
+        style.size.width = match style.size.width {
+            Dimension::AUTO => length(width_guess),
+            _ => style.size.width,
+        };
+        style.size.height = match style.size.height {
+            Dimension::AUTO => length(height_guess),
+            _ => style.size.height,
+        };
+
+        let node = taffy.new_leaf(style).unwrap();
+        ctx.record_node_widget(node);
+        node
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let x = offset.0 + layout.location.x;
+        let y = offset.1 + layout.location.y;
+        renderer.add_text(self.content.clone(), x, y, self.size, self.color);
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: (f32, f32),
+        event: &winit::event::WindowEvent,
+        cursor_pos: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
+    }
+}
+
+pub struct TextEdit {
+    pub editor_id: String,
+    pub initial_text: String,
+    pub swash_cache: SwashCache,
+    pub text_color: [f32; 3],
+    pub style: taffy::Style,
+    pub key: Option<String>,
+}
+
+impl TextEdit {
+    pub fn new(id: impl Into<String>, initial_text: impl Into<String>) -> Self {
+        Self {
+            editor_id: id.into(),
+            initial_text: initial_text.into(),
+            swash_cache: SwashCache::new(),
+            text_color: [1.0, 1.0, 1.0],
+            style: Style::default(),
+            key: None,
+        }
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    pub fn style(mut self, style: taffy::Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn size(self, size: (f32, f32)) -> Self {
+        self.style(Style {
+            size: Size {
+                width: Dimension::length(size.0),
+                height: Dimension::length(size.1),
+            },
+            ..Default::default()
+        })
+    }
+}
+
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        let node_id = taffy.new_leaf(self.style.clone()).unwrap();
+        // record mapping for this TextEdit node
+        ctx.record_node_widget(node_id);
+        let layout = taffy.layout(node_id).unwrap();
+        let w = layout.size.width;
+        let h = layout.size.height;
+
+        node_id
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: (f32, f32),
+        _focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let x = offset.0 + layout.location.x;
+        let y = offset.1 + layout.location.y;
+
+        // For-Debug
+        let w = layout.size.width;
+        let h = layout.size.height;
+        renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
+
+        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let mut eidtor_ref = editor_arc.borrow_mut();
+
+        eidtor_ref.set_size(&mut ctx.font_system, w, h);
+        eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
+
+        renderer.add_editor_request(
+            &self.editor_id,
+            Bounds {
+                x,
+                y,
+                width: w,
+                height: h,
+            },
+        );
+
+        let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
+        let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
+        let selection_color = Color::rgba(0xFF, 0xFF, 0xFF, 0x33);
+        let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
+
+        let mut cache = SwashCache::new();
+    }
+
+    fn on_event(
+        &mut self,
+        _taffy: &taffy::TaffyTree,
+        _node: NodeId,
+        _offset: (f32, f32),
+        _event: &winit::event::WindowEvent,
+        _cursor_pos: (f32, f32),
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        // Determine our widget id from the node->widget mapping
+        let my_id = ctx.get_widget_id(_node);
+        let is_focused = focused_id == my_id;
+
+        if !is_focused {
+            // Check for click to grab focus
+            if let WindowEvent::MouseInput {
+                state: winit::event::ElementState::Pressed,
+                button: winit::event::MouseButton::Left,
+                ..
+            } = _event
+            {
+                let layout = _taffy.layout(_node).unwrap();
+                let x = _offset.0 + layout.location.x;
+                let y = _offset.1 + layout.location.y;
+                let width = layout.size.width;
+                let height = layout.size.height;
+
+                let is_over = _cursor_pos.0 >= x
+                    && _cursor_pos.0 <= x + width
+                    && _cursor_pos.1 >= y
+                    && _cursor_pos.1 <= y + height;
+
+                if is_over {
+                    // Request focus
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: my_id,
+                        handled: true,
+                    };
+                }
+            }
+            return WidgetResponse::default();
+        }
+
+        // We are focused, so handle keyboard input
+        let editor_rc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let mut editor_ref = editor_rc.borrow_mut();
+
+        let mut _ctrl_pressed = false;
+        let mut _mouse_x: f64 = 0.0;
+        let mut _mouse_y: f64 = 0.0;
+        let _mouse_left = ElementState::Released;
+
+        match _event {
+            WindowEvent::ModifiersChanged(modifiers) => {
+                _ctrl_pressed = modifiers.state().control_key();
+            }
+            WindowEvent::MouseInput {
+                device_id: _,
+                state,
+                button,
+            } => {
+                if *button == MouseButton::Left {
+                    if state.is_pressed() {
+                        let layout = _taffy.layout(_node).unwrap();
+                        let x = _offset.0 + layout.location.x;
+                        let y = _offset.1 + layout.location.y;
+                        let width = layout.size.width;
+                        let height = layout.size.height;
+
+                        let relative_physical_x =
+                            (_mouse_x.round() as i32).saturating_sub(width as i32);
+                        let relative_physical_y =
+                            (_mouse_y.round() as i32).saturating_sub(height as i32);
+
+                        // Handle mouse click
+                        editor_ref.action(
+                            &mut ctx.font_system,
+                            Action::Click {
+                                x: relative_physical_x,
+                                y: relative_physical_y,
+                            },
+                        );
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let KeyEvent {
+                    logical_key, state, ..
+                } = event;
+
+                if state.is_pressed() {
+                    match logical_key {
+                        Key::Named(NamedKey::ArrowLeft) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Left));
+                        }
+                        Key::Named(NamedKey::ArrowRight) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Right));
+                        }
+                        Key::Named(NamedKey::ArrowUp) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Up));
+                        }
+                        Key::Named(NamedKey::ArrowDown) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Down));
+                        }
+                        Key::Named(NamedKey::Home) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Home));
+                        }
+                        Key::Named(NamedKey::End) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::End));
+                        }
+                        Key::Named(NamedKey::PageUp) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageUp));
+                        }
+                        Key::Named(NamedKey::PageDown) => {
+                            editor_ref
+                                .action(&mut ctx.font_system, Action::Motion(Motion::PageDown));
+                        }
+                        Key::Named(NamedKey::Escape) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Escape);
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Enter);
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Backspace);
+                        }
+                        Key::Named(NamedKey::Delete) => {
+                            editor_ref.action(&mut ctx.font_system, Action::Delete);
+                        }
+                        Key::Character(text) => {
+                            if _ctrl_pressed {
+                                // Handle Ctrl + Char
+                                match text.as_str() {
+                                    "c" => {
+                                        // TODO: Copy
+                                    }
+                                    "v" => {
+                                        // TOOD: Paste
+                                    }
+                                    "x" => {
+                                        // TODO: Cut
+                                    }
+                                    _ => {
+                                        // Ignore other Ctrl + Char combinations
+                                    }
+                                }
+                            } else {
+                                // Normal character input
+                                for c in text.chars() {
+                                    if c.is_control() {
+                                        // Ignore control characters
+                                        continue;
+                                    }
+                                    editor_ref.action(&mut ctx.font_system, Action::Insert(c));
+                                }
+                            }
+                        }
+                        _ => {
+                            // Ignore other keys
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        editor_ref.shape_as_needed(&mut ctx.font_system, true);
+
+        WidgetResponse {
+            message: None,
+            focus_request: None,
+            handled: true,
+        }
+    }
+}
