@@ -1,10 +1,12 @@
 use crate::editor;
 use crate::renderer::UiBatcher;
+use crate::utils::PhysicalLocation;
 use glyphon::{Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Shaping};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use taffy::prelude::NodeId;
+use winit::dpi::PhysicalPosition;
 use winit::window::Window;
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
@@ -40,7 +42,6 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         node: taffy::NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M>;
@@ -119,6 +120,10 @@ pub struct WidgetContext {
     pub font_system: FontSystem,
 
     pub window: Option<Arc<Window>>,
+
+    pub scale: crate::utils::Scale,
+
+    pub cursor_pos: crate::utils::PhysicalLocation,
 }
 
 impl WidgetContext {
@@ -136,6 +141,8 @@ impl WidgetContext {
             node_to_widget: HashMap::new(),
             font_system,
             window,
+            scale: crate::utils::Scale::new(1.0),
+            cursor_pos: PhysicalLocation::default(),
         }
     }
 

@@ -1,10 +1,10 @@
 use crate::renderer::{Bounds, UiBatcher};
+use crate::utils::{is_location_inside_quad, TaffyQuad};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use glyphon::{cosmic_text::Motion, Action, Color, SwashCache};
 use taffy::prelude::{length, Dimension, NodeId, Size, TaffyAuto};
 use taffy::Style;
-// use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::{
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     keyboard::{Key, NamedKey},
@@ -106,7 +106,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -221,7 +220,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         _node: NodeId,
         _offset: (f32, f32),
         _event: &winit::event::WindowEvent,
-        _cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -243,12 +241,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 let width = layout.size.width;
                 let height = layout.size.height;
 
-                let is_over = _cursor_pos.0 >= x
-                    && _cursor_pos.0 <= x + width
-                    && _cursor_pos.1 >= y
-                    && _cursor_pos.1 <= y + height;
+                let taffy_quad = TaffyQuad::new(layout.location, layout.size);
 
-                if is_over {
+                let is_mouse_over =
+                    is_location_inside_quad(&ctx.cursor_pos, &ctx.scale, &taffy_quad);
+                if is_mouse_over {
                     // Request focus
                     return WidgetResponse {
                         message: None,

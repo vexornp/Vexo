@@ -70,7 +70,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {

@@ -96,7 +96,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -107,15 +106,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         let my_offset = (my_x, my_y);
 
         for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response = child.on_event(
-                taffy,
-                child_node_id,
-                my_offset,
-                event,
-                cursor_pos,
-                focused_id,
-                ctx,
-            );
+            let child_response =
+                child.on_event(taffy, child_node_id, my_offset, event, focused_id, ctx);
 
             // If a child handled it or request focus, return imediately
             if child_response.handled || child_response.focus_request.is_some() {
@@ -218,7 +210,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -229,15 +220,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         let my_offset = (my_x, my_y);
 
         for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response = child.on_event(
-                taffy,
-                child_node_id,
-                my_offset,
-                event,
-                cursor_pos,
-                focused_id,
-                ctx,
-            );
+            let child_response =
+                child.on_event(taffy, child_node_id, my_offset, event, focused_id, ctx);
 
             // If a child handled it or request focus, return imediately
             if child_response.handled || child_response.focus_request.is_some() {

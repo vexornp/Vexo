@@ -1,9 +1,11 @@
 use crate::renderer::UiBatcher;
+use crate::utils::{is_location_inside_quad, PhysicalLocation, TaffyQuad};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use taffy::prelude::{auto, length, AlignItems, Display, JustifyContent, NodeId, Rect, Size};
 use taffy::Style;
 use winit::event::WindowEvent;
+
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
@@ -111,27 +113,25 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         node: NodeId,
         offset: (f32, f32),
         event: &winit::event::WindowEvent,
-        cursor_pos: (f32, f32),
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
-        let width = layout.size.width;
-        let height = layout.size.height;
 
-        let is_over = cursor_pos.0 >= x
-            && cursor_pos.0 <= x + width
-            && cursor_pos.1 >= y
-            && cursor_pos.1 <= y + height;
-
+        let taffy_quad = TaffyQuad::from(x, y, layout.size);
         // Handle mobile touch events here if needed
         if let WindowEvent::Touch(touch) = event {
             if touch.phase == winit::event::TouchPhase::Started {
-                let touch_x = touch.location.x as f32;
-                let touch_y = touch.location.y as f32;
-                if touch_x >= x && touch_x <= x + width && touch_y >= y && touch_y <= y + height {
+                let winit_pos = PhysicalLocation::new(touch.location);
+                let is_pos_inside = is_location_inside_quad(&winit_pos, &ctx.scale, &taffy_quad);
+                println!(
+                    "Touch in: ({}, {}), button quad: ({}) , is inside button: {}",
+                    touch.location.x, touch.location.y, taffy_quad, is_pos_inside
+                );
+
+                if is_pos_inside {
                     return WidgetResponse {
                         message: Some(self.on_press.clone()),
                         focus_request: None,
@@ -141,8 +141,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             }
         }
 
+        let is_mouse_over = is_location_inside_quad(&ctx.cursor_pos, &ctx.scale, &taffy_quad);
         // 1. CLICK HANDLING
-        if is_over {
+        if is_mouse_over {
             if let WindowEvent::MouseInput {
                 state: winit::event::ElementState::Pressed,
                 button: winit::event::MouseButton::Left,
@@ -166,7 +167,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 *content_node, // Pass event to the content node
                 content_offset,
                 event,
-                cursor_pos,
                 focused_id,
                 ctx,
             );

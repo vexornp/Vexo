@@ -14,10 +14,14 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
 mod editor;
 mod renderer;
 mod resource;
+mod utils;
 pub mod widgets;
 
 use renderer::{TextRequest, UiBatcher, Vertex};
 use widgets::{Column, Widget, WidgetContext, WidgetId};
+pub use winit::dpi::PhysicalPosition;
+
+use crate::utils::PhysicalLocation;
 
 extern crate alloc;
 
@@ -32,7 +36,6 @@ pub struct FrameworkState<A: Application + 'static> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     batcher: UiBatcher,
-    cursor_pos: (f32, f32),
     taffy: taffy::TaffyTree,
     root_widget: Box<dyn Widget<A::Message>>,
     root_node_id: NodeId,
@@ -41,7 +44,6 @@ pub struct FrameworkState<A: Application + 'static> {
     atlas: glyphon::TextAtlas,
     text_renderer: glyphon::TextRenderer,
     swash_cache: glyphon::SwashCache,
-    scale_factor: f32,
     viewport: glyphon::Viewport,
 
     // User's application state
@@ -217,14 +219,12 @@ impl<A: Application + 'static> FrameworkState<A> {
             vertex_buffer,
             index_buffer,
             batcher: UiBatcher::new(),
-            cursor_pos: (0.0, 0.0),
             taffy,
             root_widget,
             root_node_id,
             atlas,
             text_renderer,
             swash_cache,
-            scale_factor,
             viewport,
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
@@ -263,9 +263,11 @@ impl<A: Application + 'static> FrameworkState<A> {
         // push root slot
         self.widget_context.push_index(0);
 
+        let scale_factor = self.widget_context.scale.factor();
+
         // Taffy should layout in logical points so that 24.0 size means 24 points.
-        let logical_width = self.config.width as f32 / self.scale_factor;
-        let logical_height = self.config.height as f32 / self.scale_factor;
+        let logical_width = self.config.width as f32 / scale_factor;
+        let logical_height = self.config.height as f32 / scale_factor;
 
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
@@ -340,8 +342,8 @@ impl<A: Application + 'static> FrameworkState<A> {
                 // Taffy (req.position) gives Logical coordinates.
                 // Glyphon expects Physical coordinates.
                 // So we multiply by scale_factor.
-                let left_pos = req.position.0 * self.scale_factor;
-                let top_pos = req.position.1 * self.scale_factor;
+                let left_pos = req.position.0 * scale_factor;
+                let top_pos = req.position.1 * scale_factor;
 
                 let bounds_left: i32 = left_pos.floor() as i32;
                 let bounds_top = top_pos.floor() as i32;
@@ -359,7 +361,7 @@ impl<A: Application + 'static> FrameworkState<A> {
                     buffer: buffer,
                     left: left_pos,
                     top: top_pos,
-                    scale: self.scale_factor,
+                    scale: scale_factor,
                     bounds: TextBounds {
                         left: bounds_left,
                         top: bounds_top,
@@ -392,13 +394,13 @@ impl<A: Application + 'static> FrameworkState<A> {
             let bw = req.bounds.width;
             let bh = req.bounds.height;
 
-            let left_pos = bx * self.scale_factor;
-            let top_pos = by * self.scale_factor;
+            let left_pos = bx * scale_factor;
+            let top_pos = by * scale_factor;
 
             let bounds_left: i32 = left_pos.floor() as i32;
             let bounds_top: i32 = top_pos.floor() as i32;
-            let bounds_right: i32 = ((bx + bw) * self.scale_factor).ceil() as i32;
-            let bounds_bottom: i32 = ((by + bh) * self.scale_factor).ceil() as i32;
+            let bounds_right: i32 = ((bx + bw) * scale_factor).ceil() as i32;
+            let bounds_bottom: i32 = ((by + bh) * scale_factor).ceil() as i32;
 
             let color_rgba_u8 = cosmic_text::Color::rgba(
                 (req.color[0] * 255.0) as u8,
@@ -435,7 +437,7 @@ impl<A: Application + 'static> FrameworkState<A> {
                 buffer: buf,
                 left: left_pos,
                 top: top_pos,
-                scale: self.scale_factor,
+                scale: self.widget_context.scale.factor(),
                 bounds: TextBounds {
                     left: bounds_left,
                     top: bounds_top,
@@ -540,7 +542,6 @@ impl<A: Application + 'static> FrameworkState<A> {
             self.root_node_id,
             (0.0, 0.0),
             event,
-            self.cursor_pos,
             self.focused_widget_id,
             &mut self.widget_context,
         );
@@ -587,7 +588,6 @@ impl<A: Application + 'static> FrameworkState<A> {
                 self.root_node_id,
                 (0.0, 0.0),
                 &event,
-                self.cursor_pos,
                 self.focused_widget_id,
                 &mut self.widget_context,
             );
@@ -663,7 +663,7 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
                 inner_size_writer: _,
             } => {
                 if let Some(state) = &mut self.framework_state {
-                    state.scale_factor = scale_factor as f32;
+                    state.widget_context.scale = crate::utils::Scale::new(scale_factor);
                     // let size = inner_size_writer.downgrate();
                     // state.resize_by_pixel_point(size.width as f32, size.height as f32);
                 }
@@ -674,10 +674,7 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
                 position,
             } => {
                 if let Some(state) = &mut self.framework_state {
-                    state.cursor_pos = (
-                        position.x as f32 / state.scale_factor,
-                        position.y as f32 / state.scale_factor,
-                    );
+                    state.widget_context.cursor_pos = PhysicalLocation::new(position);
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -697,27 +694,6 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
         if let Some(state) = &mut self.framework_state {
             state.handle_window_event(event_loop, _window_id, &event);
         }
-    }
-}
-
-pub enum Primitive {
-    Quad {
-        bounds: taffy::Rect<f32>,
-        color: [f32; 4],
-    },
-    Text {
-        content: String,
-        bounds: Rect<f32>,
-    },
-}
-
-pub struct Renderer {
-    primitives: Vec<Primitive>,
-}
-
-impl Renderer {
-    pub fn fill_quad(&mut self, bounds: taffy::Rect<f32>, color: [f32; 4]) {
-        self.primitives.push(Primitive::Quad { bounds, color });
     }
 }
 
