@@ -1,7 +1,13 @@
 use glyphon::{cosmic_text, Metrics, TextBounds, Viewport};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc};
 use taffy::prelude::*;
+use winit::dpi::PhysicalSize;
 use winit::event::*;
+use winit::event_loop::EventLoop;
+use winit::window::{WindowAttributes, WindowId};
 
 use winit::{
     application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
@@ -21,7 +27,7 @@ use renderer::{TextRequest, UiBatcher, Vertex};
 use widgets::{Column, Widget, WidgetContext, WidgetId};
 pub use winit::dpi::PhysicalPosition;
 
-use crate::utils::PhysicalLocation;
+use crate::utils::{PhysicalLocation, Scale};
 
 extern crate alloc;
 
@@ -31,7 +37,7 @@ pub struct FrameworkState<A: Application + 'static> {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
-    window: Option<Arc<Window>>,
+    window: Option<Arc<dyn Window>>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -56,8 +62,8 @@ pub struct FrameworkState<A: Application + 'static> {
 }
 
 impl<A: Application + 'static> FrameworkState<A> {
-    pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let size = window.inner_size();
+    pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
+        let size = window.surface_size();
         let scale_factor = window.scale_factor() as f32;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -85,7 +91,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         physical_width: f32,
         physical_height: f32,
         scale_factor: f32,
-        window: Option<Arc<Window>>,
+        window: Option<Arc<dyn Window>>,
     ) -> anyhow::Result<Self> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptionsBase {
@@ -200,7 +206,7 @@ impl<A: Application + 'static> FrameworkState<A> {
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
         let mut root_widget = Box::new(Column::new());
-        let mut ctx = WidgetContext::new(window.clone());
+        let mut ctx = WidgetContext::new();
         let root_node_id = root_widget.layout(&mut taffy, &mut ctx);
 
         if physical_width > 0.0 && physical_height > 0.0 {
@@ -532,7 +538,7 @@ impl<A: Application + 'static> FrameworkState<A> {
 
     fn handle_window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
@@ -565,7 +571,7 @@ impl<A: Application + 'static> FrameworkState<A> {
     }
 
     #[allow(dead_code)]
-    fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
+    fn handle_key(&mut self, event_loop: &dyn ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
             (KeyCode::Space, true) => {
@@ -575,113 +581,128 @@ impl<A: Application + 'static> FrameworkState<A> {
         }
     }
 
-    fn handle_mouse_click(&mut self, state: ElementState, button: MouseButton) {
-        if state == ElementState::Pressed && button == MouseButton::Left {
-            let event = winit::event::WindowEvent::MouseInput {
-                device_id: unsafe { std::mem::zeroed() },
-                state,
-                button,
-            };
-
-            let widget_response = self.root_widget.on_event(
-                &self.taffy,
-                self.root_node_id,
-                (0.0, 0.0),
-                &event,
-                self.focused_widget_id,
-                &mut self.widget_context,
-            );
-
-            if let Some(msg) = widget_response.message {
-                self.update(msg);
-            }
-        }
-    }
-
     fn view(&self) -> Box<dyn Widget<A::Message>> {
         A::view(&self.user_app_state)
+    }
+
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.resize_by_pixel_point(size.width as f32, size.height as f32);
     }
 }
 
 pub struct MyApp<A: Application + 'static> {
-    window: Option<Arc<Window>>,
-    framework_state: Option<FrameworkState<A>>,
+    receiver: Receiver<KeyBindingAction>,
+    sender: Sender<KeyBindingAction>,
+    windows: HashMap<WindowId, FrameworkState<A>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyBindingAction {
+    CloseWindow,
+    Message,
 }
 
 impl<A: Application + 'static> MyApp<A> {
-    pub fn new() -> Self {
+    pub fn new(
+        event_loop: &EventLoop,
+        receiver: Receiver<KeyBindingAction>,
+        sender: Sender<KeyBindingAction>,
+    ) -> Self {
         Self {
-            window: None,
-            framework_state: None,
+            receiver,
+            sender,
+            windows: Default::default(),
         }
     }
 
-    pub fn try_init_framework_state(&mut self) {
-        if let Some(window) = &self.window {
-            let size = window.inner_size();
-            let width = size.width;
-            let height = size.height;
-            if width > 0 && height > 0 && self.framework_state.is_none() {
-                println!("SUCCESS: Window ready at {}x{}", size.width, size.height);
-                let mut state = pollster::block_on(FrameworkState::new(window.clone())).unwrap();
-                state.resize_by_pixel_point(width as f32, height as f32);
-                self.framework_state = Some(state);
-            }
+    pub fn try_init_framework_state(&mut self, window: Box<dyn Window>) -> Option<WindowId> {
+        let window: Arc<dyn Window> = Arc::from(window);
+        let window_id = window.id();
+        let size = window.surface_size();
+        let width = size.width;
+        let height = size.height;
+        let window_state = self.windows.get(&window_id);
+        if width > 0 && height > 0 && window_state.is_none() {
+            println!("SUCCESS: Window ready at {}x{}", size.width, size.height);
+            let mut state = pollster::block_on(FrameworkState::new(window.clone())).unwrap();
+            state.resize_by_pixel_point(width as f32, height as f32);
+            self.windows.insert(window_id, state);
+            return Some(window_id);
         }
+
+        return None;
+    }
+
+    fn handle_action_from_proxy(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        action: KeyBindingAction,
+    ) {
+        match action {
+            KeyBindingAction::Message => {
+                println!("Use wake up")
+            }
+            _ => {}
+        }
+    }
+
+    fn create_window(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+    ) -> Result<WindowId, Box<dyn Error>> {
+        let window_attr = WindowAttributes::default();
+        let window = event_loop.create_window(window_attr).unwrap();
+        let wid = self.try_init_framework_state(window);
+        return Result::Ok(wid.unwrap());
     }
 }
 
-impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A> {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.framework_state.is_some() {
-            return;
-        }
+impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
+    // fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
+    //     if !self.windows.is_empty() {
+    //         println!("app resumed, already have window");
+    //         return;
+    //     }
 
-        println!("window resumed");
-        let window_attributes = Window::default_attributes();
-        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        self.window = Some(window.clone());
-        self.try_init_framework_state();
-    }
-
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: FrameworkState<A>) {
-        self.framework_state = Some(event);
-    }
+    //     println!("app resumed, create initial window");
+    //     let window_attributes = WindowAttributes::default();
+    //     let window = event_loop.create_window(window_attributes).unwrap();
+    //     self.try_init_framework_state(window);
+    // }
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        let window_state = match self.windows.get_mut(&window_id) {
+            Some(ws) => ws,
+            None => return,
+        };
+
         match event {
-            WindowEvent::Resized(_) => {
-                self.try_init_framework_state();
+            WindowEvent::SurfaceResized(size) => {
+                window_state.resize(size);
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor,
-                inner_size_writer: _,
+                surface_size_writer: _,
             } => {
-                if let Some(state) = &mut self.framework_state {
-                    state.widget_context.scale = crate::utils::Scale::new(scale_factor);
-                    // let size = inner_size_writer.downgrate();
-                    // state.resize_by_pixel_point(size.width as f32, size.height as f32);
-                }
+                window_state.widget_context.scale = Scale::new(scale_factor);
                 println!("Scale factor changed to {}", scale_factor);
             }
-            WindowEvent::CursorMoved {
-                device_id: _,
+            WindowEvent::PointerMoved {
+                device_id,
                 position,
+                primary,
+                source: _,
             } => {
-                if let Some(state) = &mut self.framework_state {
-                    state.widget_context.cursor_pos = PhysicalLocation::new(position);
-                }
+                window_state.widget_context.cursor_pos = PhysicalLocation::new(position);
             }
             WindowEvent::RedrawRequested => {
-                if let Some(state) = &mut self.framework_state {
-                    if let Err(e) = state.render() {
-                        log::error!("Render error: {}", e);
-                    }
+                if let Err(err) = window_state.render() {
+                    println!("Error drawing window: {err}")
                 }
             }
             WindowEvent::CloseRequested => {
@@ -691,9 +712,28 @@ impl<A: Application + 'static> ApplicationHandler<FrameworkState<A>> for MyApp<A
             _ => (),
         }
 
-        if let Some(state) = &mut self.framework_state {
-            state.handle_window_event(event_loop, _window_id, &event);
+        window_state.handle_window_event(event_loop, window_id, &event);
+    }
+
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Ok(action) = self.receiver.try_recv() {
+            self.handle_action_from_proxy(event_loop, action);
         }
+    }
+
+    fn device_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        device_id: Option<DeviceId>,
+        event: DeviceEvent,
+    ) {
+        println!("Device {:?} event: {:?}", device_id, event);
+    }
+
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        println!("Ready to create surfaces");
+        self.create_window(event_loop)
+            .expect("Failed to create initial window");
     }
 }
 
@@ -706,10 +746,32 @@ pub trait Application {
     fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>>;
 }
 
-pub fn run_desktop_demo<A: Application + 'static>() -> anyhow::Result<()> {
+pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
     env_logger::init();
-    let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
-    let mut app = crate::MyApp::<A>::new();
-    event_loop.run_app(&mut app)?;
-    Ok(())
+
+    let event_loop = EventLoop::new()?;
+    let (sender, receiver) = mpsc::channel();
+
+    {
+        // Wire the user event from another thread.
+        let event_loop_proxy = event_loop.create_proxy();
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+            // Wake up the `event_loop` once every second and dispatch a custom event
+            // from a different thread.
+            println!("Starting to send user event every second");
+            // loop {
+            //     let _ = sender.send(KeyBindingAction::Message);
+            //     event_loop_proxy.wake_up();
+            //     std::thread::sleep(std::time::Duration::from_secs(1));
+            // }
+        });
+    }
+
+    let app = MyApp::<A>::new(&event_loop, receiver, sender);
+
+    // let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
+    // let mut app = crate::MyApp::<A>::new();
+    // event_loop.run_app(&mut app)?;
+    Result::Ok(event_loop.run_app(app)?)
 }

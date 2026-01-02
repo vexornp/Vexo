@@ -1,6 +1,6 @@
 use shared_app::State;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     vexo::run_desktop_demo::<State>()
 }
 

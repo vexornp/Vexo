@@ -70,8 +70,6 @@ impl Application for State {
 #[derive(uniffi::Object)]
 pub struct MobileApp {}
 
-static mut GLOBAL_FS: Option<FrameworkState<State>> = None;
-
 #[uniffi::export]
 impl MobileApp {
     #[uniffi::constructor]

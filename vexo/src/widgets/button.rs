@@ -121,35 +121,36 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let y = offset.1 + layout.location.y;
 
         let taffy_quad = TaffyQuad::from(x, y, layout.size);
-        // Handle mobile touch events here if needed
-        if let WindowEvent::Touch(touch) = event {
-            if touch.phase == winit::event::TouchPhase::Started {
-                let winit_pos = PhysicalLocation::new(touch.location);
-                let is_pos_inside = is_location_inside_quad(&winit_pos, &ctx.scale, &taffy_quad);
-                println!(
-                    "Touch in: ({}, {}), button quad: ({}) , is inside button: {}",
-                    touch.location.x, touch.location.y, taffy_quad, is_pos_inside
-                );
+        // // Handle mobile touch events here if needed
+        // if let WindowEvent::Touch(touch) = event {
+        //     if touch.phase == winit::event::TouchPhase::Started {
+        //         let winit_pos = PhysicalLocation::new(touch.location);
+        //         let is_pos_inside = is_location_inside_quad(&winit_pos, &ctx.scale, &taffy_quad);
+        //         println!(
+        //             "Touch in: ({}, {}), button quad: ({}) , is inside button: {}",
+        //             touch.location.x, touch.location.y, taffy_quad, is_pos_inside
+        //         );
 
-                if is_pos_inside {
-                    return WidgetResponse {
-                        message: Some(self.on_press.clone()),
-                        focus_request: None,
-                        handled: true,
-                    };
-                }
-            }
-        }
+        //         if is_pos_inside {
+        //             return WidgetResponse {
+        //                 message: Some(self.on_press.clone()),
+        //                 focus_request: None,
+        //                 handled: true,
+        //             };
+        //         }
+        //     }
+        // }
 
-        let is_mouse_over = is_location_inside_quad(&ctx.cursor_pos, &ctx.scale, &taffy_quad);
         // 1. CLICK HANDLING
-        if is_mouse_over {
-            if let WindowEvent::MouseInput {
-                state: winit::event::ElementState::Pressed,
-                button: winit::event::MouseButton::Left,
-                ..
-            } = event
-            {
+        if let WindowEvent::PointerButton {
+            state: winit::event::ElementState::Pressed,
+            position,
+            ..
+        } = event
+        {
+            let location = PhysicalLocation::new(*position);
+            let is_mouse_over = is_location_inside_quad(&location, &ctx.scale, &taffy_quad);
+            if is_mouse_over {
                 return WidgetResponse {
                     message: Some(self.on_press.clone()),
                     focus_request: None,

@@ -119,15 +119,13 @@ pub struct WidgetContext {
 
     pub font_system: FontSystem,
 
-    pub window: Option<Arc<Window>>,
-
     pub scale: crate::utils::Scale,
 
     pub cursor_pos: crate::utils::PhysicalLocation,
 }
 
 impl WidgetContext {
-    pub fn new(window: Option<Arc<Window>>) -> Self {
+    pub fn new() -> Self {
         // Embed a font so we are guaranteed to have one available.
         // Eg: we can't get the system font on ios platform
         let font_data = crate::resource::file::FONT.to_vec();
@@ -140,7 +138,6 @@ impl WidgetContext {
             id_stack: vec![0x9E3779B97F4A7C15u64],
             node_to_widget: HashMap::new(),
             font_system,
-            window,
             scale: crate::utils::Scale::new(1.0),
             cursor_pos: PhysicalLocation::default(),
         }
