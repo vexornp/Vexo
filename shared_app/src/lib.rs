@@ -1,6 +1,6 @@
 use vexo::{
     widgets::{Button, Column, Rectangle, Row, Text, TextEdit, Widget},
-    Application, FrameworkState,
+    Application, WindowState,
 };
 uniffi::setup_scaffolding!();
 

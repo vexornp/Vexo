@@ -4,6 +4,7 @@ use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use taffy::prelude::*;
+use wgpu::PipelineStatisticsTypes;
 use winit::dpi::PhysicalSize;
 use winit::event::*;
 use winit::event_loop::EventLoop;
@@ -31,7 +32,7 @@ use crate::utils::{PhysicalLocation, Scale};
 
 extern crate alloc;
 
-pub struct FrameworkState<A: Application + 'static> {
+pub struct WindowState<A: Application + 'static> {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -61,7 +62,7 @@ pub struct FrameworkState<A: Application + 'static> {
     widget_context: WidgetContext,
 }
 
-impl<A: Application + 'static> FrameworkState<A> {
+impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
         let size = window.surface_size();
         let scale_factor = window.scale_factor() as f32;
@@ -593,7 +594,7 @@ impl<A: Application + 'static> FrameworkState<A> {
 pub struct MyApp<A: Application + 'static> {
     receiver: Receiver<KeyBindingAction>,
     sender: Sender<KeyBindingAction>,
-    windows: HashMap<WindowId, FrameworkState<A>>,
+    windows: HashMap<WindowId, WindowState<A>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -624,7 +625,7 @@ impl<A: Application + 'static> MyApp<A> {
         let window_state = self.windows.get(&window_id);
         if width > 0 && height > 0 && window_state.is_none() {
             println!("SUCCESS: Window ready at {}x{}", size.width, size.height);
-            let mut state = pollster::block_on(FrameworkState::new(window.clone())).unwrap();
+            let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
             state.resize_by_pixel_point(width as f32, height as f32);
             self.windows.insert(window_id, state);
             return Some(window_id);
@@ -708,6 +709,19 @@ impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
                 println!("Window closed by user");
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: winit::keyboard::PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                event_loop.exit();
+                println!("Escape pressed, exiting");
             }
             _ => (),
         }
