@@ -188,7 +188,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         // For-Debug
         let w = layout.size.width;
         let h = layout.size.height;
-        renderer.add_rect(x, y, w, h, [1.0, 0.0, 0.0]);
+        let debug_color = [1.0, 0.0, 0.0, 1.0];
+        renderer.add_rect([x, y], [w, h], [0.0, 0.0, 0.0, 1.0], debug_color, 1.0);
 
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut eidtor_ref = editor_arc.borrow_mut();

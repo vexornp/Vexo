@@ -59,9 +59,23 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
+
+        // Calculate absolute position by adding offset to layout location
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
-        renderer.add_rect(x, y, layout.size.width, layout.size.height, self.color);
+
+        // Prepare instance data for the rectangle
+        let pos = [x, y];
+        let size = [layout.size.width, layout.size.height];
+
+        // Convert [f32; 3] to [f32; 4] (assuming alpha is 1.0)
+        let color = [self.color[0], self.color[1], self.color[2], 1.0];
+
+        // Set default border color and width (can be customized later)
+        let border_color = [1.0, 1.0, 1.0, 1.0]; // black border
+        let border_width = 1.0; // no border by default
+
+        renderer.add_rect(pos, size, color, border_color, border_width);
     }
 
     fn on_event(

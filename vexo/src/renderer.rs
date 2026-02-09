@@ -1,13 +1,13 @@
+use crate::QuadInstance::QuadInstance;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub pos: [f32; 3],
-    pub color: [f32; 3],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
@@ -44,6 +44,7 @@ pub struct UiBatcher {
     pub indices: Vec<u16>,
     pub text_requests: Vec<TextRequest>, // For normal Text widget
     pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
+    pub quad_instances: Vec<QuadInstance>,
 
     screen_width: f32,  // Logical width: pixel_width * scale_factor
     screen_height: f32, // Logical height: pixel_height * scale_factor
@@ -56,6 +57,7 @@ impl UiBatcher {
             indices: Vec::new(),
             text_requests: Vec::new(),
             editor_requests: Vec::new(),
+            quad_instances: Vec::new(),
             screen_width: 1.0,
             screen_height: 1.0,
         }
@@ -66,6 +68,7 @@ impl UiBatcher {
         self.indices.clear();
         self.text_requests.clear();
         self.editor_requests.clear();
+        self.quad_instances.clear();
     }
 
     // Set logical size
@@ -74,31 +77,22 @@ impl UiBatcher {
         self.screen_height = height;
     }
 
-    pub fn add_rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 3]) {
-        let sw = self.screen_width;
-        let sh = self.screen_height;
-
-        let normalize =
-            |px: f32, py: f32| -> [f32; 3] { [(px / sw) * 2.0 - 1.0, 1.0 - (py / sh) * 2.0, 0.0] };
-        let i = self.vertices.len() as u16;
-        let tl = normalize(x, y);
-        let tr = normalize(x + width, y);
-        let br = normalize(x + width, y + height);
-        let bl = normalize(x, y + height);
-
-        self.vertices.push(Vertex { pos: tl, color });
-        self.vertices.push(Vertex { pos: tr, color });
-        self.vertices.push(Vertex { pos: br, color });
-        self.vertices.push(Vertex { pos: bl, color });
-
-        self.indices.extend_from_slice(&[
-            i,
-            i + 1,
-            i + 2, // First Triangle
-            i,
-            i + 2,
-            i + 3, // Secode Triangle
-        ]);
+    pub fn add_rect(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        border_color: [f32; 4],
+        border_width: f32,
+    ) {
+        self.quad_instances.push(QuadInstance {
+            position: pos,
+            size,
+            color,
+            border_color,
+            border_width,
+            _padding: [0.0; 3],
+        });
     }
 
     pub fn add_text(&mut self, content: String, x: f32, y: f32, size: f32, color: [f32; 3]) {

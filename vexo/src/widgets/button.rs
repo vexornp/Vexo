@@ -85,13 +85,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
-        renderer.add_rect(
-            x,
-            y,
-            layout.size.width,
-            layout.size.height,
-            self.background_color,
-        );
+        let pos = [x, y];
+        let size = [layout.size.width, layout.size.height];
+
+        // Assuming alpha = 1.0 for now
+        let color = [
+            self.background_color[0],
+            self.background_color[1],
+            self.background_color[2],
+            1.0,
+        ];
+
+        let border_color = [0.0, 0.0, 0.0, 1.0];
+        let border_width = 1.0;
+        renderer.add_rect(pos, size, color, border_color, border_width);
 
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {
