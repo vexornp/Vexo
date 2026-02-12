@@ -21,8 +21,8 @@ pub use uniffi;
 
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
 
-mod QuadInstance;
 mod editor;
+mod quad_instance;
 mod renderer;
 mod resource;
 mod utils;
@@ -40,7 +40,8 @@ extern crate alloc;
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct GlobalUniforms {
     pub screen_size: [f32; 2],
-    pub _padding: [f32; 2], // // 16-byte alignment
+    scale_factor: f32,
+    pub _padding: f32, // Pad to 16 bytes (4 floats total)
 }
 
 pub struct WindowState<A: Application + 'static> {
@@ -161,7 +162,7 @@ impl<A: Application + 'static> WindowState<A> {
                 label: Some("Global Bind Group Layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -171,8 +172,8 @@ impl<A: Application + 'static> WindowState<A> {
                 }],
             });
 
-        /// Put that bind group layout into a pipeline layout
-        /// (even if we don't have bind groups yet, we need this for the pipeline)
+        // Put that bind group layout into a pipeline layout
+        // (even if we don't have bind groups yet, we need this for the pipeline)
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -191,8 +192,8 @@ impl<A: Application + 'static> WindowState<A> {
 
                 // Order matters: The first buffer layout is slot 0, the second is slot 1, etc.
                 buffers: &[
-                    Vertex::desc(),                     // Standard mesh data (Position/UV) -> Slot 0
-                    QuadInstance::QuadInstance::desc(), // Instance data (position/size/color) -> Slot 1
+                    Vertex::desc(),                      // Standard mesh data (Position/UV) -> Slot 0
+                    quad_instance::QuadInstance::desc(), // Instance data (position/size/color) -> Slot 1
                 ],
             },
             fragment: Some(wgpu::FragmentState {
@@ -259,7 +260,7 @@ impl<A: Application + 'static> WindowState<A> {
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
             // Allocate space for 10,000 instances initially
-            size: (std::mem::size_of::<QuadInstance::QuadInstance>() * 10000)
+            size: (std::mem::size_of::<quad_instance::QuadInstance>() * 10000)
                 as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -333,10 +334,13 @@ impl<A: Application + 'static> WindowState<A> {
         })
     }
 
-    pub fn resize_by_pixel_point(&mut self, width: f32, height: f32) {
+    pub fn resize_physical(&mut self, width: f32, height: f32) {
+        let scale_factor = self.widget_context.scale.factor();
+
         let uniform = GlobalUniforms {
             screen_size: [width, height],
-            _padding: [0.0, 0.0],
+            scale_factor,
+            _padding: 0.0,
         };
 
         self.queue
@@ -714,7 +718,7 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.resize_by_pixel_point(size.width as f32, size.height as f32);
+        self.resize_physical(size.width as f32, size.height as f32);
     }
 }
 
@@ -751,9 +755,14 @@ impl<A: Application + 'static> MyApp<A> {
         let height = size.height;
         let window_state = self.windows.get(&window_id);
         if width > 0 && height > 0 && window_state.is_none() {
-            println!("SUCCESS: Window ready at {}x{}", size.width, size.height);
+            println!(
+                "SUCCESS: Window ready at {}x{}, scale: {}",
+                size.width,
+                size.height,
+                window.scale_factor()
+            );
             let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
-            state.resize_by_pixel_point(width as f32, height as f32);
+            state.resize_physical(width as f32, height as f32);
             self.windows.insert(window_id, state);
             return Some(window_id);
         }
@@ -868,7 +877,6 @@ impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
         device_id: Option<DeviceId>,
         event: DeviceEvent,
     ) {
-        println!("Device {:?} event: {:?}", device_id, event);
     }
 
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {

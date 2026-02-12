@@ -80,13 +80,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
 
-        let size = [layout.size.width, layout.size.height];
-        let color = [0.0, 0.0, 0.0, 0.0]; // Transparent
-        let border_color = [0.0, 0.0, 0.0, 1.0]; // Black border
-        let border_width = 1.0;
-
-        renderer.add_rect([my_x, my_y], size, color, border_color, border_width);
-
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
             child_widget.draw(
                 taffy,

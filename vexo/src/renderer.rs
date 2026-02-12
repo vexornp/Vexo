@@ -1,4 +1,4 @@
-use crate::QuadInstance::QuadInstance;
+use crate::quad_instance;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -44,7 +44,7 @@ pub struct UiBatcher {
     pub indices: Vec<u16>,
     pub text_requests: Vec<TextRequest>, // For normal Text widget
     pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
-    pub quad_instances: Vec<QuadInstance>,
+    pub quad_instances: Vec<quad_instance::QuadInstance>,
 
     screen_width: f32,  // Logical width: pixel_width * scale_factor
     screen_height: f32, // Logical height: pixel_height * scale_factor
@@ -85,7 +85,7 @@ impl UiBatcher {
         border_color: [f32; 4],
         border_width: f32,
     ) {
-        self.quad_instances.push(QuadInstance {
+        self.quad_instances.push(quad_instance::QuadInstance {
             position: pos,
             size,
             color,

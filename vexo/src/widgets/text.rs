@@ -182,19 +182,23 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
+        let scale = ctx.scale.factor();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
+        let width = layout.size.width;
+        let height = layout.size.height;
 
         // For-Debug
-        let w = layout.size.width;
-        let h = layout.size.height;
+        let pos = [x, y];
+        let size = [width, height];
+
         let debug_color = [1.0, 0.0, 0.0, 1.0];
-        renderer.add_rect([x, y], [w, h], [0.0, 0.0, 0.0, 1.0], debug_color, 1.0);
+        renderer.add_rect(pos, size, [0.0, 0.0, 0.0, 1.0], debug_color, 1.0);
 
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut eidtor_ref = editor_arc.borrow_mut();
 
-        eidtor_ref.set_size(&mut ctx.font_system, w, h);
+        eidtor_ref.set_size(&mut ctx.font_system, width, height);
         eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
 
         renderer.add_editor_request(
@@ -202,8 +206,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             Bounds {
                 x,
                 y,
-                width: w,
-                height: h,
+                width: width,
+                height: height,
             },
         );
 

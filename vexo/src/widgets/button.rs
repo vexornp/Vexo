@@ -83,10 +83,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
+
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
         let pos = [x, y];
-        let size = [layout.size.width, layout.size.height];
+
+        let width = layout.size.width;
+        let height = layout.size.height;
+        let size = [width, height];
 
         // Assuming alpha = 1.0 for now
         let color = [

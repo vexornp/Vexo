@@ -1,6 +1,6 @@
 use vexo::{
     widgets::{Button, Column, Rectangle, Row, Text, TextEdit, Widget},
-    Application, WindowState,
+    Application,
 };
 uniffi::setup_scaffolding!();
 
@@ -42,7 +42,7 @@ impl Application for State {
         let text_content = format!("You clicked {} times!", state.click_count);
         let rect1 = state.create_rect_box(60.0, 70.0, [1.0, 0.0, 0.0]);
         let rect2 = state.create_rect_box(90.0, 40.0, [1.0, 1.0, 0.0]);
-        let rect3 = state.create_rect_box(150.0, 150.0, [0.0, 0.1, 0.0]);
+        let rect3 = state.create_rect_box(400.0, 150.0, [0.0, 0.1, 0.0]);
         let rect4 = state.create_rect_box(150.0, 50.0, [0.0, 0.0, 1.0]);
         let rect5 = state.create_rect_box(110.0, 30.0, [0.0, 1.0, 1.0]);
         let text_edit =

@@ -59,14 +59,23 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
+        let scale = ctx.scale.factor();
 
         // Calculate absolute position by adding offset to layout location
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
 
+        // Convert logical coordinates to physical coordinates
+        let physical_x = x * scale;
+        let physical_y = y * scale;
+
+        // Convert logical size to physical size
+        let physical_width = layout.size.width * scale;
+        let physical_height = layout.size.height * scale;
+
         // Prepare instance data for the rectangle
-        let pos = [x, y];
-        let size = [layout.size.width, layout.size.height];
+        let pos = [physical_x, physical_y];
+        let size = [physical_width, physical_height];
 
         // Convert [f32; 3] to [f32; 4] (assuming alpha is 1.0)
         let color = [self.color[0], self.color[1], self.color[2], 1.0];
