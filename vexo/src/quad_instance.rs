@@ -1,0 +1,47 @@
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct QuadInstance {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub color: [f32; 4],
+    pub border_color: [f32; 4],
+    pub border_width: f32,
+    pub _padding: [f32; 3], // Maintain 16-byte alignment for safety
+}
+
+impl QuadInstance {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<QuadInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                }, // position
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                }, // size
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                }, // color
+                wgpu::VertexAttribute {
+                    offset: 32,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                }, // border_color
+                wgpu::VertexAttribute {
+                    offset: 48,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32,
+                }, // border_width
+            ],
+        }
+    }
+}
