@@ -8,6 +8,7 @@ use taffy::Style;
 pub struct Column<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
+    pub align_items: taffy::prelude::AlignItems,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Column<M> {
@@ -15,11 +16,17 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
         Self {
             children: Vec::new(),
             key: None,
+            align_items: taffy::prelude::AlignItems::Start,
         }
     }
 
     pub fn push(mut self, widget: Box<dyn Widget<M>>) -> Self {
         self.children.push(widget);
+        self
+    }
+
+    pub fn align_items(mut self, align: taffy::prelude::AlignItems) -> Self {
+        self.align_items = align;
         self
     }
 
@@ -52,6 +59,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 Style {
                     display: Display::Flex,
                     flex_direction: FlexDirection::Column,
+                    align_items: Some(self.align_items),
                     gap: Size {
                         width: length(0.0),
                         height: length(10.0),
@@ -79,6 +87,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         let my_x = offset.0 + layout.location.x;
         let my_y = offset.1 + layout.location.y;
         let child_ids = taffy.children(node).unwrap();
+
+        let pos = [my_x, my_y];
+        let size = [layout.size.width, layout.size.height];
+        let color = [0.8, 0.8, 0.8, 1.0];
+        let border_color = [0.0, 0.0, 0.0, 1.0];
+        let border_width = 2.0;
+
+        renderer.add_rect(pos, size, color, border_color, border_width);
 
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
             child_widget.draw(

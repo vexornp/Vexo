@@ -34,6 +34,8 @@ pub use winit::dpi::PhysicalPosition;
 
 use crate::utils::{PhysicalLocation, Scale};
 
+pub use taffy::prelude::AlignItems;
+
 extern crate alloc;
 
 #[repr(C)]

@@ -1,6 +1,6 @@
 use vexo::{
     widgets::{Button, Column, Rectangle, Row, Text, TextEdit, Widget},
-    Application,
+    AlignItems, Application,
 };
 uniffi::setup_scaffolding!();
 
@@ -51,6 +51,7 @@ impl Application for State {
         let row = Row::new().push(rect1).push(rect2);
 
         let clm = Column::new()
+            .align_items(vexo::AlignItems::Center)
             .push(rect3)
             .push(text_edit)
             .push(Box::new(
@@ -63,6 +64,7 @@ impl Application for State {
             .push(rect4)
             .push(rect5)
             .push(Box::new(row));
+
         Box::new(clm)
     }
 }
