@@ -17,13 +17,9 @@ mkdir -p "$SWIFT_SRC_DIR"
 mkdir -p "$OUT_DIR"
 mkdir -p "$SIMULATOR_HEADERS_DIR"
 
-# 1. Build Rust library for iOS
-echo "Building Rust library..."
-cargo build --target aarch64-apple-ios --release
-
-# 1b. Build Rust library for iOS Simulator (ARM64)
-echo "Building Rust library for iOS Simulator..."
-cargo build --target aarch64-apple-ios-sim --release
+# 1. Build Rust library for iOS (device + simulator in parallel)
+echo "Building Rust library for iOS device and simulator..."
+cargo build --target aarch64-apple-ios --target aarch64-apple-ios-sim --release
 
 # 2. Generate Swift bindings
 echo "Generating Swift bindings (shared_app.swift)..."
@@ -32,13 +28,12 @@ target/debug/uniffi-bindgen-swift --swift-sources "$TARGET_DIR/libshared_app.a" 
 echo "Generating C headers (shared_appFFI.h)..."
 target/debug/uniffi-bindgen-swift --headers "$TARGET_DIR/libshared_app.a" "$OUT_DIR"
 
-# 3. Copy generated files to xcframework and sources
-echo "Copying generated files..."
+# 3. Copy to xcframework slices
+echo "Copying device artifacts..."
 cp "$TARGET_DIR/libshared_app.a" "$XCFRAMEWORK_DIR/"
 cp "$OUT_DIR/shared_appFFI.h" "$HEADERS_DIR/"
 cp "$OUT_DIR/shared_app.swift" "$SWIFT_SRC_DIR/"
 
-# 3b. Copy generated files to simulator xcframework slice
 echo "Copying simulator artifacts..."
 cp "$SIMULATOR_TARGET_DIR/libshared_app.a" "$SIMULATOR_DIR/"
 cp "$OUT_DIR/shared_appFFI.h" "$SIMULATOR_HEADERS_DIR/"
