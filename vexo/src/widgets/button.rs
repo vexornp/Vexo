@@ -1,6 +1,7 @@
 use crate::renderer::UiBatcher;
 use crate::utils::{is_location_inside_quad, PhysicalLocation, TaffyQuad};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
+use crate::Color;
 use crate::Widget;
 use taffy::prelude::{auto, length, AlignItems, Display, JustifyContent, NodeId, Rect, Size};
 use taffy::Style;
@@ -9,7 +10,7 @@ use winit::event::WindowEvent;
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
-    pub background_color: [f32; 3],
+    pub background_color: Color,
     pub padding: f32,
     pub key: Option<String>,
 }
@@ -19,14 +20,14 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
         Self {
             content,
             on_press,
-            background_color: [0.2, 0.2, 0.2],
+            background_color: Color::rgb(0.2, 0.2, 0.2),
             padding: 10.0,
             key: None,
         }
     }
 
-    pub fn color(mut self, color: [f32; 3]) -> Self {
-        self.background_color = color;
+    pub fn color(mut self, color: impl Into<Color>) -> Self {
+        self.background_color = color.into();
         self
     }
 
@@ -92,13 +93,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let height = layout.size.height;
         let size = [width, height];
 
-        // Assuming alpha = 1.0 for now
-        let color = [
-            self.background_color[0],
-            self.background_color[1],
-            self.background_color[2],
-            1.0,
-        ];
+        let color = self.background_color.to_array();
 
         let border_color = [0.0, 0.0, 0.0, 1.0];
         let border_width = 1.0;
