@@ -1,4 +1,4 @@
-use vexo::{column, rect, row, text, text_edit, button, widgets::Widget, AlignItems, Application};
+use vexo::{column, rect, row, text, text_edit, button, widgets::Widget, AlignItems, Application, Color};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -34,14 +34,14 @@ impl Application for State {
 
         column![
             align: AlignItems::Center,
-            rect!(400.0, 150.0, [0.0, 0.1, 0.0]),
+            rect!(400.0, 150.0, Color::rgb(0.0, 0.1, 0.0)),
             text_edit!("editor_id_input", "Type here...", size: (100.0, 50.0)),
-            button!(text!(text_content, size: 24.0), Message::Clicked, color: [0.1, 0.4, 0.1]),
-            rect!(150.0, 50.0, [0.0, 0.0, 1.0]),
-            rect!(110.0, 30.0, [0.0, 1.0, 1.0]),
+            button!(text!(text_content, size: 24.0), Message::Clicked, color: Color::rgb(0.1, 0.4, 0.1)),
+            rect!(150.0, 50.0, Color::BLUE),
+            rect!(110.0, 30.0, Color::CYAN),
             row![
-                rect!(60.0, 70.0, [1.0, 0.0, 0.0]),
-                rect!(90.0, 40.0, [1.0, 1.0, 0.0]),
+                rect!(60.0, 70.0, Color::RED),
+                rect!(90.0, 40.0, Color::YELLOW),
             ],
         ]
     }
