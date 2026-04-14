@@ -2,7 +2,8 @@ use crate::renderer::{Bounds, UiBatcher};
 use crate::utils::{is_location_inside_quad, TaffyQuad};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
-use glyphon::{cosmic_text::Motion, Action, Color, SwashCache};
+use crate::Color;
+use glyphon::{cosmic_text::Motion, Action, SwashCache};
 use taffy::prelude::{length, Dimension, NodeId, Size, TaffyAuto};
 use taffy::Style;
 use winit::{
@@ -13,7 +14,7 @@ use winit::{
 pub struct Text {
     pub content: String,
     pub size: f32,
-    pub color: [f32; 3],
+    pub color: Color,
     pub style: taffy::Style,
     pub key: Option<String>,
 }
@@ -23,7 +24,7 @@ impl Text {
         Self {
             content: content.into(),
             size: 24.0,
-            color: [0.0, 0.0, 0.0],
+            color: Color::BLACK,
             style: Style::default(),
             key: None,
         }
@@ -97,7 +98,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         let layout = taffy.layout(node).unwrap();
         let x = offset.0 + layout.location.x;
         let y = offset.1 + layout.location.y;
-        renderer.add_text(self.content.clone(), x, y, self.size, self.color);
+        renderer.add_text(self.content.clone(), x, y, self.size, [self.color.r, self.color.g, self.color.b]);
     }
 
     fn on_event(
@@ -117,7 +118,7 @@ pub struct TextEdit {
     pub editor_id: String,
     pub initial_text: String,
     pub swash_cache: SwashCache,
-    pub text_color: [f32; 3],
+    pub text_color: Color,
     pub style: taffy::Style,
     pub key: Option<String>,
 }
@@ -128,7 +129,7 @@ impl TextEdit {
             editor_id: id.into(),
             initial_text: initial_text.into(),
             swash_cache: SwashCache::new(),
-            text_color: [1.0, 1.0, 1.0],
+            text_color: Color::WHITE,
             style: Style::default(),
             key: None,
         }
@@ -192,8 +193,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let pos = [x, y];
         let size = [width, height];
 
-        let debug_color = [1.0, 0.0, 0.0, 1.0];
-        renderer.add_rect(pos, size, [0.0, 0.0, 0.0, 1.0], debug_color, 1.0);
+        let debug_color = Color::RED.to_array();
+        renderer.add_rect(pos, size, Color::BLACK.to_array(), debug_color, 1.0);
 
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut eidtor_ref = editor_arc.borrow_mut();
@@ -211,10 +212,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             },
         );
 
-        let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
-        let cursor_color = Color::rgb(0xFF, 0xFF, 0xFF);
-        let selection_color = Color::rgba(0xFF, 0xFF, 0xFF, 0x33);
-        let selected_text_color = Color::rgb(0xA0, 0xA0, 0xFF);
+        let text_color = Color::WHITE;
+        let cursor_color = Color::WHITE;
+        let selection_color = Color::new(1.0, 1.0, 1.0, 0.2);
+        let selected_text_color = Color::rgb(0.627, 0.627, 1.0);
 
         let mut cache = SwashCache::new();
     }
