@@ -24,7 +24,9 @@ macro_rules! text {
 ///
 /// # Example
 /// ```
-/// rect!(60.0, 70.0, [1.0, 0.0, 0.0])  // width, height, RGB color
+/// use vexo::Color;
+/// rect!(60.0, 70.0, Color::RED)           // width, height, Color
+/// rect!(60.0, 70.0, [1.0, 0.0, 0.0])      // width, height, RGB array (also works)
 /// ```
 #[macro_export]
 macro_rules! rect {
@@ -54,8 +56,10 @@ macro_rules! text_edit {
 ///
 /// # Examples
 /// ```
+/// use vexo::Color;
 /// button!(text!("Click"), Message::Clicked)
-/// button!(text!("Click"), Message::Clicked, color: [0.1, 0.4, 0.1])
+/// button!(text!("Click"), Message::Clicked, color: Color::rgb(0.1, 0.4, 0.1))
+/// button!(text!("Click"), Message::Clicked, color: [0.1, 0.4, 0.1])  // RGB array also works
 /// ```
 #[macro_export]
 macro_rules! button {
