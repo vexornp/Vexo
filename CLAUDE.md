@@ -89,6 +89,10 @@ Implement `Widget<M>` in `vexo/src/lib.rs`. Required methods:
 - Methods `init_renderer()` and `render()` are callable from Swift
 - Global static `GLOBAL_FS` holds the framework state (unsafe; consider refactoring with proper Arc/Mutex for production)
 
+## Commit Guidelines
+
+- Do not include "Co-Authored-By: Claude" or similar attribution strings in commit messages
+
 ## Key File Locations
 
 - Widget trait definition: `vexo/src/lib.rs:720`
