@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rustup target:*)",
+      "Bash(which xcodebuild:*)",
+      "Bash(target/debug/uniffi-bindgen-swift --help 2>&1 || echo \"Checking uniffi-bindgen-swift options\")",
+      "Bash(cargo metadata:*)",
+      "Bash(./build_for_ios.sh 2>&1)",
+      "Bash(target/debug/uniffi-bindgen-swift --modulemap --xcframework --module-name shared_appFFI target/aarch64-apple-ios-sim/release/libshared_app.a out 2>&1)"
+    ]
+  }
+}

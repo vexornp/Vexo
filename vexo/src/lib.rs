@@ -690,6 +690,13 @@ impl<A: Application + 'static> WindowState<A> {
         if let Some(focus_request) = widget_response.focus_request {
             self.focused_widget_id = Some(focus_request);
             println!("Focus requested by widget: {:?}", focus_request);
+        } else if let WindowEvent::PointerButton {
+            state: winit::event::ElementState::Pressed,
+            ..
+        } = event
+        {
+            // Click outside any focusable widget - clear focus
+            self.focused_widget_id = None;
         }
 
         // Check if event if handled, notify if needed
