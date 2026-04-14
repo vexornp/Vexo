@@ -1,5 +1,6 @@
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
+use crate::Color;
 use crate::Widget;
 use taffy::prelude::{length, NodeId, Size};
 use taffy::Style;
@@ -7,16 +8,16 @@ use taffy::Style;
 pub struct Rectangle {
     pub width: f32,
     pub height: f32,
-    pub color: [f32; 3],
+    pub color: Color,
     pub key: Option<String>,
 }
 
 impl Rectangle {
-    pub fn new(width: f32, height: f32, color: [f32; 3]) -> Self {
+    pub fn new(width: f32, height: f32, color: impl Into<Color>) -> Self {
         Self {
             width,
             height,
-            color,
+            color: color.into(),
             key: None,
         }
     }
@@ -77,8 +78,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
         let pos = [physical_x, physical_y];
         let size = [physical_width, physical_height];
 
-        // Convert [f32; 3] to [f32; 4] (assuming alpha is 1.0)
-        let color = [self.color[0], self.color[1], self.color[2], 1.0];
+        let color = self.color.to_array();
 
         // Set default border color and width (can be customized later)
         let border_color = [1.0, 1.0, 1.0, 1.0]; // black border
