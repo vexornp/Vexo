@@ -22,6 +22,7 @@ pub use uniffi;
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
 
 mod editor;
+mod macros;
 mod quad_instance;
 mod renderer;
 mod resource;
