@@ -1,4 +1,5 @@
 use crate::quad_instance;
+use crate::Color;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -81,28 +82,31 @@ impl UiBatcher {
         &mut self,
         pos: [f32; 2],
         size: [f32; 2],
-        color: [f32; 4],
-        border_color: [f32; 4],
+        color: impl Into<Color>,
+        border_color: impl Into<Color>,
         border_width: f32,
     ) {
+        let color: Color = color.into();
+        let border_color: Color = border_color.into();
+
         self.quad_instances.push(quad_instance::QuadInstance {
             position: pos,
             size,
-            color,
-            border_color,
+            color: color.to_array(),
+            border_color: border_color.to_array(),
             border_width,
             _padding: [0.0; 3],
         });
     }
 
-    pub fn add_text(&mut self, content: String, x: f32, y: f32, size: f32, color: [f32; 3]) {
-        let color_rgba = [color[0], color[1], color[2], 1.0];
+    pub fn add_text(&mut self, content: String, x: f32, y: f32, size: f32, color: impl Into<Color>) {
+        let color: Color = color.into();
 
         self.text_requests.push(TextRequest {
             content,
             position: (x, y),
             size,
-            color: color_rgba,
+            color: color.to_array(),
         });
     }
 
@@ -110,7 +114,7 @@ impl UiBatcher {
         self.editor_requests.push(EditorRequest {
             id: id.into(),
             bounds,
-            color: [1.0, 1.0, 1.0, 1.0],
+            color: Color::WHITE.to_array(),
         });
     }
 }
