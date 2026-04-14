@@ -17,10 +17,12 @@ use winit::{
     application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
 };
 
+pub use color::Color;
 pub use uniffi;
 
-const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLUE;
+const CLEAR_COLOR: wgpu::Color = Color::BLUE.to_wgpu_color();
 
+mod color;
 mod editor;
 mod macros;
 mod quad_instance;
