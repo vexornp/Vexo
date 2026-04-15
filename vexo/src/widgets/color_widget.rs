@@ -5,14 +5,14 @@ use crate::Widget;
 use taffy::prelude::{length, NodeId, Size};
 use taffy::Style;
 
-pub struct Rectangle {
+pub struct ColorWidget {
     pub width: f32,
     pub height: f32,
     pub color: Color,
     pub key: Option<String>,
 }
 
-impl Rectangle {
+impl ColorWidget {
     pub fn new(width: f32, height: f32, color: impl Into<Color>) -> Self {
         Self {
             width,
@@ -29,7 +29,7 @@ impl Rectangle {
 }
 
 #[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Rectangle {
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
     fn key(&self) -> Option<&str> {
         self.key.as_deref()
     }

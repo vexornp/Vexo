@@ -20,18 +20,18 @@ macro_rules! text {
     };
 }
 
-/// Create a Rectangle widget wrapped in Box.
+/// Create a ColorWidget wrapped in Box.
 ///
 /// # Example
 /// ```
 /// use vexo::Color;
-/// rect!(60.0, 70.0, Color::RED)           // width, height, Color
-/// rect!(60.0, 70.0, [1.0, 0.0, 0.0])      // width, height, RGB array (also works)
+/// color_widget!(60.0, 70.0, Color::RED)           // width, height, Color
+/// color_widget!(60.0, 70.0, [1.0, 0.0, 0.0])      // width, height, RGB array (also works)
 /// ```
 #[macro_export]
-macro_rules! rect {
+macro_rules! color_widget {
     ($width:expr, $height:expr, $color:expr) => {
-        Box::new($crate::widgets::Rectangle::new($width, $height, $color))
+        Box::new($crate::widgets::ColorWidget::new($width, $height, $color))
     };
 }
 
@@ -77,7 +77,7 @@ macro_rules! button {
 /// ```
 /// column![
 ///     text!("Title"),
-///     rect!(60.0, 70.0, [1.0, 0.0, 0.0]),
+///     color_widget!(60.0, 70.0, [1.0, 0.0, 0.0]),
 /// ]
 ///
 /// column![

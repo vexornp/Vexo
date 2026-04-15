@@ -99,9 +99,15 @@ impl UiBatcher {
         });
     }
 
-    pub fn add_text(&mut self, content: String, x: f32, y: f32, size: f32, color: impl Into<Color>) {
+    pub fn add_text(
+        &mut self,
+        content: String,
+        x: f32,
+        y: f32,
+        size: f32,
+        color: impl Into<Color>,
+    ) {
         let color: Color = color.into();
-
         self.text_requests.push(TextRequest {
             content,
             position: (x, y),
