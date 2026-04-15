@@ -1,5 +1,3 @@
-use core::fmt;
-
 // ============================================================================
 // UNIFIED POINT SYSTEM
 // ============================================================================
@@ -151,6 +149,19 @@ impl Rect<Logical> {
     pub fn from_layout(location: taffy::Point<f32>, size: taffy::Size<f32>) -> Self {
         Rect::new(Point::from_taffy(location), Size::from_taffy(size))
     }
+
+    /// Create from position and size
+    pub fn from_pos_size(pos: Point<Logical>, size: Size<Logical>) -> Self {
+        Rect::new(pos, size)
+    }
+
+    /// Check if a logical point is inside this rectangle
+    pub fn contains(&self, point: &Point<Logical>) -> bool {
+        point.x >= self.origin.x
+            && point.x <= self.origin.x + self.size.width
+            && point.y >= self.origin.y
+            && point.y <= self.origin.y + self.size.height
+    }
 }
 
 impl Rect<Physical> {
@@ -178,31 +189,6 @@ impl<T> std::ops::AddAssign for Point<T> {
     }
 }
 
-pub struct TaffyQuad {
-    location: taffy::Point<f32>,
-    size: taffy::Size<f32>,
-}
-
-impl fmt::Display for TaffyQuad {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "(x: {}, y: {}, w: {}, h: {})",
-            self.location.x, self.location.y, self.size.width, self.size.height
-        )
-    }
-}
-
-impl TaffyQuad {
-    pub fn new(location: taffy::Point<f32>, size: taffy::Size<f32>) -> Self {
-        Self { location, size }
-    }
-
-    pub fn from(x: f32, y: f32, size: taffy::Size<f32>) -> Self {
-        TaffyQuad::new(taffy::Point { x: x, y: y }, size)
-    }
-}
-
 pub struct Scale(f64);
 impl Scale {
     pub fn new(factor: f64) -> Self {
@@ -212,20 +198,4 @@ impl Scale {
     pub fn factor(&self) -> f32 {
         self.0 as f32
     }
-}
-
-// Check if a physical position is inside a TaffyQuad, considering the scale factor
-pub fn is_location_inside_quad(
-    location: &Point<Physical>,
-    scale: &Scale,
-    quad: &TaffyQuad,
-) -> bool {
-    let logical_pos = location.to_logical(scale.factor());
-    let x = logical_pos.x;
-    let y = logical_pos.y;
-
-    x >= quad.location.x
-        && x <= quad.location.x + quad.size.width
-        && y >= quad.location.y
-        && y <= quad.location.y + quad.size.height
 }

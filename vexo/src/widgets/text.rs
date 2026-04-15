@@ -1,5 +1,4 @@
 use crate::renderer::UiBatcher;
-use crate::utils::is_location_inside_quad;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
@@ -228,8 +227,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        use crate::utils::TaffyQuad;
-
         // Determine our widget id from the node->widget mapping
         let my_id = ctx.get_widget_id(_node);
         let is_focused = focused_id == my_id;
@@ -242,11 +239,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             } = _event
             {
                 let layout = _taffy.layout(_node).unwrap();
-                let taffy_quad = TaffyQuad::new(layout.location, layout.size);
+                let rect = crate::utils::Rect::<crate::utils::Logical>::from_layout(layout.location, layout.size);
 
-                let is_mouse_over =
-                    is_location_inside_quad(&ctx.cursor_pos, &ctx.scale, &taffy_quad);
-                if is_mouse_over {
+                let logical_pos = ctx.cursor_pos.to_logical(ctx.scale.factor());
+                if rect.contains(&logical_pos) {
                     return WidgetResponse {
                         message: None,
                         focus_request: my_id,

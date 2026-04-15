@@ -1,10 +1,10 @@
 use crate::renderer::UiBatcher;
-use crate::utils::{is_location_inside_quad, Physical, Point, TaffyQuad};
+use crate::utils::{Logical, Physical, Point, Rect, Size};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
-use taffy::prelude::{auto, length, AlignItems, Display, JustifyContent, NodeId, Rect, Size};
-use taffy::Style;
+use taffy::prelude::{auto, length, AlignItems, Display, JustifyContent, NodeId};
+use taffy::{Rect as TaffyRect, Size as TaffySize, Style};
 use winit::event::WindowEvent;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
@@ -54,13 +54,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                     display: Display::Flex,
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    padding: Rect {
+                    padding: TaffyRect {
                         left: length(self.padding),
                         right: length(self.padding),
                         top: length(self.padding),
                         bottom: length(self.padding),
                     },
-                    size: Size {
+                    size: TaffySize {
                         width: auto(),
                         height: auto(),
                     },
@@ -83,8 +83,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::{Point, Size};
-
         let layout = taffy.layout(node).unwrap();
 
         let pos = Point::<crate::utils::Logical>::new(
@@ -121,13 +119,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        use crate::utils::{Point, TaffyQuad};
-
         let layout = taffy.layout(node).unwrap();
         let x = offset.x + layout.location.x;
         let y = offset.y + layout.location.y;
 
-        let taffy_quad = TaffyQuad::from(x, y, layout.size);
+        let rect = Rect::<Logical>::from_xywh(x, y, layout.size.width, layout.size.height);
 
         // Handle pointer events
         if let WindowEvent::PointerButton {
@@ -136,9 +132,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             ..
         } = event
         {
-            let location = Point::<Physical>::new(position.x as f32, position.y as f32);
-            let is_mouse_over = is_location_inside_quad(&location, &ctx.scale, &taffy_quad);
-            if is_mouse_over {
+            let physical_pos = Point::<Physical>::new(position.x as f32, position.y as f32);
+            let logical_pos = physical_pos.to_logical(ctx.scale.factor());
+            if rect.contains(&logical_pos) {
                 return WidgetResponse {
                     message: Some(self.on_press.clone()),
                     focus_request: None,
