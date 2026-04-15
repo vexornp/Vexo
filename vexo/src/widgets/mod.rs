@@ -216,11 +216,17 @@ type EditorRef = std::rc::Rc<std::cell::RefCell<editor::Editor>>;
 mod button;
 mod color_widget;
 mod containers;
+mod modifiers;
 mod text;
 
 pub use button::Button;
 pub use color_widget::ColorWidget;
 pub use containers::Column;
 pub use containers::Row;
+pub use modifiers::Background;
+pub use modifiers::Border;
+pub use modifiers::CornerRadius;
+pub use modifiers::Padding;
+pub use modifiers::WidgetExt;
 pub use text::Text;
 pub use text::TextEdit;
