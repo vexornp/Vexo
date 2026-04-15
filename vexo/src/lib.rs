@@ -456,14 +456,11 @@ impl<A: Application + 'static> WindowState<A> {
         let text_areas: Vec<glyphon::TextArea> = processed_texts
             .iter_mut()
             .map(|(buffer, req)| {
-                // Taffy (req.position) gives Logical coordinates.
-                // Glyphon expects Physical coordinates.
-                // So we multiply by scale_factor.
-                let left_pos = req.position.0 * scale_factor;
-                let top_pos = req.position.1 * scale_factor;
+                // Convert logical position to physical for glyphon
+                let physical_pos = req.position.to_physical(scale_factor);
 
-                let bounds_left: i32 = left_pos.floor() as i32;
-                let bounds_top = top_pos.floor() as i32;
+                let bounds_left: i32 = physical_pos.x.floor() as i32;
+                let bounds_top = physical_pos.y.floor() as i32;
                 let bounds_right = self.config.width as i32;
                 let bounds_bottom: i32 = self.config.height as i32;
 
@@ -476,8 +473,8 @@ impl<A: Application + 'static> WindowState<A> {
 
                 glyphon::TextArea {
                     buffer: buffer,
-                    left: left_pos,
-                    top: top_pos,
+                    left: physical_pos.x,
+                    top: physical_pos.y,
                     scale: scale_factor,
                     bounds: TextBounds {
                         left: bounds_left,
@@ -504,20 +501,13 @@ impl<A: Application + 'static> WindowState<A> {
         let mut editor_meta: Vec<(f32, f32, i32, i32, i32, i32, cosmic_text::Color)> = Vec::new();
 
         for req in self.batcher.editor_requests.iter_mut() {
-            // req.bounds is (x, y, width, height) in logical points (taffy layout)
-            // Convert to physical pixels and compute absolute bounds (left..right, top..bottom)
-            let bx = req.bounds.x;
-            let by = req.bounds.y;
-            let bw = req.bounds.width;
-            let bh = req.bounds.height;
+            // Convert logical bounds to physical
+            let physical_rect = req.bounds.to_physical(scale_factor);
 
-            let left_pos = bx * scale_factor;
-            let top_pos = by * scale_factor;
-
-            let bounds_left: i32 = left_pos.floor() as i32;
-            let bounds_top: i32 = top_pos.floor() as i32;
-            let bounds_right: i32 = ((bx + bw) * scale_factor).ceil() as i32;
-            let bounds_bottom: i32 = ((by + bh) * scale_factor).ceil() as i32;
+            let bounds_left: i32 = physical_rect.origin.x.floor() as i32;
+            let bounds_top: i32 = physical_rect.origin.y.floor() as i32;
+            let bounds_right: i32 = (physical_rect.origin.x + physical_rect.size.width).ceil() as i32;
+            let bounds_bottom: i32 = (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
 
             let color_rgba_u8 = cosmic_text::Color::rgba(
                 (req.color[0] * 255.0) as u8,
@@ -533,8 +523,8 @@ impl<A: Application + 'static> WindowState<A> {
             let buf = editor.buffer().clone();
             editor_buffers.push(buf);
             editor_meta.push((
-                left_pos,
-                top_pos,
+                physical_rect.origin.x,
+                physical_rect.origin.y,
                 bounds_left,
                 bounds_top,
                 bounds_right,

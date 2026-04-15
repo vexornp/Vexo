@@ -87,11 +87,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
         let layout = taffy.layout(node).unwrap();
 
-        let pos = Point::new(
+        let pos = Point::<crate::utils::Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
-        let size = Size::new(layout.size.width, layout.size.height);
+        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
 
         let color = self.background_color;
         let border_color = crate::Color::BLACK;

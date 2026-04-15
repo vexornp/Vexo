@@ -69,8 +69,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
 
         // Pass LOGICAL coordinates - shader handles conversion to physical
         // BUG FIX: Previously this was converting to physical, causing double-scaling
-        let pos = Point::new(x, y);
-        let size = Size::new(layout.size.width, layout.size.height);
+        let pos = Point::<crate::utils::Logical>::new(x, y);
+        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
 
         let border_color = crate::Color::WHITE;
         let border_width = 1.0;

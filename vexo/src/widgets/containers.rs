@@ -86,13 +86,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         use crate::utils::{Point, Size};
 
         let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::new(
+        let my_offset = Point::<crate::utils::Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
 
         let pos = my_offset;
-        let size = Size::new(layout.size.width, layout.size.height);
+        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
         let color = [0.8, 0.8, 0.8, 1.0];
         let border_color = [0.0, 0.0, 0.0, 1.0];
         let border_width = 2.0;
