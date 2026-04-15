@@ -6,7 +6,8 @@ pub struct QuadInstance {
     pub color: [f32; 4],
     pub border_color: [f32; 4],
     pub border_width: f32,
-    pub _padding: [f32; 3], // Maintain 16-byte alignment for safety
+    pub corner_radius: f32,
+    pub _padding: [f32; 2], // Maintain 16-byte alignment for safety
 }
 
 impl QuadInstance {
@@ -17,6 +18,7 @@ impl QuadInstance {
         color: crate::Color,
         border_color: crate::Color,
         border_width: f32,
+        corner_radius: f32,
     ) -> Self {
         Self {
             position: pos.to_array(),
@@ -24,7 +26,8 @@ impl QuadInstance {
             color: color.to_array(),
             border_color: border_color.to_array(),
             border_width,
-            _padding: [0.0; 3],
+            corner_radius,
+            _padding: [0.0; 2],
         }
     }
 
@@ -59,6 +62,11 @@ impl QuadInstance {
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32,
                 }, // border_width
+                wgpu::VertexAttribute {
+                    offset: 52,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32,
+                }, // corner_radius
             ],
         }
     }

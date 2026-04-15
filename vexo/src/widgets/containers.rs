@@ -97,7 +97,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         let border_color = [0.0, 0.0, 0.0, 1.0];
         let border_width = 2.0;
 
-        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width);
+        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width, 0.0);
 
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {

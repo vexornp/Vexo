@@ -224,7 +224,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         let size = Size::<Logical>::new(layout.size.width, layout.size.height);
 
         // Draw background rect first (behind child)
-        renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0);
+        renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
         // Draw child on top
         self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
@@ -301,7 +301,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
 
         // Draw border on top (transparent fill, colored border)
-        renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width);
+        renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
     }
 
     fn on_event(
@@ -322,16 +322,67 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
     }
 }
 
+// ============================================================================
+// CornerRadius Modifier
+// ============================================================================
+
+/// Applies rounded corners to a child widget's background/border.
 pub struct CornerRadius<W, M> {
-    _child: PhantomData<W>,
+    child: W,
+    radius: f32,
     _marker: PhantomData<M>,
 }
 
-impl<W, M> CornerRadius<W, M> {
-    pub fn new(_child: W, _radius: f32) -> Self {
+impl<W, M: Clone + std::fmt::Debug + Send> CornerRadius<W, M> {
+    pub fn new(child: W, radius: f32) -> Self {
         Self {
-            _child: PhantomData,
+            child,
+            radius,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
+    fn key(&self) -> Option<&str> {
+        self.child.key()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        self.child.layout(taffy, ctx)
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<Logical>,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: Point<Logical>,
+        event: &WindowEvent,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
     }
 }

@@ -95,7 +95,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let border_color = crate::Color::BLACK;
         let border_width = 1.0;
 
-        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width);
+        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width, 0.0);
 
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {

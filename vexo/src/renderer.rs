@@ -80,6 +80,7 @@ impl UiBatcher {
         color: impl Into<Color>,
         border_color: impl Into<Color>,
         border_width: f32,
+        corner_radius: f32,
     ) {
         let color: Color = color.into();
         let border_color: Color = border_color.into();
@@ -90,7 +91,8 @@ impl UiBatcher {
             color: color.to_array(),
             border_color: border_color.to_array(),
             border_width,
-            _padding: [0.0; 3],
+            corner_radius,
+            _padding: [0.0; 2],
         });
     }
 

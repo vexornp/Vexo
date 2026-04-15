@@ -75,7 +75,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         let border_color = crate::Color::WHITE;
         let border_width = 1.0;
 
-        renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width);
+        renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width, 0.0);
     }
 
     fn on_event(

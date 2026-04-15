@@ -197,7 +197,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
         // Debug border
         let debug_color = crate::Color::RED;
-        renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0);
+        renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0, 0.0);
 
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut editor_ref = editor_arc.borrow_mut();
