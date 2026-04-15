@@ -10,6 +10,24 @@ pub struct QuadInstance {
 }
 
 impl QuadInstance {
+    /// Create a QuadInstance from logical coordinates
+    pub fn from_logical(
+        pos: crate::utils::Point<crate::utils::Logical>,
+        size: crate::utils::Size<crate::utils::Logical>,
+        color: crate::Color,
+        border_color: crate::Color,
+        border_width: f32,
+    ) -> Self {
+        Self {
+            position: pos.to_array(),
+            size: size.to_array(),
+            color: color.to_array(),
+            border_color: border_color.to_array(),
+            border_width,
+            _padding: [0.0; 3],
+        }
+    }
+
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {

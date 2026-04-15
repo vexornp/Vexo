@@ -22,17 +22,12 @@ impl Vertex {
 
 pub struct TextRequest {
     pub content: String,
-    pub position: (f32, f32),
+    pub position: crate::utils::Point<crate::utils::Logical>,
     pub size: f32,
     pub color: [f32; 4],
 }
 
-pub struct Bounds {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
+pub type Bounds = crate::utils::Rect<crate::utils::Logical>;
 
 pub struct EditorRequest {
     pub id: String,
@@ -102,15 +97,14 @@ impl UiBatcher {
     pub fn add_text(
         &mut self,
         content: String,
-        x: f32,
-        y: f32,
+        position: crate::utils::Point<crate::utils::Logical>,
         size: f32,
         color: impl Into<Color>,
     ) {
         let color: Color = color.into();
         self.text_requests.push(TextRequest {
             content,
-            position: (x, y),
+            position,
             size,
             color: color.to_array(),
         });
