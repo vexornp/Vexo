@@ -1,5 +1,5 @@
-use crate::renderer::{Bounds, UiBatcher};
-use crate::utils::{is_location_inside_quad, TaffyQuad};
+use crate::renderer::UiBatcher;
+use crate::utils::is_location_inside_quad;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
@@ -91,21 +91,26 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
+        use crate::utils::Point;
+
         let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        renderer.add_text(self.content.clone(), x, y, self.size, [self.color.r, self.color.g, self.color.b]);
+        let pos = Point::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+
+        renderer.add_text(self.content.clone(), pos, self.size, self.color);
     }
 
     fn on_event(
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         event: &winit::event::WindowEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
@@ -178,57 +183,53 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         _focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
+        use crate::utils::{Logical, Point, Rect, Size};
+
         let layout = taffy.layout(node).unwrap();
-        let scale = ctx.scale.factor();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        let width = layout.size.width;
-        let height = layout.size.height;
+        let pos: Point<Logical> = Point::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        let size: Size<Logical> = Size::new(layout.size.width, layout.size.height);
 
-        // For-Debug
-        let pos = [x, y];
-        let size = [width, height];
-
-        let debug_color = Color::RED.to_array();
-        renderer.add_rect(pos, size, Color::BLACK.to_array(), debug_color, 1.0);
+        // Debug border
+        let debug_color = crate::Color::RED;
+        renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0);
 
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
-        let mut eidtor_ref = editor_arc.borrow_mut();
+        let mut editor_ref = editor_arc.borrow_mut();
 
-        eidtor_ref.set_size(&mut ctx.font_system, width, height);
-        eidtor_ref.shape_as_needed(&mut ctx.font_system, true);
+        editor_ref.set_size(&mut ctx.font_system, size.width, size.height);
+        editor_ref.shape_as_needed(&mut ctx.font_system, true);
 
         renderer.add_editor_request(
             &self.editor_id,
-            Bounds {
-                x,
-                y,
-                width: width,
-                height: height,
-            },
+            Rect::new(pos, size),
         );
 
-        let text_color = Color::WHITE;
-        let cursor_color = Color::WHITE;
-        let selection_color = Color::new(1.0, 1.0, 1.0, 0.2);
-        let selected_text_color = Color::rgb(0.627, 0.627, 1.0);
+        let _text_color = crate::Color::WHITE;
+        let _cursor_color = crate::Color::WHITE;
+        let _selection_color = crate::Color::new(1.0, 1.0, 1.0, 0.2);
+        let _selected_text_color = crate::Color::rgb(0.627, 0.627, 1.0);
 
-        let mut cache = SwashCache::new();
+        let mut _cache = SwashCache::new();
     }
 
     fn on_event(
         &mut self,
         _taffy: &taffy::TaffyTree,
         _node: NodeId,
-        _offset: (f32, f32),
+        _offset: crate::utils::Point<crate::utils::Logical>,
         _event: &winit::event::WindowEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
+        use crate::utils::TaffyQuad;
+
         // Determine our widget id from the node->widget mapping
         let my_id = ctx.get_widget_id(_node);
         let is_focused = focused_id == my_id;
@@ -241,17 +242,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             } = _event
             {
                 let layout = _taffy.layout(_node).unwrap();
-                let x = _offset.0 + layout.location.x;
-                let y = _offset.1 + layout.location.y;
-                let width = layout.size.width;
-                let height = layout.size.height;
-
                 let taffy_quad = TaffyQuad::new(layout.location, layout.size);
 
                 let is_mouse_over =
                     is_location_inside_quad(&ctx.cursor_pos, &ctx.scale, &taffy_quad);
                 if is_mouse_over {
-                    // Request focus
                     return WidgetResponse {
                         message: None,
                         focus_request: my_id,
@@ -279,8 +274,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 // if *button == MouseButton::Left {
                 //     if state.is_pressed() {
                 //         let layout = _taffy.layout(_node).unwrap();
-                //         let x = _offset.0 + layout.location.x;
-                //         let y = _offset.1 + layout.location.y;
+                //         let x = _offset.x + layout.location.x;
+                //         let y = _offset.y + layout.location.y;
                 //         let width = layout.size.width;
                 //         let height = layout.size.height;
 
