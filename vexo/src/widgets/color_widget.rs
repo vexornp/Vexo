@@ -55,43 +55,34 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
+        use crate::utils::{Point, Size};
+
         let layout = taffy.layout(node).unwrap();
-        let scale = ctx.scale.factor();
 
         // Calculate absolute position by adding offset to layout location
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
+        let x = offset.x + layout.location.x;
+        let y = offset.y + layout.location.y;
 
-        // Convert logical coordinates to physical coordinates
-        let physical_x = x * scale;
-        let physical_y = y * scale;
+        // Pass LOGICAL coordinates - shader handles conversion to physical
+        // BUG FIX: Previously this was converting to physical, causing double-scaling
+        let pos = Point::new(x, y);
+        let size = Size::new(layout.size.width, layout.size.height);
 
-        // Convert logical size to physical size
-        let physical_width = layout.size.width * scale;
-        let physical_height = layout.size.height * scale;
+        let border_color = crate::Color::WHITE;
+        let border_width = 1.0;
 
-        // Prepare instance data for the rectangle
-        let pos = [physical_x, physical_y];
-        let size = [physical_width, physical_height];
-
-        let color = self.color.to_array();
-
-        // Set default border color and width (can be customized later)
-        let border_color = [1.0, 1.0, 1.0, 1.0]; // black border
-        let border_width = 1.0; // no border by default
-
-        renderer.add_rect(pos, size, color, border_color, border_width);
+        renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width);
     }
 
     fn on_event(
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         event: &winit::event::WindowEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
