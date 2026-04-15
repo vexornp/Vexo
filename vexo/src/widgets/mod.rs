@@ -47,6 +47,50 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     ) -> WidgetResponse<M>;
 }
 
+// ============================================================================
+// Box<dyn Widget<M>> Support
+// ============================================================================
+
+/// Enables trait objects: Box<dyn Widget<M>> implements Widget<M>.
+/// This allows widgets to be stored in collections and returned from functions.
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
+    fn id(&self) -> WidgetId {
+        (**self).id()
+    }
+
+    fn key(&self) -> Option<&str> {
+        (**self).key()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        (**self).layout(taffy, ctx)
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: taffy::NodeId,
+        renderer: &mut UiBatcher,
+        offset: crate::utils::Point<crate::utils::Logical>,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        (**self).draw(taffy, node, renderer, offset, focused_id, ctx)
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: taffy::NodeId,
+        offset: crate::utils::Point<crate::utils::Logical>,
+        event: &winit::event::WindowEvent,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        (**self).on_event(taffy, node, offset, event, focused_id, ctx)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WidgetId(pub u64);
 
