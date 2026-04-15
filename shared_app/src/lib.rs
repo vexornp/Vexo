@@ -1,4 +1,7 @@
-use vexo::{column, color_widget, row, text, text_edit, button, widgets::Widget, AlignItems, Application, Color, WidgetExt};
+use vexo::{
+    button, column, color_widget, row, text, text_edit, widgets::Widget, AlignItems, Application,
+    Color, WidgetExt,
+};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -34,21 +37,32 @@ impl Application for State {
 
         column![
             align: AlignItems::Center,
-            color_widget!(400.0, 150.0, Color::rgb(0.0, 0.1, 0.0)),
-            text_edit!("editor_id_input", "Type here...", size: (100.0, 50.0)),
+            color_widget!(Color::rgb(0.0, 0.1, 0.0))
+                .frame(400.0, 150.0)
+                .boxed(),
+            text_edit!("editor_id_input", "Type here...")
+                .frame(100.0, 50.0)
+                .boxed(),
             // Example with modifiers
-            Box::new(
-                text!("Modified Text", size: 24.0)
-                    .padding(10.0)
-                    .background(Color::rgb(0.2, 0.2, 0.4))
-                    .border(Color::WHITE, 2.0)
-            ),
-            button!(text!(text_content, size: 24.0), Message::Clicked, color: Color::rgb(0.1, 0.4, 0.1)),
-            color_widget!(150.0, 50.0, Color::BLUE),
-            color_widget!(110.0, 30.0, Color::CYAN),
+            text!("Modified Text", font_size: 24.0)
+                .padding(10.0)
+                .background(Color::RED)
+                .border(Color::GREEN, 2.0)
+                .boxed(),
+            button!(text!(text_content, font_size: 24.0), Message::Clicked)
+                .padding(10.0)
+                .background(Color::rgb(0.1, 0.4, 0.1))
+                .border(Color::BLACK, 1.0)
+                .boxed(),
+            color_widget!(Color::BLUE)
+                .frame(150.0, 50.0)
+                .boxed(),
+            color_widget!(Color::CYAN)
+                .frame(110.0, 30.0)
+                .boxed(),
             row![
-                color_widget!(60.0, 70.0, Color::RED),
-                color_widget!(90.0, 40.0, Color::YELLOW),
+                color_widget!(Color::RED).frame(60.0, 70.0).boxed(),
+                color_widget!(Color::YELLOW).frame(90.0, 40.0).boxed(),
             ],
         ]
     }

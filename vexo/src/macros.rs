@@ -8,15 +8,15 @@
 /// # Examples
 /// ```
 /// text!("Hello")                    // Basic text
-/// text!("Hello", size: 24.0)        // With font size
+/// text!("Hello", font_size: 24.0)   // With font size
 /// ```
 #[macro_export]
 macro_rules! text {
     ($content:expr) => {
         Box::new($crate::widgets::Text::new($content))
     };
-    ($content:expr, size: $size:expr) => {
-        Box::new($crate::widgets::Text::new($content).size($size))
+    ($content:expr, font_size: $size:expr) => {
+        Box::new($crate::widgets::Text::new($content).font_size($size))
     };
 }
 
@@ -25,13 +25,13 @@ macro_rules! text {
 /// # Example
 /// ```
 /// use vexo::Color;
-/// color_widget!(60.0, 70.0, Color::RED)           // width, height, Color
-/// color_widget!(60.0, 70.0, [1.0, 0.0, 0.0])      // width, height, RGB array (also works)
+/// color_widget!(Color::RED)           // Just color, use .frame() for size
+/// color_widget!([1.0, 0.0, 0.0])      // RGB array (also works)
 /// ```
 #[macro_export]
 macro_rules! color_widget {
-    ($width:expr, $height:expr, $color:expr) => {
-        Box::new($crate::widgets::ColorWidget::new($width, $height, $color))
+    ($color:expr) => {
+        Box::new($crate::widgets::ColorWidget::new($color))
     };
 }
 
@@ -40,15 +40,11 @@ macro_rules! color_widget {
 /// # Examples
 /// ```
 /// text_edit!("id", "placeholder")
-/// text_edit!("id", "placeholder", size: (100.0, 50.0))
 /// ```
 #[macro_export]
 macro_rules! text_edit {
     ($id:expr, $placeholder:expr) => {
         Box::new($crate::widgets::TextEdit::new($id, $placeholder))
-    };
-    ($id:expr, $placeholder:expr, size: $size:expr) => {
-        Box::new($crate::widgets::TextEdit::new($id, $placeholder).size($size))
     };
 }
 
@@ -58,16 +54,11 @@ macro_rules! text_edit {
 /// ```
 /// use vexo::Color;
 /// button!(text!("Click"), Message::Clicked)
-/// button!(text!("Click"), Message::Clicked, color: Color::rgb(0.1, 0.4, 0.1))
-/// button!(text!("Click"), Message::Clicked, color: [0.1, 0.4, 0.1])  // RGB array also works
 /// ```
 #[macro_export]
 macro_rules! button {
     ($content:expr, $msg:expr) => {
         Box::new($crate::widgets::Button::new($content, $msg))
-    };
-    ($content:expr, $msg:expr, color: $color:expr) => {
-        Box::new($crate::widgets::Button::new($content, $msg).color($color))
     };
 }
 

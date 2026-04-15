@@ -33,7 +33,7 @@ pub mod widgets;
 
 use renderer::{TextRequest, UiBatcher, Vertex};
 use widgets::{Column, Widget, WidgetContext, WidgetId};
-pub use widgets::WidgetExt;
+pub use widgets::{FrameSize, WidgetExt};
 pub use winit::dpi::PhysicalPosition;
 
 use crate::utils::{Physical, Point, Scale};

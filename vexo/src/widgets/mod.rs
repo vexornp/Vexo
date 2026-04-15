@@ -270,6 +270,8 @@ pub use containers::Row;
 pub use modifiers::Background;
 pub use modifiers::Border;
 pub use modifiers::CornerRadius;
+pub use modifiers::Frame;
+pub use modifiers::FrameSize;
 pub use modifiers::Padding;
 pub use modifiers::WidgetExt;
 pub use text::Text;

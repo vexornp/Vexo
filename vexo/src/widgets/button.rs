@@ -1,17 +1,15 @@
 use crate::renderer::UiBatcher;
-use crate::utils::{Logical, Physical, Point, Rect, Size};
+use crate::utils::{Logical, Physical, Point, Rect};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
-use crate::Color;
 use crate::Widget;
-use taffy::prelude::{auto, length, AlignItems, Display, JustifyContent, NodeId};
-use taffy::{Rect as TaffyRect, Size as TaffySize, Style};
+use taffy::prelude::{auto, AlignItems, Display, JustifyContent, NodeId};
+use taffy::Size as TaffySize;
+use taffy::Style;
 use winit::event::WindowEvent;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
-    pub background_color: Color,
-    pub padding: f32,
     pub key: Option<String>,
 }
 
@@ -20,15 +18,8 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
         Self {
             content,
             on_press,
-            background_color: Color::rgb(0.2, 0.2, 0.2),
-            padding: 10.0,
             key: None,
         }
-    }
-
-    pub fn color(mut self, color: impl Into<Color>) -> Self {
-        self.background_color = color.into();
-        self
     }
 
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
@@ -54,12 +45,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                     display: Display::Flex,
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    padding: TaffyRect {
-                        left: length(self.padding),
-                        right: length(self.padding),
-                        top: length(self.padding),
-                        bottom: length(self.padding),
-                    },
                     size: TaffySize {
                         width: auto(),
                         height: auto(),
@@ -89,14 +74,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
-        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
 
-        let color = self.background_color;
-        let border_color = crate::Color::BLACK;
-        let border_width = 1.0;
-
-        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width, 0.0);
-
+        // Button is now a transparent container - use .background() modifier for styling
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {
             self.content.draw(

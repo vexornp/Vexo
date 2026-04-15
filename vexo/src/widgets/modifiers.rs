@@ -7,6 +7,44 @@ use taffy::prelude::{auto, length, NodeId};
 use taffy::{Rect as TaffyRect, Size as TaffySize, Style};
 use winit::event::WindowEvent;
 
+/// Frame size constraint - can be fixed, flexible, or auto.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameSize {
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub min_width: Option<f32>,
+    pub min_height: Option<f32>,
+    pub max_width: Option<f32>,
+    pub max_height: Option<f32>,
+}
+
+impl FrameSize {
+    /// Fixed width and height.
+    pub fn fixed(width: f32, height: f32) -> Self {
+        Self {
+            width: Some(width),
+            height: Some(height),
+            ..Default::default()
+        }
+    }
+
+    /// Fixed width only, height auto.
+    pub fn width(width: f32) -> Self {
+        Self {
+            width: Some(width),
+            ..Default::default()
+        }
+    }
+
+    /// Fixed height only, width auto.
+    pub fn height(height: f32) -> Self {
+        Self {
+            height: Some(height),
+            ..Default::default()
+        }
+    }
+}
+
 /// Extension trait providing SwiftUI-style modifier chaining.
 ///
 /// All widgets automatically implement this trait via blanket impl.
@@ -44,6 +82,54 @@ pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     /// Apply rounded corners to the widget.
     fn corner_radius(self, radius: f32) -> CornerRadius<Self, M> {
         CornerRadius::new(self, radius)
+    }
+
+    /// Apply fixed size constraints to the widget.
+    ///
+    /// # Examples
+    /// ```
+    /// // Fixed width and height
+    /// text!("Hello").frame(100.0, 50.0)
+    ///
+    /// // Fixed width only
+    /// text!("Hello").frame_width(200.0)
+    ///
+    /// // Fixed height only
+    /// text!("Hello").frame_height(30.0)
+    /// ```
+    fn frame(self, width: f32, height: f32) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::fixed(width, height))
+    }
+
+    /// Apply fixed width, height is auto-sized.
+    fn frame_width(self, width: f32) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::width(width))
+    }
+
+    /// Apply fixed height, width is auto-sized.
+    fn frame_height(self, height: f32) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::height(height))
+    }
+
+    /// Apply frame with full constraints.
+    fn frame_with(self, constraints: FrameSize) -> Frame<Self, M> {
+        Frame::new(self, constraints)
+    }
+
+    /// Box this widget for use in containers.
+    ///
+    /// Allows modifiers to be chained without manual `Box::new()` wrapping:
+    /// ```
+    /// text!("Hello")
+    ///     .padding(10.0)
+    ///     .background(Color::RED)
+    ///     .boxed()
+    /// ```
+    fn boxed(self) -> Box<dyn Widget<M>>
+    where
+        Self: 'static,
+    {
+        Box::new(self)
     }
 }
 
@@ -226,8 +312,8 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         // Draw background rect first (behind child)
         renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
-        // Draw child on top
-        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+        // Draw child on top - pass original offset since child will add its own layout.location
+        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
     }
 
     fn on_event(
@@ -239,12 +325,8 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        let layout = taffy.layout(node).unwrap();
-        let pos = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
+        // Pass original offset since child will add its own layout.location
+        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
     }
 }
 
@@ -297,8 +379,8 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         );
         let size = Size::<Logical>::new(layout.size.width, layout.size.height);
 
-        // Draw child first
-        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+        // Draw child first - pass original offset since child will add its own layout.location
+        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
 
         // Draw border on top (transparent fill, colored border)
         renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
@@ -313,12 +395,8 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        let layout = taffy.layout(node).unwrap();
-        let pos = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
+        // Pass original offset since child will add its own layout.location
+        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
     }
 }
 
@@ -361,12 +439,109 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
+        // CornerRadius just delegates to child - radius is for future clipping implementation
+        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: Point<Logical>,
+        event: &WindowEvent,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        // Pass original offset since child will add its own layout.location
+        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
+    }
+}
+
+// ============================================================================
+// Frame Modifier
+// ============================================================================
+
+/// Applies size constraints to a child widget.
+///
+/// Unlike SwiftUI's frame which can also handle alignment within a larger frame,
+/// this modifier focuses on size constraints via Taffy's layout system.
+pub struct Frame<W, M> {
+    child: W,
+    constraints: FrameSize,
+    _marker: PhantomData<M>,
+}
+
+impl<W, M: Clone + std::fmt::Debug + Send> Frame<W, M> {
+    pub fn new(child: W, constraints: FrameSize) -> Self {
+        Self {
+            child,
+            constraints,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> {
+    fn key(&self) -> Option<&str> {
+        self.child.key()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        // Layout child first
+        ctx.push_index(1);
+        let child_node = self.child.layout(taffy, ctx);
+        ctx.pop();
+
+        // Create wrapper node with size constraints
+        // Use flex with stretch to make child fill the frame
+        let node = taffy
+            .new_with_children(
+                Style {
+                    display: taffy::prelude::Display::Flex,
+                    align_items: Some(taffy::prelude::AlignItems::Stretch),
+                    justify_content: Some(taffy::prelude::JustifyContent::Center),
+                    size: TaffySize {
+                        width: self.constraints.width.map(length).unwrap_or(auto()),
+                        height: self.constraints.height.map(length).unwrap_or(auto()),
+                    },
+                    min_size: TaffySize {
+                        width: self.constraints.min_width.map(length).unwrap_or(auto()),
+                        height: self.constraints.min_height.map(length).unwrap_or(auto()),
+                    },
+                    max_size: TaffySize {
+                        width: self.constraints.max_width.map(length).unwrap_or(auto()),
+                        height: self.constraints.max_height.map(length).unwrap_or(auto()),
+                    },
+                    ..Default::default()
+                },
+                &[child_node],
+            )
+            .unwrap();
+
+        ctx.record_node_widget(node);
+        node
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<Logical>,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
         let layout = taffy.layout(node).unwrap();
         let pos = Point::<Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
-        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+
+        // Draw child at offset (frame size is handled by Taffy layout)
+        let child_ids = taffy.children(node).unwrap();
+        if let Some(child_node) = child_ids.get(0) {
+            self.child.draw(taffy, *child_node, renderer, pos, focused_id, ctx);
+        }
     }
 
     fn on_event(
@@ -383,6 +558,12 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
-        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
+
+        let child_ids = taffy.children(node).unwrap();
+        if let Some(child_node) = child_ids.get(0) {
+            return self.child.on_event(taffy, *child_node, pos, event, focused_id, ctx);
+        }
+
+        WidgetResponse::default()
     }
 }

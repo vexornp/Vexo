@@ -2,21 +2,17 @@ use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
-use taffy::prelude::{length, NodeId, Size};
+use taffy::prelude::NodeId;
 use taffy::Style;
 
 pub struct ColorWidget {
-    pub width: f32,
-    pub height: f32,
     pub color: Color,
     pub key: Option<String>,
 }
 
 impl ColorWidget {
-    pub fn new(width: f32, height: f32, color: impl Into<Color>) -> Self {
+    pub fn new(color: impl Into<Color>) -> Self {
         Self {
-            width,
-            height,
             color: color.into(),
             key: None,
         }
@@ -35,17 +31,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        // ColorWidget has no intrinsic size - use flex_grow to fill available space
         let node = taffy
             .new_leaf(Style {
-                size: Size {
-                    width: length(self.width),
-                    height: length(self.height),
-                },
+                flex_grow: 1.0,
                 ..Default::default()
             })
             .unwrap();
-
-        // record the mapping node -> computed WidgetId for this frame
         ctx.record_node_widget(node);
         node
     }
@@ -63,12 +55,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
 
         let layout = taffy.layout(node).unwrap();
 
-        // Calculate absolute position by adding offset to layout location
         let x = offset.x + layout.location.x;
         let y = offset.y + layout.location.y;
 
-        // Pass LOGICAL coordinates - shader handles conversion to physical
-        // BUG FIX: Previously this was converting to physical, causing double-scaling
         let pos = Point::<crate::utils::Logical>::new(x, y);
         let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
 

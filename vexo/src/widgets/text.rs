@@ -3,7 +3,7 @@ use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
-use taffy::prelude::{length, Dimension, NodeId, Size, TaffyAuto};
+use taffy::prelude::{length, NodeId};
 use taffy::Style;
 use winit::{
     event::{ElementState, KeyEvent, WindowEvent},
@@ -12,9 +12,8 @@ use winit::{
 
 pub struct Text {
     pub content: String,
-    pub size: f32,
+    pub font_size: f32,
     pub color: Color,
-    pub style: taffy::Style,
     pub key: Option<String>,
 }
 
@@ -22,30 +21,15 @@ impl Text {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             content: content.into(),
-            size: 24.0,
+            font_size: 24.0,
             color: Color::BLACK,
-            style: Style::default(),
             key: None,
         }
     }
 
-    pub fn size(mut self, size: f32) -> Self {
-        self.size = size;
-        self
-    }
-
-    pub fn flex_grow(mut self, value: f32) -> Self {
-        self.style.flex_grow = value;
-        self
-    }
-
-    pub fn width(mut self, dim: taffy::Dimension) -> Self {
-        self.style.size.width = dim;
-        self
-    }
-
-    pub fn height(mut self, dim: Dimension) -> Self {
-        self.style.size.height = dim;
+    /// Set the font size.
+    pub fn font_size(mut self, size: f32) -> Self {
+        self.font_size = size;
         self
     }
 
@@ -62,25 +46,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // Glyphon calculation: This is where we calculate the precise bounds.
-        // NOTE: In a final structure, FontSystem should be passed here,
+        // Calculate intrinsic size based on content and font size
+        let width_guess = self.content.len() as f32 * (self.font_size * 0.5);
+        let height_guess = self.font_size * 1.2;
 
-        let mut style: Style = self.style.clone();
-        let width_guess = self.content.len() as f32 * (self.size * 0.5);
-        let height_guess = self.size * 1.2;
+        let node = taffy
+            .new_leaf(Style {
+                size: taffy::Size {
+                    width: length(width_guess),
+                    height: length(height_guess),
+                },
+                ..Default::default()
+            })
+            .unwrap();
 
-        // If the user's style is Auto, use the calculated intrinsic width.
-        // Otherwise, use the user's custom width (Percent, Length, etc.).
-        style.size.width = match style.size.width {
-            Dimension::AUTO => length(width_guess),
-            _ => style.size.width,
-        };
-        style.size.height = match style.size.height {
-            Dimension::AUTO => length(height_guess),
-            _ => style.size.height,
-        };
-
-        let node = taffy.new_leaf(style).unwrap();
         ctx.record_node_widget(node);
         node
     }
@@ -102,7 +81,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
             offset.y + layout.location.y,
         );
 
-        renderer.add_text(self.content.clone(), pos, self.size, self.color);
+        renderer.add_text(self.content.clone(), pos, self.font_size, self.color);
     }
 
     fn on_event(
@@ -123,7 +102,6 @@ pub struct TextEdit {
     pub initial_text: String,
     pub swash_cache: SwashCache,
     pub text_color: Color,
-    pub style: taffy::Style,
     pub key: Option<String>,
 }
 
@@ -134,7 +112,6 @@ impl TextEdit {
             initial_text: initial_text.into(),
             swash_cache: SwashCache::new(),
             text_color: Color::WHITE,
-            style: Style::default(),
             key: None,
         }
     }
@@ -142,21 +119,6 @@ impl TextEdit {
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
         self
-    }
-
-    pub fn style(mut self, style: taffy::Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    pub fn size(self, size: (f32, f32)) -> Self {
-        self.style(Style {
-            size: Size {
-                width: Dimension::length(size.0),
-                height: Dimension::length(size.1),
-            },
-            ..Default::default()
-        })
     }
 }
 
@@ -167,13 +129,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let node_id = taffy.new_leaf(self.style.clone()).unwrap();
-        // record mapping for this TextEdit node
+        // TextEdit has no intrinsic size - use flex_grow to fill available space
+        let node_id = taffy
+            .new_leaf(Style {
+                flex_grow: 1.0,
+                ..Default::default()
+            })
+            .unwrap();
         ctx.record_node_widget(node_id);
-        let layout = taffy.layout(node_id).unwrap();
-        let w = layout.size.width;
-        let h = layout.size.height;
-
         node_id
     }
 
