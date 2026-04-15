@@ -1,5 +1,5 @@
 use crate::renderer::UiBatcher;
-use crate::utils::{Logical, Point};
+use crate::utils::{Logical, Point, Size};
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use std::marker::PhantomData;
@@ -176,17 +176,75 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
 // (Will be implemented in Task 2)
 // ============================================================================
 
+// ============================================================================
+// Background Modifier
+// ============================================================================
+
+/// Draws a colored background behind a child widget.
 pub struct Background<W, M> {
-    _child: PhantomData<W>,
+    child: W,
+    color: Color,
     _marker: PhantomData<M>,
 }
 
-impl<W, M> Background<W, M> {
-    pub fn new(_child: W, _color: Color) -> Self {
+impl<W, M: Clone + std::fmt::Debug + Send> Background<W, M> {
+    pub fn new(child: W, color: Color) -> Self {
         Self {
-            _child: PhantomData,
+            child,
+            color,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
+    fn key(&self) -> Option<&str> {
+        self.child.key()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        // Layout child, background uses same bounds
+        self.child.layout(taffy, ctx)
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<Logical>,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
+
+        // Draw background rect first (behind child)
+        renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0);
+
+        // Draw child on top
+        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: Point<Logical>,
+        event: &WindowEvent,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
     }
 }
 
