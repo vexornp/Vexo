@@ -2,3 +2,4 @@
 /out
 /VexoDemo/SharedApp/.build
 **/*.xcodeproj
+.worktrees/
