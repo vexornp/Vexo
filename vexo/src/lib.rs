@@ -411,7 +411,7 @@ impl<A: Application + 'static> WindowState<A> {
             &mut self.taffy,
             self.root_node_id,
             &mut self.batcher,
-            (0.0, 0.0),
+            crate::utils::Point::new(0.0, 0.0),
             self.focused_widget_id,
             &mut self.widget_context,
         );
@@ -683,7 +683,7 @@ impl<A: Application + 'static> WindowState<A> {
         let widget_response = self.root_widget.on_event(
             &self.taffy,
             self.root_node_id,
-            (0.0, 0.0),
+            crate::utils::Point::new(0.0, 0.0),
             event,
             self.focused_widget_id,
             &mut self.widget_context,

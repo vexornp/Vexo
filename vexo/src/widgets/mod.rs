@@ -31,7 +31,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         taffy: &mut taffy::TaffyTree,
         node: taffy::NodeId,
         renderer: &mut UiBatcher,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
         ctx: &mut WidgetContext,
     );
@@ -40,7 +40,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         event: &winit::event::WindowEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
         ctx: &mut WidgetContext,
