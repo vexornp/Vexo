@@ -214,42 +214,13 @@ impl Scale {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct PhysicalLocation(Point<Physical>);
-
-impl PhysicalLocation {
-    pub fn new(pos: winit::dpi::PhysicalPosition<f64>) -> Self {
-        Self(Point::new(pos.x as f32, pos.y as f32))
-    }
-
-    pub fn default() -> Self {
-        Self(Point::new(0.0, 0.0))
-    }
-
-    pub fn x(&self) -> f64 {
-        self.0.x as f64
-    }
-
-    pub fn y(&self) -> f64 {
-        self.0.y as f64
-    }
-
-    pub fn to_logical(self, scale: &Scale) -> Point<Logical> {
-        self.0.to_logical(scale.factor())
-    }
-
-    fn to_taffy_point(&self, scale: &Scale) -> taffy::Point<f32> {
-        self.to_logical(scale).to_taffy()
-    }
-}
-
 // Check if a physical position is inside a TaffyQuad, considering the scale factor
 pub fn is_location_inside_quad(
-    location: &PhysicalLocation,
+    location: &Point<Physical>,
     scale: &Scale,
     quad: &TaffyQuad,
 ) -> bool {
-    let logical_pos = location.to_logical(scale);
+    let logical_pos = location.to_logical(scale.factor());
     let x = logical_pos.x;
     let y = logical_pos.y;
 

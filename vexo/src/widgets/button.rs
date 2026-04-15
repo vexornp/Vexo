@@ -1,5 +1,5 @@
 use crate::renderer::UiBatcher;
-use crate::utils::{is_location_inside_quad, PhysicalLocation, TaffyQuad};
+use crate::utils::{is_location_inside_quad, Physical, Point, TaffyQuad};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
@@ -136,7 +136,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             ..
         } = event
         {
-            let location = PhysicalLocation::new(*position);
+            let location = Point::<Physical>::new(position.x as f32, position.y as f32);
             let is_mouse_over = is_location_inside_quad(&location, &ctx.scale, &taffy_quad);
             if is_mouse_over {
                 return WidgetResponse {

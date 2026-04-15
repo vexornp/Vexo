@@ -35,7 +35,7 @@ use renderer::{TextRequest, UiBatcher, Vertex};
 use widgets::{Column, Widget, WidgetContext, WidgetId};
 pub use winit::dpi::PhysicalPosition;
 
-use crate::utils::{PhysicalLocation, Scale};
+use crate::utils::{Physical, Point, Scale};
 
 pub use taffy::prelude::AlignItems;
 
@@ -837,7 +837,7 @@ impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
                 primary,
                 source: _,
             } => {
-                window_state.widget_context.cursor_pos = PhysicalLocation::new(position);
+                window_state.widget_context.cursor_pos = Point::<Physical>::new(position.x as f32, position.y as f32);
             }
             WindowEvent::RedrawRequested => {
                 if let Err(err) = window_state.render() {

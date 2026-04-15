@@ -1,6 +1,6 @@
 use crate::editor;
 use crate::renderer::UiBatcher;
-use crate::utils::PhysicalLocation;
+use crate::utils::Physical;
 use glyphon::{Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Shaping};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -121,7 +121,7 @@ pub struct WidgetContext {
 
     pub scale: crate::utils::Scale,
 
-    pub cursor_pos: crate::utils::PhysicalLocation,
+    pub cursor_pos: crate::utils::Point<Physical>,
 }
 
 impl WidgetContext {
@@ -139,7 +139,7 @@ impl WidgetContext {
             node_to_widget: HashMap::new(),
             font_system,
             scale: crate::utils::Scale::new(1.0),
-            cursor_pos: PhysicalLocation::default(),
+            cursor_pos: crate::utils::Point::new(0.0, 0.0),
         }
     }
 
