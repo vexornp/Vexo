@@ -248,17 +248,77 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
     }
 }
 
+// ============================================================================
+// Border Modifier
+// ============================================================================
+
+/// Draws a border around a child widget.
 pub struct Border<W, M> {
-    _child: PhantomData<W>,
+    child: W,
+    color: Color,
+    width: f32,
     _marker: PhantomData<M>,
 }
 
-impl<W, M> Border<W, M> {
-    pub fn new(_child: W, _color: Color, _width: f32) -> Self {
+impl<W, M: Clone + std::fmt::Debug + Send> Border<W, M> {
+    pub fn new(child: W, color: Color, width: f32) -> Self {
         Self {
-            _child: PhantomData,
+            child,
+            color,
+            width,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
+    fn key(&self) -> Option<&str> {
+        self.child.key()
+    }
+
+    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+        // Layout child, border uses same bounds
+        self.child.layout(taffy, ctx)
+    }
+
+    fn draw(
+        &self,
+        taffy: &mut taffy::TaffyTree,
+        node: NodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<Logical>,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
+
+        // Draw child first
+        self.child.draw(taffy, node, renderer, pos, focused_id, ctx);
+
+        // Draw border on top (transparent fill, colored border)
+        renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width);
+    }
+
+    fn on_event(
+        &mut self,
+        taffy: &taffy::TaffyTree,
+        node: NodeId,
+        offset: Point<Logical>,
+        event: &WindowEvent,
+        focused_id: Option<WidgetId>,
+        ctx: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        let layout = taffy.layout(node).unwrap();
+        let pos = Point::<Logical>::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        self.child.on_event(taffy, node, pos, event, focused_id, ctx)
     }
 }
 
