@@ -97,6 +97,11 @@ impl Point<Physical> {
     pub fn to_logical(self, scale: f32) -> Point<Logical> {
         Point::new(self.x / scale, self.y / scale)
     }
+
+    /// Convert to array for GPU buffers
+    pub fn to_array(self) -> [f32; 2] {
+        [self.x, self.y]
+    }
 }
 
 impl Size<Logical> {
@@ -125,6 +130,11 @@ impl Size<Physical> {
     /// Convert physical size to logical coordinates
     pub fn to_logical(self, scale: f32) -> Size<Logical> {
         Size::new(self.width / scale, self.height / scale)
+    }
+
+    /// Convert to array for GPU buffers
+    pub fn to_array(self) -> [f32; 2] {
+        [self.width, self.height]
     }
 }
 
