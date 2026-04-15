@@ -79,34 +79,33 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
+        use crate::utils::{Point, Size};
+
         let layout = taffy.layout(node).unwrap();
 
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
-        let pos = [x, y];
+        let pos = Point::new(
+            offset.x + layout.location.x,
+            offset.y + layout.location.y,
+        );
+        let size = Size::new(layout.size.width, layout.size.height);
 
-        let width = layout.size.width;
-        let height = layout.size.height;
-        let size = [width, height];
-
-        let color = self.background_color.to_array();
-
-        let border_color = [0.0, 0.0, 0.0, 1.0];
+        let color = self.background_color;
+        let border_color = crate::Color::BLACK;
         let border_width = 1.0;
-        renderer.add_rect(pos, size, color, border_color, border_width);
+
+        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width);
 
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {
-            let content_offset = (x, y);
             self.content.draw(
                 taffy,
                 *content_node,
                 renderer,
-                content_offset,
+                pos,
                 focused_id,
                 ctx,
             );
@@ -117,37 +116,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: (f32, f32),
+        offset: crate::utils::Point<crate::utils::Logical>,
         event: &winit::event::WindowEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
+        use crate::utils::{Point, TaffyQuad};
+
         let layout = taffy.layout(node).unwrap();
-        let x = offset.0 + layout.location.x;
-        let y = offset.1 + layout.location.y;
+        let x = offset.x + layout.location.x;
+        let y = offset.y + layout.location.y;
 
         let taffy_quad = TaffyQuad::from(x, y, layout.size);
-        // // Handle mobile touch events here if needed
-        // if let WindowEvent::Touch(touch) = event {
-        //     if touch.phase == winit::event::TouchPhase::Started {
-        //         let winit_pos = PhysicalLocation::new(touch.location);
-        //         let is_pos_inside = is_location_inside_quad(&winit_pos, &ctx.scale, &taffy_quad);
-        //         println!(
-        //             "Touch in: ({}, {}), button quad: ({}) , is inside button: {}",
-        //             touch.location.x, touch.location.y, taffy_quad, is_pos_inside
-        //         );
 
-        //         if is_pos_inside {
-        //             return WidgetResponse {
-        //                 message: Some(self.on_press.clone()),
-        //                 focus_request: None,
-        //                 handled: true,
-        //             };
-        //         }
-        //     }
-        // }
-
-        // 1. CLICK HANDLING
+        // Handle pointer events
         if let WindowEvent::PointerButton {
             state: winit::event::ElementState::Pressed,
             position,
@@ -165,13 +147,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             }
         }
 
-        // 2. CHILD EVENT PROPAGATION
+        // Child event propagation
         let child_ids = taffy.children(node).unwrap();
         if let Some(content_node) = child_ids.get(0) {
-            let content_offset = (x, y);
+            let content_offset = Point::new(x, y);
             return self.content.on_event(
                 taffy,
-                *content_node, // Pass event to the content node
+                *content_node,
                 content_offset,
                 event,
                 focused_id,
