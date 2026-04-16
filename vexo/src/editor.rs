@@ -40,9 +40,4 @@ impl Editor {
         self.raw.cursor_position()
     }
 
-    /// Get the current cursor (line, index).
-    pub fn cursor(&self) -> (usize, usize) {
-        let cursor = self.raw.cursor();
-        (cursor.line, cursor.index)
-    }
 }

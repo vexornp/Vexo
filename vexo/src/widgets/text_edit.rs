@@ -104,13 +104,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 let abs_cursor_x = pos.x + cursor_x as f32;
                 let abs_cursor_y = pos.y + cursor_y as f32;
 
-                // Get line height from the buffer for cursor height
+                // Get line height from the buffer metrics
                 let buffer = editor_ref.buffer();
-                let line_height = if !buffer.lines.is_empty() {
-                    size.height / buffer.lines.len() as f32
-                } else {
-                    size.height // Fallback to full height if no lines
-                };
+                let line_height = buffer.metrics().line_height;
 
                 // Draw vertical bar cursor (2 logical pixels wide)
                 let cursor_width = 2.0;
