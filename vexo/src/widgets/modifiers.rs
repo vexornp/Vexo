@@ -16,6 +16,9 @@ pub struct FrameSize {
     pub min_height: Option<f32>,
     pub max_width: Option<f32>,
     pub max_height: Option<f32>,
+    pub flex_grow: Option<f32>,
+    /// If true, width/height are percentages (0.0-1.0) instead of pixels.
+    pub use_percent: bool,
 }
 
 impl FrameSize {
@@ -40,6 +43,40 @@ impl FrameSize {
     pub fn height(height: f32) -> Self {
         Self {
             height: Some(height),
+            ..Default::default()
+        }
+    }
+
+    /// Expand to fill available space in both dimensions.
+    pub fn expand() -> Self {
+        Self {
+            flex_grow: Some(1.0),
+            ..Default::default()
+        }
+    }
+
+    /// Expand width to fill available space, height auto.
+    pub fn expand_width() -> Self {
+        Self {
+            flex_grow: Some(1.0),
+            ..Default::default()
+        }
+    }
+
+    /// Expand height to fill available space, width auto.
+    pub fn expand_height() -> Self {
+        Self {
+            flex_grow: Some(1.0),
+            ..Default::default()
+        }
+    }
+
+    /// Fill 100% of available space (uses percent sizing).
+    pub fn fill() -> Self {
+        Self {
+            width: Some(1.0),
+            height: Some(1.0),
+            use_percent: true,
             ..Default::default()
         }
     }
@@ -114,6 +151,26 @@ pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     /// Apply frame with full constraints.
     fn frame_with(self, constraints: FrameSize) -> Frame<Self, M> {
         Frame::new(self, constraints)
+    }
+
+    /// Expand to fill available space in both dimensions.
+    fn expand(self) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::expand())
+    }
+
+    /// Expand width to fill available space, height auto.
+    fn expand_width(self) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::expand_width())
+    }
+
+    /// Expand height to fill available space, width auto.
+    fn expand_height(self) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::expand_height())
+    }
+
+    /// Fill 100% of available space (percent-based sizing).
+    fn fill(self) -> Frame<Self, M> {
+        Frame::new(self, FrameSize::fill())
     }
 
     /// Box this widget for use in containers.
@@ -482,16 +539,27 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let child_node = self.child.layout(taffy, ctx);
 
+        use taffy::prelude::Dimension;
+
+        let width = if self.constraints.use_percent {
+            self.constraints.width.map(Dimension::percent).unwrap_or(auto())
+        } else {
+            self.constraints.width.map(length).unwrap_or(auto())
+        };
+
+        let height = if self.constraints.use_percent {
+            self.constraints.height.map(Dimension::percent).unwrap_or(auto())
+        } else {
+            self.constraints.height.map(length).unwrap_or(auto())
+        };
+
         taffy
             .new_with_children(
                 Style {
                     display: taffy::prelude::Display::Flex,
                     align_items: Some(taffy::prelude::AlignItems::Stretch),
                     justify_content: Some(taffy::prelude::JustifyContent::Center),
-                    size: TaffySize {
-                        width: self.constraints.width.map(length).unwrap_or(auto()),
-                        height: self.constraints.height.map(length).unwrap_or(auto()),
-                    },
+                    size: TaffySize { width, height },
                     min_size: TaffySize {
                         width: self.constraints.min_width.map(length).unwrap_or(auto()),
                         height: self.constraints.min_height.map(length).unwrap_or(auto()),
@@ -500,6 +568,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
                         width: self.constraints.max_width.map(length).unwrap_or(auto()),
                         height: self.constraints.max_height.map(length).unwrap_or(auto()),
                     },
+                    flex_grow: self.constraints.flex_grow.unwrap_or(0.0),
                     ..Default::default()
                 },
                 &[child_node],

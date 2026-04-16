@@ -73,21 +73,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::{Point, Size};
+        use crate::utils::Point;
 
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::<crate::utils::Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
-
-        let pos = my_offset;
-        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
-        let color = [0.8, 0.8, 0.8, 1.0];
-        let border_color = [0.0, 0.0, 0.0, 1.0];
-        let border_width = 2.0;
-
-        renderer.add_rect(pos.to_array(), size.to_array(), color, border_color, border_width, 0.0);
 
         let child_ids = taffy.children(node).unwrap();
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {

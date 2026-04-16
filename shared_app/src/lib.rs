@@ -1,5 +1,5 @@
 use vexo::{
-    button, column, color_widget, row, text, text_edit, widgets::Widget, AlignItems, Application,
+    button, color_widget, column, row, text, text_edit, widgets::Widget, AlignItems, Application,
     Color, WidgetExt,
 };
 uniffi::setup_scaffolding!();
@@ -37,8 +37,9 @@ impl Application for State {
 
         column![
             align: AlignItems::Center,
-            color_widget!(Color::rgb(0.0, 0.1, 0.0))
-                .frame(400.0, 150.0)
+            color_widget!(Color::BLUE)
+                .frame(200.0, 100.0)
+        .padding(20.0)
                 .boxed(),
             text_edit!("editor_id_input", "Type here...")
                 .frame(100.0, 50.0)
@@ -65,6 +66,9 @@ impl Application for State {
                 color_widget!(Color::YELLOW).frame(90.0, 40.0).boxed(),
             ],
         ]
+        .fill()
+        .background(Color::WHITE)
+        .boxed()
     }
 }
 
