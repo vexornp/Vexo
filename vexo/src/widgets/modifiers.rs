@@ -493,8 +493,14 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        // CornerRadius just delegates to child - radius is for future clipping implementation
+        // Push radius onto context stack
+        renderer.push_corner_radius(self.radius);
+
+        // Draw child with radius context set
         self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
+
+        // Pop radius from context stack
+        renderer.pop_corner_radius();
     }
 
     fn on_event(
