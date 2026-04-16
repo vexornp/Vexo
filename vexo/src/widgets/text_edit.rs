@@ -161,6 +161,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                         message: None,
                         focus_request: Some(my_id),
                         handled: true,
+                        clear_focus: false,
                     };
                 }
             }
@@ -180,30 +181,33 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             WindowEvent::ModifiersChanged(modifiers) => {
                 _ctrl_pressed = modifiers.state().control_key();
             }
-            WindowEvent::PointerButton { device_id: _, .. } => {
-                // if *button == MouseButton::Left {
-                //     if state.is_pressed() {
-                //         let layout = _taffy.layout(_node).unwrap();
-                //         let x = _offset.x + layout.location.x;
-                //         let y = _offset.y + layout.location.y;
-                //         let width = layout.size.width;
-                //         let height = layout.size.height;
+            WindowEvent::PointerButton {
+                state: winit::event::ElementState::Pressed,
+                ..
+            } => {
+                // Check if click is inside our bounds
+                let layout = _taffy.layout(_node).unwrap();
+                let abs_x = _offset.x + layout.location.x;
+                let abs_y = _offset.y + layout.location.y;
+                let rect = crate::utils::Rect::from_xywh(
+                    abs_x,
+                    abs_y,
+                    layout.size.width,
+                    layout.size.height,
+                );
 
-                //         let relative_physical_x =
-                //             (_mouse_x.round() as i32).saturating_sub(width as i32);
-                //         let relative_physical_y =
-                //             (_mouse_y.round() as i32).saturating_sub(height as i32);
-
-                //         // Handle mouse click
-                //         editor_ref.action(
-                //             &mut ctx.font_system,
-                //             Action::Click {
-                //                 x: relative_physical_x,
-                //                 y: relative_physical_y,
-                //             },
-                //         );
-                //     }
-                // }
+                let logical_pos = ctx.cursor_pos.to_logical(ctx.scale.factor());
+                if rect.contains(&logical_pos) {
+                    // Click inside - retain focus
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: Some(my_id),
+                        handled: true,
+                        clear_focus: false,
+                    };
+                }
+                // Click outside - don't handle, let framework clear focus
+                return WidgetResponse::default();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let KeyEvent {
@@ -292,6 +296,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             message: None,
             focus_request: None,
             handled: true,
+            clear_focus: false,
         }
     }
 }

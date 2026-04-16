@@ -100,6 +100,10 @@ pub struct WidgetResponse<M> {
 
     /// Did the widget consume this event? (Stops propagation)
     pub handled: bool,
+
+    /// Should the framework clear focus from the currently focused widget?
+    /// Used by non-focusable widgets (like Button) to clear focus when clicked.
+    pub clear_focus: bool,
 }
 
 impl<M> Default for WidgetResponse<M> {
@@ -108,6 +112,7 @@ impl<M> Default for WidgetResponse<M> {
             message: None,
             focus_request: None,
             handled: false,
+            clear_focus: false,
         }
     }
 }
