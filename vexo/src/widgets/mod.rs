@@ -162,6 +162,7 @@ mod color_widget;
 mod containers;
 mod modifiers;
 mod text;
+mod text_edit;
 
 pub use button::Button;
 pub use color_widget::ColorWidget;
@@ -175,4 +176,4 @@ pub use modifiers::FrameSize;
 pub use modifiers::Padding;
 pub use modifiers::WidgetExt;
 pub use text::Text;
-pub use text::TextEdit;
+pub use text_edit::TextEdit;
