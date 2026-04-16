@@ -22,6 +22,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     );
 
@@ -58,9 +59,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        (**self).draw(taffy, node, renderer, offset, focused_id, ctx)
+        (**self).draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx)
     }
 
     fn on_event(

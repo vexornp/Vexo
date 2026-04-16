@@ -267,6 +267,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -278,7 +279,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
         // Draw child at offset (padding is handled by Taffy layout)
         let child_ids = taffy.children(node).unwrap();
         if let Some(child_node) = child_ids.get(0) {
-            self.child.draw(taffy, *child_node, renderer, pos, focused_id, ctx);
+            self.child.draw(taffy, *child_node, renderer, pos, focused_id, cursor_blink, ctx);
         }
     }
 
@@ -350,6 +351,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -363,7 +365,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
         // Draw child on top - pass original offset since child will add its own layout.location
-        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
+        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
     }
 
     fn on_event(
@@ -420,6 +422,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -430,7 +433,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         let size = Size::<Logical>::new(layout.size.width, layout.size.height);
 
         // Draw child first - pass original offset since child will add its own layout.location
-        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
+        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
 
         // Draw border on top (transparent fill, colored border)
         renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
@@ -487,10 +490,11 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         // CornerRadius just delegates to child - radius is for future clipping implementation
-        self.child.draw(taffy, node, renderer, offset, focused_id, ctx);
+        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
     }
 
     fn on_event(
@@ -583,6 +587,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -594,7 +599,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
         // Draw child at offset (frame size is handled by Taffy layout)
         let child_ids = taffy.children(node).unwrap();
         if let Some(child_node) = child_ids.get(0) {
-            self.child.draw(taffy, *child_node, renderer, pos, focused_id, ctx);
+            self.child.draw(taffy, *child_node, renderer, pos, focused_id, cursor_blink, ctx);
         }
     }
 

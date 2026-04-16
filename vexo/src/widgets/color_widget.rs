@@ -47,6 +47,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
+        _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         use crate::utils::{Point, Size};

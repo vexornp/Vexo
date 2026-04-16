@@ -71,6 +71,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         use crate::utils::Point;
@@ -89,6 +90,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 renderer,
                 my_offset,
                 focused_id,
+                cursor_blink,
                 ctx,
             );
         }
@@ -182,6 +184,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         use crate::utils::Point;
@@ -200,6 +203,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 renderer,
                 my_offset,
                 focused_id,
+                cursor_blink,
                 ctx,
             );
         }

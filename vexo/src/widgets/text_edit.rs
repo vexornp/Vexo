@@ -58,6 +58,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         _focused_id: Option<WidgetId>,
+        _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         use crate::utils::{Logical, Point, Rect, Size};

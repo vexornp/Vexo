@@ -60,6 +60,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
         focused_id: Option<WidgetId>,
+        _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
@@ -78,6 +79,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 renderer,
                 pos,
                 focused_id,
+                _cursor_blink,
                 ctx,
             );
         }

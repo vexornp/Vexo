@@ -460,6 +460,7 @@ impl<A: Application + 'static> WindowState<A> {
             &mut self.batcher,
             crate::utils::Point::new(0.0, 0.0),
             self.focused_widget_id,
+            &self.cursor_blink,
             &mut self.widget_context,
         );
 
