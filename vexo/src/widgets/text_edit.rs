@@ -64,8 +64,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         node: NodeId,
         renderer: &mut UiBatcher,
         offset: crate::utils::Point<crate::utils::Logical>,
-        _focused_id: Option<WidgetId>,
-        _cursor_blink: &crate::CursorBlinkState,
+        focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         use crate::utils::{Logical, Point, Rect, Size};
@@ -92,12 +92,40 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             Rect::new(pos, size),
         );
 
-        let _text_color = crate::Color::WHITE;
-        let _cursor_color = crate::Color::WHITE;
-        let _selection_color = crate::Color::new(1.0, 1.0, 1.0, 0.2);
-        let _selected_text_color = crate::Color::rgb(0.627, 0.627, 1.0);
+        // Render cursor if focused and visible
+        let my_id = WidgetId::from_key(&self.editor_id);
+        let is_focused = focused_id == Some(my_id);
 
-        let mut _cache = SwashCache::new();
+        if is_focused && cursor_blink.is_visible() {
+            // Get cursor position from the editor
+            if let Some((cursor_x, cursor_y)) = editor_ref.cursor_position() {
+                // cursor_position returns coordinates relative to the buffer
+                // Convert to absolute position within the widget
+                let abs_cursor_x = pos.x + cursor_x as f32;
+                let abs_cursor_y = pos.y + cursor_y as f32;
+
+                // Get line height from the buffer for cursor height
+                let buffer = editor_ref.buffer();
+                let line_height = if !buffer.lines.is_empty() {
+                    size.height / buffer.lines.len() as f32
+                } else {
+                    size.height // Fallback to full height if no lines
+                };
+
+                // Draw vertical bar cursor (2 logical pixels wide)
+                let cursor_width = 2.0;
+                let cursor_height = line_height;
+
+                renderer.add_rect(
+                    [abs_cursor_x, abs_cursor_y],
+                    [cursor_width, cursor_height],
+                    self.cursor_color,
+                    crate::Color::TRANSPARENT, // No border
+                    0.0, // No border width
+                    0.0, // No corner radius
+                );
+            }
+        }
     }
 
     fn on_event(

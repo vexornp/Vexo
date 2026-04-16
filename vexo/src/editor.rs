@@ -33,4 +33,16 @@ impl Editor {
         self.raw
             .with_buffer_mut(|buffer| buffer.shape_until_scroll(font_system, prune));
     }
+
+    /// Get the cursor position in screen coordinates (x, y).
+    /// Returns None if the cursor position cannot be determined.
+    pub fn cursor_position(&self) -> Option<(i32, i32)> {
+        self.raw.cursor_position()
+    }
+
+    /// Get the current cursor (line, index).
+    pub fn cursor(&self) -> (usize, usize) {
+        let cursor = self.raw.cursor();
+        (cursor.line, cursor.index)
+    }
 }
