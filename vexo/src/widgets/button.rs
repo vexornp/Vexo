@@ -35,10 +35,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // push content index (single child)
-        ctx.push_index(1);
-        let content_node = self.content.layout(taffy, ctx);
-        ctx.pop();
+        let content_node = ctx.with_child(1, |ctx| self.content.layout(taffy, ctx));
         let node = taffy
             .new_with_children(
                 Style {

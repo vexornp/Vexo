@@ -45,14 +45,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let mut child_nodes: Vec<NodeId> = Vec::new();
         for (i, child) in self.children.iter_mut().enumerate() {
-            if let Some(k) = child.key() {
-                ctx.push_key(k);
+            let key = child.key().map(|s| s.to_string());
+            let node = if let Some(ref k) = key {
+                ctx.with_child_key(k, |ctx| child.layout(taffy, ctx))
             } else {
-                ctx.push_index(i);
-            }
-            let node = child.layout(taffy, ctx);
+                ctx.with_child(i, |ctx| child.layout(taffy, ctx))
+            };
             child_nodes.push(node);
-            ctx.pop();
         }
         let node = taffy
             .new_with_children(
@@ -175,14 +174,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let mut child_nodes: Vec<NodeId> = Vec::new();
         for (i, child) in self.children.iter_mut().enumerate() {
-            if let Some(k) = child.key() {
-                ctx.push_key(k);
+            let key = child.key().map(|s| s.to_string());
+            let node = if let Some(ref k) = key {
+                ctx.with_child_key(k, |ctx| child.layout(taffy, ctx))
             } else {
-                ctx.push_index(i);
-            }
-            let node = child.layout(taffy, ctx);
+                ctx.with_child(i, |ctx| child.layout(taffy, ctx))
+            };
             child_nodes.push(node);
-            ctx.pop();
         }
         let node = taffy
             .new_with_children(

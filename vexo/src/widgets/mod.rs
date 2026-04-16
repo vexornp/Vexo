@@ -220,6 +220,30 @@ impl WidgetContext {
         }
     }
 
+    /// Execute a closure with a child context (by index), auto-popping afterwards.
+    /// This is safer than manual push/pop pairs.
+    pub fn with_child<F, R>(&mut self, idx: usize, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        self.push_index(idx);
+        let result = f(self);
+        self.pop();
+        result
+    }
+
+    /// Execute a closure with a child context (by key), auto-popping afterwards.
+    /// This is safer than manual push/pop pairs.
+    pub fn with_child_key<F, R>(&mut self, key: &str, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        self.push_key(key);
+        let result = f(self);
+        self.pop();
+        result
+    }
+
     pub fn current_widget_id(&self) -> WidgetId {
         WidgetId(*self.id_stack.last().unwrap())
     }
