@@ -4,22 +4,11 @@ use crate::utils::Physical;
 use glyphon::{Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Shaping};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 use taffy::prelude::NodeId;
-use winit::dpi::PhysicalPosition;
-use winit::window::Window;
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
-    /// Widget unique ID. (Used for focus tracking)
-    /// Default implementation returns `WidgetId(0)`; prefer using the
-    /// NodeId->WidgetId mapping stored in `WidgetContext` instead.
-    fn id(&self) -> WidgetId {
-        if let Some(k) = self.key() {
-            return WidgetId::from_key(k);
-        }
-        WidgetId(0)
-    }
     /// Optional stable key for identity across reorders.
+    /// Widgets that need focus tracking must have a unique key.
     fn key(&self) -> Option<&str> {
         None
     }
@@ -54,10 +43,6 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
 /// Enables trait objects: Box<dyn Widget<M>> implements Widget<M>.
 /// This allows widgets to be stored in collections and returned from functions.
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
-    fn id(&self) -> WidgetId {
-        (**self).id()
-    }
-
     fn key(&self) -> Option<&str> {
         (**self).key()
     }
@@ -96,40 +81,11 @@ pub struct WidgetId(pub u64);
 
 impl WidgetId {
     /// Create a WidgetId deterministically from a stable `key` string.
-    ///
-    /// This uses the default std hasher to produce a 64-bit value.
-    /// Prefer using the framework-provided path-mixing (via `WidgetContext`) when
-    /// deriving ids from traversal paths, but this helper is convenient when
-    /// you only have a developer-provided key and want a `WidgetId`.
     pub fn from_key(key: &str) -> Self {
         use std::hash::{Hash, Hasher};
         let mut s = std::collections::hash_map::DefaultHasher::new();
         key.hash(&mut s);
         WidgetId(s.finish())
-    }
-
-    /// Mix this id with a child index to derive a child WidgetId along the
-    /// deterministic path (same mixing constant used in `WidgetContext`).
-    pub fn mix_with_index(&self, idx: usize) -> Self {
-        WidgetId(
-            self.0
-                .wrapping_mul(0x9E3779B97F4A7C15u64)
-                .wrapping_add(idx as u64 + 1),
-        )
-    }
-
-    /// Mix this id with a key string to derive a child WidgetId along the
-    /// deterministic path (same mixing constant used in `WidgetContext`).
-    pub fn mix_with_key(&self, key: &str) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        let key_hash = s.finish();
-        WidgetId(
-            self.0
-                .wrapping_mul(0x9E3779B97F4A7C15u64)
-                .wrapping_add(key_hash),
-        )
     }
 }
 
@@ -156,15 +112,8 @@ impl<M> Default for WidgetResponse<M> {
 
 pub struct WidgetContext {
     pub editors: HashMap<String, EditorRef>,
-    // id stack for deterministic widget id generation
-    pub id_stack: Vec<u64>,
-    // Mapping from layout NodeId -> computed WidgetId for this frame
-    pub node_to_widget: HashMap<NodeId, WidgetId>,
-
     pub font_system: FontSystem,
-
     pub scale: crate::utils::Scale,
-
     pub cursor_pos: crate::utils::Point<Physical>,
 }
 
@@ -174,87 +123,14 @@ impl WidgetContext {
         // Eg: we can't get the system font on ios platform
         let font_data = crate::resource::file::FONT.to_vec();
         let binary = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(font_data));
-        // font_system.db_mut().load_font_data(font_data);
         let font_system = FontSystem::new_with_fonts([binary]);
 
         Self {
             editors: HashMap::new(),
-            id_stack: vec![0x9E3779B97F4A7C15u64],
-            node_to_widget: HashMap::new(),
             font_system,
             scale: crate::utils::Scale::new(1.0),
             cursor_pos: crate::utils::Point::new(0.0, 0.0),
         }
-    }
-
-    pub fn reset_id_stack(&mut self) {
-        self.id_stack.clear();
-        self.id_stack.push(0x9E3779B97F4A7C15u64);
-        // clear per-frame node->widget mapping
-        self.node_to_widget.clear();
-    }
-
-    pub fn push_index(&mut self, idx: usize) {
-        let parent = *self.id_stack.last().unwrap();
-        let child = parent
-            .wrapping_mul(0x9E3779B97F4A7C15u64)
-            .wrapping_add(idx as u64 + 1);
-        self.id_stack.push(child);
-    }
-
-    pub fn push_key(&mut self, key: &str) {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        let key_hash = s.finish();
-        let parent = *self.id_stack.last().unwrap();
-        let child = parent
-            .wrapping_mul(0x9E3779B97F4A7C15u64)
-            .wrapping_add(key_hash);
-        self.id_stack.push(child);
-    }
-
-    pub fn pop(&mut self) {
-        if self.id_stack.len() > 1 {
-            self.id_stack.pop();
-        }
-    }
-
-    /// Execute a closure with a child context (by index), auto-popping afterwards.
-    /// This is safer than manual push/pop pairs.
-    pub fn with_child<F, R>(&mut self, idx: usize, f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        self.push_index(idx);
-        let result = f(self);
-        self.pop();
-        result
-    }
-
-    /// Execute a closure with a child context (by key), auto-popping afterwards.
-    /// This is safer than manual push/pop pairs.
-    pub fn with_child_key<F, R>(&mut self, key: &str, f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        self.push_key(key);
-        let result = f(self);
-        self.pop();
-        result
-    }
-
-    pub fn current_widget_id(&self) -> WidgetId {
-        WidgetId(*self.id_stack.last().unwrap())
-    }
-
-    pub fn record_node_widget(&mut self, node: NodeId) {
-        let wid = self.current_widget_id();
-        self.node_to_widget.insert(node, wid);
-    }
-
-    pub fn get_widget_id(&self, node: NodeId) -> Option<WidgetId> {
-        self.node_to_widget.get(&node).copied()
     }
 
     pub fn get_or_create_editor(&mut self, id: &str, initial_text: &str) -> EditorRef {

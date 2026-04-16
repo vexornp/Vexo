@@ -32,14 +32,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         // ColorWidget has no intrinsic size - use flex_grow to fill available space
-        let node = taffy
+        taffy
             .new_leaf(Style {
                 flex_grow: 1.0,
                 ..Default::default()
             })
-            .unwrap();
-        ctx.record_node_widget(node);
-        node
+            .unwrap()
     }
 
     fn draw(

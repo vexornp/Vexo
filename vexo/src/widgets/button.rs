@@ -35,8 +35,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let content_node = ctx.with_child(1, |ctx| self.content.layout(taffy, ctx));
-        let node = taffy
+        let content_node = self.content.layout(taffy, ctx);
+        taffy
             .new_with_children(
                 Style {
                     display: Display::Flex,
@@ -50,10 +50,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 },
                 &[content_node],
             )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
+            .unwrap()
     }
 
     fn draw(

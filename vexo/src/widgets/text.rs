@@ -50,7 +50,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         let width_guess = self.content.len() as f32 * (self.font_size * 0.5);
         let height_guess = self.font_size * 1.2;
 
-        let node = taffy
+        taffy
             .new_leaf(Style {
                 size: taffy::Size {
                     width: length(width_guess),
@@ -58,10 +58,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
                 },
                 ..Default::default()
             })
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
+            .unwrap()
     }
 
     fn draw(
@@ -130,14 +127,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         // TextEdit has no intrinsic size - use flex_grow to fill available space
-        let node_id = taffy
+        taffy
             .new_leaf(Style {
                 flex_grow: 1.0,
                 ..Default::default()
             })
-            .unwrap();
-        ctx.record_node_widget(node_id);
-        node_id
+            .unwrap()
     }
 
     fn draw(
@@ -190,9 +185,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // Determine our widget id from the node->widget mapping
-        let my_id = ctx.get_widget_id(_node);
-        let is_focused = focused_id == my_id;
+        // Derive our WidgetId from the editor_id (explicit key)
+        let my_id = WidgetId::from_key(&self.editor_id);
+        let is_focused = focused_id == Some(my_id);
 
         if !is_focused {
             // Check for click to grab focus
@@ -202,13 +197,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             } = _event
             {
                 let layout = _taffy.layout(_node).unwrap();
-                let rect = crate::utils::Rect::<crate::utils::Logical>::from_layout(layout.location, layout.size);
+                // Add offset to get absolute position
+                let abs_x = _offset.x + layout.location.x;
+                let abs_y = _offset.y + layout.location.y;
+                let rect = crate::utils::Rect::from_xywh(
+                    abs_x,
+                    abs_y,
+                    layout.size.width,
+                    layout.size.height,
+                );
 
                 let logical_pos = ctx.cursor_pos.to_logical(ctx.scale.factor());
                 if rect.contains(&logical_pos) {
                     return WidgetResponse {
                         message: None,
-                        focus_request: my_id,
+                        focus_request: Some(my_id),
                         handled: true,
                     };
                 }

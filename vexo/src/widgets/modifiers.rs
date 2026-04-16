@@ -181,10 +181,9 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let child_node = ctx.with_child(1, |ctx| self.child.layout(taffy, ctx));
+        let child_node = self.child.layout(taffy, ctx);
 
-        // Create padding wrapper node
-        let node = taffy
+        taffy
             .new_with_children(
                 Style {
                     padding: TaffyRect {
@@ -201,10 +200,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
                 },
                 &[child_node],
             )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
+            .unwrap()
     }
 
     fn draw(
@@ -484,11 +480,9 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let child_node = ctx.with_child(1, |ctx| self.child.layout(taffy, ctx));
+        let child_node = self.child.layout(taffy, ctx);
 
-        // Create wrapper node with size constraints
-        // Use flex with stretch to make child fill the frame
-        let node = taffy
+        taffy
             .new_with_children(
                 Style {
                     display: taffy::prelude::Display::Flex,
@@ -510,10 +504,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
                 },
                 &[child_node],
             )
-            .unwrap();
-
-        ctx.record_node_widget(node);
-        node
+            .unwrap()
     }
 
     fn draw(

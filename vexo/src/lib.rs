@@ -376,11 +376,6 @@ impl<A: Application + 'static> WindowState<A> {
         self.taffy.clear();
         self.batcher.clear();
 
-        // Reset deterministic id stack before building widget tree
-        self.widget_context.reset_id_stack();
-        // push root slot
-        self.widget_context.push_index(0);
-
         let scale_factor = self.widget_context.scale.factor();
 
         // Taffy should layout in logical points so that 24.0 size means 24 points.
@@ -391,9 +386,6 @@ impl<A: Application + 'static> WindowState<A> {
         self.batcher.set_screen_size(logical_width, logical_height);
 
         let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.widget_context);
-
-        // pop the root slot
-        self.widget_context.pop();
 
         self.taffy
             .compute_layout(
