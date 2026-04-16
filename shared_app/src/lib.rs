@@ -49,11 +49,13 @@ impl Application for State {
                 .padding(10.0)
                 .background(Color::RED)
                 .border(Color::GREEN, 2.0)
+                .corner_radius(8.0)
                 .boxed(),
             button!(text!(text_content, font_size: 24.0), Message::Clicked)
                 .padding(10.0)
                 .background(Color::rgb(0.1, 0.4, 0.1))
                 .border(Color::BLACK, 1.0)
+                .corner_radius(8.0)
                 .boxed(),
             color_widget!(Color::BLUE)
                 .frame(150.0, 50.0)
