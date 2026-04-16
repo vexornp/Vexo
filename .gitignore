@@ -3,3 +3,4 @@
 /VexoDemo/SharedApp/.build
 **/*.xcodeproj
 .worktrees/
+.superpowers/
