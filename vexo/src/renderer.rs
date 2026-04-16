@@ -44,6 +44,7 @@ pub struct UiBatcher {
 
     screen_width: f32,  // Logical width: pixel_width * scale_factor
     screen_height: f32, // Logical height: pixel_height * scale_factor
+    corner_radius_stack: Vec<f32>, // Stack for nested radius contexts
 }
 
 impl UiBatcher {
@@ -56,6 +57,7 @@ impl UiBatcher {
             quad_instances: Vec::new(),
             screen_width: 1.0,
             screen_height: 1.0,
+            corner_radius_stack: Vec::new(),
         }
     }
 
@@ -65,12 +67,31 @@ impl UiBatcher {
         self.text_requests.clear();
         self.editor_requests.clear();
         self.quad_instances.clear();
+        self.corner_radius_stack.clear();
     }
 
     // Set logical size
     pub fn set_screen_size(&mut self, width: f32, height: f32) {
         self.screen_width = width;
         self.screen_height = height;
+    }
+
+    /// Push a corner radius onto the context stack.
+    /// Used by CornerRadius modifier to set radius for child widgets.
+    pub fn push_corner_radius(&mut self, radius: f32) {
+        self.corner_radius_stack.push(radius);
+    }
+
+    /// Pop the corner radius from the context stack.
+    /// Called after drawing children to restore previous context.
+    pub fn pop_corner_radius(&mut self) {
+        self.corner_radius_stack.pop();
+    }
+
+    /// Get the current corner radius from the context stack.
+    /// Returns 0.0 if no radius is set.
+    pub fn current_corner_radius(&self) -> f32 {
+        self.corner_radius_stack.last().copied().unwrap_or(0.0)
     }
 
     pub fn add_rect(
@@ -85,13 +106,20 @@ impl UiBatcher {
         let color: Color = color.into();
         let border_color: Color = border_color.into();
 
+        // Use explicit radius if > 0, otherwise use context
+        let radius = if corner_radius > 0.0 {
+            corner_radius
+        } else {
+            self.current_corner_radius()
+        };
+
         self.quad_instances.push(quad_instance::QuadInstance {
             position: pos,
             size,
             color: color.to_array(),
             border_color: border_color.to_array(),
             border_width,
-            corner_radius,
+            corner_radius: radius,
             _padding: [0.0; 2],
         });
     }
