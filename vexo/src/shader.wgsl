@@ -6,6 +6,7 @@ struct VertexOutput {
     @location(2) border_color: vec4<f32>,
     @location(3) border_width: f32,
     @location(4) size: vec2<f32>,
+    @location(5) corner_radius: f32,
 };
 
 struct GlobalUniforms {
@@ -23,13 +24,13 @@ fn vs_main(
     @location(3) inst_color: vec4<f32>,
     @location(4) inst_border_color: vec4<f32>,
     @location(5) inst_border_width: f32,
+    @location(6) inst_corner_radius: f32,
 ) -> VertexOutput {
     // Multiply incoming logical points by the scale factor to get physical pixels
     let scaled_pos = inst_pos * globals.scale_factor;
     let scaled_size = inst_size * globals.scale_factor;
 
     // 1. Calculate pixel position:
-    // If model_pos is 0.0 to 1.0, we just do:
     let pixel_pos = scaled_pos + (model_pos * scaled_size);
 
     // Normalize to NDC (-1.0 to 1.0)
@@ -41,39 +42,54 @@ fn vs_main(
     out.uv = model_pos;
     out.color = inst_color;
     out.border_color = inst_border_color;
-    out.size = scaled_size; // Pass scaled size to fragment shader for border calculations
-
-    /// Make a fixed pixel border (e.g., exactly 2 pixels wide), 
-    /// We should adjust the border_width in your vertex shader before passing it to the fragment shade
-    /// Convert pixel width to UV-space width for this specific instance
+    out.size = scaled_size;
     out.border_width = inst_border_width;
+    out.corner_radius = inst_corner_radius * globals.scale_factor;
     return out;
 }
 
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let centered_uv = in.uv - 0.5; // Center UV around (0,0)
+    // Clamp radius to at most half the smallest dimension
+    let radius = min(in.corner_radius, min(in.size.x, in.size.y) * 0.5);
 
-    // How many UV units represent the desired border width?
-    // inst_border_width is logical points, so multiply by scale_factor for physical pixels
+    // If no corner radius, use original rectangular rendering
+    if (radius < 0.5) {
+        let centered_uv = in.uv - 0.5;
+        let border_px = in.border_width * globals.scale_factor;
+        let uv_border_step = border_px / in.size;
+        let edge_dist = abs(centered_uv);
+        let is_border_x = smoothstep(0.5 - uv_border_step.x - 0.002, 0.5 - uv_border_step.x, edge_dist.x);
+        let is_border_y = smoothstep(0.5 - uv_border_step.y - 0.002, 0.5 - uv_border_step.y, edge_dist.y);
+        let is_border = max(is_border_x, is_border_y);
+        return mix(in.color, in.border_color, is_border);
+    }
+
+    // SDF for rounded rectangle
+    // UV is 0-1, convert to pixel coordinates relative to center
+    let pixel_pos = in.uv * in.size;
+    let half_size = in.size * 0.5;
+    let center_pos = pixel_pos - half_size;
+
+    // SDF: distance from rounded rectangle edge
+    let inner_dist = abs(center_pos) - (half_size - radius);
+    let corner_dist = length(max(inner_dist, vec2<f32>(0.0))) - radius;
+    let sdf = min(max(inner_dist.x, inner_dist.y), 0.0) + corner_dist;
+
+    // Fill alpha with 1px anti-aliasing
+    let fill_alpha = 1.0 - smoothstep(-1.0, 1.0, sdf);
+
+    // If completely outside, discard
+    if (fill_alpha <= 0.0) {
+        discard;
+    }
+
+    // Calculate border - border is the ring between sdf and sdf + border_px
     let border_px = in.border_width * globals.scale_factor;
-
-    // Convert pixel border width to UV space based on the size of the rectangle
-    let uv_border_step = border_px / in.size; // How much UV corresponds to 1 pixel for this instance
-    
-    // This gives us the UV distance that corresponds to the desired pixel border width
-    // (Prevents the border from looking stretched on wide rectangles)
-    // let border_uv_thickness = in.border_width * uv_pixel_step;
-
-    // Calculate edge distance
-    let edge_dist = abs(centered_uv);
-
-    // Determine if we're in the border region
-    let is_border_x = smoothstep(0.5 - uv_border_step.x - 0.002, 0.5 - uv_border_step.x, edge_dist.x);
-    let is_border_y = smoothstep(0.5 - uv_border_step.y - 0.002, 0.5 - uv_border_step.y, edge_dist.y);
-    let is_border = max(is_border_x, is_border_y);
-
-    // Mix the base color and the border color based on the distance
-    return mix(in.color, in.border_color, is_border);
+    let border_alpha = 1.0 - smoothstep(-1.0, 1.0, sdf + border_px);
+    let in_border = 1.0 - smoothstep(-1.0, 1.0, sdf);
+    let border_weight = in_border * (1.0 - border_alpha);
+    let final_color = mix(in.color, in.border_color, border_weight);
+    return vec4<f32>(final_color.rgb, final_color.a * fill_alpha);
 }
