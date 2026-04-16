@@ -15,6 +15,7 @@ pub struct TextEdit {
     pub initial_text: String,
     pub swash_cache: SwashCache,
     pub text_color: Color,
+    pub cursor_color: Color,
     pub key: Option<String>,
 }
 
@@ -25,12 +26,18 @@ impl TextEdit {
             initial_text: initial_text.into(),
             swash_cache: SwashCache::new(),
             text_color: Color::WHITE,
+            cursor_color: Color::new(0.3, 0.67, 0.97, 1.0), // Accent blue
             key: None,
         }
     }
 
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    pub fn with_cursor_color(mut self, color: Color) -> Self {
+        self.cursor_color = color;
         self
     }
 }
