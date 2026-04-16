@@ -426,6 +426,9 @@ impl<A: Application + 'static> WindowState<A> {
             return Ok(());
         }
 
+        // Update cursor blink state
+        self.cursor_blink.tick();
+
         let mut new_root_widget = self.view();
         self.taffy.clear();
         self.batcher.clear();
@@ -743,6 +746,10 @@ impl<A: Application + 'static> WindowState<A> {
         // Check if event if handled, notify if needed
         if widget_response.handled {
             println!("Event handled by widget");
+            // Reset cursor blink on keyboard input
+            if let WindowEvent::KeyboardInput { .. } = event {
+                self.cursor_blink.reset();
+            }
         }
 
         //  Handle User Logic
