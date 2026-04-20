@@ -1,10 +1,8 @@
-use crate::editor;
 use crate::renderer::UiBatcher;
 use crate::utils::Physical;
 use crate::core::WidgetId;
-use glyphon::{Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Shaping};
-use std::collections::HashMap;
-use std::rc::Rc;
+use crate::state::WidgetStateRegistry;
+use glyphon::FontSystem;
 use taffy::prelude::NodeId;
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
@@ -106,7 +104,8 @@ impl<M> Default for WidgetResponse<M> {
 }
 
 pub struct WidgetContext {
-    pub editors: HashMap<String, EditorRef>,
+    /// State registry for editors and focus management.
+    state: WidgetStateRegistry,
     pub font_system: FontSystem,
     pub scale: crate::utils::Scale,
     pub cursor_pos: crate::utils::Point<Physical>,
@@ -121,36 +120,32 @@ impl WidgetContext {
         let font_system = FontSystem::new_with_fonts([binary]);
 
         Self {
-            editors: HashMap::new(),
+            state: WidgetStateRegistry::new(),
             font_system,
             scale: crate::utils::Scale::new(1.0),
             cursor_pos: crate::utils::Point::new(0.0, 0.0),
         }
     }
 
+    /// Get or create an editor by ID.
+    ///
+    /// Delegates to the internal WidgetStateRegistry.
     pub fn get_or_create_editor(&mut self, id: &str, initial_text: &str) -> EditorRef {
-        self.editors
-            .entry(id.to_string())
-            .or_insert_with(|| {
-                let font_size = 16.0;
-                let metrics = Metrics::new(font_size, font_size * 1.25);
-                let mut editor = Editor::new(Buffer::new_empty(metrics));
-                editor.with_buffer_mut(|buffer| {
-                    buffer.set_text(
-                        &mut self.font_system,
-                        initial_text,
-                        &Attrs::new(),
-                        Shaping::Advanced,
-                    );
-                });
-                editor.shape_as_needed(&mut self.font_system, true);
-                Rc::new(std::cell::RefCell::new(editor::Editor::new(editor)))
-            })
-            .clone()
+        self.state.get_or_create_editor(id, initial_text, &mut self.font_system)
+    }
+
+    /// Get access to the state registry.
+    pub fn state(&self) -> &WidgetStateRegistry {
+        &self.state
+    }
+
+    /// Get mutable access to the state registry.
+    pub fn state_mut(&mut self) -> &mut WidgetStateRegistry {
+        &mut self.state
     }
 }
 
-type EditorRef = std::rc::Rc<std::cell::RefCell<editor::Editor>>;
+type EditorRef = crate::state::EditorRef;
 
 mod button;
 mod color_widget;

@@ -19,10 +19,10 @@
 //! let editor = registry.get_or_create_editor("my-editor", "initial text");
 //! ```
 
-mod editor;
+pub mod editor;
 mod focus;
 mod registry;
 
-pub use editor::EditorState;
+pub use editor::EditorRef;
 pub use focus::FocusState;
 pub use registry::WidgetStateRegistry;
