@@ -189,6 +189,7 @@ impl<T> std::ops::AddAssign for Point<T> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Scale(f64);
 impl Scale {
     pub fn new(factor: f64) -> Self {

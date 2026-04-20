@@ -732,12 +732,23 @@ impl<A: Application + 'static> WindowState<A> {
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
+        // Convert winit event to InputEvent
+        let input_event = crate::input::InputEvent::from_winit(
+            event,
+            self.widget_context.scale.clone(),
+        );
+
+        // Only process events that convert to InputEvent
+        let Some(input_event) = input_event else {
+            return;
+        };
+
         // Pass the event to the root widget (which passes it down)
         let widget_response = self.root_widget.on_event(
             &self.taffy,
             self.root_node_id,
             crate::utils::Point::new(0.0, 0.0),
-            event,
+            &input_event,
             self.focused_widget_id,
             &mut self.widget_context,
         );
@@ -749,10 +760,10 @@ impl<A: Application + 'static> WindowState<A> {
         } else if widget_response.clear_focus {
             self.focused_widget_id = None;
         } else if !widget_response.handled {
-            if let WindowEvent::PointerButton {
-                state: winit::event::ElementState::Pressed,
+            if let crate::input::InputEvent::PointerButton {
+                state: crate::input::ButtonState::Pressed,
                 ..
-            } = event
+            } = input_event
             {
                 // Click outside any focusable widget - clear focus
                 self.focused_widget_id = None;
@@ -763,7 +774,7 @@ impl<A: Application + 'static> WindowState<A> {
         if widget_response.handled {
             println!("Event handled by widget");
             // Reset cursor blink on keyboard input
-            if let WindowEvent::KeyboardInput { .. } = event {
+            if let crate::input::InputEvent::Keyboard { .. } = input_event {
                 self.cursor_blink.reset();
             }
         }

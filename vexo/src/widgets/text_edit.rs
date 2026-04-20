@@ -2,13 +2,10 @@ use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
+use crate::input::{InputEvent, ButtonState, Key, NamedKey};
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
 use taffy::prelude::NodeId;
 use taffy::Style;
-use winit::{
-    event::{ElementState, KeyEvent, WindowEvent},
-    keyboard::{Key, NamedKey},
-};
 
 pub struct TextEdit {
     pub editor_id: String,
@@ -129,7 +126,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         _taffy: &taffy::TaffyTree,
         _node: NodeId,
         _offset: crate::utils::Point<crate::utils::Logical>,
-        _event: &winit::event::WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -139,10 +136,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
         if !is_focused {
             // Check for click to grab focus
-            if let WindowEvent::PointerButton {
-                state: winit::event::ElementState::Pressed,
+            if let InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                position,
                 ..
-            } = _event
+            } = event
             {
                 let layout = _taffy.layout(_node).unwrap();
                 // Add offset to get absolute position
@@ -155,8 +153,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     layout.size.height,
                 );
 
-                let logical_pos = ctx.cursor_pos.to_logical(ctx.scale.factor());
-                if rect.contains(&logical_pos) {
+                if rect.contains(position) {
                     return WidgetResponse {
                         message: None,
                         focus_request: Some(my_id),
@@ -172,17 +169,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let editor_rc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut editor_ref = editor_rc.borrow_mut();
 
-        let mut _ctrl_pressed = false;
-        let mut _mouse_x: f64 = 0.0;
-        let mut _mouse_y: f64 = 0.0;
-        let _mouse_left = ElementState::Released;
-
-        match _event {
-            WindowEvent::ModifiersChanged(modifiers) => {
-                _ctrl_pressed = modifiers.state().control_key();
+        match event {
+            InputEvent::ModifiersChanged { modifiers } => {
+                // Store modifiers for later use if needed
+                let _ctrl_pressed = modifiers.control;
             }
-            WindowEvent::PointerButton {
-                state: winit::event::ElementState::Pressed,
+            InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                position,
                 ..
             } => {
                 // Check if click is inside our bounds
@@ -196,8 +190,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     layout.size.height,
                 );
 
-                let logical_pos = ctx.cursor_pos.to_logical(ctx.scale.factor());
-                if rect.contains(&logical_pos) {
+                if rect.contains(position) {
                     // Click inside - retain focus
                     return WidgetResponse {
                         message: None,
@@ -209,69 +202,72 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 // Click outside - don't handle, let framework clear focus
                 return WidgetResponse::default();
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                let KeyEvent {
-                    logical_key, state, ..
-                } = event;
+            InputEvent::Keyboard {
+                key,
+                state: ButtonState::Pressed,
+                text,
+                modifiers,
+                ..
+            } => {
+                let ctrl_pressed = modifiers.control;
 
-                if state.is_pressed() {
-                    match logical_key {
-                        Key::Named(NamedKey::ArrowLeft) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Left));
-                        }
-                        Key::Named(NamedKey::ArrowRight) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Right));
-                        }
-                        Key::Named(NamedKey::ArrowUp) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Up));
-                        }
-                        Key::Named(NamedKey::ArrowDown) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Down));
-                        }
-                        Key::Named(NamedKey::Home) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Home));
-                        }
-                        Key::Named(NamedKey::End) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::End));
-                        }
-                        Key::Named(NamedKey::PageUp) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageUp));
-                        }
-                        Key::Named(NamedKey::PageDown) => {
-                            editor_ref
-                                .action(&mut ctx.font_system, Action::Motion(Motion::PageDown));
-                        }
-                        Key::Named(NamedKey::Escape) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Escape);
-                        }
-                        Key::Named(NamedKey::Enter) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Enter);
-                        }
-                        Key::Named(NamedKey::Backspace) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Backspace);
-                        }
-                        Key::Named(NamedKey::Delete) => {
-                            editor_ref.action(&mut ctx.font_system, Action::Delete);
-                        }
-                        Key::Character(text) => {
-                            if _ctrl_pressed {
-                                // Handle Ctrl + Char
-                                match text.as_str() {
-                                    "c" => {
-                                        // TODO: Copy
-                                    }
-                                    "v" => {
-                                        // TOOD: Paste
-                                    }
-                                    "x" => {
-                                        // TODO: Cut
-                                    }
-                                    _ => {
-                                        // Ignore other Ctrl + Char combinations
-                                    }
+                match key {
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Left));
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Right));
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Up));
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Down));
+                    }
+                    Key::Named(NamedKey::Home) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Home));
+                    }
+                    Key::Named(NamedKey::End) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::End));
+                    }
+                    Key::Named(NamedKey::PageUp) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageUp));
+                    }
+                    Key::Named(NamedKey::PageDown) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageDown));
+                    }
+                    Key::Named(NamedKey::Escape) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Escape);
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Enter);
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Backspace);
+                    }
+                    Key::Named(NamedKey::Delete) => {
+                        editor_ref.action(&mut ctx.font_system, Action::Delete);
+                    }
+                    Key::Character(ch) => {
+                        if ctrl_pressed {
+                            // Handle Ctrl + Char
+                            match ch.as_str() {
+                                "c" => {
+                                    // TODO: Copy
                                 }
-                            } else {
-                                // Normal character input
+                                "v" => {
+                                    // TODO: Paste
+                                }
+                                "x" => {
+                                    // TODO: Cut
+                                }
+                                _ => {
+                                    // Ignore other Ctrl + Char combinations
+                                }
+                            }
+                        } else {
+                            // Normal character input - use the text field if available
+                            if let Some(text) = text {
                                 for c in text.chars() {
                                     if c.is_control() {
                                         // Ignore control characters
@@ -281,9 +277,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                                 }
                             }
                         }
-                        _ => {
-                            // Ignore other keys
-                        }
+                    }
+                    _ => {
+                        // Ignore other keys
                     }
                 }
             }

@@ -2,6 +2,7 @@ use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
+use crate::input::InputEvent;
 use taffy::prelude::NodeId;
 use taffy::Style;
 
@@ -71,7 +72,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: crate::utils::Point<crate::utils::Logical>,
-        event: &winit::event::WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {

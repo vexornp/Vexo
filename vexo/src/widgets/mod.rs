@@ -2,6 +2,7 @@ use crate::renderer::UiBatcher;
 use crate::utils::Physical;
 use crate::core::WidgetId;
 use crate::state::WidgetStateRegistry;
+use crate::input::InputEvent;
 use glyphon::FontSystem;
 use taffy::prelude::NodeId;
 
@@ -30,7 +31,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
         offset: crate::utils::Point<crate::utils::Logical>,
-        event: &winit::event::WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M>;
@@ -69,7 +70,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
         offset: crate::utils::Point<crate::utils::Logical>,
-        event: &winit::event::WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {

@@ -1,11 +1,11 @@
 use crate::renderer::UiBatcher;
 use crate::utils::{Logical, Point, Size};
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
+use crate::input::InputEvent;
 use crate::Color;
 use std::marker::PhantomData;
 use taffy::prelude::{auto, length, NodeId};
 use taffy::{Rect as TaffyRect, Size as TaffySize, Style};
-use winit::event::WindowEvent;
 
 /// Frame size constraint - can be fixed, flexible, or auto.
 #[derive(Debug, Clone, Copy, Default)]
@@ -288,7 +288,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Padding<W, M
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: Point<Logical>,
-        event: &WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -373,7 +373,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: Point<Logical>,
-        event: &WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -444,7 +444,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: Point<Logical>,
-        event: &WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -508,7 +508,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: Point<Logical>,
-        event: &WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -614,7 +614,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Frame<W, M> 
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: Point<Logical>,
-        event: &WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {

@@ -1,11 +1,11 @@
 use crate::renderer::UiBatcher;
-use crate::utils::{Logical, Physical, Point, Rect};
+use crate::utils::{Logical, Point, Rect};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
+use crate::input::{InputEvent, ButtonState};
 use taffy::prelude::{auto, AlignItems, Display, JustifyContent, NodeId};
 use taffy::Size as TaffySize;
 use taffy::Style;
-use winit::event::WindowEvent;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
@@ -90,7 +90,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         taffy: &taffy::TaffyTree,
         node: NodeId,
         offset: crate::utils::Point<crate::utils::Logical>,
-        event: &winit::event::WindowEvent,
+        event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
@@ -101,15 +101,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         let rect = Rect::<Logical>::from_xywh(x, y, layout.size.width, layout.size.height);
 
         // Handle pointer events
-        if let WindowEvent::PointerButton {
-            state: winit::event::ElementState::Pressed,
+        if let InputEvent::PointerButton {
+            state: ButtonState::Pressed,
             position,
             ..
         } = event
         {
-            let physical_pos = Point::<Physical>::new(position.x as f32, position.y as f32);
-            let logical_pos = physical_pos.to_logical(ctx.scale.factor());
-            if rect.contains(&logical_pos) {
+            if rect.contains(position) {
                 return WidgetResponse {
                     message: Some(self.on_press.clone()),
                     focus_request: None,
