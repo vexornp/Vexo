@@ -1,6 +1,7 @@
 use crate::editor;
 use crate::renderer::UiBatcher;
 use crate::utils::Physical;
+use crate::core::WidgetId;
 use glyphon::{Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Shaping};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -75,19 +76,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         (**self).on_event(taffy, node, offset, event, focused_id, ctx)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WidgetId(pub u64);
-
-impl WidgetId {
-    /// Create a WidgetId deterministically from a stable `key` string.
-    pub fn from_key(key: &str) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut s);
-        WidgetId(s.finish())
     }
 }
 

@@ -4,7 +4,8 @@ use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
-use taffy::prelude::*;
+use taffy::prelude::{AvailableSpace, NodeId};
+use taffy::Style;
 use wgpu::util::DeviceExt;
 use wgpu::wgc::device::global;
 use wgpu::wgc::instance;
@@ -24,19 +25,30 @@ pub use uniffi;
 const CLEAR_COLOR: wgpu::Color = Color::BLUE.to_wgpu_color();
 
 mod color;
+mod core;
 mod editor;
+mod input;
+mod layout;
 mod macros;
 mod quad_instance;
+mod render;
 mod renderer;
 mod resource;
+mod state;
 mod utils;
+mod widget;
 pub mod widgets;
 
+// Note: core module types are available but not re-exported yet to avoid conflicts
+// with existing utils types during the transition. Use crate::core::Type directly.
+
 use renderer::{TextRequest, UiBatcher, Vertex};
-use widgets::{Column, Widget, WidgetContext, WidgetId};
+use widgets::{Column, Widget, WidgetContext};
 pub use widgets::{FrameSize, WidgetExt};
 pub use winit::dpi::PhysicalPosition;
 
+// Import types needed by lib.rs - use utils for now during transition
+use crate::core::WidgetId;
 use crate::utils::{Physical, Point, Scale};
 
 pub use taffy::prelude::AlignItems;
@@ -447,7 +459,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.taffy
             .compute_layout(
                 new_root_node_id,
-                Size {
+                taffy::Size {
                     width: AvailableSpace::Definite(logical_width),
                     height: AvailableSpace::Definite(logical_height),
                 },
