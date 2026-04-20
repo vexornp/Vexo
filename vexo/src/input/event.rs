@@ -10,7 +10,7 @@
 //! - Enable testing of input handling
 //! - Provide a clean, minimal event model
 
-use crate::core::{Point, Logical};
+use crate::utils::{Point, Logical, Physical, Scale, Rect};
 
 // ============================================================================
 // INPUT EVENT
@@ -230,7 +230,7 @@ pub struct InteractionContext {
     /// Currently focused widget (if any).
     pub focused_widget: Option<crate::core::WidgetId>,
     /// Bounds of the widget receiving the event.
-    pub bounds: crate::core::Rect<Logical>,
+    pub bounds: Rect<Logical>,
     /// Current DPI scale factor.
     pub scale: f32,
 }
@@ -240,7 +240,7 @@ impl InteractionContext {
     pub fn new(
         pointer_position: Point<Logical>,
         focused_widget: Option<crate::core::WidgetId>,
-        bounds: crate::core::Rect<Logical>,
+        bounds: Rect<Logical>,
         scale: f32,
     ) -> Self {
         Self {
@@ -267,7 +267,7 @@ impl Default for InteractionContext {
         Self {
             pointer_position: Point::new(0.0, 0.0),
             focused_widget: None,
-            bounds: crate::core::Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
+            bounds: Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
             scale: 1.0,
         }
     }
@@ -353,6 +353,195 @@ impl<M> InteractionResponse<M> {
 }
 
 // ============================================================================
+// WINIT CONVERSION
+// ============================================================================
+
+impl InputEvent {
+    /// Convert a winit WindowEvent to an InputEvent.
+    ///
+    /// Returns None if the event is not relevant to widgets
+    /// (e.g., surface resize, close requested).
+    pub fn from_winit(
+        event: &winit::event::WindowEvent,
+        scale: Scale,
+    ) -> Option<Self> {
+        use winit::event::ElementState;
+
+        match event {
+            WindowEvent::PointerMoved { position, .. } => {
+                let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
+                let logical = physical.to_logical(scale.factor());
+                Some(InputEvent::PointerMoved {
+                    position: logical,
+                })
+            }
+
+            WindowEvent::PointerButton {
+                state,
+                button: _,
+                position,
+                ..
+            } => {
+                let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
+                let logical = physical.to_logical(scale.factor());
+
+                // For now, treat all pointer button events as primary button
+                // The button field in winit 0.31 is a ButtonSource which is more complex
+                let button_state = match state {
+                    ElementState::Pressed => ButtonState::Pressed,
+                    ElementState::Released => ButtonState::Released,
+                };
+                Some(InputEvent::PointerButton {
+                    position: logical,
+                    button: PointerButton::Primary,
+                    state: button_state,
+                })
+            }
+
+            WindowEvent::KeyboardInput { event, .. } => {
+                use winit::keyboard::{Key, NamedKey as WinitNamedKey};
+
+                let key = match &event.logical_key {
+                    Key::Named(named) => {
+                        let named_key = match named {
+                            WinitNamedKey::ArrowUp => NamedKey::ArrowUp,
+                            WinitNamedKey::ArrowDown => NamedKey::ArrowDown,
+                            WinitNamedKey::ArrowLeft => NamedKey::ArrowLeft,
+                            WinitNamedKey::ArrowRight => NamedKey::ArrowRight,
+                            WinitNamedKey::Home => NamedKey::Home,
+                            WinitNamedKey::End => NamedKey::End,
+                            WinitNamedKey::PageUp => NamedKey::PageUp,
+                            WinitNamedKey::PageDown => NamedKey::PageDown,
+                            WinitNamedKey::Backspace => NamedKey::Backspace,
+                            WinitNamedKey::Delete => NamedKey::Delete,
+                            WinitNamedKey::Enter => NamedKey::Enter,
+                            WinitNamedKey::Escape => NamedKey::Escape,
+                            WinitNamedKey::Tab => NamedKey::Tab,
+                            WinitNamedKey::F1 => NamedKey::F1,
+                            WinitNamedKey::F2 => NamedKey::F2,
+                            WinitNamedKey::F3 => NamedKey::F3,
+                            WinitNamedKey::F4 => NamedKey::F4,
+                            WinitNamedKey::F5 => NamedKey::F5,
+                            WinitNamedKey::F6 => NamedKey::F6,
+                            WinitNamedKey::F7 => NamedKey::F7,
+                            WinitNamedKey::F8 => NamedKey::F8,
+                            WinitNamedKey::F9 => NamedKey::F9,
+                            WinitNamedKey::F10 => NamedKey::F10,
+                            WinitNamedKey::F11 => NamedKey::F11,
+                            WinitNamedKey::F12 => NamedKey::F12,
+                            WinitNamedKey::Shift => NamedKey::Shift,
+                            WinitNamedKey::Control => NamedKey::Control,
+                            WinitNamedKey::Alt => NamedKey::Alt,
+                            WinitNamedKey::Super => NamedKey::Super,
+                            WinitNamedKey::CapsLock => NamedKey::CapsLock,
+                            WinitNamedKey::NumLock => NamedKey::NumLock,
+                            _ => return Some(InputEvent::Keyboard {
+                                key: crate::input::Key::Unknown,
+                                text: None,
+                                state: ButtonState::Released,
+                                modifiers: Modifiers::default(),
+                            }),
+                        };
+                        crate::input::Key::Named(named_key)
+                    }
+                    Key::Character(ch) => crate::input::Key::Character(ch.to_string()),
+                    _ => crate::input::Key::Unknown,
+                };
+
+                let state = match event.state {
+                    ElementState::Pressed => ButtonState::Pressed,
+                    ElementState::Released => ButtonState::Released,
+                };
+
+                let text = if event.state == ElementState::Pressed {
+                    match &event.logical_key {
+                        Key::Character(ch) => Some(ch.to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                Some(InputEvent::Keyboard {
+                    key,
+                    text,
+                    state,
+                    modifiers: Modifiers::default(), // Caller should fill this
+                })
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        (*x * 20.0, *y * 20.0) // Approximate line height
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        (pos.x as f32, pos.y as f32)
+                    }
+                };
+                Some(InputEvent::Scroll {
+                    delta: Point::new(dx, dy),
+                })
+            }
+
+            WindowEvent::Focused(focused) => {
+                Some(InputEvent::WindowFocus {
+                    focused: *focused,
+                })
+            }
+
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let mods = modifiers.state();
+                Some(InputEvent::ModifiersChanged {
+                    modifiers: Modifiers {
+                        shift: mods.shift_key(),
+                        control: mods.control_key(),
+                        alt: mods.alt_key(),
+                        super_key: false, // winit 0.31 doesn't expose this directly
+                    },
+                })
+            }
+
+            _ => None,
+        }
+    }
+
+    /// Set the pointer position for pointer events.
+    ///
+    /// This is used when converting from winit events that don't include
+    /// position information.
+    pub fn with_position(self, position: Point<Logical>) -> Self {
+        match self {
+            InputEvent::PointerButton { button, state, .. } => {
+                InputEvent::PointerButton {
+                    position,
+                    button,
+                    state,
+                }
+            }
+            _ => self,
+        }
+    }
+
+    /// Set the modifiers for keyboard events.
+    pub fn with_modifiers(self, modifiers: Modifiers) -> Self {
+        match self {
+            InputEvent::Keyboard { key, text, state, .. } => {
+                InputEvent::Keyboard {
+                    key,
+                    text,
+                    state,
+                    modifiers,
+                }
+            }
+            _ => self,
+        }
+    }
+}
+
+use winit::event::WindowEvent;
+
+// ============================================================================
 // TESTS
 // ============================================================================
 
@@ -388,7 +577,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(50.0, 50.0),
             None,
-            crate::core::Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
             1.0,
         );
         assert!(ctx.is_pointer_inside());
@@ -396,7 +585,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(150.0, 50.0),
             None,
-            crate::core::Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
             1.0,
         );
         assert!(!ctx.is_pointer_inside());
