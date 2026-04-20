@@ -25,18 +25,18 @@ pub use uniffi;
 const CLEAR_COLOR: wgpu::Color = Color::BLUE.to_wgpu_color();
 
 mod color;
-mod core;
+pub mod core;
 mod editor;
-mod input;
-mod layout;
+pub mod input;
+pub mod layout;
 mod macros;
 mod quad_instance;
-mod render;
+pub mod render;
 mod renderer;
 mod resource;
-mod state;
+pub mod state;
 mod utils;
-mod widget;
+pub mod widget;
 pub mod widgets;
 
 // Note: core module types are available but not re-exported yet to avoid conflicts

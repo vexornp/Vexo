@@ -11,7 +11,7 @@ use crate::core::WidgetId;
 ///
 /// ```
 /// use vexo::widget::Identifiable;
-/// use vexo::WidgetId;
+/// use vexo::core::WidgetId;
 ///
 /// struct MyWidget {
 ///     id: WidgetId,

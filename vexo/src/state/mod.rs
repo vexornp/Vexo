@@ -14,9 +14,11 @@
 //!
 //! ```
 //! use vexo::state::WidgetStateRegistry;
+//! use glyphon::FontSystem;
 //!
+//! let mut font_system = FontSystem::new();
 //! let mut registry = WidgetStateRegistry::new();
-//! let editor = registry.get_or_create_editor("my-editor", "initial text");
+//! let editor = registry.get_or_create_editor("my-editor", "initial text", &mut font_system);
 //! ```
 
 pub mod editor;

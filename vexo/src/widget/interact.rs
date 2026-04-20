@@ -152,8 +152,9 @@ impl<M> InteractionResponse<M> {
 ///
 /// ```
 /// use vexo::widget::{Interact, InteractionContext, InteractionResponse};
-/// use vexo::input::InputEvent;
+/// use vexo::input::{InputEvent, ButtonState};
 ///
+/// #[derive(Clone, Debug)]
 /// enum Message { Clicked }
 ///
 /// struct Clickable;
@@ -165,7 +166,7 @@ impl<M> InteractionResponse<M> {
 ///         ctx: &InteractionContext,
 ///     ) -> InteractionResponse<Message> {
 ///         match event {
-///             InputEvent::PointerButton { state, .. } if state.is_pressed() => {
+///             InputEvent::PointerButton { state, .. } if *state == ButtonState::Pressed => {
 ///                 if ctx.is_pointer_inside() {
 ///                     InteractionResponse::with_message(Message::Clicked)
 ///                 } else {

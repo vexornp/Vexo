@@ -125,14 +125,17 @@ pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     ///
     /// # Examples
     /// ```
+    /// use vexo::widgets::Text;
+    /// use vexo::WidgetExt;
+    ///
     /// // Fixed width and height
-    /// text!("Hello").frame(100.0, 50.0)
+    /// let w: Box<dyn vexo::widgets::Widget<()>> = Text::new("Hello").frame(100.0, 50.0).boxed();
     ///
     /// // Fixed width only
-    /// text!("Hello").frame_width(200.0)
+    /// let w: Box<dyn vexo::widgets::Widget<()>> = Text::new("Hello").frame_width(200.0).boxed();
     ///
     /// // Fixed height only
-    /// text!("Hello").frame_height(30.0)
+    /// let w: Box<dyn vexo::widgets::Widget<()>> = Text::new("Hello").frame_height(30.0).boxed();
     /// ```
     fn frame(self, width: f32, height: f32) -> Frame<Self, M> {
         Frame::new(self, FrameSize::fixed(width, height))
@@ -177,10 +180,13 @@ pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     ///
     /// Allows modifiers to be chained without manual `Box::new()` wrapping:
     /// ```
-    /// text!("Hello")
+    /// use vexo::widgets::Text;
+    /// use vexo::{Color, WidgetExt};
+    ///
+    /// let w: Box<dyn vexo::widgets::Widget<()>> = Text::new("Hello")
     ///     .padding(10.0)
     ///     .background(Color::RED)
-    ///     .boxed()
+    ///     .boxed();
     /// ```
     fn boxed(self) -> Box<dyn Widget<M>>
     where

@@ -7,8 +7,8 @@
 ///
 /// # Examples
 /// ```
-/// text!("Hello")                    // Basic text
-/// text!("Hello", font_size: 24.0)   // With font size
+/// use vexo::widgets::Text;
+/// let t = vexo::text!("Hello");  // Basic text
 /// ```
 #[macro_export]
 macro_rules! text {
@@ -25,8 +25,7 @@ macro_rules! text {
 /// # Example
 /// ```
 /// use vexo::Color;
-/// color_widget!(Color::RED)           // Just color, use .frame() for size
-/// color_widget!([1.0, 0.0, 0.0])      // RGB array (also works)
+/// let w = vexo::color_widget!(Color::RED);  // Just color, use .frame() for size
 /// ```
 #[macro_export]
 macro_rules! color_widget {
@@ -39,7 +38,8 @@ macro_rules! color_widget {
 ///
 /// # Examples
 /// ```
-/// text_edit!("id", "placeholder")
+/// use vexo::widgets::TextEdit;
+/// let editor = vexo::text_edit!("id", "placeholder");
 /// ```
 #[macro_export]
 macro_rules! text_edit {
@@ -52,8 +52,10 @@ macro_rules! text_edit {
 ///
 /// # Examples
 /// ```
-/// use vexo::Color;
-/// button!(text!("Click"), Message::Clicked)
+/// use vexo::widgets::{Button, Text};
+/// #[derive(Clone, Debug)]
+/// enum Message { Clicked }
+/// let btn = vexo::button!(Box::new(Text::new("Click")), Message::Clicked);
 /// ```
 #[macro_export]
 macro_rules! button {
@@ -66,16 +68,10 @@ macro_rules! button {
 ///
 /// # Examples
 /// ```
-/// column![
-///     text!("Title"),
-///     color_widget!(60.0, 70.0, [1.0, 0.0, 0.0]),
-/// ]
-///
-/// column![
-///     align: Center,
-///     text!("Title"),
-///     button!(text!("Click"), Message::Clicked),
-/// ]
+/// use vexo::widgets::Column;
+/// let col: Box<Column<()>> = vexo::column![
+///     vexo::text!("Title"),
+/// ];
 /// ```
 #[macro_export]
 macro_rules! column {
@@ -105,10 +101,11 @@ macro_rules! column {
 ///
 /// # Example
 /// ```
-/// row![
-///     text!("Left"),
-///     text!("Right"),
-/// ]
+/// use vexo::widgets::Row;
+/// let row: Box<Row<()>> = vexo::row![
+///     vexo::text!("Left"),
+///     vexo::text!("Right"),
+/// ];
 /// ```
 #[macro_export]
 macro_rules! row {

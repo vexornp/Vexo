@@ -135,14 +135,14 @@ impl PaintContext {
 /// ```
 /// use vexo::widget::{Paint, PaintContext};
 /// use vexo::render::RenderCommand;
-/// use vexo::Color;
+/// use vexo::core::{Color, Rect, Logical};
 ///
 /// struct RedRect;
 ///
 /// impl Paint for RedRect {
 ///     fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
 ///         vec![RenderCommand::rect(
-///             vexo::Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+///             Rect::<Logical>::from_xywh(0.0, 0.0, 100.0, 100.0),
 ///             Color::RED,
 ///         )]
 ///     }

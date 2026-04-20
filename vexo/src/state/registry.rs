@@ -18,11 +18,14 @@ use crate::state::focus::FocusState;
 ///
 /// ```
 /// use vexo::state::WidgetStateRegistry;
+/// use glyphon::FontSystem;
+/// use vexo::core::WidgetId;
 ///
+/// let mut font_system = FontSystem::new();
 /// let mut registry = WidgetStateRegistry::new();
 ///
 /// // Manage editors
-/// let editor = registry.get_or_create_editor("my-editor", "initial text");
+/// let editor = registry.get_or_create_editor("my-editor", "initial text", &mut font_system);
 ///
 /// // Manage focus
 /// let focused = registry.focused_widget();
