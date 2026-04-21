@@ -87,21 +87,37 @@ impl FrameSize {
 /// All widgets automatically implement this trait via blanket impl.
 pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     /// Add uniform padding around the widget.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .padding() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn padding(self, amount: f32) -> Padding<Self, M> {
         Padding::uniform(self, amount)
     }
 
     /// Add horizontal padding (left and right).
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .padding() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn padding_horizontal(self, amount: f32) -> Padding<Self, M> {
         Padding::horizontal(self, amount)
     }
 
     /// Add vertical padding (top and bottom).
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .padding() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn padding_vertical(self, amount: f32) -> Padding<Self, M> {
         Padding::vertical(self, amount)
     }
 
     /// Add asymmetric padding with specific values for each side.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .padding() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn padding_each(self, left: f32, right: f32, top: f32, bottom: f32) -> Padding<Self, M> {
         Padding::new(self, left, right, top, bottom)
     }
@@ -137,41 +153,73 @@ pub trait WidgetExt<M: Clone + std::fmt::Debug + Send>: Widget<M> + Sized {
     /// // Fixed height only
     /// let w: Box<dyn vexo::widgets::Widget<()>> = Text::new("Hello").frame_height(30.0).boxed();
     /// ```
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .frame() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn frame(self, width: f32, height: f32) -> Frame<Self, M> {
         Frame::new(self, FrameSize::fixed(width, height))
     }
 
     /// Apply fixed width, height is auto-sized.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .frame() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn frame_width(self, width: f32) -> Frame<Self, M> {
         Frame::new(self, FrameSize::width(width))
     }
 
     /// Apply fixed height, width is auto-sized.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .frame() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn frame_height(self, height: f32) -> Frame<Self, M> {
         Frame::new(self, FrameSize::height(height))
     }
 
     /// Apply frame with full constraints.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .frame() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn frame_with(self, constraints: FrameSize) -> Frame<Self, M> {
         Frame::new(self, constraints)
     }
 
     /// Expand to fill available space in both dimensions.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .expand() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn expand(self) -> Frame<Self, M> {
         Frame::new(self, FrameSize::expand())
     }
 
     /// Expand width to fill available space, height auto.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .expand() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn expand_width(self) -> Frame<Self, M> {
         Frame::new(self, FrameSize::expand_width())
     }
 
     /// Expand height to fill available space, width auto.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .expand() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn expand_height(self) -> Frame<Self, M> {
         Frame::new(self, FrameSize::expand_height())
     }
 
     /// Fill 100% of available space (percent-based sizing).
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use container's .fill() method instead. This wrapper creates extra Taffy nodes."
+    )]
     fn fill(self) -> Frame<Self, M> {
         Frame::new(self, FrameSize::fill())
     }
@@ -204,6 +252,13 @@ impl<M: Clone + std::fmt::Debug + Send, W: Widget<M>> WidgetExt<M> for W {}
 // ============================================================================
 
 /// Adds padding around a child widget using Taffy layout.
+///
+/// **Deprecated:** Use container's `.padding()` method instead.
+/// This wrapper creates an extra Taffy node which is inefficient.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use container's .padding() method instead. This wrapper creates extra Taffy nodes."
+)]
 pub struct Padding<W, M> {
     child: W,
     left: f32,
@@ -531,6 +586,13 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
 ///
 /// Unlike SwiftUI's frame which can also handle alignment within a larger frame,
 /// this modifier focuses on size constraints via Taffy's layout system.
+///
+/// **Deprecated:** Use container's `.frame()` method instead.
+/// This wrapper creates an extra Taffy node which is inefficient.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use container's .frame() method instead. This wrapper creates extra Taffy nodes."
+)]
 pub struct Frame<W, M> {
     child: W,
     constraints: FrameSize,
