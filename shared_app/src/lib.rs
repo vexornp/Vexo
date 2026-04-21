@@ -1,5 +1,5 @@
 use vexo::{
-    button, color_widget,
+    button, color_widget, column, row, grid,
     layout::{AlignItems, TrackSizing},
     text, text_edit,
     widgets::{Column, Grid, Row, Widget},
@@ -39,99 +39,78 @@ impl Application for State {
         let text_content = format!("You clicked {} times!", state.click_count);
 
         // Main column fills available space with white background
-        Column::new()
-            .align(AlignItems::Center)
-            .gap(10.0)
-            .padding(20.0)
-            .push(
-                // Text edit with fixed size
+        column![
+            // Text edit with fixed size
+            Column::new()
+                .width(100.0)
+                .height(50.0)
+                .push(text_edit!("editor_id_input", "Type here..."))
+                .boxed(),
+            // Text with padding and decorative styling
+            column![
+                padding: 10.0,
+                text!("Modified Text", font_size: 24.0)
+                    .background(Color::RED)
+                    .border(Color::GREEN, 2.0)
+                    .corner_radius(8.0)
+                    .boxed(),
+            ],
+            // Button with padding and decorative styling
+            column![
+                padding: 10.0,
+                button!(text!(text_content, font_size: 24.0), Message::Clicked)
+                    .background(Color::rgb(0.1, 0.4, 0.1))
+                    .border(Color::BLACK, 1.0)
+                    .corner_radius(8.0)
+                    .boxed(),
+            ],
+            // Cyan rectangle with fixed size
+            Column::new()
+                .width(110.0)
+                .height(30.0)
+                .push(color_widget!(Color::CYAN))
+                .boxed(),
+            // Row with two colored rectangles
+            row![
                 Column::new()
-                    .width(100.0)
-                    .height(50.0)
-                    .push(text_edit!("editor_id_input", "Type here..."))
+                    .width(60.0)
+                    .height(70.0)
+                    .push(color_widget!(Color::RED))
                     .boxed(),
-            )
-            .push(
-                // Text with padding and decorative styling
                 Column::new()
-                    .padding(10.0)
-                    .push(
-                        text!("Modified Text", font_size: 24.0)
-                            .background(Color::RED)
-                            .border(Color::GREEN, 2.0)
-                            .corner_radius(8.0)
-                            .boxed(),
-                    )
+                    .width(90.0)
+                    .height(40.0)
+                    .push(color_widget!(Color::YELLOW))
                     .boxed(),
-            )
-            .push(
-                // Button with padding and decorative styling
-                Column::new()
-                    .padding(10.0)
-                    .push(
-                        button!(text!(text_content, font_size: 24.0), Message::Clicked)
-                            .background(Color::rgb(0.1, 0.4, 0.1))
-                            .border(Color::BLACK, 1.0)
-                            .corner_radius(8.0)
-                            .boxed(),
-                    )
-                    .boxed(),
-            )
-            .push(
-                // Cyan rectangle with fixed size
-                Column::new()
-                    .width(110.0)
-                    .height(30.0)
-                    .push(color_widget!(Color::CYAN))
-                    .boxed(),
-            )
-            .push(
-                // Row with two colored rectangles
-                Row::new()
-                    .push(
-                        Column::new()
-                            .width(60.0)
-                            .height(70.0)
-                            .push(color_widget!(Color::RED))
-                            .boxed(),
-                    )
-                    .push(
-                        Column::new()
-                            .width(90.0)
-                            .height(40.0)
-                            .push(color_widget!(Color::YELLOW))
-                            .boxed(),
-                    )
-                    .boxed(),
-            )
-            .push(
-                // Grid demonstration: 2x3 grid with different sized cells
-                Column::new()
-                    .padding(10.0)
-                    .push(text!("Grid Demo (2x3):", font_size: 18.0).boxed())
-                    .push(
-                        Grid::new()
-                            .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
-                            .rows(vec![
-                                TrackSizing::Px(40.0),
-                                TrackSizing::Px(40.0),
-                                TrackSizing::Px(40.0),
-                            ])
-                            .gap(5.0)
-                            .push(text!("Cell 1,1").background(Color::RED).boxed())
-                            .push(text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed())
-                            .push(text!("Cell 2,1").background(Color::BLUE).boxed())
-                            .push(text!("Cell 2,2").background(Color::YELLOW).boxed())
-                            .push(text!("Cell 3,1").background(Color::MAGENTA).boxed())
-                            .push(text!("Cell 3,2").background(Color::CYAN).boxed())
-                            .border(Color::BLACK, 2.0)
-                            .boxed(),
-                    )
-                    .boxed(),
-            )
-            .fill()
-            .background(Color::WHITE)
-            .boxed()
+            ],
+            // Grid demonstration: 2x3 grid with different sized cells
+            column![
+                padding: 10.0,
+                text!("Grid Demo (2x3):", font_size: 18.0).boxed(),
+                grid![
+                    columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)],
+                    rows: vec![
+                        TrackSizing::Px(40.0),
+                        TrackSizing::Px(40.0),
+                        TrackSizing::Px(40.0),
+                    ],
+                    text!("Cell 1,1").background(Color::RED).boxed(),
+                    text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed(),
+                    text!("Cell 2,1").background(Color::BLUE).boxed(),
+                    text!("Cell 2,2").background(Color::YELLOW).boxed(),
+                    text!("Cell 3,1").background(Color::MAGENTA).boxed(),
+                    text!("Cell 3,2").background(Color::CYAN).boxed(),
+                ]
+                .border(Color::BLACK, 2.0)
+                .boxed(),
+            ],
+        ]
+        .align(AlignItems::Center)
+        .gap(10.0)
+        .padding(20.0)
+        .fill()
+        .background(Color::WHITE)
+        .boxed()
     }
 }
 
