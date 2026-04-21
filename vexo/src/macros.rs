@@ -153,39 +153,16 @@ macro_rules! row {
 /// ```
 /// use vexo::{grid, layout::TrackSizing};
 /// let grid = grid![
-///     columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)],
-///     rows: vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0)],
 ///     vexo::text!("Cell 1").boxed(),
 ///     vexo::text!("Cell 2").boxed(),
 /// ]
+/// .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])
+/// .rows(vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0)])
 /// .gap(5.0)
 /// .boxed();
 /// ```
 #[macro_export]
 macro_rules! grid {
-    // With columns and rows
-    (columns: $cols:expr, rows: $rows:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut grid = $crate::widgets::Grid::new()
-                .columns($cols)
-                .rows($rows);
-            $(
-                grid = grid.push($child);
-            )*
-            grid
-        }
-    };
-    // With columns only
-    (columns: $cols:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut grid = $crate::widgets::Grid::new().columns($cols);
-            $(
-                grid = grid.push($child);
-            )*
-            grid
-        }
-    };
-    // Children only (auto columns)
     ($($child:expr),* $(,)?) => {
         {
             let mut grid = $crate::widgets::Grid::new();

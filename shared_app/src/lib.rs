@@ -86,12 +86,6 @@ impl Application for State {
             column![
                 text!("Grid Demo (2x3):", font_size: 18.0).boxed(),
                 grid![
-                    columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)],
-                    rows: vec![
-                        TrackSizing::Px(40.0),
-                        TrackSizing::Px(40.0),
-                        TrackSizing::Px(40.0),
-                    ],
                     text!("Cell 1,1").background(Color::RED).boxed(),
                     text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed(),
                     text!("Cell 2,1").background(Color::BLUE).boxed(),
@@ -99,6 +93,12 @@ impl Application for State {
                     text!("Cell 3,1").background(Color::MAGENTA).boxed(),
                     text!("Cell 3,2").background(Color::CYAN).boxed(),
                 ]
+                .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
+                .rows(vec![
+                    TrackSizing::Px(40.0),
+                    TrackSizing::Px(40.0),
+                    TrackSizing::Px(40.0),
+                ])
                 .border(Color::BLACK, 2.0)
                 .boxed(),
             ]
