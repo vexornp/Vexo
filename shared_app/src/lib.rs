@@ -1,6 +1,6 @@
 use vexo::{
-    button, color_widget, column, row, text, text_edit, widgets::Widget, AlignItems, Application,
-    Color, WidgetExt,
+    button, color_widget, text, text_edit, widgets::{Widget, Column, Row}, Application,
+    Color, WidgetExt, layout::AlignItems,
 };
 uniffi::setup_scaffolding!();
 
@@ -35,42 +35,91 @@ impl Application for State {
     fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>> {
         let text_content = format!("You clicked {} times!", state.click_count);
 
-        column![
-            align: AlignItems::Center,
-            color_widget!(Color::BLUE)
-                .frame(200.0, 100.0)
-        .padding(20.0)
-                .boxed(),
-            text_edit!("editor_id_input", "Type here...")
-                .frame(100.0, 50.0)
-                .boxed(),
-            // Example with modifiers
-            text!("Modified Text", font_size: 24.0)
-                .padding(10.0)
-                .background(Color::RED)
-                .border(Color::GREEN, 2.0)
-                .corner_radius(8.0)
-                .boxed(),
-            button!(text!(text_content, font_size: 24.0), Message::Clicked)
-                .padding(10.0)
-                .background(Color::rgb(0.1, 0.4, 0.1))
-                .border(Color::BLACK, 1.0)
-                .corner_radius(8.0)
-                .boxed(),
-            color_widget!(Color::BLUE)
-                .frame(150.0, 50.0)
-                .boxed(),
-            color_widget!(Color::CYAN)
-                .frame(110.0, 30.0)
-                .boxed(),
-            row![
-                color_widget!(Color::RED).frame(60.0, 70.0).boxed(),
-                color_widget!(Color::YELLOW).frame(90.0, 40.0).boxed(),
-            ],
-        ]
-        .fill()
-        .background(Color::WHITE)
-        .boxed()
+        // Main column fills available space with white background
+        Column::new()
+            .align(AlignItems::Center)
+            .gap(10.0)
+            .padding(20.0)
+            .push(
+                // Blue rectangle with fixed size
+                Column::new()
+                    .width(200.0)
+                    .height(100.0)
+                    .push(color_widget!(Color::BLUE))
+                    .boxed()
+            )
+            .push(
+                // Text edit with fixed size
+                Column::new()
+                    .width(100.0)
+                    .height(50.0)
+                    .push(text_edit!("editor_id_input", "Type here..."))
+                    .boxed()
+            )
+            .push(
+                // Text with padding and decorative styling
+                Column::new()
+                    .padding(10.0)
+                    .push(
+                        text!("Modified Text", font_size: 24.0)
+                            .background(Color::RED)
+                            .border(Color::GREEN, 2.0)
+                            .corner_radius(8.0)
+                            .boxed()
+                    )
+                    .boxed()
+            )
+            .push(
+                // Button with padding and decorative styling
+                Column::new()
+                    .padding(10.0)
+                    .push(
+                        button!(text!(text_content, font_size: 24.0), Message::Clicked)
+                            .background(Color::rgb(0.1, 0.4, 0.1))
+                            .border(Color::BLACK, 1.0)
+                            .corner_radius(8.0)
+                            .boxed()
+                    )
+                    .boxed()
+            )
+            .push(
+                // Blue rectangle with fixed size
+                Column::new()
+                    .width(150.0)
+                    .height(50.0)
+                    .push(color_widget!(Color::BLUE))
+                    .boxed()
+            )
+            .push(
+                // Cyan rectangle with fixed size
+                Column::new()
+                    .width(110.0)
+                    .height(30.0)
+                    .push(color_widget!(Color::CYAN))
+                    .boxed()
+            )
+            .push(
+                // Row with two colored rectangles
+                Row::new()
+                    .push(
+                        Column::new()
+                            .width(60.0)
+                            .height(70.0)
+                            .push(color_widget!(Color::RED))
+                            .boxed()
+                    )
+                    .push(
+                        Column::new()
+                            .width(90.0)
+                            .height(40.0)
+                            .push(color_widget!(Color::YELLOW))
+                            .boxed()
+                    )
+                    .boxed()
+            )
+            .fill()
+            .background(Color::WHITE)
+            .boxed()
     }
 }
 

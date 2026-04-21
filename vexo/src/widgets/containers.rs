@@ -77,6 +77,24 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
         self.layout = self.layout.flex_grow(value);
         self
     }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Fill available space (sets flex_grow to 1.0).
+    pub fn fill(mut self) -> Self {
+        self.layout = self.layout.flex_grow(1.0);
+        self
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Default for Column<M> {
@@ -238,6 +256,24 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
     /// Set flex grow factor.
     pub fn flex_grow(mut self, value: f32) -> Self {
         self.layout = self.layout.flex_grow(value);
+        self
+    }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Fill available space (sets flex_grow to 1.0).
+    pub fn fill(mut self) -> Self {
+        self.layout = self.layout.flex_grow(1.0);
         self
     }
 }
