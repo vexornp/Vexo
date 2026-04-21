@@ -1,3 +1,4 @@
+use crate::core::{Logical, Point, Size};
 use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -85,20 +86,18 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::{Point, Size};
-
         let layout = taffy.layout(node).unwrap();
 
         let x = offset.x + layout.location.x;
         let y = offset.y + layout.location.y;
 
-        let pos = Point::<crate::utils::Logical>::new(x, y);
-        let size = Size::<crate::utils::Logical>::new(layout.size.width, layout.size.height);
+        let pos = Point::<Logical>::new(x, y);
+        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
 
         let border_color = crate::Color::WHITE;
         let border_width = 1.0;
@@ -110,7 +109,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,

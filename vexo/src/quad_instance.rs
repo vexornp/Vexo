@@ -1,3 +1,5 @@
+use crate::core::{Logical, Point, Size};
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct QuadInstance {
@@ -13,8 +15,8 @@ pub struct QuadInstance {
 impl QuadInstance {
     /// Create a QuadInstance from logical coordinates
     pub fn from_logical(
-        pos: crate::utils::Point<crate::utils::Logical>,
-        size: crate::utils::Size<crate::utils::Logical>,
+        pos: Point<Logical>,
+        size: Size<Logical>,
         color: crate::Color,
         border_color: crate::Color,
         border_width: f32,

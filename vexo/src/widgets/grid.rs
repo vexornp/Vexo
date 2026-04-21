@@ -1,9 +1,9 @@
 //! Grid container widget for 2D layouts.
 
+use crate::core::{Logical, Point};
 use crate::input::InputEvent;
 use crate::layout::{Layout, TrackSizing};
 use crate::renderer::UiBatcher;
-use crate::utils::Logical;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use taffy::prelude::NodeId;
 
@@ -106,13 +106,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::Point;
-
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::new(
             offset.x + layout.location.x,
@@ -137,13 +135,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        use crate::utils::Point;
-
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::new(

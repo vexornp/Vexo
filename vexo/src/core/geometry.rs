@@ -143,6 +143,16 @@ impl Size<Physical> {
     pub fn to_logical(self, scale: f32) -> Size<Logical> {
         Size::new(self.width / scale, self.height / scale)
     }
+
+    /// Get width as u32 for GPU APIs.
+    pub fn width_u32(&self) -> u32 {
+        self.width as u32
+    }
+
+    /// Get height as u32 for GPU APIs.
+    pub fn height_u32(&self) -> u32 {
+        self.height as u32
+    }
 }
 
 // ============================================================================

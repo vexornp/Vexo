@@ -1,3 +1,4 @@
+use crate::core::{Logical, Point};
 use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -108,13 +109,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::Point;
-
         let layout = taffy.layout(node).unwrap();
         let pos = Point::new(
             offset.x + layout.location.x,
@@ -128,7 +127,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,

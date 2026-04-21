@@ -1,6 +1,6 @@
 use crate::layout::{AlignItems, JustifyContent, Layout};
 use crate::renderer::UiBatcher;
-use crate::utils::{Logical, Point, Rect};
+use crate::core::{Logical, Point, Rect};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::{InputEvent, ButtonState};
@@ -95,14 +95,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
         let layout = taffy.layout(node).unwrap();
 
-        let pos = Point::<crate::utils::Logical>::new(
+        let pos = Point::<Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
@@ -126,7 +126,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,

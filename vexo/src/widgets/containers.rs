@@ -1,3 +1,4 @@
+use crate::core::{Logical, Point};
 use crate::layout::{AlignItems, FlexDirection, JustifyContent, Layout};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -129,15 +130,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::Point;
-
         let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::<crate::utils::Logical>::new(
+        let my_offset = Point::<Logical>::new(
             offset.x + layout.location.x,
             offset.y + layout.location.y,
         );
@@ -160,13 +159,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        use crate::utils::Point;
-
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::new(
@@ -310,13 +307,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::Point;
-
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::new(
             offset.x + layout.location.x,
@@ -341,13 +336,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        use crate::utils::Point;
-
         let child_ids = taffy.children(node).unwrap();
         let layout = taffy.layout(node).unwrap();
         let my_offset = Point::new(

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
+use crate::core::{Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
 use crate::renderer::{UiBatcher, Vertex};
@@ -273,11 +274,10 @@ impl WgpuBackend {
             text_renderer,
             viewport,
             cache,
-            current_config: Some(RenderConfig {
-                width: physical_width as u32,
-                height: physical_height as u32,
-                scale_factor,
-            }),
+            current_config: Some(RenderConfig::new(
+                Size::new(physical_width as f32, physical_height as f32),
+                Scale::new(scale_factor as f64),
+            )),
             clear_color: Color::BLUE.to_wgpu_color(),
         })
     }
@@ -474,8 +474,8 @@ impl RenderBackend for WgpuBackend {
 
         // Update global uniforms if size changed
         let uniform = GlobalUniforms {
-            screen_size: [config.width as f32, config.height as f32],
-            scale_factor: config.scale_factor,
+            screen_size: config.screen_size_array(),
+            scale_factor: config.scale_factor(),
             _padding: 0.0,
         };
         self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
@@ -487,8 +487,8 @@ impl RenderBackend for WgpuBackend {
         self.viewport.update(
             &self.queue,
             glyphon::Resolution {
-                width: config.width,
-                height: config.height,
+                width: config.width(),
+                height: config.height(),
             },
         );
     }
@@ -498,7 +498,9 @@ impl RenderBackend for WgpuBackend {
         self.execute_render_pass(0)
     }
 
-    fn resize(&mut self, width: u32, height: u32, scale_factor: f32) {
+    fn resize(&mut self, config: RenderConfig) {
+        let width = config.width();
+        let height = config.height();
         if width > 0 && height > 0 {
             self.config.width = width;
             self.config.height = height;
@@ -507,8 +509,8 @@ impl RenderBackend for WgpuBackend {
 
             // Update uniforms
             let uniform = GlobalUniforms {
-                screen_size: [width as f32, height as f32],
-                scale_factor,
+                screen_size: config.screen_size_array(),
+                scale_factor: config.scale_factor(),
                 _padding: 0.0,
             };
             self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));

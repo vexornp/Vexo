@@ -34,18 +34,13 @@ mod utils;
 pub mod widget;
 pub mod widgets;
 
-// Note: core module types are available but not re-exported yet to avoid conflicts
-// with existing utils types during the transition. Use crate::core::Type directly.
-
 use renderer::{TextRequest, UiBatcher};
 use render::{RenderBackend, WgpuBackend};
 use widgets::{Column, Widget, WidgetContext};
 pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
-// Import types needed by lib.rs - use utils for now during transition
-use crate::core::WidgetId;
-use crate::utils::{Physical, Point, Scale};
+use crate::core::{Physical, Point, Scale, Size, WidgetId};
 
 pub use taffy::prelude::AlignItems;
 
@@ -148,8 +143,11 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     pub fn resize_physical(&mut self, width: f32, height: f32) {
-        let scale_factor = self.widget_context.scale.factor();
-        self.backend.resize(width as u32, height as u32, scale_factor);
+        let config = render::RenderConfig::new(
+            Size::<Physical>::new(width, height),
+            Scale::new(self.widget_context.scale.factor() as f64),
+        );
+        self.backend.resize(config);
 
         if width > 0.0 && height > 0.0 {
             //Force re-layout
@@ -201,7 +199,7 @@ impl<A: Application + 'static> WindowState<A> {
             &mut self.taffy,
             self.root_node_id,
             &mut self.batcher,
-            crate::utils::Point::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             self.focused_widget_id,
             &self.cursor_blink,
             &mut self.widget_context,
@@ -396,7 +394,7 @@ impl<A: Application + 'static> WindowState<A> {
         let widget_response = self.root_widget.on_event(
             &self.taffy,
             self.root_node_id,
-            crate::utils::Point::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             &input_event,
             self.focused_widget_id,
             &mut self.widget_context,

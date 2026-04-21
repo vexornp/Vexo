@@ -5,25 +5,50 @@
 
 use glyphon::FontSystem;
 
+use crate::core::{Physical, Scale, Size};
 use crate::renderer::UiBatcher;
 
 /// Configuration for the render backend.
 #[derive(Debug, Clone)]
 pub struct RenderConfig {
-    /// Width in physical pixels.
-    pub width: u32,
-    /// Height in physical pixels.
-    pub height: u32,
+    /// Physical size in screen pixels.
+    pub size: Size<Physical>,
     /// DPI scale factor.
-    pub scale_factor: f32,
+    pub scale: Scale,
+}
+
+impl RenderConfig {
+    /// Create a new render config.
+    pub fn new(size: Size<Physical>, scale: Scale) -> Self {
+        Self { size, scale }
+    }
+
+    /// Get width as u32 for GPU APIs.
+    pub fn width(&self) -> u32 {
+        self.size.width_u32()
+    }
+
+    /// Get height as u32 for GPU APIs.
+    pub fn height(&self) -> u32 {
+        self.size.height_u32()
+    }
+
+    /// Get scale factor as f32 for GPU APIs.
+    pub fn scale_factor(&self) -> f32 {
+        self.scale.factor()
+    }
+
+    /// Get screen size as [f32; 2] for GPU uniforms.
+    pub fn screen_size_array(&self) -> [f32; 2] {
+        self.size.to_array()
+    }
 }
 
 impl Default for RenderConfig {
     fn default() -> Self {
         Self {
-            width: 800,
-            height: 600,
-            scale_factor: 1.0,
+            size: Size::new(800.0, 600.0),
+            scale: Scale::default(),
         }
     }
 }
@@ -52,7 +77,7 @@ pub trait RenderBackend {
     fn render(&mut self) -> Result<(), RenderError>;
 
     /// Resize the render surface.
-    fn resize(&mut self, width: u32, height: u32, scale_factor: f32);
+    fn resize(&mut self, config: RenderConfig);
 
     /// Check if the backend is ready to render.
     fn is_ready(&self) -> bool;
@@ -95,9 +120,9 @@ mod tests {
     #[test]
     fn test_render_config_default() {
         let config = RenderConfig::default();
-        assert_eq!(config.width, 800);
-        assert_eq!(config.height, 600);
-        assert_eq!(config.scale_factor, 1.0);
+        assert_eq!(config.width(), 800);
+        assert_eq!(config.height(), 600);
+        assert_eq!(config.scale_factor(), 1.0);
     }
 
     #[test]

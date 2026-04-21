@@ -1,6 +1,5 @@
 use crate::renderer::UiBatcher;
-use crate::utils::Physical;
-use crate::core::WidgetId;
+use crate::core::{Logical, Physical, Point, Scale, WidgetId};
 use crate::state::WidgetStateRegistry;
 use crate::input::InputEvent;
 use crate::layout::Layout;
@@ -27,7 +26,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         taffy: &mut taffy::TaffyTree,
         node: taffy::NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
@@ -37,7 +36,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
         ctx: &mut WidgetContext,
@@ -68,7 +67,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         taffy: &mut taffy::TaffyTree,
         node: taffy::NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
@@ -80,7 +79,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         &mut self,
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
@@ -119,8 +118,8 @@ pub struct WidgetContext {
     /// State registry for editors and focus management.
     state: WidgetStateRegistry,
     pub font_system: FontSystem,
-    pub scale: crate::utils::Scale,
-    pub cursor_pos: crate::utils::Point<Physical>,
+    pub scale: Scale,
+    pub cursor_pos: Point<Physical>,
 }
 
 impl WidgetContext {
@@ -134,8 +133,8 @@ impl WidgetContext {
         Self {
             state: WidgetStateRegistry::new(),
             font_system,
-            scale: crate::utils::Scale::new(1.0),
-            cursor_pos: crate::utils::Point::new(0.0, 0.0),
+            scale: Scale::new(1.0),
+            cursor_pos: Point::new(0.0, 0.0),
         }
     }
 

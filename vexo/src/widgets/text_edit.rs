@@ -1,3 +1,4 @@
+use crate::core::{Logical, Point, Rect, Size};
 use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -107,13 +108,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         taffy: &mut taffy::TaffyTree,
         node: NodeId,
         renderer: &mut UiBatcher,
-        offset: crate::utils::Point<crate::utils::Logical>,
+        offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
         ctx: &mut WidgetContext,
     ) {
-        use crate::utils::{Logical, Point, Rect, Size};
-
         let layout = taffy.layout(node).unwrap();
         let pos: Point<Logical> = Point::new(
             offset.x + layout.location.x,
@@ -172,7 +171,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         &mut self,
         _taffy: &taffy::TaffyTree,
         _node: NodeId,
-        _offset: crate::utils::Point<crate::utils::Logical>,
+        _offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         ctx: &mut WidgetContext,
@@ -193,7 +192,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 // Add offset to get absolute position
                 let abs_x = _offset.x + layout.location.x;
                 let abs_y = _offset.y + layout.location.y;
-                let rect = crate::utils::Rect::from_xywh(
+                let rect = Rect::from_xywh(
                     abs_x,
                     abs_y,
                     layout.size.width,
@@ -230,7 +229,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 let layout = _taffy.layout(_node).unwrap();
                 let abs_x = _offset.x + layout.location.x;
                 let abs_y = _offset.y + layout.location.y;
-                let rect = crate::utils::Rect::from_xywh(
+                let rect = Rect::from_xywh(
                     abs_x,
                     abs_y,
                     layout.size.width,

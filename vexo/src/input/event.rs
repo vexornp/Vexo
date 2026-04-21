@@ -10,7 +10,7 @@
 //! - Enable testing of input handling
 //! - Provide a clean, minimal event model
 
-use crate::utils::{Point, Logical, Physical, Scale, Rect};
+use crate::core::{Point, Logical, Physical, Scale, Rect};
 
 // ============================================================================
 // INPUT EVENT

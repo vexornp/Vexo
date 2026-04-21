@@ -99,7 +99,7 @@ impl RenderBackend for MockBackend {
     ) {
         self.prepare_count += 1;
         self.config = Some(config.clone());
-        self.last_screen_size = Some((config.width as f32, config.height as f32));
+        self.last_screen_size = Some((config.size.width, config.size.height));
         self.last_quad_count = batcher.quad_instances.len();
         self.last_text_count = batcher.text_requests.len();
         self.last_editor_count = batcher.editor_requests.len();
@@ -113,12 +113,8 @@ impl RenderBackend for MockBackend {
         Ok(())
     }
 
-    fn resize(&mut self, width: u32, height: u32, scale_factor: f32) {
-        self.config = Some(RenderConfig {
-            width,
-            height,
-            scale_factor,
-        });
+    fn resize(&mut self, config: RenderConfig) {
+        self.config = Some(config);
         self.ready = true;
     }
 
@@ -134,6 +130,7 @@ impl RenderBackend for MockBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{Physical, Scale, Size};
 
     #[test]
     fn test_mock_backend_new() {
@@ -154,11 +151,10 @@ mod tests {
         let mut backend = MockBackend::new();
         let mut batcher = UiBatcher::new();
         let mut font_system = FontSystem::new();
-        let config = RenderConfig {
-            width: 1024,
-            height: 768,
-            scale_factor: 2.0,
-        };
+        let config = RenderConfig::new(
+            Size::<Physical>::new(1024.0, 768.0),
+            Scale::new(2.0),
+        );
 
         backend.prepare(&mut batcher, &mut font_system, config);
 
@@ -189,12 +185,15 @@ mod tests {
     fn test_mock_backend_resize() {
         let mut backend = MockBackend::not_ready();
 
-        backend.resize(800, 600, 1.5);
+        backend.resize(RenderConfig::new(
+            Size::<Physical>::new(800.0, 600.0),
+            Scale::new(1.5),
+        ));
 
         assert!(backend.is_ready());
         let config = backend.config().unwrap();
-        assert_eq!(config.width, 800);
-        assert_eq!(config.height, 600);
-        assert_eq!(config.scale_factor, 1.5);
+        assert_eq!(config.width(), 800);
+        assert_eq!(config.height(), 600);
+        assert_eq!(config.scale_factor(), 1.5);
     }
 }

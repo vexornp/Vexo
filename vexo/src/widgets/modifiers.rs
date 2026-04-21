@@ -1,5 +1,5 @@
+use crate::core::{Logical, Point, Size};
 use crate::renderer::UiBatcher;
-use crate::utils::{Logical, Point, Size};
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::input::InputEvent;
 use crate::Color;

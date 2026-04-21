@@ -1,3 +1,4 @@
+use crate::core::{Logical, Point, Rect};
 use crate::quad_instance;
 use crate::Color;
 
@@ -22,12 +23,12 @@ impl Vertex {
 
 pub struct TextRequest {
     pub content: String,
-    pub position: crate::utils::Point<crate::utils::Logical>,
+    pub position: Point<Logical>,
     pub size: f32,
     pub color: [f32; 4],
 }
 
-pub type Bounds = crate::utils::Rect<crate::utils::Logical>;
+pub type Bounds = Rect<Logical>;
 
 pub struct EditorRequest {
     pub id: String,
@@ -127,7 +128,7 @@ impl UiBatcher {
     pub fn add_text(
         &mut self,
         content: String,
-        position: crate::utils::Point<crate::utils::Logical>,
+        position: Point<Logical>,
         size: f32,
         color: impl Into<Color>,
     ) {
