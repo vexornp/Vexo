@@ -1,7 +1,7 @@
 use vexo::{
-    button, color_widget, column, row, grid,
+    button, color_widget, column, grid,
     layout::{AlignItems, TrackSizing},
-    text, text_edit,
+    row, text, text_edit,
     widgets::{Column, Grid, Row, Widget},
     Application, Color, WidgetExt,
 };
@@ -85,7 +85,6 @@ impl Application for State {
             ],
             // Grid demonstration: 2x3 grid with different sized cells
             column![
-                padding: 10.0,
                 text!("Grid Demo (2x3):", font_size: 18.0).boxed(),
                 grid![
                     columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)],
@@ -106,8 +105,6 @@ impl Application for State {
             ],
         ]
         .align(AlignItems::Center)
-        .gap(10.0)
-        .padding(20.0)
         .fill()
         .background(Color::WHITE)
         .boxed()
