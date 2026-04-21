@@ -12,6 +12,7 @@
 /// ```
 /// use vexo::text;
 /// let txt = text!("Hello")
+///     .font_size(24.0)
 ///     .width(100.0)
 ///     .height(50.0)
 ///     .boxed();
@@ -20,9 +21,6 @@
 macro_rules! text {
     ($content:expr) => {
         $crate::widgets::Text::new($content)
-    };
-    ($content:expr, font_size: $size:expr) => {
-        $crate::widgets::Text::new($content).font_size($size)
     };
 }
 

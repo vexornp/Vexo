@@ -47,7 +47,8 @@ impl Application for State {
                 .height(50.0)
                 .boxed(),
             // Text with padding and decorative styling
-            column![text!("Modified Text", font_size: 24.0)
+            column![text!("Modified Text")
+                .font_size(24.0)
                 .background(Color::RED)
                 .border(Color::GREEN, 2.0)
                 .corner_radius(8.0)
@@ -56,7 +57,7 @@ impl Application for State {
             .boxed(),
             // Button with padding and decorative styling
             column![
-                button!(text!(text_content, font_size: 24.0).boxed(), Message::Clicked)
+                button!(text!(text_content).font_size(24.0).boxed(), Message::Clicked)
                     .background(Color::rgb(0.1, 0.4, 0.1))
                     .border(Color::BLACK, 1.0)
                     .corner_radius(8.0)
@@ -84,7 +85,7 @@ impl Application for State {
             .boxed(),
             // Grid demonstration: 2x3 grid with different sized cells
             column![
-                text!("Grid Demo (2x3):", font_size: 18.0).boxed(),
+                text!("Grid Demo (2x3):").font_size(18.0).boxed(),
                 grid![
                     text!("Cell 1,1").background(Color::RED).boxed(),
                     text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed(),
