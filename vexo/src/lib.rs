@@ -176,8 +176,8 @@ impl<A: Application + 'static> WindowState<A> {
         let scale_factor = self.widget_context.scale.factor();
 
         // Taffy should layout in logical points so that 24.0 size means 24 points.
-        let logical_width = self.backend.viewport().resolution().width as f32 / scale_factor;
-        let logical_height = self.backend.viewport().resolution().height as f32 / scale_factor;
+        let logical_width = self.backend.width() as f32 / scale_factor;
+        let logical_height = self.backend.height() as f32 / scale_factor;
 
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
@@ -208,8 +208,11 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
-        let physical_width = self.backend.viewport().resolution().width;
-        let physical_height = self.backend.viewport().resolution().height;
+        let physical_width = self.backend.width();
+        let physical_height = self.backend.height();
+
+        // Update viewport resolution
+        self.backend.update_viewport(physical_width, physical_height);
 
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 

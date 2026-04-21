@@ -332,9 +332,30 @@ impl WgpuBackend {
         &mut self.viewport
     }
 
+    /// Update viewport resolution.
+    pub fn update_viewport(&mut self, width: u32, height: u32) {
+        self.viewport.update(
+            &self.queue,
+            glyphon::Resolution {
+                width,
+                height,
+            },
+        );
+    }
+
     /// Get the surface format.
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.config.format
+    }
+
+    /// Get the current width in physical pixels.
+    pub fn width(&self) -> u32 {
+        self.config.width
+    }
+
+    /// Get the current height in physical pixels.
+    pub fn height(&self) -> u32 {
+        self.config.height
     }
 
     /// Set the clear color.
@@ -436,6 +457,7 @@ impl WgpuBackend {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+        self.atlas.trim();
 
         Ok(())
     }
