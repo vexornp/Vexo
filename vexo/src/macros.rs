@@ -85,7 +85,27 @@ macro_rules! column {
             Box::new(col)
         }
     };
-    // Without alignment
+    // With padding
+    (padding: $padding:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut col = $crate::widgets::Column::new().padding($padding);
+            $(
+                col = col.push($child);
+            )*
+            Box::new(col)
+        }
+    };
+    // With gap
+    (gap: $gap:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut col = $crate::widgets::Column::new().gap($gap);
+            $(
+                col = col.push($child);
+            )*
+            Box::new(col)
+        }
+    };
+    // Without options
     ($($child:expr),* $(,)?) => {
         {
             let mut col = $crate::widgets::Column::new();
@@ -109,6 +129,37 @@ macro_rules! column {
 /// ```
 #[macro_export]
 macro_rules! row {
+    // With alignment
+    (align: $align:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut row = $crate::widgets::Row::new().align_items($align);
+            $(
+                row = row.push($child);
+            )*
+            Box::new(row)
+        }
+    };
+    // With padding
+    (padding: $padding:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut row = $crate::widgets::Row::new().padding($padding);
+            $(
+                row = row.push($child);
+            )*
+            Box::new(row)
+        }
+    };
+    // With gap
+    (gap: $gap:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut row = $crate::widgets::Row::new().gap($gap);
+            $(
+                row = row.push($child);
+            )*
+            Box::new(row)
+        }
+    };
+    // Without options
     ($($child:expr),* $(,)?) => {
         {
             let mut row = $crate::widgets::Row::new();
@@ -116,6 +167,53 @@ macro_rules! row {
                 row = row.push($child);
             )*
             Box::new(row)
+        }
+    };
+}
+
+/// Create a Grid container widget wrapped in Box.
+///
+/// # Examples
+/// ```
+/// use vexo::widgets::Grid;
+/// use vexo::layout::TrackSizing;
+/// let grid: Box<Grid<()>> = vexo::grid![
+///     vexo::text!("Cell 1"),
+///     vexo::text!("Cell 2"),
+/// ];
+/// ```
+#[macro_export]
+macro_rules! grid {
+    // With columns and rows
+    (columns: $cols:expr, rows: $rows:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut grid = $crate::widgets::Grid::new()
+                .columns($cols)
+                .rows($rows);
+            $(
+                grid = grid.push($child);
+            )*
+            Box::new(grid)
+        }
+    };
+    // With columns only
+    (columns: $cols:expr, $($child:expr),* $(,)?) => {
+        {
+            let mut grid = $crate::widgets::Grid::new().columns($cols);
+            $(
+                grid = grid.push($child);
+            )*
+            Box::new(grid)
+        }
+    };
+    // Children only (auto columns)
+    ($($child:expr),* $(,)?) => {
+        {
+            let mut grid = $crate::widgets::Grid::new();
+            $(
+                grid = grid.push($child);
+            )*
+            Box::new(grid)
         }
     };
 }
