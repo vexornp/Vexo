@@ -1,14 +1,14 @@
+use crate::layout::{AlignItems, FlexDirection, JustifyContent, Layout};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::InputEvent;
-use taffy::prelude::{length, Display, FlexDirection, NodeId, Size};
-use taffy::Style;
+use taffy::prelude::NodeId;
 
 pub struct Column<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
-    pub align_items: taffy::prelude::AlignItems,
+    pub layout: Layout,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Column<M> {
@@ -16,7 +16,7 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
         Self {
             children: Vec::new(),
             key: None,
-            align_items: taffy::prelude::AlignItems::Start,
+            layout: Layout::default(),
         }
     }
 
@@ -25,14 +25,63 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
         self
     }
 
-    pub fn align_items(mut self, align: taffy::prelude::AlignItems) -> Self {
-        self.align_items = align;
-        self
-    }
-
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
         self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set gap between children.
+    pub fn gap(mut self, value: f32) -> Self {
+        self.layout = self.layout.gap(value);
+        self
+    }
+
+    /// Enable flex wrapping.
+    pub fn flex_wrap(mut self) -> Self {
+        self.layout = self.layout.flex_wrap();
+        self
+    }
+
+    /// Set justify content.
+    pub fn justify(mut self, value: JustifyContent) -> Self {
+        self.layout = self.layout.justify(value);
+        self
+    }
+
+    /// Set align items.
+    pub fn align(mut self, value: AlignItems) -> Self {
+        self.layout = self.layout.align(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Default for Column<M> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -47,21 +96,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         for child in self.children.iter_mut() {
             child_nodes.push(child.layout(taffy, ctx));
         }
-        taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Column,
-                    align_items: Some(self.align_items),
-                    gap: Size {
-                        width: length(0.0),
-                        height: length(10.0),
-                    },
-                    ..Default::default()
-                },
-                &child_nodes,
-            )
-            .unwrap()
+
+        let style = Layout {
+            flex_direction: Some(FlexDirection::Column),
+            ..self.layout.clone()
+        }
+        .to_taffy_style();
+
+        taffy.new_with_children(style, &child_nodes).unwrap()
     }
 
     fn draw(
@@ -129,6 +171,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
 pub struct Row<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
+    pub layout: Layout,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Row<M> {
@@ -136,6 +179,7 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
         Self {
             children: Vec::new(),
             key: None,
+            layout: Layout::default(),
         }
     }
 
@@ -147,6 +191,60 @@ impl<M: Clone + std::fmt::Debug + Send> Row<M> {
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
         self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set gap between children.
+    pub fn gap(mut self, value: f32) -> Self {
+        self.layout = self.layout.gap(value);
+        self
+    }
+
+    /// Enable flex wrapping.
+    pub fn flex_wrap(mut self) -> Self {
+        self.layout = self.layout.flex_wrap();
+        self
+    }
+
+    /// Set justify content.
+    pub fn justify(mut self, value: JustifyContent) -> Self {
+        self.layout = self.layout.justify(value);
+        self
+    }
+
+    /// Set align items.
+    pub fn align(mut self, value: AlignItems) -> Self {
+        self.layout = self.layout.align(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Default for Row<M> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -161,20 +259,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         for child in self.children.iter_mut() {
             child_nodes.push(child.layout(taffy, ctx));
         }
-        taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Row,
-                    gap: Size {
-                        width: length(10.0),
-                        height: length(0.0),
-                    },
-                    ..Default::default()
-                },
-                &child_nodes,
-            )
-            .unwrap()
+
+        let style = Layout {
+            flex_direction: Some(FlexDirection::Row),
+            ..self.layout.clone()
+        }
+        .to_taffy_style();
+
+        taffy.new_with_children(style, &child_nodes).unwrap()
     }
 
     fn draw(
