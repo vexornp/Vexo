@@ -3,6 +3,7 @@ use crate::utils::Physical;
 use crate::core::WidgetId;
 use crate::state::WidgetStateRegistry;
 use crate::input::InputEvent;
+use crate::layout::Layout;
 use glyphon::FontSystem;
 use taffy::prelude::NodeId;
 
@@ -11,6 +12,12 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Widgets that need focus tracking must have a unique key.
     fn key(&self) -> Option<&str> {
         None
+    }
+
+    /// Return layout properties for this widget.
+    /// Default implementation returns empty Layout.
+    fn layout_props(&self) -> Layout {
+        Layout::default()
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId;
@@ -46,6 +53,10 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
     fn key(&self) -> Option<&str> {
         (**self).key()
+    }
+
+    fn layout_props(&self) -> Layout {
+        (**self).layout_props()
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
