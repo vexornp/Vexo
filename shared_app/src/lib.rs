@@ -1,6 +1,9 @@
 use vexo::{
-    button, color_widget, text, text_edit, widgets::{Widget, Column, Row, Grid}, Application,
-    Color, WidgetExt, layout::{AlignItems, TrackSizing},
+    button, color_widget,
+    layout::{AlignItems, TrackSizing},
+    text, text_edit,
+    widgets::{Column, Grid, Row, Widget},
+    Application, Color, WidgetExt,
 };
 uniffi::setup_scaffolding!();
 
@@ -41,20 +44,12 @@ impl Application for State {
             .gap(10.0)
             .padding(20.0)
             .push(
-                // Blue rectangle with fixed size
-                Column::new()
-                    .width(200.0)
-                    .height(100.0)
-                    .push(color_widget!(Color::BLUE))
-                    .boxed()
-            )
-            .push(
                 // Text edit with fixed size
                 Column::new()
                     .width(100.0)
                     .height(50.0)
                     .push(text_edit!("editor_id_input", "Type here..."))
-                    .boxed()
+                    .boxed(),
             )
             .push(
                 // Text with padding and decorative styling
@@ -65,9 +60,9 @@ impl Application for State {
                             .background(Color::RED)
                             .border(Color::GREEN, 2.0)
                             .corner_radius(8.0)
-                            .boxed()
+                            .boxed(),
                     )
-                    .boxed()
+                    .boxed(),
             )
             .push(
                 // Button with padding and decorative styling
@@ -78,17 +73,9 @@ impl Application for State {
                             .background(Color::rgb(0.1, 0.4, 0.1))
                             .border(Color::BLACK, 1.0)
                             .corner_radius(8.0)
-                            .boxed()
+                            .boxed(),
                     )
-                    .boxed()
-            )
-            .push(
-                // Blue rectangle with fixed size
-                Column::new()
-                    .width(150.0)
-                    .height(50.0)
-                    .push(color_widget!(Color::BLUE))
-                    .boxed()
+                    .boxed(),
             )
             .push(
                 // Cyan rectangle with fixed size
@@ -96,7 +83,7 @@ impl Application for State {
                     .width(110.0)
                     .height(30.0)
                     .push(color_widget!(Color::CYAN))
-                    .boxed()
+                    .boxed(),
             )
             .push(
                 // Row with two colored rectangles
@@ -106,50 +93,41 @@ impl Application for State {
                             .width(60.0)
                             .height(70.0)
                             .push(color_widget!(Color::RED))
-                            .boxed()
+                            .boxed(),
                     )
                     .push(
                         Column::new()
                             .width(90.0)
                             .height(40.0)
                             .push(color_widget!(Color::YELLOW))
-                            .boxed()
+                            .boxed(),
                     )
-                    .boxed()
+                    .boxed(),
             )
             .push(
                 // Grid demonstration: 2x3 grid with different sized cells
                 Column::new()
                     .padding(10.0)
-                    .push(
-                        text!("Grid Demo (2x3):", font_size: 18.0).boxed()
-                    )
+                    .push(text!("Grid Demo (2x3):", font_size: 18.0).boxed())
                     .push(
                         Grid::new()
                             .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
-                            .rows(vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0), TrackSizing::Px(40.0)])
+                            .rows(vec![
+                                TrackSizing::Px(40.0),
+                                TrackSizing::Px(40.0),
+                                TrackSizing::Px(40.0),
+                            ])
                             .gap(5.0)
-                            .push(
-                                text!("Cell 1,1").background(Color::RED).boxed()
-                            )
-                            .push(
-                                text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed()
-                            )
-                            .push(
-                                text!("Cell 2,1").background(Color::BLUE).boxed()
-                            )
-                            .push(
-                                text!("Cell 2,2").background(Color::YELLOW).boxed()
-                            )
-                            .push(
-                                text!("Cell 3,1").background(Color::MAGENTA).boxed()
-                            )
-                            .push(
-                                text!("Cell 3,2").background(Color::CYAN).boxed()
-                            )
-                            .boxed()
+                            .push(text!("Cell 1,1").background(Color::RED).boxed())
+                            .push(text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed())
+                            .push(text!("Cell 2,1").background(Color::BLUE).boxed())
+                            .push(text!("Cell 2,2").background(Color::YELLOW).boxed())
+                            .push(text!("Cell 3,1").background(Color::MAGENTA).boxed())
+                            .push(text!("Cell 3,2").background(Color::CYAN).boxed())
+                            .border(Color::BLACK, 2.0)
+                            .boxed(),
                     )
-                    .boxed()
+                    .boxed(),
             )
             .fill()
             .background(Color::WHITE)
