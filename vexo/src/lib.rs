@@ -1,4 +1,4 @@
-use glyphon::{cosmic_text, Metrics, TextBounds, Viewport};
+use glyphon::{cosmic_text, Metrics, TextBounds};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender};
@@ -6,9 +6,6 @@ use std::sync::{mpsc, Arc};
 use std::time::Instant;
 use taffy::prelude::{AvailableSpace, NodeId};
 use taffy::Style;
-use wgpu::util::DeviceExt;
-use wgpu::wgc::device::global;
-use wgpu::wgc::instance;
 
 use winit::dpi::PhysicalSize;
 use winit::event::*;
@@ -21,8 +18,6 @@ use winit::{
 
 pub use color::Color;
 pub use uniffi;
-
-const CLEAR_COLOR: wgpu::Color = Color::BLUE.to_wgpu_color();
 
 mod color;
 pub mod core;
@@ -42,7 +37,8 @@ pub mod widgets;
 // Note: core module types are available but not re-exported yet to avoid conflicts
 // with existing utils types during the transition. Use crate::core::Type directly.
 
-use renderer::{TextRequest, UiBatcher, Vertex};
+use renderer::{TextRequest, UiBatcher};
+use render::{RenderBackend, WgpuBackend};
 use widgets::{Column, Widget, WidgetContext};
 pub use widgets::{FrameSize, WidgetExt};
 pub use winit::dpi::PhysicalPosition;
@@ -55,44 +51,15 @@ pub use taffy::prelude::AlignItems;
 
 extern crate alloc;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct GlobalUniforms {
-    pub screen_size: [f32; 2],
-    scale_factor: f32,
-    pub _padding: f32, // Pad to 16 bytes (4 floats total)
-}
-
 pub struct WindowState<A: Application + 'static> {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    is_surface_configured: bool,
+    // GPU rendering backend
+    backend: WgpuBackend,
     window: Option<Arc<dyn Window>>,
-    render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer, // The 4 corners of the quad mesh
-    index_buffer: wgpu::Buffer,  // The indices for the quad mesh (2 triangles)
-
-    // DYNAMIC BUFFERS (updated every frame)
-    instance_buffer: wgpu::Buffer, // The list of quads to draw (position/size/color)
-
-    // UNIFORM BUFFER (updated on resize)
-    global_uniform_buffer: wgpu::Buffer,
-
-    // Bind group for global uniforms (like screen size)
-    global_bind_group: wgpu::BindGroup,
 
     batcher: UiBatcher,
     taffy: taffy::TaffyTree,
     root_widget: Box<dyn Widget<A::Message>>,
     root_node_id: NodeId,
-
-    // --- Text Rendering Fields --
-    atlas: glyphon::TextAtlas,
-    text_renderer: glyphon::TextRenderer,
-    swash_cache: glyphon::SwashCache,
-    viewport: glyphon::Viewport,
 
     // User's application state
     user_app_state: A::State,
@@ -157,214 +124,7 @@ impl CursorBlinkState {
 
 impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
-        let size = window.surface_size();
-        let scale_factor = window.scale_factor() as f32;
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let surface = instance.create_surface(window.clone()).unwrap();
-
-        let physical_width = size.width as f32;
-        let physical_height = size.height as f32;
-
-        Self::init(
-            surface,
-            instance,
-            physical_width,
-            physical_height,
-            scale_factor,
-            Some(window),
-        )
-        .await
-    }
-
-    async fn init(
-        surface: wgpu::Surface<'static>,
-        instance: wgpu::Instance,
-        physical_width: f32,
-        physical_height: f32,
-        scale_factor: f32,
-        window: Option<Arc<dyn Window>>,
-    ) -> anyhow::Result<Self> {
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptionsBase {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await?;
-        let (device, queue) = adapter
-            .request_device(&wgpu::wgt::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                memory_hints: Default::default(),
-                trace: wgpu::Trace::Off,
-            })
-            .await?;
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(surface_caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: physical_width as u32,
-            height: physical_height as u32,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(resource::file::WGSL.into()),
-        });
-
-        // Define the Bind Group Layout for global uniforms (like screen size)
-        let global_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Global Bind Group Layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        // Put that bind group layout into a pipeline layout
-        // (even if we don't have bind groups yet, we need this for the pipeline)
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&global_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        // Create the render pipeline with the shader and pipeline layout
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-
-                // Order matters: The first buffer layout is slot 0, the second is slot 1, etc.
-                buffers: &[
-                    Vertex::desc(),                      // Standard mesh data (Position/UV) -> Slot 0
-                    quad_instance::QuadInstance::desc(), // Instance data (position/size/color) -> Slot 1
-                ],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING), // Allow alpha blending for transparency
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
-        const QUAD_VERTICES: &[Vertex] = &[
-            Vertex {
-                pos: [0.0, 0.0, 0.0],
-            }, // Top-left
-            Vertex {
-                pos: [1.0, 0.0, 0.0],
-            }, // Top-right
-            Vertex {
-                pos: [1.0, 1.0, 0.0],
-            }, // Bottom-right
-            Vertex {
-                pos: [0.0, 1.0, 0.0],
-            }, // Bottom-left
-        ];
-
-        const QUAD_INDICES: &[u16] = &[
-            0, 1, 2, // First triangle (top-left, top-right, bottom-right)
-            0, 2, 3, // Second triangle (top-left, bottom-right, bottom-left)
-        ];
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(QUAD_VERTICES),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(QUAD_INDICES),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instance Buffer"),
-            // Allocate space for 10,000 instances initially
-            size: (std::mem::size_of::<quad_instance::QuadInstance>() * 10000)
-                as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let global_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Global Uniform Buffer"),
-            size: std::mem::size_of::<GlobalUniforms>() as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let global_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Global Bind Group"),
-            layout: &global_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: global_uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        // --- Glyphone Initialization ---
-
-        let swash_cache = glyphon::SwashCache::new();
-        let cache = glyphon::Cache::new(&device);
-        let viewport = Viewport::new(&device, &cache);
-        let mut atlas = glyphon::TextAtlas::new(&device, &queue, &cache, config.format);
-        let text_renderer = glyphon::TextRenderer::new(
-            &mut atlas,
-            &device,
-            wgpu::MultisampleState::default(),
-            None,
-        );
+        let backend = WgpuBackend::new(window.clone()).await?;
 
         // --- Root Node Id ---
         let mut taffy = taffy::TaffyTree::new();
@@ -372,32 +132,13 @@ impl<A: Application + 'static> WindowState<A> {
         let mut ctx = WidgetContext::new();
         let root_node_id = root_widget.layout(&mut taffy, &mut ctx);
 
-        if physical_width > 0.0 && physical_height > 0.0 {
-            // Necessary for android, which does not get resize event later:
-            surface.configure(&device, &config);
-        }
-
         Ok(Self {
-            surface,
-            device,
-            queue,
-            config,
-            is_surface_configured: false,
-            window: window,
-            render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            instance_buffer,
-            global_uniform_buffer,
-            global_bind_group,
+            backend,
+            window: Some(window),
             batcher: UiBatcher::new(),
             taffy,
             root_widget,
             root_node_id,
-            atlas,
-            text_renderer,
-            swash_cache,
-            viewport,
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             focused_widget_id: None,
@@ -408,22 +149,9 @@ impl<A: Application + 'static> WindowState<A> {
 
     pub fn resize_physical(&mut self, width: f32, height: f32) {
         let scale_factor = self.widget_context.scale.factor();
-
-        let uniform = GlobalUniforms {
-            screen_size: [width, height],
-            scale_factor,
-            _padding: 0.0,
-        };
-
-        self.queue
-            .write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+        self.backend.resize(width as u32, height as u32, scale_factor);
 
         if width > 0.0 && height > 0.0 {
-            self.config.width = width as u32;
-            self.config.height = height as u32;
-            self.surface.configure(&self.device, &self.config);
-            self.is_surface_configured = true;
-
             //Force re-layout
             self.root_node_id = self.taffy.new_leaf(Style::default()).unwrap();
         }
@@ -434,7 +162,7 @@ impl<A: Application + 'static> WindowState<A> {
             win.request_redraw();
         }
 
-        if !self.is_surface_configured {
+        if !self.backend.is_ready() {
             return Ok(());
         }
 
@@ -448,8 +176,8 @@ impl<A: Application + 'static> WindowState<A> {
         let scale_factor = self.widget_context.scale.factor();
 
         // Taffy should layout in logical points so that 24.0 size means 24 points.
-        let logical_width = self.config.width as f32 / scale_factor;
-        let logical_height = self.config.height as f32 / scale_factor;
+        let logical_width = self.backend.viewport().resolution().width as f32 / scale_factor;
+        let logical_height = self.backend.viewport().resolution().height as f32 / scale_factor;
 
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_width, logical_height);
@@ -480,13 +208,8 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
-        self.viewport.update(
-            &self.queue,
-            glyphon::Resolution {
-                width: self.config.width,
-                height: self.config.height,
-            },
-        );
+        let physical_width = self.backend.viewport().resolution().width;
+        let physical_height = self.backend.viewport().resolution().height;
 
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 
@@ -524,8 +247,8 @@ impl<A: Application + 'static> WindowState<A> {
 
                 let bounds_left: i32 = physical_pos.x.floor() as i32;
                 let bounds_top = physical_pos.y.floor() as i32;
-                let bounds_right = self.config.width as i32;
-                let bounds_bottom: i32 = self.config.height as i32;
+                let bounds_right = physical_width as i32;
+                let bounds_bottom: i32 = physical_height as i32;
 
                 let color_rgba_u8 = cosmic_text::Color::rgba(
                     (req.color[0] * 255.0) as u8,
@@ -619,103 +342,26 @@ impl<A: Application + 'static> WindowState<A> {
             });
         }
 
-        // --- WGPU Drawing Phase ---
-        // Upload rectangle geometry
-        if !self.batcher.vertices.is_empty() {
-            self.queue.write_buffer(
-                &self.vertex_buffer,
-                0,
-                bytemuck::cast_slice(&self.batcher.vertices),
-            );
-            self.queue.write_buffer(
-                &self.index_buffer,
-                0,
-                bytemuck::cast_slice(&self.batcher.indices),
-            );
-        }
-
-        if !self.batcher.quad_instances.is_empty() {
-            self.queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.batcher.quad_instances),
-            );
-        }
+        // Upload geometry to backend
+        self.backend.upload_geometry(&self.batcher);
 
         // Combine text areas (regular + editor) and prepare glyphon once.
         let mut combined_text_areas = text_areas;
         combined_text_areas.extend(editor_areas.into_iter());
 
-        self.text_renderer
-            .prepare(
-                &self.device,
-                &self.queue,
-                &mut self.widget_context.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                combined_text_areas,
-                &mut self.swash_cache,
-            )
-            .unwrap();
+        // Prepare text rendering
+        self.backend.prepare_text(&mut self.widget_context.font_system, combined_text_areas);
 
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        // Execute render pass
+        let instance_count = self.batcher.quad_instances.len();
+        self.backend.execute_render_pass(instance_count)
+            .map_err(|e| match e {
+                render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
+                render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,
+                render::RenderError::TextPrepareFailed(_) => wgpu::SurfaceError::Lost,
+                render::RenderError::GpuError(_) => wgpu::SurfaceError::Lost,
+            })?;
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            //Set the Pipeline
-            render_pass.set_pipeline(&self.render_pipeline);
-
-            // Bind the screen size global uniform
-            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-
-            // Set the Quad Mesh (The 4 corners)
-            // This is Slot 0 in your VertexBufferLayout
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-
-            // Set the Instance Data (The specific quads)
-            // This is Slot 1 in your VertexBufferLayout
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
-            // Draw
-            let instance_count = self.batcher.quad_instances.len() as u32;
-            if instance_count > 0 {
-                render_pass
-                    .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..6, 0, 0..instance_count);
-            }
-
-            // Render Text on top
-            self.text_renderer
-                .render(&self.atlas, &self.viewport, &mut render_pass)
-                .unwrap();
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-        self.atlas.trim();
         Ok(())
     }
 

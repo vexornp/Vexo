@@ -342,6 +342,26 @@ impl WgpuBackend {
         self.clear_color = color.to_wgpu_color();
     }
 
+    /// Prepare text rendering.
+    pub fn prepare_text(
+        &mut self,
+        font_system: &mut FontSystem,
+        text_areas: Vec<glyphon::TextArea>,
+    ) {
+        let mut swash_cache = glyphon::SwashCache::new();
+        self.text_renderer
+            .prepare(
+                &self.device,
+                &self.queue,
+                font_system,
+                &mut self.atlas,
+                &self.viewport,
+                text_areas,
+                &mut swash_cache,
+            )
+            .unwrap();
+    }
+
     /// Upload geometry from batcher to GPU buffers.
     pub fn upload_geometry(&mut self, batcher: &UiBatcher) {
         if !batcher.vertices.is_empty() {
