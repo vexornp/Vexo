@@ -40,7 +40,7 @@ pub mod widgets;
 use renderer::{TextRequest, UiBatcher};
 use render::{RenderBackend, WgpuBackend};
 use widgets::{Column, Widget, WidgetContext};
-pub use widgets::{FrameSize, WidgetExt};
+pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
 // Import types needed by lib.rs - use utils for now during transition
