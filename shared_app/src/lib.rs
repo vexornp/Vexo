@@ -44,55 +44,46 @@ impl Application for State {
             text_edit!("editor_id_input")
                 .content("Type here...")
                 .width(100.0)
-                .height(50.0)
-                .boxed(),
+                .height(50.0),
             // Text with padding and decorative styling
             column![text!("Modified Text")
                 .font_size(24.0)
                 .background(Color::RED)
                 .border(Color::GREEN, 2.0)
-                .corner_radius(8.0)
-                .boxed()]
-            .padding(10.0)
-            .boxed(),
+                .corner_radius(8.0)]
+            .padding(10.0),
             // Button with padding and decorative styling
             column![
-                button!(text!(text_content).font_size(24.0).boxed(), Message::Clicked)
+                button!(text!(text_content).font_size(24.0), Message::Clicked)
                     .background(Color::rgb(0.1, 0.4, 0.1))
                     .border(Color::BLACK, 1.0)
                     .corner_radius(8.0)
-                    .boxed()
             ]
             .padding(10.0)
-            .background(Color::BLUE)
-            .boxed(),
+            .background(Color::BLUE),
             // Cyan rectangle with fixed size - now using CSS-like layout directly
             color_widget!(Color::CYAN)
                 .width(110.0)
-                .height(30.0)
-                .boxed(),
+                .height(30.0),
             // Row with two colored rectangles - now using CSS-like layout directly
             row![
                 color_widget!(Color::RED)
                     .width(60.0)
-                    .height(70.0)
-                    .boxed(),
+                    .height(70.0),
                 color_widget!(Color::YELLOW)
                     .width(90.0)
-                    .height(40.0)
-                    .boxed(),
-            ]
-            .boxed(),
+                    .height(40.0),
+            ],
             // Grid demonstration: 2x3 grid with different sized cells
             column![
-                text!("Grid Demo (2x3):").font_size(18.0).boxed(),
+                text!("Grid Demo (2x3):").font_size(18.0),
                 grid![
-                    text!("Cell 1,1").background(Color::RED).boxed(),
-                    text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed(),
-                    text!("Cell 2,1").background(Color::BLUE).boxed(),
-                    text!("Cell 2,2").background(Color::YELLOW).boxed(),
-                    text!("Cell 3,1").background(Color::MAGENTA).boxed(),
-                    text!("Cell 3,2").background(Color::CYAN).boxed(),
+                    text!("Cell 1,1").background(Color::RED),
+                    text!("Cell 1,2 (2x wide)").background(Color::GREEN),
+                    text!("Cell 2,1").background(Color::BLUE),
+                    text!("Cell 2,2").background(Color::YELLOW),
+                    text!("Cell 3,1").background(Color::MAGENTA),
+                    text!("Cell 3,2").background(Color::CYAN),
                 ]
                 .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
                 .rows(vec![
@@ -100,10 +91,8 @@ impl Application for State {
                     TrackSizing::Px(40.0),
                     TrackSizing::Px(40.0),
                 ])
-                .border(Color::BLACK, 2.0)
-                .boxed(),
-            ]
-            .boxed(),
+                .border(Color::BLACK, 2.0),
+            ],
         ]
         .align(AlignItems::Center)
         .fill()
