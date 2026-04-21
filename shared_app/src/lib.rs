@@ -1,6 +1,6 @@
 use vexo::{
-    button, color_widget, text, text_edit, widgets::{Widget, Column, Row}, Application,
-    Color, WidgetExt, layout::AlignItems,
+    button, color_widget, text, text_edit, widgets::{Widget, Column, Row, Grid}, Application,
+    Color, WidgetExt, layout::{AlignItems, TrackSizing},
 };
 uniffi::setup_scaffolding!();
 
@@ -113,6 +113,40 @@ impl Application for State {
                             .width(90.0)
                             .height(40.0)
                             .push(color_widget!(Color::YELLOW))
+                            .boxed()
+                    )
+                    .boxed()
+            )
+            .push(
+                // Grid demonstration: 2x3 grid with different sized cells
+                Column::new()
+                    .padding(10.0)
+                    .push(
+                        text!("Grid Demo (2x3):", font_size: 18.0).boxed()
+                    )
+                    .push(
+                        Grid::new()
+                            .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
+                            .rows(vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0), TrackSizing::Px(40.0)])
+                            .gap(5.0)
+                            .push(
+                                text!("Cell 1,1").background(Color::RED).boxed()
+                            )
+                            .push(
+                                text!("Cell 1,2 (2x wide)").background(Color::GREEN).boxed()
+                            )
+                            .push(
+                                text!("Cell 2,1").background(Color::BLUE).boxed()
+                            )
+                            .push(
+                                text!("Cell 2,2").background(Color::YELLOW).boxed()
+                            )
+                            .push(
+                                text!("Cell 3,1").background(Color::MAGENTA).boxed()
+                            )
+                            .push(
+                                text!("Cell 3,2").background(Color::CYAN).boxed()
+                            )
                             .boxed()
                     )
                     .boxed()
