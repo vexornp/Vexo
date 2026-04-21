@@ -1,6 +1,6 @@
 //! Grid container widget for 2D layouts.
 
-use crate::core::{Logical, Point};
+use crate::core::{Logical, Point, Size};
 use crate::input::InputEvent;
 use crate::layout::{Layout, TrackSizing};
 use crate::renderer::UiBatcher;
@@ -38,6 +38,12 @@ impl<M: Clone + std::fmt::Debug + Send> Grid<M> {
     /// Set gap between cells.
     pub fn gap(mut self, value: f32) -> Self {
         self.layout = self.layout.gap(value);
+        self
+    }
+
+    /// Set gap using a Size value.
+    pub fn gap_size(mut self, size: Size<Logical>) -> Self {
+        self.layout = self.layout.gap_size(size);
         self
     }
 

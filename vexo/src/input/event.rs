@@ -10,7 +10,7 @@
 //! - Enable testing of input handling
 //! - Provide a clean, minimal event model
 
-use crate::core::{Point, Logical, Physical, Scale, Rect};
+use crate::core::{Point, Logical, Physical, Scale};
 
 // ============================================================================
 // INPUT EVENT
@@ -215,140 +215,6 @@ impl Modifiers {
     /// Check if no modifiers are held.
     pub fn none(&self) -> bool {
         !self.any()
-    }
-}
-
-// ============================================================================
-// INTERACTION CONTEXT
-// ============================================================================
-
-/// Context provided to widgets during event handling.
-#[derive(Debug, Clone)]
-pub struct InteractionContext {
-    /// Current pointer position in logical coordinates.
-    pub pointer_position: Point<Logical>,
-    /// Currently focused widget (if any).
-    pub focused_widget: Option<crate::core::WidgetId>,
-    /// Bounds of the widget receiving the event.
-    pub bounds: Rect<Logical>,
-    /// Current DPI scale factor.
-    pub scale: f32,
-}
-
-impl InteractionContext {
-    /// Create a new interaction context.
-    pub fn new(
-        pointer_position: Point<Logical>,
-        focused_widget: Option<crate::core::WidgetId>,
-        bounds: Rect<Logical>,
-        scale: f32,
-    ) -> Self {
-        Self {
-            pointer_position,
-            focused_widget,
-            bounds,
-            scale,
-        }
-    }
-
-    /// Check if the pointer is inside the widget bounds.
-    pub fn is_pointer_inside(&self) -> bool {
-        self.bounds.contains(&self.pointer_position)
-    }
-
-    /// Check if this widget is currently focused.
-    pub fn is_focused(&self, id: crate::core::WidgetId) -> bool {
-        self.focused_widget == Some(id)
-    }
-}
-
-impl Default for InteractionContext {
-    fn default() -> Self {
-        Self {
-            pointer_position: Point::new(0.0, 0.0),
-            focused_widget: None,
-            bounds: Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
-            scale: 1.0,
-        }
-    }
-}
-
-// ============================================================================
-// INTERACTION RESPONSE
-// ============================================================================
-
-/// Response from widget event handling.
-#[derive(Debug)]
-pub struct InteractionResponse<M> {
-    /// User-defined message to emit.
-    pub message: Option<M>,
-    /// Focus change request.
-    pub focus_request: Option<FocusRequest>,
-    /// Whether the event was consumed.
-    pub handled: bool,
-    /// Whether to clear focus from the currently focused widget.
-    pub clear_focus: bool,
-}
-
-/// Focus change request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusRequest {
-    /// Request focus for a specific widget.
-    Gain(crate::core::WidgetId),
-    /// Clear focus from the currently focused widget.
-    Clear,
-}
-
-impl<M> Default for InteractionResponse<M> {
-    fn default() -> Self {
-        Self {
-            message: None,
-            focus_request: None,
-            handled: false,
-            clear_focus: false,
-        }
-    }
-}
-
-impl<M> InteractionResponse<M> {
-    /// Create a response indicating the event was not handled.
-    pub fn ignored() -> Self {
-        Self::default()
-    }
-
-    /// Create a response indicating the event was handled.
-    pub fn handled() -> Self {
-        Self {
-            handled: true,
-            ..Self::default()
-        }
-    }
-
-    /// Create a response with a user message.
-    pub fn with_message(message: M) -> Self {
-        Self {
-            message: Some(message),
-            handled: true,
-            ..Self::default()
-        }
-    }
-
-    /// Create a response requesting focus.
-    pub fn request_focus(id: crate::core::WidgetId) -> Self {
-        Self {
-            focus_request: Some(FocusRequest::Gain(id)),
-            handled: true,
-            ..Self::default()
-        }
-    }
-
-    /// Create a response requesting focus to be cleared.
-    pub fn clear_focus() -> Self {
-        Self {
-            focus_request: Some(FocusRequest::Clear),
-            handled: true,
-            ..Self::default()
-        }
     }
 }
 
@@ -571,38 +437,5 @@ mod tests {
 
         let m = Modifiers::control();
         assert!(m.control);
-    }
-
-    #[test]
-    fn test_interaction_context_pointer_inside() {
-        let ctx = InteractionContext::new(
-            Point::new(50.0, 50.0),
-            None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-            1.0,
-        );
-        assert!(ctx.is_pointer_inside());
-
-        let ctx = InteractionContext::new(
-            Point::new(150.0, 50.0),
-            None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-            1.0,
-        );
-        assert!(!ctx.is_pointer_inside());
-    }
-
-    #[test]
-    fn test_interaction_response() {
-        let r: InteractionResponse<()> = InteractionResponse::default();
-        assert!(!r.handled);
-        assert!(r.message.is_none());
-
-        let r: InteractionResponse<()> = InteractionResponse::handled();
-        assert!(r.handled);
-
-        let r = InteractionResponse::with_message("test");
-        assert_eq!(r.message, Some("test"));
-        assert!(r.handled);
     }
 }

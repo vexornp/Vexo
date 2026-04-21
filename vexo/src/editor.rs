@@ -1,3 +1,4 @@
+use crate::core::{Logical, Size};
 use glyphon::{Edit, FontSystem};
 
 pub struct Editor {
@@ -17,10 +18,10 @@ impl Editor {
         }
     }
 
-    pub fn set_size(&mut self, font_system: &mut FontSystem, width: f32, height: f32) {
-        // println!("Editor set_size: {}, {}", width, height);
+    pub fn set_size(&mut self, font_system: &mut FontSystem, size: Size<Logical>) {
+        // println!("Editor set_size: {}, {}", size.width, size.height);
         self.raw.with_buffer_mut(|buffer| {
-            buffer.set_size(font_system, Some(width), Some(height));
+            buffer.set_size(font_system, Some(size.width), Some(size.height));
         });
     }
 

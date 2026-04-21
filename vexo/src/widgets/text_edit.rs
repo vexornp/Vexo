@@ -127,7 +127,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut editor_ref = editor_arc.borrow_mut();
 
-        editor_ref.set_size(&mut ctx.font_system, size.width, size.height);
+        editor_ref.set_size(&mut ctx.font_system, size);
         editor_ref.shape_as_needed(&mut ctx.font_system, true);
 
         renderer.add_editor_request(

@@ -76,6 +76,11 @@ impl LayoutConstraints {
         }
     }
 
+    /// Create constraints for a fixed-size widget using a Size value.
+    pub fn fixed_size(size: Size<Logical>) -> Self {
+        Self::fixed(size.width, size.height)
+    }
+
     /// Create constraints for a widget that fills available space.
     pub fn fill() -> Self {
         Self {

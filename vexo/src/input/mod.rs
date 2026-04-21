@@ -39,9 +39,6 @@ mod event;
 pub use event::{
     ButtonState,
     InputEvent,
-    InteractionContext,
-    InteractionResponse,
-    FocusRequest,
     Key,
     Modifiers,
     NamedKey,

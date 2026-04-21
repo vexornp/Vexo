@@ -1,6 +1,6 @@
 //! Interact trait for widget input handling.
 
-use crate::core::{Point, Rect, WidgetId, Logical};
+use crate::core::{Point, Rect, Scale, WidgetId, Logical};
 use crate::input::{InputEvent, Modifiers};
 
 /// Context provided to widgets during event handling.
@@ -13,7 +13,7 @@ pub struct InteractionContext {
     /// Bounds of the widget receiving the event.
     pub bounds: Rect<Logical>,
     /// Current DPI scale factor.
-    pub scale: f32,
+    pub scale: Scale,
     /// Current keyboard modifiers.
     pub modifiers: Modifiers,
 }
@@ -24,7 +24,7 @@ impl Default for InteractionContext {
             pointer_position: Point::new(0.0, 0.0),
             focused_widget: None,
             bounds: Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
-            scale: 1.0,
+            scale: Scale::default(),
             modifiers: Modifiers::default(),
         }
     }
@@ -36,7 +36,7 @@ impl InteractionContext {
         pointer_position: Point<Logical>,
         focused_widget: Option<WidgetId>,
         bounds: Rect<Logical>,
-        scale: f32,
+        scale: Scale,
     ) -> Self {
         Self {
             pointer_position,
@@ -204,7 +204,7 @@ mod tests {
             Point::new(50.0, 50.0),
             None,
             Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-            1.0,
+            Scale::new(1.0),
         );
         assert!(ctx.is_pointer_inside());
 
@@ -212,7 +212,7 @@ mod tests {
             Point::new(150.0, 50.0),
             None,
             Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-            1.0,
+            Scale::new(1.0),
         );
         assert!(!ctx.is_pointer_inside());
     }
@@ -224,7 +224,7 @@ mod tests {
             Point::new(0.0, 0.0),
             Some(id),
             Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-            1.0,
+            Scale::new(1.0),
         );
 
         assert!(ctx.is_focused(id));

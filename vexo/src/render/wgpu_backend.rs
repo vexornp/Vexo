@@ -7,7 +7,7 @@ use std::sync::Arc;
 use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
-use crate::core::{Scale, Size};
+use crate::core::{Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
 use crate::renderer::{UiBatcher, Vertex};
@@ -66,19 +66,18 @@ impl WgpuBackend {
         });
         let surface = instance.create_surface(window.clone()).unwrap();
 
-        let physical_width = size.width as f32;
-        let physical_height = size.height as f32;
+        let physical_size = Size::<Physical>::new(size.width as f32, size.height as f32);
 
-        Self::init(surface, instance, physical_width, physical_height, scale_factor).await
+        Self::init(surface, instance, physical_size, Scale::new(scale_factor as f64)).await
     }
 
     async fn init(
         surface: wgpu::Surface<'static>,
         instance: wgpu::Instance,
-        physical_width: f32,
-        physical_height: f32,
-        scale_factor: f32,
+        physical_size: Size<Physical>,
+        scale: Scale,
     ) -> anyhow::Result<Self> {
+        let scale_factor = scale.factor();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptionsBase {
                 power_preference: wgpu::PowerPreference::default(),
@@ -109,8 +108,8 @@ impl WgpuBackend {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: physical_width as u32,
-            height: physical_height as u32,
+            width: physical_size.width_u32(),
+            height: physical_size.height_u32(),
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -243,7 +242,7 @@ impl WgpuBackend {
         );
 
         // Configure surface if we have valid dimensions
-        let is_configured = if physical_width > 0.0 && physical_height > 0.0 {
+        let is_configured = if physical_size.width > 0.0 && physical_size.height > 0.0 {
             surface.configure(&device, &config);
             true
         } else {
@@ -252,7 +251,7 @@ impl WgpuBackend {
 
         // Write initial uniforms
         let uniform = GlobalUniforms {
-            screen_size: [physical_width, physical_height],
+            screen_size: physical_size.to_array(),
             scale_factor,
             _padding: 0.0,
         };
@@ -274,10 +273,7 @@ impl WgpuBackend {
             text_renderer,
             viewport,
             cache,
-            current_config: Some(RenderConfig::new(
-                Size::new(physical_width as f32, physical_height as f32),
-                Scale::new(scale_factor as f64),
-            )),
+            current_config: Some(RenderConfig::new(physical_size, scale)),
             clear_color: Color::BLUE.to_wgpu_color(),
         })
     }
@@ -333,12 +329,12 @@ impl WgpuBackend {
     }
 
     /// Update viewport resolution.
-    pub fn update_viewport(&mut self, width: u32, height: u32) {
+    pub fn update_viewport(&mut self, size: Size<Physical>) {
         self.viewport.update(
             &self.queue,
             glyphon::Resolution {
-                width,
-                height,
+                width: size.width_u32(),
+                height: size.height_u32(),
             },
         );
     }

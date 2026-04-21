@@ -1,4 +1,4 @@
-use crate::core::{Logical, Point, Rect};
+use crate::core::{Logical, Point, Rect, Size};
 use crate::quad_instance;
 use crate::Color;
 
@@ -43,8 +43,7 @@ pub struct UiBatcher {
     pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
     pub quad_instances: Vec<quad_instance::QuadInstance>,
 
-    screen_width: f32,  // Logical width: pixel_width * scale_factor
-    screen_height: f32, // Logical height: pixel_height * scale_factor
+    screen_size: Size<Logical>, // Logical size: pixel_size * scale_factor
     corner_radius_stack: Vec<f32>, // Stack for nested radius contexts
 }
 
@@ -56,8 +55,7 @@ impl UiBatcher {
             text_requests: Vec::new(),
             editor_requests: Vec::new(),
             quad_instances: Vec::new(),
-            screen_width: 1.0,
-            screen_height: 1.0,
+            screen_size: Size::new(1.0, 1.0),
             corner_radius_stack: Vec::new(),
         }
     }
@@ -71,10 +69,14 @@ impl UiBatcher {
         self.corner_radius_stack.clear();
     }
 
-    // Set logical size
-    pub fn set_screen_size(&mut self, width: f32, height: f32) {
-        self.screen_width = width;
-        self.screen_height = height;
+    /// Set logical screen size.
+    pub fn set_screen_size(&mut self, size: Size<Logical>) {
+        self.screen_size = size;
+    }
+
+    /// Get the logical screen size.
+    pub fn screen_size(&self) -> Size<Logical> {
+        self.screen_size
     }
 
     /// Push a corner radius onto the context stack.

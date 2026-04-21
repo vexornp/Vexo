@@ -40,7 +40,7 @@ use widgets::{Column, Widget, WidgetContext};
 pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
-use crate::core::{Physical, Point, Scale, Size, WidgetId};
+use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
 
 pub use taffy::prelude::AlignItems;
 
@@ -142,14 +142,14 @@ impl<A: Application + 'static> WindowState<A> {
         })
     }
 
-    pub fn resize_physical(&mut self, width: f32, height: f32) {
+    pub fn resize_physical(&mut self, size: Size<Physical>) {
         let config = render::RenderConfig::new(
-            Size::<Physical>::new(width, height),
+            size,
             Scale::new(self.widget_context.scale.factor() as f64),
         );
         self.backend.resize(config);
 
-        if width > 0.0 && height > 0.0 {
+        if size.width > 0.0 && size.height > 0.0 {
             //Force re-layout
             self.root_node_id = self.taffy.new_leaf(Style::default()).unwrap();
         }
@@ -176,9 +176,10 @@ impl<A: Application + 'static> WindowState<A> {
         // Taffy should layout in logical points so that 24.0 size means 24 points.
         let logical_width = self.backend.width() as f32 / scale_factor;
         let logical_height = self.backend.height() as f32 / scale_factor;
+        let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
         // Set screen size once per frame
-        self.batcher.set_screen_size(logical_width, logical_height);
+        self.batcher.set_screen_size(logical_size);
 
         let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.widget_context);
 
@@ -206,11 +207,13 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
-        let physical_width = self.backend.width();
-        let physical_height = self.backend.height();
+        let physical_size = Size::<Physical>::new(
+            self.backend.width() as f32,
+            self.backend.height() as f32,
+        );
 
         // Update viewport resolution
-        self.backend.update_viewport(physical_width, physical_height);
+        self.backend.update_viewport(physical_size);
 
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 
@@ -248,8 +251,8 @@ impl<A: Application + 'static> WindowState<A> {
 
                 let bounds_left: i32 = physical_pos.x.floor() as i32;
                 let bounds_top = physical_pos.y.floor() as i32;
-                let bounds_right = physical_width as i32;
-                let bounds_bottom: i32 = physical_height as i32;
+                let bounds_right = physical_size.width_u32() as i32;
+                let bounds_bottom: i32 = physical_size.height_u32() as i32;
 
                 let color_rgba_u8 = cosmic_text::Color::rgba(
                     (req.color[0] * 255.0) as u8,
@@ -449,7 +452,7 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.resize_physical(size.width as f32, size.height as f32);
+        self.resize_physical(Size::new(size.width as f32, size.height as f32));
     }
 }
 
@@ -493,7 +496,7 @@ impl<A: Application + 'static> MyApp<A> {
                 window.scale_factor()
             );
             let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
-            state.resize_physical(width as f32, height as f32);
+            state.resize_physical(Size::new(width as f32, height as f32));
             self.windows.insert(window_id, state);
             return Some(window_id);
         }

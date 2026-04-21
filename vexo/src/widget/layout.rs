@@ -1,6 +1,6 @@
 //! Layout trait for widget layout participation.
 
-use crate::core::{Rect, Logical};
+use crate::core::{Rect, Logical, Size};
 
 /// Layout constraints that describe how a widget should be sized.
 ///
@@ -46,6 +46,11 @@ impl LayoutConstraints {
             flex_grow: 0.0,
             flex_shrink: 0.0,
         }
+    }
+
+    /// Create constraints for a fixed-size widget using a Size value.
+    pub fn fixed_size(size: Size<Logical>) -> Self {
+        Self::fixed(size.width, size.height)
     }
 
     /// Create constraints for a widget that fills available space.

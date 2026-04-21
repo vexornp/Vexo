@@ -384,6 +384,12 @@ impl Layout {
         self
     }
 
+    /// Set gap using a Size value.
+    pub fn gap_size(mut self, size: Size<Logical>) -> Self {
+        self.gap = Some(size);
+        self
+    }
+
     /// Set horizontal and vertical gap separately.
     pub fn gap_each(mut self, width: f32, height: f32) -> Self {
         self.gap = Some(Size::new(width, height));
