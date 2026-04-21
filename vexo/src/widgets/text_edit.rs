@@ -18,10 +18,10 @@ pub struct TextEdit {
 }
 
 impl TextEdit {
-    pub fn new(id: impl Into<String>, initial_text: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>) -> Self {
         Self {
             editor_id: id.into(),
-            initial_text: initial_text.into(),
+            initial_text: String::new(),
             swash_cache: SwashCache::new(),
             text_color: Color::WHITE,
             cursor_color: Color::new(0.3, 0.67, 0.97, 1.0), // Accent blue
@@ -32,6 +32,12 @@ impl TextEdit {
 
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set initial/placeholder text content.
+    pub fn content(mut self, text: impl Into<String>) -> Self {
+        self.initial_text = text.into();
         self
     }
 

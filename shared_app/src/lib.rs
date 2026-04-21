@@ -41,7 +41,8 @@ impl Application for State {
         // Main column fills available space with white background
         column![
             // Text edit with fixed size - now using CSS-like layout directly
-            text_edit!("editor_id_input", "Type here...")
+            text_edit!("editor_id_input")
+                .content("Type here...")
                 .width(100.0)
                 .height(50.0)
                 .boxed(),

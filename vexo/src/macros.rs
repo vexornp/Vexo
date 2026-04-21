@@ -54,15 +54,16 @@ macro_rules! color_widget {
 /// # Example
 /// ```
 /// use vexo::text_edit;
-/// let editor = text_edit!("editor_id", "Type here...")
+/// let editor = text_edit!("editor_id")
+///     .content("Type here...")
 ///     .width(200.0)
 ///     .height(50.0)
 ///     .boxed();
 /// ```
 #[macro_export]
 macro_rules! text_edit {
-    ($id:expr, $placeholder:expr) => {
-        $crate::widgets::TextEdit::new($id, $placeholder)
+    ($id:expr) => {
+        $crate::widgets::TextEdit::new($id)
     };
 }
 
@@ -95,8 +96,8 @@ macro_rules! button {
 /// ```
 /// use vexo::column;
 /// let col = column![
-///     vexo::text!("Title"),
-///     vexo::text!("Body"),
+///     vexo::text!("Title").boxed(),
+///     vexo::text!("Body").boxed(),
 /// ]
 /// .padding(10.0)
 /// .gap(5.0)
@@ -124,8 +125,8 @@ macro_rules! column {
 /// ```
 /// use vexo::row;
 /// let row = row![
-///     vexo::text!("Left"),
-///     vexo::text!("Right"),
+///     vexo::text!("Left").boxed(),
+///     vexo::text!("Right").boxed(),
 /// ]
 /// .gap(10.0)
 /// .boxed();
@@ -154,8 +155,8 @@ macro_rules! row {
 /// let grid = grid![
 ///     columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)],
 ///     rows: vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0)],
-///     vexo::text!("Cell 1"),
-///     vexo::text!("Cell 2"),
+///     vexo::text!("Cell 1").boxed(),
+///     vexo::text!("Cell 2").boxed(),
 /// ]
 /// .gap(5.0)
 /// .boxed();
