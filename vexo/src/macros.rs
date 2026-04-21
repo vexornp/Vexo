@@ -1,41 +1,88 @@
 //! Widget construction macros for ergonomic syntax.
 //!
-//! Leaf widget macros (text!, button!, etc.) return Box<dyn Widget<M>>.
-//! Container macros (column!, row!, grid!) return the unboxed type,
-//! allowing method chaining before .boxed().
+//! All widget macros now return the unboxed type, allowing method chaining
+//! before calling `.boxed()`.
 
-/// Create a Text widget wrapped in Box.
+/// Create a Text widget.
+///
+/// Returns `Text` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
+/// ```
+/// use vexo::text;
+/// let txt = text!("Hello")
+///     .width(100.0)
+///     .height(50.0)
+///     .boxed();
+/// ```
 #[macro_export]
 macro_rules! text {
     ($content:expr) => {
-        Box::new($crate::widgets::Text::new($content))
+        $crate::widgets::Text::new($content)
     };
     ($content:expr, font_size: $size:expr) => {
-        Box::new($crate::widgets::Text::new($content).font_size($size))
+        $crate::widgets::Text::new($content).font_size($size)
     };
 }
 
-/// Create a ColorWidget wrapped in Box.
+/// Create a ColorWidget.
+///
+/// Returns `ColorWidget` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
+/// ```
+/// use vexo::color_widget;
+/// let widget = color_widget!(Color::RED)
+///     .width(100.0)
+///     .height(50.0)
+///     .boxed();
+/// ```
 #[macro_export]
 macro_rules! color_widget {
     ($color:expr) => {
-        Box::new($crate::widgets::ColorWidget::new($color))
+        $crate::widgets::ColorWidget::new($color)
     };
 }
 
-/// Create a TextEdit widget wrapped in Box.
+/// Create a TextEdit widget.
+///
+/// Returns `TextEdit` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
+/// ```
+/// use vexo::text_edit;
+/// let editor = text_edit!("editor_id", "Type here...")
+///     .width(200.0)
+///     .height(50.0)
+///     .boxed();
+/// ```
 #[macro_export]
 macro_rules! text_edit {
     ($id:expr, $placeholder:expr) => {
-        Box::new($crate::widgets::TextEdit::new($id, $placeholder))
+        $crate::widgets::TextEdit::new($id, $placeholder)
     };
 }
 
-/// Create a Button widget wrapped in Box.
+/// Create a Button widget.
+///
+/// Returns `Button<M>` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
+/// ```
+/// use vexo::{button, text};
+/// let btn = button!(text!("Click me").boxed(), Message::Clicked)
+///     .width(100.0)
+///     .height(50.0)
+///     .boxed();
+/// ```
 #[macro_export]
 macro_rules! button {
     ($content:expr, $msg:expr) => {
-        Box::new($crate::widgets::Button::new($content, $msg))
+        $crate::widgets::Button::new($content, $msg)
     };
 }
 

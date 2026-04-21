@@ -1,3 +1,4 @@
+use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
@@ -5,7 +6,6 @@ use crate::Color;
 use crate::input::{InputEvent, ButtonState, Key, NamedKey};
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
 use taffy::prelude::NodeId;
-use taffy::Style;
 
 pub struct TextEdit {
     pub editor_id: String,
@@ -14,6 +14,7 @@ pub struct TextEdit {
     pub text_color: Color,
     pub cursor_color: Color,
     pub key: Option<String>,
+    pub layout: Layout,
 }
 
 impl TextEdit {
@@ -25,6 +26,7 @@ impl TextEdit {
             text_color: Color::WHITE,
             cursor_color: Color::new(0.3, 0.67, 0.97, 1.0), // Accent blue
             key: None,
+            layout: Layout::default(),
         }
     }
 
@@ -37,6 +39,42 @@ impl TextEdit {
         self.cursor_color = color;
         self
     }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
 }
 
 #[allow(unused_variables)]
@@ -46,13 +84,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // TextEdit has no intrinsic size - use flex_grow to fill available space
-        taffy
-            .new_leaf(Style {
-                flex_grow: 1.0,
-                ..Default::default()
-            })
-            .unwrap()
+        // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
+        let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
+            Layout::default().flex_grow(1.0)
+        } else if self.layout.flex_grow.is_none() {
+            self.layout.clone()
+        } else {
+            self.layout.clone()
+        };
+
+        taffy.new_leaf(layout.to_taffy_style()).unwrap()
     }
 
     fn draw(

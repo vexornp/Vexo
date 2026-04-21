@@ -1,16 +1,16 @@
+use crate::layout::{AlignItems, JustifyContent, Layout};
 use crate::renderer::UiBatcher;
 use crate::utils::{Logical, Point, Rect};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::{InputEvent, ButtonState};
-use taffy::prelude::{auto, AlignItems, Display, JustifyContent, NodeId};
-use taffy::Size as TaffySize;
-use taffy::Style;
+use taffy::prelude::NodeId;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
     pub key: Option<String>,
+    pub layout: Layout,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Button<M> {
@@ -19,11 +19,48 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
             content,
             on_press,
             key: None,
+            layout: Layout::default(),
         }
     }
 
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 }
@@ -36,21 +73,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         let content_node = self.content.layout(taffy, ctx);
-        taffy
-            .new_with_children(
-                Style {
-                    display: Display::Flex,
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    size: TaffySize {
-                        width: auto(),
-                        height: auto(),
-                    },
-                    ..Default::default()
-                },
-                &[content_node],
-            )
-            .unwrap()
+
+        // Merge Button's layout with default flex container style
+        let style = Layout {
+            flex_direction: self.layout.flex_direction,
+            flex_wrap: self.layout.flex_wrap,
+            flex_grow: self.layout.flex_grow,
+            flex_shrink: self.layout.flex_shrink,
+            flex_basis: self.layout.flex_basis,
+            justify_content: self.layout.justify_content.or(Some(JustifyContent::Center)),
+            align_items: self.layout.align_items.or(Some(AlignItems::Center)),
+            ..self.layout.clone()
+        }
+        .to_taffy_style();
+
+        taffy.new_with_children(style, &[content_node]).unwrap()
     }
 
     fn draw(

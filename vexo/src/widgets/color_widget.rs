@@ -1,14 +1,15 @@
+use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
 use crate::input::InputEvent;
 use taffy::prelude::NodeId;
-use taffy::Style;
 
 pub struct ColorWidget {
     pub color: Color,
     pub key: Option<String>,
+    pub layout: Layout,
 }
 
 impl ColorWidget {
@@ -16,11 +17,48 @@ impl ColorWidget {
         Self {
             color: color.into(),
             key: None,
+            layout: Layout::default(),
         }
     }
 
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 }
@@ -32,13 +70,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
     }
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        // ColorWidget has no intrinsic size - use flex_grow to fill available space
-        taffy
-            .new_leaf(Style {
-                flex_grow: 1.0,
-                ..Default::default()
-            })
-            .unwrap()
+        // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
+        let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
+            Layout::default().flex_grow(1.0)
+        } else {
+            self.layout.clone()
+        };
+
+        taffy.new_leaf(layout.to_taffy_style()).unwrap()
     }
 
     fn draw(

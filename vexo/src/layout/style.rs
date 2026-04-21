@@ -572,7 +572,8 @@ impl Layout {
 // ============================================================================
 
 impl Dimension {
-    fn to_taffy(self) -> taffy::prelude::Dimension {
+    /// Convert to Taffy dimension.
+    pub fn to_taffy(self) -> taffy::prelude::Dimension {
         match self {
             Dimension::Auto => taffy::prelude::auto(),
             Dimension::Length(v) => taffy::prelude::length(v),

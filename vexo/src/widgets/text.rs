@@ -1,16 +1,17 @@
+use crate::layout::Layout;
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
 use crate::input::InputEvent;
 use taffy::prelude::{length, NodeId};
-use taffy::Style;
 
 pub struct Text {
     pub content: String,
     pub font_size: f32,
     pub color: Color,
     pub key: Option<String>,
+    pub layout: Layout,
 }
 
 impl Text {
@@ -20,6 +21,7 @@ impl Text {
             font_size: 24.0,
             color: Color::BLACK,
             key: None,
+            layout: Layout::default(),
         }
     }
 
@@ -33,6 +35,42 @@ impl Text {
         self.key = Some(key.into());
         self
     }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Set uniform padding on all sides.
+    pub fn padding(mut self, value: f32) -> Self {
+        self.layout = self.layout.padding(value);
+        self
+    }
+
+    /// Set uniform margin on all sides.
+    pub fn margin(mut self, value: f32) -> Self {
+        self.layout = self.layout.margin(value);
+        self
+    }
+
+    /// Set flex grow factor.
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.layout = self.layout.flex_grow(value);
+        self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
 }
 
 #[allow(unused_variables)]
@@ -43,18 +81,26 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
 
     fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
         // Calculate intrinsic size based on content and font size
-        let width_guess = self.content.len() as f32 * (self.font_size * 0.5);
-        let height_guess = self.font_size * 1.2;
+        let intrinsic_width = self.content.len() as f32 * (self.font_size * 0.5);
+        let intrinsic_height = self.font_size * 1.2;
 
-        taffy
-            .new_leaf(Style {
+        // Use Layout properties, falling back to intrinsic size for auto dimensions
+        let style = self.layout.clone().to_taffy_style();
+
+        // If width/height are auto, use intrinsic size as the base
+        let style = if self.layout.width.is_none() || self.layout.height.is_none() {
+            taffy::Style {
                 size: taffy::Size {
-                    width: length(width_guess),
-                    height: length(height_guess),
+                    width: self.layout.width.map(|d| d.to_taffy()).unwrap_or_else(|| length(intrinsic_width)),
+                    height: self.layout.height.map(|d| d.to_taffy()).unwrap_or_else(|| length(intrinsic_height)),
                 },
-                ..Default::default()
-            })
-            .unwrap()
+                ..style
+            }
+        } else {
+            style
+        };
+
+        taffy.new_leaf(style).unwrap()
     }
 
     fn draw(
