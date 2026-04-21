@@ -3,6 +3,24 @@
 //! This module provides the rendering layer that sits between widgets and
 //! the GPU backend. It uses the RenderCommand pattern to decouple widget
 //! painting from actual rendering.
+//!
+//! # Architecture
+//!
+//! The rendering layer consists of:
+//! - `RenderCommand` - Immutable draw instructions produced by widgets
+//! - `RenderBackend` - Trait for rendering implementations
+//! - `WgpuBackend` - Production GPU rendering via wgpu
+//! - `MockBackend` - Testing backend without GPU dependencies
+//!
+//! # Example
+//!
+//! ```
+//! use vexo::render::{RenderBackend, RenderCommand, MockBackend};
+//! use vexo::core::{Rect, Logical, Color};
+//!
+//! let mut backend = MockBackend::new();
+//! // Backend can be used for testing without GPU
+//! ```
 
 mod backend;
 mod command;

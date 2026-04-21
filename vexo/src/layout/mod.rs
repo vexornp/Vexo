@@ -7,6 +7,22 @@
 //! - `LayoutNode` tree structure for describing layout
 //! - `ComputedLayout` for layout results
 //! - `TaffyLayoutEngine` implementation
+//!
+//! # Architecture
+//!
+//! The layout abstraction enables:
+//! - Testing layout without Taffy dependency
+//! - Swapping to different layout algorithms
+//! - Centralized layout logic (not scattered in widgets)
+//!
+//! # Example
+//!
+//! ```
+//! use vexo::layout::{LayoutEngine, TaffyLayoutEngine, LayoutConstraints};
+//!
+//! let mut engine = TaffyLayoutEngine::new();
+//! // Build and compute layout trees using the engine
+//! ```
 
 mod engine;
 mod node;
