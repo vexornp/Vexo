@@ -2,7 +2,7 @@ use vexo::{
     button, color_widget, column, grid,
     layout::{AlignItems, TrackSizing},
     row, text, text_edit,
-    widgets::{Column, Grid, Row, Widget},
+    widgets::{Column, Widget},
     Application, Color, WidgetExt,
 };
 uniffi::setup_scaffolding!();
@@ -47,23 +47,21 @@ impl Application for State {
                 .push(text_edit!("editor_id_input", "Type here..."))
                 .boxed(),
             // Text with padding and decorative styling
-            column![
-                padding: 10.0,
-                text!("Modified Text", font_size: 24.0)
-                    .background(Color::RED)
-                    .border(Color::GREEN, 2.0)
-                    .corner_radius(8.0)
-                    .boxed(),
-            ],
+            column![text!("Modified Text", font_size: 24.0)
+                .background(Color::RED)
+                .border(Color::GREEN, 2.0)
+                .corner_radius(8.0)
+                .boxed()]
+            .padding(10.0)
+            .boxed(),
             // Button with padding and decorative styling
-            column![
-                padding: 10.0,
-                button!(text!(text_content, font_size: 24.0), Message::Clicked)
-                    .background(Color::rgb(0.1, 0.4, 0.1))
-                    .border(Color::BLACK, 1.0)
-                    .corner_radius(8.0)
-                    .boxed(),
-            ],
+            column![button!(text!(text_content, font_size: 24.0), Message::Clicked)
+                .background(Color::rgb(0.1, 0.4, 0.1))
+                .border(Color::BLACK, 1.0)
+                .corner_radius(8.0)
+                .boxed()]
+            .padding(10.0)
+            .boxed(),
             // Cyan rectangle with fixed size
             Column::new()
                 .width(110.0)
@@ -82,7 +80,8 @@ impl Application for State {
                     .height(40.0)
                     .push(color_widget!(Color::YELLOW))
                     .boxed(),
-            ],
+            ]
+            .boxed(),
             // Grid demonstration: 2x3 grid with different sized cells
             column![
                 text!("Grid Demo (2x3):", font_size: 18.0).boxed(),
@@ -102,7 +101,8 @@ impl Application for State {
                 ]
                 .border(Color::BLACK, 2.0)
                 .boxed(),
-            ],
+            ]
+            .boxed(),
         ]
         .align(AlignItems::Center)
         .fill()

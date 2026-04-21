@@ -1,15 +1,10 @@
-//! Widget construction macros that auto-box widgets for ergonomic syntax.
+//! Widget construction macros for ergonomic syntax.
 //!
-//! These macros eliminate the need for `Box::new()` wrappers when building
-//! widget trees, while preserving the builder pattern for styling.
+//! Leaf widget macros (text!, button!, etc.) return Box<dyn Widget<M>>.
+//! Container macros (column!, row!, grid!) return the unboxed type,
+//! allowing method chaining before .boxed().
 
 /// Create a Text widget wrapped in Box.
-///
-/// # Examples
-/// ```
-/// use vexo::widgets::Text;
-/// let t = vexo::text!("Hello");  // Basic text
-/// ```
 #[macro_export]
 macro_rules! text {
     ($content:expr) => {
@@ -21,12 +16,6 @@ macro_rules! text {
 }
 
 /// Create a ColorWidget wrapped in Box.
-///
-/// # Example
-/// ```
-/// use vexo::Color;
-/// let w = vexo::color_widget!(Color::RED);  // Just color, use .frame() for size
-/// ```
 #[macro_export]
 macro_rules! color_widget {
     ($color:expr) => {
@@ -35,12 +24,6 @@ macro_rules! color_widget {
 }
 
 /// Create a TextEdit widget wrapped in Box.
-///
-/// # Examples
-/// ```
-/// use vexo::widgets::TextEdit;
-/// let editor = vexo::text_edit!("id", "placeholder");
-/// ```
 #[macro_export]
 macro_rules! text_edit {
     ($id:expr, $placeholder:expr) => {
@@ -49,14 +32,6 @@ macro_rules! text_edit {
 }
 
 /// Create a Button widget wrapped in Box.
-///
-/// # Examples
-/// ```
-/// use vexo::widgets::{Button, Text};
-/// #[derive(Clone, Debug)]
-/// enum Message { Clicked }
-/// let btn = vexo::button!(Box::new(Text::new("Click")), Message::Clicked);
-/// ```
 #[macro_export]
 macro_rules! button {
     ($content:expr, $msg:expr) => {
@@ -64,123 +39,79 @@ macro_rules! button {
     };
 }
 
-/// Create a Column container widget wrapped in Box.
+/// Create a Column container widget.
 ///
-/// # Examples
+/// Returns `Column<M>` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
 /// ```
-/// use vexo::widgets::Column;
-/// let col: Box<Column<()>> = vexo::column![
+/// use vexo::column;
+/// let col = column![
 ///     vexo::text!("Title"),
-/// ];
+///     vexo::text!("Body"),
+/// ]
+/// .padding(10.0)
+/// .gap(5.0)
+/// .boxed();
 /// ```
 #[macro_export]
 macro_rules! column {
-    // With alignment
-    (align: $align:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut col = $crate::widgets::Column::new().align_items($align);
-            $(
-                col = col.push($child);
-            )*
-            Box::new(col)
-        }
-    };
-    // With padding
-    (padding: $padding:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut col = $crate::widgets::Column::new().padding($padding);
-            $(
-                col = col.push($child);
-            )*
-            Box::new(col)
-        }
-    };
-    // With gap
-    (gap: $gap:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut col = $crate::widgets::Column::new().gap($gap);
-            $(
-                col = col.push($child);
-            )*
-            Box::new(col)
-        }
-    };
-    // Without options
     ($($child:expr),* $(,)?) => {
         {
             let mut col = $crate::widgets::Column::new();
             $(
                 col = col.push($child);
             )*
-            Box::new(col)
+            col
         }
     };
 }
 
-/// Create a Row container widget wrapped in Box.
+/// Create a Row container widget.
+///
+/// Returns `Row<M>` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
 ///
 /// # Example
 /// ```
-/// use vexo::widgets::Row;
-/// let row: Box<Row<()>> = vexo::row![
+/// use vexo::row;
+/// let row = row![
 ///     vexo::text!("Left"),
 ///     vexo::text!("Right"),
-/// ];
+/// ]
+/// .gap(10.0)
+/// .boxed();
 /// ```
 #[macro_export]
 macro_rules! row {
-    // With alignment
-    (align: $align:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut row = $crate::widgets::Row::new().align_items($align);
-            $(
-                row = row.push($child);
-            )*
-            Box::new(row)
-        }
-    };
-    // With padding
-    (padding: $padding:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut row = $crate::widgets::Row::new().padding($padding);
-            $(
-                row = row.push($child);
-            )*
-            Box::new(row)
-        }
-    };
-    // With gap
-    (gap: $gap:expr, $($child:expr),* $(,)?) => {
-        {
-            let mut row = $crate::widgets::Row::new().gap($gap);
-            $(
-                row = row.push($child);
-            )*
-            Box::new(row)
-        }
-    };
-    // Without options
     ($($child:expr),* $(,)?) => {
         {
             let mut row = $crate::widgets::Row::new();
             $(
                 row = row.push($child);
             )*
-            Box::new(row)
+            row
         }
     };
 }
 
-/// Create a Grid container widget wrapped in Box.
+/// Create a Grid container widget.
 ///
-/// # Examples
+/// Returns `Grid<M>` (unboxed) so you can chain layout methods
+/// before calling `.boxed()`.
+///
+/// # Example
 /// ```
-/// use vexo::widgets::Grid;
-/// use vexo::layout::TrackSizing;
-/// let grid: Box<Grid<()>> = vexo::grid![
+/// use vexo::{grid, layout::TrackSizing};
+/// let grid = grid![
+///     columns: vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)],
+///     rows: vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0)],
 ///     vexo::text!("Cell 1"),
 ///     vexo::text!("Cell 2"),
-/// ];
+/// ]
+/// .gap(5.0)
+/// .boxed();
 /// ```
 #[macro_export]
 macro_rules! grid {
@@ -193,7 +124,7 @@ macro_rules! grid {
             $(
                 grid = grid.push($child);
             )*
-            Box::new(grid)
+            grid
         }
     };
     // With columns only
@@ -203,7 +134,7 @@ macro_rules! grid {
             $(
                 grid = grid.push($child);
             )*
-            Box::new(grid)
+            grid
         }
     };
     // Children only (auto columns)
@@ -213,7 +144,7 @@ macro_rules! grid {
             $(
                 grid = grid.push($child);
             )*
-            Box::new(grid)
+            grid
         }
     };
 }
