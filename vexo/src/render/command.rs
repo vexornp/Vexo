@@ -10,7 +10,7 @@
 //! - Support different rendering strategies (batching, culling, etc.)
 //! - Allow for render command recording and replay
 
-use crate::core::{Color, Point, Rect, Size};
+use crate::core::{Color, Point, Rect};
 use crate::core::Logical;
 
 // ============================================================================

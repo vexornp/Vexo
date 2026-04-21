@@ -3,8 +3,7 @@
 //! This module provides a trait for render backends, enabling testing
 //! without GPU dependencies and supporting multiple rendering implementations.
 
-use glyphon::{FontSystem, SwashCache, TextAtlas, TextRenderer, Viewport};
-use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureView};
+use glyphon::FontSystem;
 
 use crate::renderer::UiBatcher;
 

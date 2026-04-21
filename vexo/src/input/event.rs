@@ -164,7 +164,7 @@ pub enum NamedKey {
     Shift,
     Control,
     Alt,
-    Super,
+    Meta,
     CapsLock,
     NumLock,
 }
@@ -432,7 +432,8 @@ impl InputEvent {
                             WinitNamedKey::Shift => NamedKey::Shift,
                             WinitNamedKey::Control => NamedKey::Control,
                             WinitNamedKey::Alt => NamedKey::Alt,
-                            WinitNamedKey::Super => NamedKey::Super,
+                            #[allow(deprecated)]
+                            WinitNamedKey::Meta | WinitNamedKey::Super => NamedKey::Meta,
                             WinitNamedKey::CapsLock => NamedKey::CapsLock,
                             WinitNamedKey::NumLock => NamedKey::NumLock,
                             _ => return Some(InputEvent::Keyboard {

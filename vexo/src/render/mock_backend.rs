@@ -3,8 +3,6 @@
 //! This module provides a mock implementation of RenderBackend
 //! that captures render commands without requiring GPU access.
 
-use std::collections::HashMap;
-
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
 use crate::renderer::UiBatcher;
 use glyphon::FontSystem;

@@ -377,8 +377,8 @@ impl<A: Application + 'static> WindowState<A> {
 
     fn handle_window_event(
         &mut self,
-        event_loop: &dyn ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _event_loop: &dyn ActiveEventLoop,
+        _window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
     ) {
         // Convert winit event to InputEvent
@@ -469,7 +469,7 @@ pub enum KeyBindingAction {
 
 impl<A: Application + 'static> MyApp<A> {
     pub fn new(
-        event_loop: &EventLoop,
+        _event_loop: &EventLoop,
         receiver: Receiver<KeyBindingAction>,
         sender: Sender<KeyBindingAction>,
     ) -> Self {
@@ -505,7 +505,7 @@ impl<A: Application + 'static> MyApp<A> {
 
     fn handle_action_from_proxy(
         &mut self,
-        event_loop: &dyn ActiveEventLoop,
+        _event_loop: &dyn ActiveEventLoop,
         action: KeyBindingAction,
     ) {
         match action {
@@ -563,9 +563,9 @@ impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
                 println!("Scale factor changed to {}", scale_factor);
             }
             WindowEvent::PointerMoved {
-                device_id,
+                device_id: _,
                 position,
-                primary,
+                primary: _,
                 source: _,
             } => {
                 window_state.widget_context.cursor_pos = Point::<Physical>::new(position.x as f32, position.y as f32);
@@ -606,9 +606,9 @@ impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
 
     fn device_event(
         &mut self,
-        event_loop: &dyn ActiveEventLoop,
-        device_id: Option<DeviceId>,
-        event: DeviceEvent,
+        _event_loop: &dyn ActiveEventLoop,
+        _device_id: Option<DeviceId>,
+        _event: DeviceEvent,
     ) {
     }
 
@@ -636,8 +636,8 @@ pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>
 
     {
         // Wire the user event from another thread.
-        let event_loop_proxy = event_loop.create_proxy();
-        let sender = sender.clone();
+        let _event_loop_proxy = event_loop.create_proxy();
+        let _sender = sender.clone();
         std::thread::spawn(move || {
             // Wake up the `event_loop` once every second and dispatch a custom event
             // from a different thread.

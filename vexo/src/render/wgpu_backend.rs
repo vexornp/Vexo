@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use glyphon::{FontSystem, SwashCache, TextAtlas, TextRenderer, Viewport};
+use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
 use crate::quad_instance::QuadInstance;
@@ -467,7 +467,7 @@ impl RenderBackend for WgpuBackend {
     fn prepare(
         &mut self,
         batcher: &mut UiBatcher,
-        font_system: &mut FontSystem,
+        _font_system: &mut FontSystem,
         config: RenderConfig,
     ) {
         self.current_config = Some(config.clone());
