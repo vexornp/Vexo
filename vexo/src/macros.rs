@@ -13,8 +13,12 @@
 ///
 /// # Example
 /// ```
-/// use vexo::text;
-/// let txt = text!("Hello")
+/// use vexo::{text, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let txt: Box<dyn vexo::widgets::Widget<Message>> = text!("Hello")
 ///     .font_size(24.0)
 ///     .width(100.0)
 ///     .height(50.0)
@@ -34,8 +38,12 @@ macro_rules! text {
 ///
 /// # Example
 /// ```
-/// use vexo::color_widget;
-/// let widget = color_widget!(Color::RED)
+/// use vexo::{color_widget, Color, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let widget: Box<dyn vexo::widgets::Widget<Message>> = color_widget!(Color::RED)
 ///     .width(100.0)
 ///     .height(50.0)
 ///     .boxed();
@@ -54,8 +62,12 @@ macro_rules! color_widget {
 ///
 /// # Example
 /// ```
-/// use vexo::text_edit;
-/// let editor = text_edit!("editor_id")
+/// use vexo::{text_edit, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let editor: Box<dyn vexo::widgets::Widget<Message>> = text_edit!("editor_id")
 ///     .content("Type here...")
 ///     .width(200.0)
 ///     .height(50.0)
@@ -77,7 +89,11 @@ macro_rules! text_edit {
 ///
 /// # Example
 /// ```
-/// use vexo::{button, text};
+/// use vexo::{button, text, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message { Clicked }
+///
 /// let btn = button!(text!("Click me"), Message::Clicked)
 ///     .width(100.0)
 ///     .height(50.0)
@@ -99,10 +115,14 @@ macro_rules! button {
 ///
 /// # Example
 /// ```
-/// use vexo::column;
-/// let col = column![
-///     vexo::text!("Title"),
-///     vexo::text!("Body"),
+/// use vexo::{column, text, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let col: Box<dyn vexo::widgets::Widget<Message>> = column![
+///     text!("Title"),
+///     text!("Body"),
 /// ]
 /// .padding(10.0)
 /// .gap(5.0)
@@ -130,10 +150,14 @@ macro_rules! column {
 ///
 /// # Example
 /// ```
-/// use vexo::row;
-/// let row = row![
-///     vexo::text!("Left"),
-///     vexo::text!("Right"),
+/// use vexo::{row, text, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let row: Box<dyn vexo::widgets::Widget<Message>> = row![
+///     text!("Left"),
+///     text!("Right"),
 /// ]
 /// .gap(10.0)
 /// .boxed();
@@ -160,10 +184,14 @@ macro_rules! row {
 ///
 /// # Example
 /// ```
-/// use vexo::{grid, layout::TrackSizing};
-/// let grid = grid![
-///     vexo::text!("Cell 1"),
-///     vexo::text!("Cell 2"),
+/// use vexo::{grid, text, layout::TrackSizing, WidgetExt};
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {}
+///
+/// let grid: Box<dyn vexo::widgets::Widget<Message>> = grid![
+///     text!("Cell 1"),
+///     text!("Cell 2"),
 /// ]
 /// .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])
 /// .rows(vec![TrackSizing::Px(40.0), TrackSizing::Px(40.0)])
