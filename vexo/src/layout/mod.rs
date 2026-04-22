@@ -33,12 +33,20 @@
 
 mod context;
 mod engine;
+mod measurement;
 mod node;
 mod style;
 mod taffy_engine;
 
 pub use context::{LayoutContext, LayoutView};
 pub use engine::{LayoutEngine, LayoutError};
+pub use measurement::{
+    MeasureCache,
+    MeasureCacheKey,
+    MeasureContext,
+    TextMeasureContext,
+    TextMeasurer,
+};
 pub use node::{
     AlignItems as NodeAlignItems,
     ComputedLayout,

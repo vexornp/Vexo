@@ -128,6 +128,7 @@ impl LayoutEngine for TaffyLayoutEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::FlexDirection;
 
     #[test]
     fn test_create_leaf() {
@@ -153,7 +154,7 @@ mod tests {
 
         // Create a row container
         let parent = engine.create_container(
-            &Layout::default().row(),
+            &Layout::default().flex_direction(FlexDirection::Row),
             &[child1, child2],
         );
 
@@ -187,7 +188,7 @@ mod tests {
     fn test_clear() {
         let mut engine = TaffyLayoutEngine::new();
 
-        let node = engine.create_leaf(&Layout::default());
+        let _node = engine.create_leaf(&Layout::default());
         assert!(!engine.node_map.is_empty());
 
         engine.clear();
