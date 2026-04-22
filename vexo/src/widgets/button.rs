@@ -1,15 +1,17 @@
 use crate::layout::{AlignItems, JustifyContent, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
-use crate::core::{Logical, Point, Rect};
-use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
+use crate::core::{Logical, Point, Rect, WidgetId};
+use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
 use crate::input::{InputEvent, ButtonState};
+use crate::render::RenderCommand;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
     pub on_press: M,
     pub key: Option<String>,
     pub layout: Layout,
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Button<M> {
@@ -19,6 +21,7 @@ impl<M: Clone + std::fmt::Debug + Send> Button<M> {
             on_press,
             key: None,
             layout: Layout::default(),
+            computed_layout: None,
         }
     }
 
@@ -168,5 +171,57 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         }
 
         WidgetResponse::default()
+    }
+}
+
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Button<M> {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Button<M> {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        crate::widget::LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Button<M> {
+    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        // Button is transparent - content paints itself
+        Vec::new()
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Button<M> {
+    fn on_event(
+        &mut self,
+        event: &InputEvent,
+        ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        if let InputEvent::PointerButton {
+            state: ButtonState::Pressed,
+            ..
+        } = event
+        {
+            if ctx.is_pointer_inside() {
+                return crate::widget::InteractionResponse {
+                    message: Some(self.on_press.clone()),
+                    focus_request: None,
+                    handled: true,
+                    clear_focus: true,
+                };
+            }
+        }
+
+        crate::widget::InteractionResponse::default()
     }
 }
