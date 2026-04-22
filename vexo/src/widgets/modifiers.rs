@@ -175,6 +175,7 @@ pub struct Border<W, M> {
     color: Color,
     width: f32,
     _marker: PhantomData<M>,
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl<W, M: Clone + std::fmt::Debug + Send> Border<W, M> {
@@ -184,10 +185,77 @@ impl<W, M: Clone + std::fmt::Debug + Send> Border<W, M> {
             color,
             width,
             _marker: PhantomData,
+            computed_layout: None,
         }
     }
 }
 
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+// Identifiable implementation
+impl<W: crate::widget::Identifiable, M> crate::widget::Identifiable for Border<W, M> {
+    fn id(&self) -> Option<crate::core::WidgetId> {
+        self.child.id()
+    }
+}
+
+// Layout implementation
+impl<W: crate::widget::Layout, M> crate::widget::Layout for Border<W, M> {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        self.child.constraints()
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+        self.child.apply_layout(layout);
+    }
+}
+
+// Paint implementation
+impl<W: crate::widget::Paint, M> crate::widget::Paint for Border<W, M> {
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<crate::render::RenderCommand> {
+        use crate::core::Rect;
+        use crate::render::RenderCommand;
+
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
+
+        let mut commands = Vec::new();
+
+        // Paint child first
+        commands.extend(self.child.paint(ctx));
+
+        // Then border on top
+        let pos = crate::core::Point::new(ctx.offset().x + layout.x(), ctx.offset().y + layout.y());
+        let size = crate::core::Size::new(layout.width(), layout.height());
+        let bounds = Rect::new(pos, size);
+        commands.push(RenderCommand::rect_with_border(
+            bounds,
+            Color::TRANSPARENT.into(),  // transparent fill
+            self.color.into(),          // border color
+            self.width,                 // border width
+        ));
+
+        commands
+    }
+}
+
+// Interact implementation
+impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Border<W, M> {
+    fn on_event(
+        &mut self,
+        event: &crate::input::InputEvent,
+        ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        self.child.on_event(event, ctx)
+    }
+}
+
+// Legacy Widget trait implementation for backwards compatibility
 impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
@@ -351,5 +419,122 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
         self.child.on_event(layout_view, node, offset, event, focused_id, widget_context)
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widget::{Identifiable, Layout, Paint, PaintContext, LayoutConstraints, ComputedLayout};
+    use crate::core::{Color as CoreColor, Rect, WidgetId};
+
+    /// Test widget that implements all separated traits.
+    struct TestWidget {
+        id: WidgetId,
+        computed_layout: Option<ComputedLayout>,
+    }
+
+    impl TestWidget {
+        fn new(id: &str) -> Self {
+            Self {
+                id: WidgetId::from_key(id),
+                computed_layout: None,
+            }
+        }
+    }
+
+    impl Identifiable for TestWidget {
+        fn id(&self) -> Option<WidgetId> {
+            Some(self.id)
+        }
+    }
+
+    impl Layout for TestWidget {
+        fn constraints(&self) -> LayoutConstraints {
+            LayoutConstraints::fixed(100.0, 50.0)
+        }
+
+        fn apply_layout(&mut self, layout: ComputedLayout) {
+            self.computed_layout = Some(layout);
+        }
+    }
+
+    impl Paint for TestWidget {
+        fn paint(&self, _ctx: &mut PaintContext) -> Vec<crate::render::RenderCommand> {
+            vec![]
+        }
+    }
+
+    impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TestWidget {
+        fn on_event(
+            &mut self,
+            _event: &crate::input::InputEvent,
+            _ctx: &crate::widget::InteractionContext,
+        ) -> crate::widget::InteractionResponse<M> {
+            crate::widget::InteractionResponse::default()
+        }
+    }
+
+    #[test]
+    fn test_border_implements_separated_traits() {
+        let child = TestWidget::new("test-child");
+        let border: Border<TestWidget, ()> = Border::new(child, Color::BLACK, 2.0);
+
+        // Should implement Identifiable - delegates to child
+        let id = border.id();
+        assert!(id.is_some());
+
+        // Should implement Layout - delegates to child
+        let constraints = border.constraints();
+        assert!(constraints.is_fixed_width());
+        assert_eq!(constraints.min_width, 100.0);
+    }
+
+    #[test]
+    fn test_border_paint_order() {
+        let mut child = TestWidget::new("test-child");
+        // Set up a computed layout
+        child.apply_layout(ComputedLayout::new(Rect::from_xywh(0.0, 0.0, 100.0, 50.0)));
+
+        let mut border: Border<TestWidget, ()> = Border::new(child, Color::BLACK, 2.0);
+        border.computed_layout = Some(ComputedLayout::new(Rect::from_xywh(0.0, 0.0, 100.0, 50.0)));
+
+        let mut ctx = PaintContext::default();
+        let commands = border.paint(&mut ctx);
+
+        // Should have 1 command (the border rect, since child returns empty)
+        assert_eq!(commands.len(), 1);
+    }
+
+    #[test]
+    fn test_background_implements_separated_traits() {
+        let child = TestWidget::new("test-child");
+        let background: Background<TestWidget, ()> = Background::new(child, Color::RED);
+
+        // Should implement Identifiable - delegates to child
+        let id = background.id();
+        assert!(id.is_some());
+
+        // Should implement Layout - delegates to child
+        let constraints = background.constraints();
+        assert!(constraints.is_fixed_width());
+    }
+
+    #[test]
+    fn test_corner_radius_implements_separated_traits() {
+        let child = TestWidget::new("test-child");
+        let corner_radius: CornerRadius<TestWidget, ()> = CornerRadius::new(child, 10.0);
+
+        // Should implement Identifiable - delegates to child
+        let id = corner_radius.id();
+        assert!(id.is_some());
+
+        // Should implement Layout - delegates to child
+        let constraints = corner_radius.constraints();
+        assert!(constraints.is_fixed_width());
     }
 }
