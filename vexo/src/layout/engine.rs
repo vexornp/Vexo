@@ -10,6 +10,8 @@
 use crate::core::Size;
 use crate::core::Logical;
 use crate::layout::{ComputedLayout, Layout, LayoutNodeId};
+use crate::layout::measurement::MeasureContext;
+use glyphon::FontSystem;
 
 // ============================================================================
 // LAYOUT ENGINE TRAIT
@@ -25,6 +27,16 @@ pub trait LayoutEngine {
     /// Returns a handle to reference this node later.
     fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeId;
 
+    /// Create a leaf node with custom measurement context.
+    ///
+    /// Used for nodes like text that need accurate intrinsic size calculation.
+    /// The measure context is passed to Taffy's measure callback during layout.
+    fn create_leaf_with_context(
+        &mut self,
+        layout: &Layout,
+        context: MeasureContext,
+    ) -> LayoutNodeId;
+
     /// Create a container node with children.
     ///
     /// Returns a handle to reference this node later.
@@ -33,7 +45,13 @@ pub trait LayoutEngine {
     /// Compute layout for all nodes.
     ///
     /// Must be called after all nodes are created and before `get_layout()`.
-    fn compute(&mut self, root: LayoutNodeId, available_size: Size<Logical>);
+    /// The font_system is used for text measurement during layout.
+    fn compute(
+        &mut self,
+        root: LayoutNodeId,
+        available_size: Size<Logical>,
+        font_system: &mut FontSystem,
+    );
 
     /// Get the computed layout for a node.
     ///
