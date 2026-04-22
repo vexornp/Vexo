@@ -140,7 +140,7 @@ impl PaintContext {
 /// struct RedRect;
 ///
 /// impl Paint for RedRect {
-///     fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+///     fn paint(&self, paint_context: &mut PaintContext) -> Vec<RenderCommand> {
 ///         vec![RenderCommand::rect(
 ///             Rect::<Logical>::from_xywh(0.0, 0.0, 100.0, 100.0),
 ///             Color::RED,
@@ -154,7 +154,7 @@ pub trait Paint {
     /// Called during the paint phase after layout has been computed.
     /// Widgets should use their stored `ComputedLayout` to determine
     /// position and size.
-    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand>;
+    fn paint(&self, paint_context: &mut PaintContext) -> Vec<RenderCommand>;
 }
 
 // ============================================================================

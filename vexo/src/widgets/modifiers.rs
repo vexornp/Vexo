@@ -63,14 +63,14 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         self.child.key()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, background uses same bounds
-        self.child.layout(ctx, widget_ctx)
+        self.child.layout(layout_context, widget_ctx)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -78,7 +78,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
@@ -89,13 +89,13 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
             renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
             // Draw child on top - pass original offset since child will add its own layout offset
-            self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
         }
     }
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
@@ -103,7 +103,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
     }
 }
 
@@ -135,14 +135,14 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         self.child.key()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, border uses same bounds
-        self.child.layout(ctx, widget_ctx)
+        self.child.layout(layout_context, widget_ctx)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -150,7 +150,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
@@ -158,7 +158,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
             let size = Size::<Logical>::new(layout.width(), layout.height());
 
             // Draw child first - pass original offset since child will add its own layout offset
-            self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
 
             // Draw border on top (transparent fill, colored border)
             renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
@@ -167,7 +167,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
@@ -175,7 +175,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
     }
 }
 
@@ -205,13 +205,13 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         self.child.key()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        self.child.layout(ctx, widget_ctx)
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        self.child.layout(layout_context, widget_ctx)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -223,7 +223,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         renderer.push_corner_radius(self.radius);
 
         // Draw child with radius context set
-        self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+        self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
 
         // Pop radius from context stack
         renderer.pop_corner_radius();
@@ -231,7 +231,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
@@ -239,6 +239,6 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
     }
 }

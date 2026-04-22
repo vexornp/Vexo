@@ -93,10 +93,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
         for child in self.children.iter_mut() {
-            child_nodes.push(child.layout(ctx, widget_ctx));
+            child_nodes.push(child.layout(layout_context, widget_ctx));
         }
 
         // Build grid layout with display: Grid
@@ -105,12 +105,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
             ..self.layout.clone()
         };
 
-        ctx.create_container(&layout, &child_nodes)
+        layout_context.create_container(&layout, &child_nodes)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -118,16 +118,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let my_offset = Point::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
             );
 
-            let child_ids = ctx.children(node);
+            let child_ids = layout_view.children(node);
             for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
                 child_widget.draw(
-                    ctx,
+                    layout_view,
                     child_node_id,
                     renderer,
                     my_offset,
@@ -141,15 +141,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        if let Some(layout) = ctx.get_layout(node) {
-            let child_ids = ctx.children(node);
+        if let Some(layout) = layout_view.get_layout(node) {
+            let child_ids = layout_view.children(node);
             let my_offset = Point::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
@@ -157,7 +157,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
 
             for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
                 let child_response =
-                    child.on_event(ctx, child_node_id, my_offset, event, focused_id, widget_ctx);
+                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_ctx);
 
                 if child_response.handled || child_response.focus_request.is_some() {
                     return child_response;

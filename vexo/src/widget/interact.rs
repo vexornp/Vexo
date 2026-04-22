@@ -163,11 +163,11 @@ impl<M> InteractionResponse<M> {
 ///     fn on_event(
 ///         &mut self,
 ///         event: &InputEvent,
-///         ctx: &InteractionContext,
+///         interaction_context: &InteractionContext,
 ///     ) -> InteractionResponse<Message> {
 ///         match event {
 ///             InputEvent::PointerButton { state, .. } if *state == ButtonState::Pressed => {
-///                 if ctx.is_pointer_inside() {
+///                 if interaction_context.is_pointer_inside() {
 ///                     InteractionResponse::with_message(Message::Clicked)
 ///                 } else {
 ///                     InteractionResponse::default()
@@ -186,7 +186,7 @@ pub trait Interact<M: Clone + std::fmt::Debug + Send> {
     fn on_event(
         &mut self,
         event: &InputEvent,
-        ctx: &InteractionContext,
+        interaction_context: &InteractionContext,
     ) -> InteractionResponse<M>;
 }
 

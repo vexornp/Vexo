@@ -79,7 +79,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Calculate intrinsic size based on content and font size
         let intrinsic_width = self.content.len() as f32 * (self.font_size * 0.5);
         let intrinsic_height = self.font_size * 1.2;
@@ -95,12 +95,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
             self.layout.clone()
         };
 
-        ctx.create_leaf(&layout)
+        layout_context.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -108,7 +108,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         _cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
@@ -120,7 +120,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,

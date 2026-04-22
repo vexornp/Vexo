@@ -69,7 +69,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -77,12 +77,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
             self.layout.clone()
         };
 
-        ctx.create_leaf(&layout)
+        layout_context.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -90,7 +90,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         _cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let x = offset.x + layout.x();
             let y = offset.y + layout.y();
 
@@ -106,7 +106,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,

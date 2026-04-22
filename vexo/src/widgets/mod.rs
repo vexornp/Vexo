@@ -18,11 +18,11 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         Layout::default()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId;
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId;
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -33,7 +33,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
@@ -57,13 +57,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         (**self).layout_props()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        (**self).layout(ctx, widget_ctx)
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        (**self).layout(layout_context, widget_ctx)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -71,19 +71,19 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        (**self).draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx)
+        (**self).draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx)
     }
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        (**self).on_event(ctx, node, offset, event, focused_id, widget_ctx)
+        (**self).on_event(layout_view, node, offset, event, focused_id, widget_ctx)
     }
 }
 

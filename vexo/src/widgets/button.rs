@@ -70,8 +70,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        let content_node = self.content.layout(ctx, widget_ctx);
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        let content_node = self.content.layout(layout_context, widget_ctx);
 
         // Merge Button's layout with default flex container style
         let layout = Layout {
@@ -85,12 +85,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             ..self.layout.clone()
         };
 
-        ctx.create_container(&layout, &[content_node])
+        layout_context.create_container(&layout, &[content_node])
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -98,17 +98,17 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
             );
 
             // Button is now a transparent container - use .background() modifier for styling
-            let child_ids = ctx.children(node);
+            let child_ids = layout_view.children(node);
             if let Some(content_node) = child_ids.get(0) {
                 self.content.draw(
-                    ctx,
+                    layout_view,
                     *content_node,
                     renderer,
                     pos,
@@ -122,14 +122,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
         widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let x = offset.x + layout.x();
             let y = offset.y + layout.y();
 
@@ -153,11 +153,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             }
 
             // Child event propagation
-            let child_ids = ctx.children(node);
+            let child_ids = layout_view.children(node);
             if let Some(content_node) = child_ids.get(0) {
                 let content_offset = Point::new(x, y);
                 return self.content.on_event(
-                    ctx,
+                    layout_view,
                     *content_node,
                     content_offset,
                     event,

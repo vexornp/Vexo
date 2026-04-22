@@ -89,7 +89,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -99,12 +99,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             self.layout.clone()
         };
 
-        ctx.create_leaf(&layout)
+        layout_context.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
@@ -112,7 +112,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         cursor_blink: &crate::CursorBlinkState,
         widget_ctx: &mut WidgetContext,
     ) {
-        if let Some(layout) = ctx.get_layout(node) {
+        if let Some(layout) = layout_view.get_layout(node) {
             let pos: Point<Logical> = Point::new(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
@@ -169,7 +169,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
     fn on_event(
         &mut self,
-        ctx: &LayoutView,
+        layout_view: &LayoutView,
         node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
@@ -188,7 +188,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } = event
             {
-                if let Some(layout) = ctx.get_layout(node) {
+                if let Some(layout) = layout_view.get_layout(node) {
                     // Add offset to get absolute position
                     let abs_x = offset.x + layout.x();
                     let abs_y = offset.y + layout.y();
@@ -227,7 +227,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } => {
                 // Check if click is inside our bounds
-                if let Some(layout) = ctx.get_layout(node) {
+                if let Some(layout) = layout_view.get_layout(node) {
                     let abs_x = offset.x + layout.x();
                     let abs_y = offset.y + layout.y();
                     let rect = Rect::from_xywh(
