@@ -2,9 +2,8 @@ use crate::renderer::UiBatcher;
 use crate::core::{Logical, Physical, Point, Scale, WidgetId};
 use crate::state::WidgetStateRegistry;
 use crate::input::InputEvent;
-use crate::layout::Layout;
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use glyphon::FontSystem;
-use taffy::prelude::NodeId;
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// Optional stable key for identity across reorders.
@@ -19,27 +18,27 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         Layout::default()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId;
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId;
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: taffy::NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     );
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: taffy::NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M>;
 }
 
@@ -58,33 +57,33 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         (**self).layout_props()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        (**self).layout(taffy, ctx)
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        (**self).layout(ctx, widget_ctx)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: taffy::NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        (**self).draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx)
+        (**self).draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx)
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: taffy::NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        (**self).on_event(taffy, node, offset, event, focused_id, ctx)
+        (**self).on_event(ctx, node, offset, event, focused_id, widget_ctx)
     }
 }
 

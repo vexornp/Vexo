@@ -1,10 +1,10 @@
 use crate::core::{Logical, Point, Size};
+use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::input::InputEvent;
 use crate::Color;
 use std::marker::PhantomData;
-use taffy::prelude::NodeId;
 
 /// Extension trait providing visual modifier chaining.
 ///
@@ -63,46 +63,47 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         self.child.key()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, background uses same bounds
-        self.child.layout(taffy, ctx)
+        self.child.layout(ctx, widget_ctx)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let pos = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
+        if let Some(layout) = ctx.get_layout(node) {
+            let pos = Point::<Logical>::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+            let size = Size::<Logical>::new(layout.width(), layout.height());
 
-        // Draw background rect first (behind child)
-        renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
+            // Draw background rect first (behind child)
+            renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
-        // Draw child on top - pass original offset since child will add its own layout.location
-        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
+            // Draw child on top - pass original offset since child will add its own layout offset
+            self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+        }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // Pass original offset since child will add its own layout.location
-        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
+        // Pass original offset since child will add its own layout offset
+        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
     }
 }
 
@@ -134,46 +135,47 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         self.child.key()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, border uses same bounds
-        self.child.layout(taffy, ctx)
+        self.child.layout(ctx, widget_ctx)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let pos = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
+        if let Some(layout) = ctx.get_layout(node) {
+            let pos = Point::<Logical>::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+            let size = Size::<Logical>::new(layout.width(), layout.height());
 
-        // Draw child first - pass original offset since child will add its own layout.location
-        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
+            // Draw child first - pass original offset since child will add its own layout offset
+            self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
 
-        // Draw border on top (transparent fill, colored border)
-        renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
+            // Draw border on top (transparent fill, colored border)
+            renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
+        }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // Pass original offset since child will add its own layout.location
-        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
+        // Pass original offset since child will add its own layout offset
+        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
     }
 }
 
@@ -203,25 +205,25 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         self.child.key()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        self.child.layout(taffy, ctx)
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        self.child.layout(ctx, widget_ctx)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
         // Push radius onto context stack
         renderer.push_corner_radius(self.radius);
 
         // Draw child with radius context set
-        self.child.draw(taffy, node, renderer, offset, focused_id, cursor_blink, ctx);
+        self.child.draw(ctx, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
 
         // Pop radius from context stack
         renderer.pop_corner_radius();
@@ -229,14 +231,14 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // Pass original offset since child will add its own layout.location
-        self.child.on_event(taffy, node, offset, event, focused_id, ctx)
+        // Pass original offset since child will add its own layout offset
+        self.child.on_event(ctx, node, offset, event, focused_id, widget_ctx)
     }
 }

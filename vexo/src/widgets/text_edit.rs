@@ -1,12 +1,11 @@
 use crate::core::{Logical, Point, Rect, Size};
-use crate::layout::Layout;
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
 use crate::input::{InputEvent, ButtonState, Key, NamedKey};
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
-use taffy::prelude::NodeId;
 
 pub struct TextEdit {
     pub editor_id: String,
@@ -90,7 +89,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -100,81 +99,82 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             self.layout.clone()
         };
 
-        taffy.new_leaf(layout.to_taffy_style()).unwrap()
+        ctx.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let pos: Point<Logical> = Point::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-        let size: Size<Logical> = Size::new(layout.size.width, layout.size.height);
+        if let Some(layout) = ctx.get_layout(node) {
+            let pos: Point<Logical> = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+            let size: Size<Logical> = Size::new(layout.width(), layout.height());
 
-        // Debug border
-        let debug_color = crate::Color::RED;
-        renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0, 0.0);
+            // Debug border
+            let debug_color = crate::Color::RED;
+            renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0, 0.0);
 
-        let editor_arc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
-        let mut editor_ref = editor_arc.borrow_mut();
+            let editor_arc = widget_ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+            let mut editor_ref = editor_arc.borrow_mut();
 
-        editor_ref.set_size(&mut ctx.font_system, size);
-        editor_ref.shape_as_needed(&mut ctx.font_system, true);
+            editor_ref.set_size(&mut widget_ctx.font_system, size);
+            editor_ref.shape_as_needed(&mut widget_ctx.font_system, true);
 
-        renderer.add_editor_request(
-            &self.editor_id,
-            Rect::new(pos, size),
-        );
+            renderer.add_editor_request(
+                &self.editor_id,
+                Rect::new(pos, size),
+            );
 
-        // Render cursor if focused and visible
-        let my_id = WidgetId::from_key(&self.editor_id);
-        let is_focused = focused_id == Some(my_id);
+            // Render cursor if focused and visible
+            let my_id = WidgetId::from_key(&self.editor_id);
+            let is_focused = focused_id == Some(my_id);
 
-        if is_focused && cursor_blink.is_visible() {
-            // Get cursor position from the editor
-            if let Some((cursor_x, cursor_y)) = editor_ref.cursor_position() {
-                // cursor_position returns coordinates relative to the buffer
-                // Convert to absolute position within the widget
-                let abs_cursor_x = pos.x + cursor_x as f32;
-                let abs_cursor_y = pos.y + cursor_y as f32;
+            if is_focused && cursor_blink.is_visible() {
+                // Get cursor position from the editor
+                if let Some((cursor_x, cursor_y)) = editor_ref.cursor_position() {
+                    // cursor_position returns coordinates relative to the buffer
+                    // Convert to absolute position within the widget
+                    let abs_cursor_x = pos.x + cursor_x as f32;
+                    let abs_cursor_y = pos.y + cursor_y as f32;
 
-                // Get line height from the buffer metrics
-                let buffer = editor_ref.buffer();
-                let line_height = buffer.metrics().line_height;
+                    // Get line height from the buffer metrics
+                    let buffer = editor_ref.buffer();
+                    let line_height = buffer.metrics().line_height;
 
-                // Draw vertical bar cursor (2 logical pixels wide)
-                let cursor_width = 2.0;
-                let cursor_height = line_height;
+                    // Draw vertical bar cursor (2 logical pixels wide)
+                    let cursor_width = 2.0;
+                    let cursor_height = line_height;
 
-                renderer.add_rect(
-                    [abs_cursor_x, abs_cursor_y],
-                    [cursor_width, cursor_height],
-                    self.cursor_color,
-                    crate::Color::TRANSPARENT, // No border
-                    0.0, // No border width
-                    0.0, // No corner radius
-                );
+                    renderer.add_rect(
+                        [abs_cursor_x, abs_cursor_y],
+                        [cursor_width, cursor_height],
+                        self.cursor_color,
+                        crate::Color::TRANSPARENT, // No border
+                        0.0, // No border width
+                        0.0, // No corner radius
+                    );
+                }
             }
         }
     }
 
     fn on_event(
         &mut self,
-        _taffy: &taffy::TaffyTree,
-        _node: NodeId,
-        _offset: Point<Logical>,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
+        offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Derive our WidgetId from the editor_id (explicit key)
         let my_id = WidgetId::from_key(&self.editor_id);
@@ -188,31 +188,32 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } = event
             {
-                let layout = _taffy.layout(_node).unwrap();
-                // Add offset to get absolute position
-                let abs_x = _offset.x + layout.location.x;
-                let abs_y = _offset.y + layout.location.y;
-                let rect = Rect::from_xywh(
-                    abs_x,
-                    abs_y,
-                    layout.size.width,
-                    layout.size.height,
-                );
+                if let Some(layout) = ctx.get_layout(node) {
+                    // Add offset to get absolute position
+                    let abs_x = offset.x + layout.x();
+                    let abs_y = offset.y + layout.y();
+                    let rect = Rect::from_xywh(
+                        abs_x,
+                        abs_y,
+                        layout.width(),
+                        layout.height(),
+                    );
 
-                if rect.contains(position) {
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: Some(my_id),
-                        handled: true,
-                        clear_focus: false,
-                    };
+                    if rect.contains(position) {
+                        return WidgetResponse {
+                            message: None,
+                            focus_request: Some(my_id),
+                            handled: true,
+                            clear_focus: false,
+                        };
+                    }
                 }
             }
             return WidgetResponse::default();
         }
 
         // We are focused, so handle keyboard input
-        let editor_rc = ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let editor_rc = widget_ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut editor_ref = editor_rc.borrow_mut();
 
         match event {
@@ -226,27 +227,28 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } => {
                 // Check if click is inside our bounds
-                let layout = _taffy.layout(_node).unwrap();
-                let abs_x = _offset.x + layout.location.x;
-                let abs_y = _offset.y + layout.location.y;
-                let rect = Rect::from_xywh(
-                    abs_x,
-                    abs_y,
-                    layout.size.width,
-                    layout.size.height,
-                );
+                if let Some(layout) = ctx.get_layout(node) {
+                    let abs_x = offset.x + layout.x();
+                    let abs_y = offset.y + layout.y();
+                    let rect = Rect::from_xywh(
+                        abs_x,
+                        abs_y,
+                        layout.width(),
+                        layout.height(),
+                    );
 
-                if rect.contains(position) {
-                    // Click inside - retain focus
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: Some(my_id),
-                        handled: true,
-                        clear_focus: false,
-                    };
+                    if rect.contains(position) {
+                        // Click inside - retain focus
+                        return WidgetResponse {
+                            message: None,
+                            focus_request: Some(my_id),
+                            handled: true,
+                            clear_focus: false,
+                        };
+                    }
+                    // Click outside - don't handle, let framework clear focus
+                    return WidgetResponse::default();
                 }
-                // Click outside - don't handle, let framework clear focus
-                return WidgetResponse::default();
             }
             InputEvent::Keyboard {
                 key,
@@ -259,40 +261,40 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
                 match key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Left));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Left));
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Right));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Right));
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Up));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Up));
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Down));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Down));
                     }
                     Key::Named(NamedKey::Home) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::Home));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Home));
                     }
                     Key::Named(NamedKey::End) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::End));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::End));
                     }
                     Key::Named(NamedKey::PageUp) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageUp));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::PageUp));
                     }
                     Key::Named(NamedKey::PageDown) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Motion(Motion::PageDown));
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::PageDown));
                     }
                     Key::Named(NamedKey::Escape) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Escape);
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Escape);
                     }
                     Key::Named(NamedKey::Enter) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Enter);
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Enter);
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Backspace);
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Backspace);
                     }
                     Key::Named(NamedKey::Delete) => {
-                        editor_ref.action(&mut ctx.font_system, Action::Delete);
+                        editor_ref.action(&mut widget_ctx.font_system, Action::Delete);
                     }
                     Key::Character(ch) => {
                         if ctrl_pressed {
@@ -319,7 +321,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                                         // Ignore control characters
                                         continue;
                                     }
-                                    editor_ref.action(&mut ctx.font_system, Action::Insert(c));
+                                    editor_ref.action(&mut widget_ctx.font_system, Action::Insert(c));
                                 }
                             }
                         }
@@ -332,7 +334,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             _ => {}
         }
 
-        editor_ref.shape_as_needed(&mut ctx.font_system, true);
+        editor_ref.shape_as_needed(&mut widget_ctx.font_system, true);
 
         WidgetResponse {
             message: None,

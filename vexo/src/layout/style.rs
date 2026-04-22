@@ -68,6 +68,24 @@ impl EdgeInsets {
 }
 
 // ============================================================================
+// DISPLAY TYPE
+// ============================================================================
+
+/// How the element is displayed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Display {
+    /// Block display (default).
+    #[default]
+    Block,
+    /// Flex container.
+    Flex,
+    /// Grid container.
+    Grid,
+    /// Not displayed.
+    None,
+}
+
+// ============================================================================
 // FLEX TYPES
 // ============================================================================
 
@@ -211,6 +229,9 @@ impl GridPlacement {
 /// properties, then call `to_taffy_style()` to convert.
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
+    // Display
+    pub display: Option<Display>,
+
     // Box model
     pub padding: Option<EdgeInsets>,
     pub margin: Option<EdgeInsets>,
@@ -540,7 +561,7 @@ impl Layout {
             },
 
             // Flexbox
-            display: Display::Flex,
+            display: self.display.map(|d| d.to_taffy()).unwrap_or(taffy::prelude::Display::Flex),
             flex_direction: self.flex_direction.map(|d| d.to_taffy()).unwrap_or_default(),
             flex_wrap: self.flex_wrap.map(|w| w.to_taffy()).unwrap_or_default(),
             flex_grow: self.flex_grow.unwrap_or(0.0),
@@ -584,6 +605,17 @@ impl Dimension {
             Dimension::Auto => taffy::prelude::auto(),
             Dimension::Length(v) => taffy::prelude::length(v),
             Dimension::Percent(v) => taffy::prelude::percent(v),
+        }
+    }
+}
+
+impl Display {
+    fn to_taffy(self) -> taffy::prelude::Display {
+        match self {
+            Display::Block => taffy::prelude::Display::Block,
+            Display::Flex => taffy::prelude::Display::Flex,
+            Display::Grid => taffy::prelude::Display::Grid,
+            Display::None => taffy::prelude::Display::None,
         }
     }
 }

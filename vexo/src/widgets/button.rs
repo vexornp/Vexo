@@ -1,10 +1,9 @@
-use crate::layout::{AlignItems, JustifyContent, Layout};
+use crate::layout::{AlignItems, JustifyContent, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::core::{Logical, Point, Rect};
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::{InputEvent, ButtonState};
-use taffy::prelude::NodeId;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub content: Box<dyn Widget<M>>,
@@ -71,11 +70,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let content_node = self.content.layout(taffy, ctx);
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        let content_node = self.content.layout(ctx, widget_ctx);
 
         // Merge Button's layout with default flex container style
-        let style = Layout {
+        let layout = Layout {
             flex_direction: self.layout.flex_direction,
             flex_wrap: self.layout.flex_wrap,
             flex_grow: self.layout.flex_grow,
@@ -84,88 +83,88 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             justify_content: self.layout.justify_content.or(Some(JustifyContent::Center)),
             align_items: self.layout.align_items.or(Some(AlignItems::Center)),
             ..self.layout.clone()
-        }
-        .to_taffy_style();
+        };
 
-        taffy.new_with_children(style, &[content_node]).unwrap()
+        ctx.create_container(&layout, &[content_node])
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
-        _cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        cursor_blink: &crate::CursorBlinkState,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-
-        let pos = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-
-        // Button is now a transparent container - use .background() modifier for styling
-        let child_ids = taffy.children(node).unwrap();
-        if let Some(content_node) = child_ids.get(0) {
-            self.content.draw(
-                taffy,
-                *content_node,
-                renderer,
-                pos,
-                focused_id,
-                _cursor_blink,
-                ctx,
+        if let Some(layout) = ctx.get_layout(node) {
+            let pos = Point::<Logical>::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
             );
+
+            // Button is now a transparent container - use .background() modifier for styling
+            let child_ids = ctx.children(node);
+            if let Some(content_node) = child_ids.get(0) {
+                self.content.draw(
+                    ctx,
+                    *content_node,
+                    renderer,
+                    pos,
+                    focused_id,
+                    cursor_blink,
+                    widget_ctx,
+                );
+            }
         }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        let layout = taffy.layout(node).unwrap();
-        let x = offset.x + layout.location.x;
-        let y = offset.y + layout.location.y;
+        if let Some(layout) = ctx.get_layout(node) {
+            let x = offset.x + layout.x();
+            let y = offset.y + layout.y();
 
-        let rect = Rect::<Logical>::from_xywh(x, y, layout.size.width, layout.size.height);
+            let rect = Rect::<Logical>::from_xywh(x, y, layout.width(), layout.height());
 
-        // Handle pointer events
-        if let InputEvent::PointerButton {
-            state: ButtonState::Pressed,
-            position,
-            ..
-        } = event
-        {
-            if rect.contains(position) {
-                return WidgetResponse {
-                    message: Some(self.on_press.clone()),
-                    focus_request: None,
-                    handled: true,
-                    clear_focus: true, // Clear focus from other widgets
-                };
+            // Handle pointer events
+            if let InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                position,
+                ..
+            } = event
+            {
+                if rect.contains(position) {
+                    return WidgetResponse {
+                        message: Some(self.on_press.clone()),
+                        focus_request: None,
+                        handled: true,
+                        clear_focus: true, // Clear focus from other widgets
+                    };
+                }
             }
-        }
 
-        // Child event propagation
-        let child_ids = taffy.children(node).unwrap();
-        if let Some(content_node) = child_ids.get(0) {
-            let content_offset = Point::new(x, y);
-            return self.content.on_event(
-                taffy,
-                *content_node,
-                content_offset,
-                event,
-                focused_id,
-                ctx,
-            );
+            // Child event propagation
+            let child_ids = ctx.children(node);
+            if let Some(content_node) = child_ids.get(0) {
+                let content_offset = Point::new(x, y);
+                return self.content.on_event(
+                    ctx,
+                    *content_node,
+                    content_offset,
+                    event,
+                    focused_id,
+                    widget_ctx,
+                );
+            }
         }
 
         WidgetResponse::default()

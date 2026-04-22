@@ -1,11 +1,10 @@
 use crate::core::{Logical, Point, Size};
-use crate::layout::Layout;
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Color;
 use crate::Widget;
 use crate::input::InputEvent;
-use taffy::prelude::NodeId;
 
 pub struct ColorWidget {
     pub color: Color,
@@ -70,7 +69,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -78,41 +77,41 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
             self.layout.clone()
         };
 
-        taffy.new_leaf(layout.to_taffy_style()).unwrap()
+        ctx.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
+        if let Some(layout) = ctx.get_layout(node) {
+            let x = offset.x + layout.x();
+            let y = offset.y + layout.y();
 
-        let x = offset.x + layout.location.x;
-        let y = offset.y + layout.location.y;
+            let pos = Point::<Logical>::new(x, y);
+            let size = Size::<Logical>::new(layout.width(), layout.height());
 
-        let pos = Point::<Logical>::new(x, y);
-        let size = Size::<Logical>::new(layout.size.width, layout.size.height);
+            let border_color = crate::Color::WHITE;
+            let border_width = 1.0;
 
-        let border_color = crate::Color::WHITE;
-        let border_width = 1.0;
-
-        renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width, 0.0);
+            renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width, 0.0);
+        }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }

@@ -1,10 +1,9 @@
 use crate::core::{Logical, Point};
-use crate::layout::{AlignItems, FlexDirection, JustifyContent, Layout};
+use crate::layout::{AlignItems, FlexDirection, JustifyContent, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::InputEvent;
-use taffy::prelude::NodeId;
 
 pub struct Column<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
@@ -110,73 +109,74 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let mut child_nodes: Vec<NodeId> = Vec::new();
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
         for child in self.children.iter_mut() {
-            child_nodes.push(child.layout(taffy, ctx));
+            child_nodes.push(child.layout(ctx, widget_ctx));
         }
 
-        let style = Layout {
+        let layout = Layout {
             flex_direction: Some(FlexDirection::Column),
             ..self.layout.clone()
-        }
-        .to_taffy_style();
+        };
 
-        taffy.new_with_children(style, &child_nodes).unwrap()
+        ctx.create_container(&layout, &child_nodes)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::<Logical>::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-
-        let child_ids = taffy.children(node).unwrap();
-        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(
-                taffy,
-                child_node_id,
-                renderer,
-                my_offset,
-                focused_id,
-                cursor_blink,
-                ctx,
+        if let Some(layout) = ctx.get_layout(node) {
+            let my_offset = Point::<Logical>::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
             );
+
+            let child_ids = ctx.children(node);
+            for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+                child_widget.draw(
+                    ctx,
+                    child_node_id,
+                    renderer,
+                    my_offset,
+                    focused_id,
+                    cursor_blink,
+                    widget_ctx,
+                );
+            }
         }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        let child_ids = taffy.children(node).unwrap();
-        let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
+        if let Some(layout) = ctx.get_layout(node) {
+            let child_ids = ctx.children(node);
+            let my_offset = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
 
-        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response =
-                child.on_event(taffy, child_node_id, my_offset, event, focused_id, ctx);
+            for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+                let child_response =
+                    child.on_event(ctx, child_node_id, my_offset, event, focused_id, widget_ctx);
 
-            if child_response.handled || child_response.focus_request.is_some() {
-                return child_response;
+                if child_response.handled || child_response.focus_request.is_some() {
+                    return child_response;
+                }
             }
         }
         WidgetResponse::default()
@@ -287,73 +287,74 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
-        let mut child_nodes: Vec<NodeId> = Vec::new();
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+        let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
         for child in self.children.iter_mut() {
-            child_nodes.push(child.layout(taffy, ctx));
+            child_nodes.push(child.layout(ctx, widget_ctx));
         }
 
-        let style = Layout {
+        let layout = Layout {
             flex_direction: Some(FlexDirection::Row),
             ..self.layout.clone()
-        }
-        .to_taffy_style();
+        };
 
-        taffy.new_with_children(style, &child_nodes).unwrap()
+        ctx.create_container(&layout, &child_nodes)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
-
-        let child_ids = taffy.children(node).unwrap();
-        for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
-            child_widget.draw(
-                taffy,
-                child_node_id,
-                renderer,
-                my_offset,
-                focused_id,
-                cursor_blink,
-                ctx,
+        if let Some(layout) = ctx.get_layout(node) {
+            let my_offset = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
             );
+
+            let child_ids = ctx.children(node);
+            for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+                child_widget.draw(
+                    ctx,
+                    child_node_id,
+                    renderer,
+                    my_offset,
+                    focused_id,
+                    cursor_blink,
+                    widget_ctx,
+                );
+            }
         }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        let child_ids = taffy.children(node).unwrap();
-        let layout = taffy.layout(node).unwrap();
-        let my_offset = Point::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
+        if let Some(layout) = ctx.get_layout(node) {
+            let child_ids = ctx.children(node);
+            let my_offset = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
 
-        for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-            let child_response =
-                child.on_event(taffy, child_node_id, my_offset, event, focused_id, ctx);
+            for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+                let child_response =
+                    child.on_event(ctx, child_node_id, my_offset, event, focused_id, widget_ctx);
 
-            if child_response.handled || child_response.focus_request.is_some() {
-                return child_response;
+                if child_response.handled || child_response.focus_request.is_some() {
+                    return child_response;
+                }
             }
         }
         WidgetResponse::default()

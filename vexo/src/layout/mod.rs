@@ -4,10 +4,11 @@
 //! the layout engine. It defines:
 //!
 //! - `LayoutEngine` trait for layout computation
-//! - `LayoutNode` tree structure for describing layout
+//! - `LayoutNodeId` for node handles
 //! - `ComputedLayout` for layout results
 //! - `TaffyLayoutEngine` implementation
 //! - `Layout` struct for CSS-style layout properties
+//! - `LayoutContext` and `LayoutView` for widget interaction
 //!
 //! # Architecture
 //!
@@ -19,10 +20,9 @@
 //! # Example
 //!
 //! ```
-//! use vexo::layout::{LayoutEngine, TaffyLayoutEngine, LayoutConstraints, Layout};
+//! use vexo::layout::{LayoutEngine, TaffyLayoutEngine, Layout};
 //!
 //! let mut engine = TaffyLayoutEngine::new();
-//! // Build and compute layout trees using the engine
 //!
 //! // Or use the Layout struct for CSS-style properties
 //! let layout = Layout::default()
@@ -31,26 +31,27 @@
 //!     .flex_grow(1.0);
 //! ```
 
+mod context;
 mod engine;
 mod node;
 mod style;
 mod taffy_engine;
 
-pub use engine::{LayoutEngine, LayoutError, LayoutTreeHandle};
+pub use context::{LayoutContext, LayoutView};
+pub use engine::{LayoutEngine, LayoutError};
 pub use node::{
     AlignItems as NodeAlignItems,
     ComputedLayout,
     FlexDirection as NodeFlexDirection,
     LayoutConstraints,
-    LayoutNode,
     LayoutNodeId,
     LayoutPadding,
-    LayoutTree,
 };
 pub use style::{
     AlignContent,
     AlignItems,
     Dimension,
+    Display,
     EdgeInsets,
     FlexDirection,
     FlexWrap,

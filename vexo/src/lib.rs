@@ -4,8 +4,6 @@ use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
-use taffy::prelude::{AvailableSpace, NodeId};
-use taffy::Style;
 
 use winit::dpi::PhysicalSize;
 use winit::event::*;
@@ -41,8 +39,9 @@ pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
+use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 
-pub use taffy::prelude::AlignItems;
+pub use layout::AlignItems;
 
 extern crate alloc;
 
@@ -52,9 +51,9 @@ pub struct WindowState<A: Application + 'static> {
     window: Option<Arc<dyn Window>>,
 
     batcher: UiBatcher,
-    taffy: taffy::TaffyTree,
+    layout_engine: Box<dyn LayoutEngine>,
     root_widget: Box<dyn Widget<A::Message>>,
-    root_node_id: NodeId,
+    root_node_id: LayoutNodeId,
 
     // User's application state
     user_app_state: A::State,
@@ -122,16 +121,17 @@ impl<A: Application + 'static> WindowState<A> {
         let backend = WgpuBackend::new(window.clone()).await?;
 
         // --- Root Node Id ---
-        let mut taffy = taffy::TaffyTree::new();
+        let mut layout_engine = Box::new(TaffyLayoutEngine::new());
         let mut root_widget = Box::new(Column::new());
         let mut ctx = WidgetContext::new();
-        let root_node_id = root_widget.layout(&mut taffy, &mut ctx);
+        let mut layout_ctx = LayoutContext::new(layout_engine.as_mut());
+        let root_node_id = root_widget.layout(&mut layout_ctx, &mut ctx);
 
         Ok(Self {
             backend,
             window: Some(window),
             batcher: UiBatcher::new(),
-            taffy,
+            layout_engine,
             root_widget,
             root_node_id,
             user_app_state: A::new(),
@@ -150,8 +150,8 @@ impl<A: Application + 'static> WindowState<A> {
         self.backend.resize(config);
 
         if size.width > 0.0 && size.height > 0.0 {
-            //Force re-layout
-            self.root_node_id = self.taffy.new_leaf(Style::default()).unwrap();
+            //Force re-layout - create a dummy leaf node
+            self.root_node_id = self.layout_engine.create_leaf(&layout::Layout::default());
         }
     }
 
@@ -168,12 +168,12 @@ impl<A: Application + 'static> WindowState<A> {
         self.cursor_blink.tick();
 
         let mut new_root_widget = self.view();
-        self.taffy.clear();
+        self.layout_engine.clear();
         self.batcher.clear();
 
         let scale = self.widget_context.scale;
 
-        // Taffy should layout in logical points so that 24.0 size means 24 points.
+        // Layout should work in logical points so that 24.0 size means 24 points.
         let logical_width = self.backend.width() as f32 / scale.factor();
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
@@ -181,23 +181,20 @@ impl<A: Application + 'static> WindowState<A> {
         // Set screen size once per frame
         self.batcher.set_screen_size(logical_size);
 
-        let new_root_node_id = new_root_widget.layout(&mut self.taffy, &mut self.widget_context);
+        // Build layout tree
+        let mut layout_ctx = LayoutContext::new(self.layout_engine.as_mut());
+        let new_root_node_id = new_root_widget.layout(&mut layout_ctx, &mut self.widget_context);
 
-        self.taffy
-            .compute_layout(
-                new_root_node_id,
-                taffy::Size {
-                    width: AvailableSpace::Definite(logical_width),
-                    height: AvailableSpace::Definite(logical_height),
-                },
-            )
-            .unwrap();
+        // Compute layout
+        self.layout_engine.compute(new_root_node_id, logical_size);
+
         self.root_widget = new_root_widget;
         self.root_node_id = new_root_node_id;
 
         // 1. DRAW RECTANGLES: Generate geometry data
+        let layout_view = LayoutView::new(self.layout_engine.as_ref());
         self.root_widget.draw(
-            &mut self.taffy,
+            &layout_view,
             self.root_node_id,
             &mut self.batcher,
             Point::new(0.0, 0.0),
@@ -394,8 +391,9 @@ impl<A: Application + 'static> WindowState<A> {
         };
 
         // Pass the event to the root widget (which passes it down)
+        let layout_view = LayoutView::new(self.layout_engine.as_ref());
         let widget_response = self.root_widget.on_event(
-            &self.taffy,
+            &layout_view,
             self.root_node_id,
             Point::new(0.0, 0.0),
             &input_event,

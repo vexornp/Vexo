@@ -1,11 +1,10 @@
 use crate::core::{Logical, Point};
-use crate::layout::Layout;
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::Color;
 use crate::input::InputEvent;
-use taffy::prelude::{length, NodeId};
 
 pub struct Text {
     pub content: String,
@@ -80,57 +79,53 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, taffy: &mut taffy::TaffyTree, ctx: &mut WidgetContext) -> NodeId {
+    fn layout(&mut self, ctx: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
         // Calculate intrinsic size based on content and font size
         let intrinsic_width = self.content.len() as f32 * (self.font_size * 0.5);
         let intrinsic_height = self.font_size * 1.2;
 
         // Use Layout properties, falling back to intrinsic size for auto dimensions
-        let style = self.layout.clone().to_taffy_style();
-
-        // If width/height are auto, use intrinsic size as the base
-        let style = if self.layout.width.is_none() || self.layout.height.is_none() {
-            taffy::Style {
-                size: taffy::Size {
-                    width: self.layout.width.map(|d| d.to_taffy()).unwrap_or_else(|| length(intrinsic_width)),
-                    height: self.layout.height.map(|d| d.to_taffy()).unwrap_or_else(|| length(intrinsic_height)),
-                },
-                ..style
+        let layout = if self.layout.width.is_none() || self.layout.height.is_none() {
+            Layout {
+                width: self.layout.width.or(Some(crate::layout::Dimension::Length(intrinsic_width))),
+                height: self.layout.height.or(Some(crate::layout::Dimension::Length(intrinsic_height))),
+                ..self.layout.clone()
             }
         } else {
-            style
+            self.layout.clone()
         };
 
-        taffy.new_leaf(style).unwrap()
+        ctx.create_leaf(&layout)
     }
 
     fn draw(
         &self,
-        taffy: &mut taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) {
-        let layout = taffy.layout(node).unwrap();
-        let pos = Point::new(
-            offset.x + layout.location.x,
-            offset.y + layout.location.y,
-        );
+        if let Some(layout) = ctx.get_layout(node) {
+            let pos = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
 
-        renderer.add_text(self.content.clone(), pos, self.font_size, self.color);
+            renderer.add_text(self.content.clone(), pos, self.font_size, self.color);
+        }
     }
 
     fn on_event(
         &mut self,
-        taffy: &taffy::TaffyTree,
-        node: NodeId,
+        ctx: &LayoutView,
+        node: LayoutNodeId,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        ctx: &mut WidgetContext,
+        widget_ctx: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }

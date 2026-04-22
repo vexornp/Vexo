@@ -1,7 +1,7 @@
 //! Layout types for the Vexo UI framework.
 //!
 //! This module provides the types used for layout computation, including
-//! constraints, nodes, and computed results.
+//! constraints, node IDs, and computed results.
 
 use crate::core::{Point, Rect, Size};
 use crate::core::Logical;
@@ -159,83 +159,6 @@ pub enum AlignItems {
 }
 
 // ============================================================================
-// LAYOUT NODE
-// ============================================================================
-
-/// A node in the layout tree.
-///
-/// Layout nodes form a tree structure that describes the layout hierarchy.
-/// Each node has constraints and optional children.
-#[derive(Debug, Clone)]
-pub struct LayoutNode {
-    /// Unique identifier for this node.
-    pub id: LayoutNodeId,
-    /// Layout constraints for this node.
-    pub constraints: LayoutConstraints,
-    /// Flex direction for container nodes.
-    pub direction: FlexDirection,
-    /// Alignment for children in the cross axis.
-    pub align_items: AlignItems,
-    /// Gap between children in logical points.
-    pub gap: f32,
-    /// Padding around the content.
-    pub padding: LayoutPadding,
-    /// Child nodes.
-    pub children: Vec<LayoutNode>,
-}
-
-impl LayoutNode {
-    /// Create a new leaf node with the given constraints.
-    pub fn leaf(id: LayoutNodeId, constraints: LayoutConstraints) -> Self {
-        Self {
-            id,
-            constraints,
-            direction: FlexDirection::default(),
-            align_items: AlignItems::default(),
-            gap: 0.0,
-            padding: LayoutPadding::default(),
-            children: Vec::new(),
-        }
-    }
-
-    /// Create a container node with children.
-    pub fn container(id: LayoutNodeId, direction: FlexDirection, children: Vec<LayoutNode>) -> Self {
-        Self {
-            id,
-            constraints: LayoutConstraints::default(),
-            direction,
-            align_items: AlignItems::default(),
-            gap: 0.0,
-            padding: LayoutPadding::default(),
-            children,
-        }
-    }
-
-    /// Set the gap between children.
-    pub fn with_gap(mut self, gap: f32) -> Self {
-        self.gap = gap;
-        self
-    }
-
-    /// Set the alignment for children.
-    pub fn with_align(mut self, align: AlignItems) -> Self {
-        self.align_items = align;
-        self
-    }
-
-    /// Set the padding.
-    pub fn with_padding(mut self, padding: LayoutPadding) -> Self {
-        self.padding = padding;
-        self
-    }
-
-    /// Check if this is a leaf node (no children).
-    pub fn is_leaf(&self) -> bool {
-        self.children.is_empty()
-    }
-}
-
-// ============================================================================
 // LAYOUT PADDING
 // ============================================================================
 
@@ -343,57 +266,6 @@ impl ComputedLayout {
 }
 
 // ============================================================================
-// LAYOUT TREE
-// ============================================================================
-
-/// A complete layout tree with computed results.
-#[derive(Debug, Clone)]
-pub struct LayoutTree {
-    /// All computed layouts, indexed by node ID.
-    pub layouts: Vec<ComputedLayout>,
-}
-
-impl LayoutTree {
-    /// Create an empty layout tree.
-    pub fn new() -> Self {
-        Self { layouts: Vec::new() }
-    }
-
-    /// Create a layout tree with pre-allocated capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            layouts: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Add a computed layout.
-    pub fn push(&mut self, layout: ComputedLayout) {
-        self.layouts.push(layout);
-    }
-
-    /// Find a layout by node ID.
-    pub fn find(&self, id: LayoutNodeId) -> Option<&ComputedLayout> {
-        self.layouts.iter().find(|l| l.id == id)
-    }
-
-    /// Get the number of layouts.
-    pub fn len(&self) -> usize {
-        self.layouts.len()
-    }
-
-    /// Check if the tree is empty.
-    pub fn is_empty(&self) -> bool {
-        self.layouts.is_empty()
-    }
-}
-
-impl Default for LayoutTree {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ============================================================================
 // TESTS
 // ============================================================================
 
@@ -416,31 +288,6 @@ mod tests {
         assert!(!c.is_fixed_width());
         assert!(!c.is_fixed_height());
         assert_eq!(c.flex_grow, 1.0);
-    }
-
-    #[test]
-    fn test_layout_node_leaf() {
-        let node = LayoutNode::leaf(
-            LayoutNodeId::new(1),
-            LayoutConstraints::fixed(100.0, 50.0),
-        );
-        assert!(node.is_leaf());
-        assert!(node.children.is_empty());
-    }
-
-    #[test]
-    fn test_layout_node_container() {
-        let child1 = LayoutNode::leaf(LayoutNodeId::new(2), LayoutConstraints::fill());
-        let child2 = LayoutNode::leaf(LayoutNodeId::new(3), LayoutConstraints::fill());
-        let parent = LayoutNode::container(
-            LayoutNodeId::new(1),
-            FlexDirection::Column,
-            vec![child1, child2],
-        );
-
-        assert!(!parent.is_leaf());
-        assert_eq!(parent.children.len(), 2);
-        assert_eq!(parent.direction, FlexDirection::Column);
     }
 
     #[test]
@@ -468,24 +315,5 @@ mod tests {
         assert_eq!(p.left, 5.0);
         assert_eq!(p.right, 5.0);
         assert_eq!(p.top, 0.0);
-    }
-
-    #[test]
-    fn test_layout_tree() {
-        let mut tree = LayoutTree::new();
-        assert!(tree.is_empty());
-
-        tree.push(ComputedLayout::new(
-            LayoutNodeId::new(1),
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
-        ));
-        tree.push(ComputedLayout::new(
-            LayoutNodeId::new(2),
-            Rect::from_xywh(0.0, 0.0, 50.0, 50.0),
-        ));
-
-        assert_eq!(tree.len(), 2);
-        assert!(tree.find(LayoutNodeId::new(1)).is_some());
-        assert!(tree.find(LayoutNodeId::new(99)).is_none());
     }
 }
