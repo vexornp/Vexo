@@ -63,9 +63,9 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         self.child.key()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, background uses same bounds
-        self.child.layout(layout_context, widget_ctx)
+        self.child.layout(layout_context, widget_context)
     }
 
     fn draw(
@@ -76,7 +76,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
@@ -89,7 +89,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
             renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
 
             // Draw child on top - pass original offset since child will add its own layout offset
-            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context);
         }
     }
 
@@ -100,10 +100,10 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_context)
     }
 }
 
@@ -135,9 +135,9 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         self.child.key()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, border uses same bounds
-        self.child.layout(layout_context, widget_ctx)
+        self.child.layout(layout_context, widget_context)
     }
 
     fn draw(
@@ -148,7 +148,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
@@ -158,7 +158,7 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
             let size = Size::<Logical>::new(layout.width(), layout.height());
 
             // Draw child first - pass original offset since child will add its own layout offset
-            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+            self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context);
 
             // Draw border on top (transparent fill, colored border)
             renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
@@ -172,10 +172,10 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_context)
     }
 }
 
@@ -205,8 +205,8 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         self.child.key()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        self.child.layout(layout_context, widget_ctx)
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+        self.child.layout(layout_context, widget_context)
     }
 
     fn draw(
@@ -217,13 +217,13 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         // Push radius onto context stack
         renderer.push_corner_radius(self.radius);
 
         // Draw child with radius context set
-        self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx);
+        self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context);
 
         // Pop radius from context stack
         renderer.pop_corner_radius();
@@ -236,9 +236,9 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Pass original offset since child will add its own layout offset
-        self.child.on_event(layout_view, node, offset, event, focused_id, widget_ctx)
+        self.child.on_event(layout_view, node, offset, event, focused_id, widget_context)
     }
 }

@@ -109,10 +109,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
         for child in self.children.iter_mut() {
-            child_nodes.push(child.layout(layout_context, widget_ctx));
+            child_nodes.push(child.layout(layout_context, widget_context));
         }
 
         let layout = Layout {
@@ -131,7 +131,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let my_offset = Point::<Logical>::new(
@@ -148,7 +148,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                     my_offset,
                     focused_id,
                     cursor_blink,
-                    widget_ctx,
+                    widget_context,
                 );
             }
         }
@@ -161,7 +161,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         if let Some(layout) = layout_view.get_layout(node) {
             let child_ids = layout_view.children(node);
@@ -172,7 +172,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
 
             for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
                 let child_response =
-                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_ctx);
+                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
 
                 if child_response.handled || child_response.focus_request.is_some() {
                     return child_response;
@@ -287,10 +287,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
         for child in self.children.iter_mut() {
-            child_nodes.push(child.layout(layout_context, widget_ctx));
+            child_nodes.push(child.layout(layout_context, widget_context));
         }
 
         let layout = Layout {
@@ -309,7 +309,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let my_offset = Point::new(
@@ -326,7 +326,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                     my_offset,
                     focused_id,
                     cursor_blink,
-                    widget_ctx,
+                    widget_context,
                 );
             }
         }
@@ -339,7 +339,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         if let Some(layout) = layout_view.get_layout(node) {
             let child_ids = layout_view.children(node);
@@ -350,7 +350,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
 
             for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
                 let child_response =
-                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_ctx);
+                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
 
                 if child_response.handled || child_response.focus_request.is_some() {
                     return child_response;

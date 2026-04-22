@@ -69,7 +69,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -88,7 +88,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let x = offset.x + layout.x();
@@ -111,7 +111,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }

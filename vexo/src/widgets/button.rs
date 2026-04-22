@@ -70,8 +70,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        let content_node = self.content.layout(layout_context, widget_ctx);
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+        let content_node = self.content.layout(layout_context, widget_context);
 
         // Merge Button's layout with default flex container style
         let layout = Layout {
@@ -96,7 +96,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::<Logical>::new(
@@ -114,7 +114,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                     pos,
                     focused_id,
                     cursor_blink,
-                    widget_ctx,
+                    widget_context,
                 );
             }
         }
@@ -127,7 +127,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         if let Some(layout) = layout_view.get_layout(node) {
             let x = offset.x + layout.x();
@@ -162,7 +162,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                     content_offset,
                     event,
                     focused_id,
-                    widget_ctx,
+                    widget_context,
                 );
             }
         }

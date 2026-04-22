@@ -198,8 +198,8 @@ impl Rect<Logical> {
     }
 
     /// Create from position and size.
-    pub fn from_pos_size(pos: Point<Logical>, size: Size<Logical>) -> Self {
-        Rect::new(pos, size)
+    pub fn from_pos_size(position: Point<Logical>, size: Size<Logical>) -> Self {
+        Rect::new(position, size)
     }
 
     /// Check if a logical point is inside this rectangle.

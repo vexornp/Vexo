@@ -18,7 +18,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         Layout::default()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId;
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId;
 
     fn draw(
         &self,
@@ -28,7 +28,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     );
 
     fn on_event(
@@ -38,7 +38,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M>;
 }
 
@@ -57,8 +57,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         (**self).layout_props()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
-        (**self).layout(layout_context, widget_ctx)
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+        (**self).layout(layout_context, widget_context)
     }
 
     fn draw(
@@ -69,9 +69,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
-        (**self).draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_ctx)
+        (**self).draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context)
     }
 
     fn on_event(
@@ -81,9 +81,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        (**self).on_event(layout_view, node, offset, event, focused_id, widget_ctx)
+        (**self).on_event(layout_view, node, offset, event, focused_id, widget_context)
     }
 }
 

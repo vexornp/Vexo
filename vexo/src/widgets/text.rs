@@ -79,7 +79,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Calculate intrinsic size based on content and font size
         let intrinsic_width = self.content.len() as f32 * (self.font_size * 0.5);
         let intrinsic_height = self.font_size * 1.2;
@@ -106,7 +106,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         _cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let pos = Point::new(
@@ -125,7 +125,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         WidgetResponse::default()
     }

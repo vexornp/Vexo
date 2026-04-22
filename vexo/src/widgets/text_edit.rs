@@ -89,7 +89,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_ctx: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -110,7 +110,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
         cursor_blink: &crate::CursorBlinkState,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
             let pos: Point<Logical> = Point::new(
@@ -123,11 +123,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             let debug_color = crate::Color::RED;
             renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0, 0.0);
 
-            let editor_arc = widget_ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+            let editor_arc = widget_context.get_or_create_editor(&self.editor_id, &self.initial_text);
             let mut editor_ref = editor_arc.borrow_mut();
 
-            editor_ref.set_size(&mut widget_ctx.font_system, size);
-            editor_ref.shape_as_needed(&mut widget_ctx.font_system, true);
+            editor_ref.set_size(&mut widget_context.font_system, size);
+            editor_ref.shape_as_needed(&mut widget_context.font_system, true);
 
             renderer.add_editor_request(
                 &self.editor_id,
@@ -174,7 +174,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
-        widget_ctx: &mut WidgetContext,
+        widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
         // Derive our WidgetId from the editor_id (explicit key)
         let my_id = WidgetId::from_key(&self.editor_id);
@@ -213,7 +213,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         }
 
         // We are focused, so handle keyboard input
-        let editor_rc = widget_ctx.get_or_create_editor(&self.editor_id, &self.initial_text);
+        let editor_rc = widget_context.get_or_create_editor(&self.editor_id, &self.initial_text);
         let mut editor_ref = editor_rc.borrow_mut();
 
         match event {
@@ -261,40 +261,40 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
                 match key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Left));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::Left));
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Right));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::Right));
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Up));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::Up));
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Down));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::Down));
                     }
                     Key::Named(NamedKey::Home) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::Home));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::Home));
                     }
                     Key::Named(NamedKey::End) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::End));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::End));
                     }
                     Key::Named(NamedKey::PageUp) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::PageUp));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::PageUp));
                     }
                     Key::Named(NamedKey::PageDown) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Motion(Motion::PageDown));
+                        editor_ref.action(&mut widget_context.font_system, Action::Motion(Motion::PageDown));
                     }
                     Key::Named(NamedKey::Escape) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Escape);
+                        editor_ref.action(&mut widget_context.font_system, Action::Escape);
                     }
                     Key::Named(NamedKey::Enter) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Enter);
+                        editor_ref.action(&mut widget_context.font_system, Action::Enter);
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Backspace);
+                        editor_ref.action(&mut widget_context.font_system, Action::Backspace);
                     }
                     Key::Named(NamedKey::Delete) => {
-                        editor_ref.action(&mut widget_ctx.font_system, Action::Delete);
+                        editor_ref.action(&mut widget_context.font_system, Action::Delete);
                     }
                     Key::Character(ch) => {
                         if ctrl_pressed {
@@ -321,7 +321,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                                         // Ignore control characters
                                         continue;
                                     }
-                                    editor_ref.action(&mut widget_ctx.font_system, Action::Insert(c));
+                                    editor_ref.action(&mut widget_context.font_system, Action::Insert(c));
                                 }
                             }
                         }
@@ -334,7 +334,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             _ => {}
         }
 
-        editor_ref.shape_as_needed(&mut widget_ctx.font_system, true);
+        editor_ref.shape_as_needed(&mut widget_context.font_system, true);
 
         WidgetResponse {
             message: None,
