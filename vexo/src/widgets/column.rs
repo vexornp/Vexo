@@ -1,6 +1,7 @@
 use crate::core::{Logical, Point};
 use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
+use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
 use crate::input::InputEvent;
@@ -9,6 +10,51 @@ pub struct Column<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
     pub layout: Layout,
+    /// Stored computed layout from the layout phase.
+    computed_layout: Option<crate::widget::ComputedLayout>,
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widget::{Identifiable, Layout};
+
+    #[test]
+    fn test_column_implements_separated_traits() {
+        let column: Column<()> = Column::new();
+
+        // Should implement Identifiable
+        let _id: Option<WidgetId> = column.id();
+
+        // Should implement Layout
+        let _constraints = column.constraints();
+    }
+
+    #[test]
+    fn test_column_with_key() {
+        let column: Column<()> = Column::new().with_key("test-column");
+
+        let id = column.id();
+        assert!(id.is_some());
+        assert_eq!(id.unwrap(), WidgetId::from_key("test-column"));
+    }
+
+    #[test]
+    fn test_column_layout_constraints() {
+        let column: Column<()> = Column::new()
+            .width(200.0)
+            .height(100.0);
+
+        let constraints = column.constraints();
+        assert!(constraints.is_fixed_width());
+        assert!(constraints.is_fixed_height());
+        assert_eq!(constraints.min_width, 200.0);
+        assert_eq!(constraints.min_height, 100.0);
+    }
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Column<M> {
@@ -17,6 +63,7 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
             children: Vec::new(),
             key: None,
             layout: Layout::default(),
+            computed_layout: None,
         }
     }
 
@@ -100,6 +147,46 @@ impl<M: Clone + std::fmt::Debug + Send> Column<M> {
 impl<M: Clone + std::fmt::Debug + Send> Default for Column<M> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Column<M> {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Column<M> {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        crate::widget::LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Column<M> {
+    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        // Container widgets don't paint themselves - children paint
+        // The framework will handle child painting
+        Vec::new()
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Column<M> {
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        // Container widgets delegate event handling to children
+        // The framework will handle child event propagation
+        crate::widget::InteractionResponse::default()
     }
 }
 
