@@ -2,22 +2,6 @@
 //!
 //! This module provides the bridge between the new `RenderCommand` output from
 //! `Paint::paint()` and the existing `UiBatcher` renderer.
-//!
-//! # Example
-//!
-//! ```
-//! use vexo::render::{RenderCommand, process_commands};
-//! use vexo::renderer::UiBatcher;
-//! use vexo::core::{Color, Point, Rect, Logical};
-//!
-//! let mut batcher = UiBatcher::new();
-//! let commands = vec![RenderCommand::rect(
-//!     Rect::from_xywh(10.0, 20.0, 100.0, 50.0),
-//!     Color::RED,
-//! )];
-//!
-//! process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
-//! ```
 
 use crate::core::{Color, Logical, Point, Rect};
 use crate::render::RenderCommand;
@@ -34,23 +18,6 @@ use crate::renderer::UiBatcher;
 /// * `commands` - The render commands to process
 /// * `batcher` - The batcher to submit commands to
 /// * `initial_offset` - An initial offset to apply to all coordinates
-///
-/// # Example
-///
-/// ```
-/// use vexo::render::{RenderCommand, process_commands};
-/// use vexo::renderer::UiBatcher;
-/// use vexo::core::{Color, Point, Rect, Logical};
-///
-/// let mut batcher = UiBatcher::new();
-/// let commands = vec![RenderCommand::rect(
-///     Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
-///     Color::RED,
-/// )];
-///
-/// process_commands(&commands, &mut batcher, Point::new(10.0, 20.0));
-/// // The rect will be rendered at position (10.0, 20.0)
-/// ```
 pub fn process_commands(
     commands: &[RenderCommand],
     batcher: &mut UiBatcher,

@@ -3,6 +3,7 @@ use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::input::InputEvent;
+use crate::render::RenderCommand;
 use crate::Color;
 use std::marker::PhantomData;
 
@@ -116,7 +117,7 @@ impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::wi
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
+impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
@@ -124,6 +125,15 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, background uses same bounds
         self.child.layout(layout_context, widget_context)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+        self.child.apply_layout(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -256,7 +266,7 @@ impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::wi
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
+impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
@@ -264,6 +274,15 @@ impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M>
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, border uses same bounds
         self.child.layout(layout_context, widget_context)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+        self.child.apply_layout(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -379,13 +398,22 @@ impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::wi
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
+impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         self.child.layout(layout_context, widget_context)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+        self.child.apply_layout(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
     }
 
     fn draw(

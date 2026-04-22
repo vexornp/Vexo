@@ -201,6 +201,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         layout_context.create_leaf(&layout)
     }
 
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
+    }
+
     fn draw(
         &self,
         layout_view: &LayoutView,
@@ -494,7 +502,7 @@ mod tests {
         let layout = crate::widget::ComputedLayout::new(
             crate::core::Rect::from_xywh(10.0, 20.0, 200.0, 50.0)
         );
-        text_edit.apply_layout(layout);
+        crate::widget::Layout::apply_layout(&mut text_edit, layout);
 
         assert!(text_edit.computed_layout.is_some());
         let stored = text_edit.computed_layout.unwrap();
@@ -510,17 +518,18 @@ mod tests {
 
         // Without computed layout, should return empty
         let mut ctx = crate::widget::PaintContext::default();
-        let commands = text_edit.paint(&mut ctx);
+        let commands = crate::widget::Paint::paint(&text_edit, &mut ctx);
         assert!(commands.is_empty());
 
         // With computed layout, should return commands
-        text_edit.apply_layout(
+        crate::widget::Layout::apply_layout(
+            &mut text_edit,
             crate::widget::ComputedLayout::new(
                 crate::core::Rect::from_xywh(0.0, 0.0, 200.0, 50.0)
             )
         );
 
-        let commands = text_edit.paint(&mut ctx);
+        let commands = crate::widget::Paint::paint(&text_edit, &mut ctx);
         assert_eq!(commands.len(), 2); // border rect + editor command
     }
 

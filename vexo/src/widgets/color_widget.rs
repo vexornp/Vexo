@@ -1,7 +1,9 @@
 use crate::core::{Color, Point, Rect, Size, WidgetId};
 use crate::input::InputEvent;
-use crate::layout::Layout;
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::render::RenderCommand;
+use crate::renderer::UiBatcher;
+use crate::widgets::{Widget, WidgetContext, WidgetResponse};
 
 pub struct ColorWidget {
     pub color: Color,
@@ -112,5 +114,57 @@ impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for ColorWidg
         _ctx: &crate::widget::InteractionContext,
     ) -> crate::widget::InteractionResponse<M> {
         crate::widget::InteractionResponse::default()
+    }
+}
+
+// Legacy Widget trait implementation
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+        layout_context.create_leaf(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
+    }
+
+    fn draw(
+        &self,
+        layout_view: &LayoutView,
+        node: LayoutNodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<crate::core::Logical>,
+        focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
+        widget_context: &mut WidgetContext,
+    ) {
+        if let Some(layout) = layout_view.get_layout(node) {
+            let pos: Point<crate::core::Logical> = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+            let size: Size<crate::core::Logical> = Size::new(layout.width(), layout.height());
+            renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::WHITE, 1.0, 0.0);
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        layout_view: &LayoutView,
+        node: LayoutNodeId,
+        offset: Point<crate::core::Logical>,
+        event: &InputEvent,
+        focused_id: Option<WidgetId>,
+        widget_context: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
     }
 }

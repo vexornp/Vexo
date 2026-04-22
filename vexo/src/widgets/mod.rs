@@ -3,6 +3,7 @@ use crate::core::{Logical, Physical, Point, Scale, WidgetId};
 use crate::state::WidgetStateRegistry;
 use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::render::RenderCommand;
 use glyphon::FontSystem;
 
 pub trait Widget<M: Clone + std::fmt::Debug + Send> {
@@ -19,6 +20,20 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     }
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId;
+
+    /// Receive computed layout after layout computation.
+    ///
+    /// This method is called by the rendering pipeline after layout computation
+    /// so widgets can store their computed bounds for use during painting.
+    fn apply_layout(&mut self, _layout: crate::widget::ComputedLayout) {
+        // Default: no-op. Widgets that need layout should override this.
+    }
+
+    /// Paint this widget using the new Paint trait.
+    ///
+    /// Returns render commands that will be processed by the rendering pipeline.
+    /// This is the new painting method that replaces `draw()`.
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand>;
 
     fn draw(
         &self,
@@ -59,6 +74,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         (**self).layout(layout_context, widget_context)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        (**self).apply_layout(layout)
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        (**self).paint(ctx)
     }
 
     fn draw(

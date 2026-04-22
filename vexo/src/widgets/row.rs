@@ -177,7 +177,7 @@ mod tests {
         use crate::widget::Paint;
         let row: Row<()> = Row::new();
         let mut ctx = crate::widget::PaintContext::default();
-        let commands = row.paint(&mut ctx);
+        let commands = Paint::paint(&row, &mut ctx);
         assert!(commands.is_empty());
     }
 }
@@ -200,6 +200,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         };
 
         layout_context.create_container(&layout, &child_nodes)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
     }
 
     fn draw(

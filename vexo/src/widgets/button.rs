@@ -91,6 +91,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         layout_context.create_container(&layout, &[content_node])
     }
 
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        crate::widget::Paint::paint(self, ctx)
+    }
+
     fn draw(
         &self,
         layout_view: &LayoutView,

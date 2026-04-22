@@ -95,7 +95,6 @@ impl<M> WidgetResponse<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Point, Rect, Logical};
     use crate::render::RenderCommand;
 
     /// Test widget that implements all traits.
