@@ -1,9 +1,9 @@
-use crate::core::{Logical, Point, Rect, Size};
+use crate::core::{Color, Logical, Point, Rect, Size};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
+use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
-use crate::Color;
 use crate::input::{InputEvent, ButtonState, Key, NamedKey};
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
 
@@ -15,6 +15,8 @@ pub struct TextEdit {
     pub cursor_color: Color,
     pub key: Option<String>,
     pub layout: Layout,
+    /// Stored computed layout from the layout phase.
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl TextEdit {
@@ -27,6 +29,7 @@ impl TextEdit {
             cursor_color: Color::new(0.3, 0.67, 0.97, 1.0), // Accent blue
             key: None,
             layout: Layout::default(),
+            computed_layout: None,
         }
     }
 
@@ -80,6 +83,102 @@ impl TextEdit {
     pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
         self
+    }
+}
+
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+impl crate::widget::Identifiable for TextEdit {
+    fn id(&self) -> Option<WidgetId> {
+        Some(WidgetId::from_key(&self.editor_id))
+    }
+}
+
+impl crate::widget::Layout for TextEdit {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        let mut constraints = crate::widget::LayoutConstraints::from_layout(&self.layout);
+        // Default to flex_grow: 1.0 if no sizing is specified
+        if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
+            constraints.flex_grow = 1.0;
+        }
+        constraints
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl crate::widget::Paint for TextEdit {
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
+
+        let pos = Point::new(
+            ctx.offset().x + layout.x(),
+            ctx.offset().y + layout.y(),
+        );
+        let size = Size::new(layout.width(), layout.height());
+
+        let mut commands = Vec::new();
+
+        // Debug border
+        commands.push(RenderCommand::rect_with_border(
+            crate::core::Rect::new(pos, size),
+            Color::BLACK,
+            Color::RED,
+            1.0,
+        ));
+
+        // Editor area
+        commands.push(RenderCommand::editor(
+            self.editor_id.clone(),
+            crate::core::Rect::new(pos, size),
+        ));
+
+        // Note: Cursor rendering requires access to editor state (via WidgetContext)
+        // which is not available in PaintContext. This is a known limitation.
+        // The legacy Widget::draw method handles cursor rendering for now.
+
+        commands
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TextEdit {
+    fn on_event(
+        &mut self,
+        event: &InputEvent,
+        ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        let my_id = WidgetId::from_key(&self.editor_id);
+        let is_focused = ctx.is_focused(my_id);
+
+        // Check for click to grab/retain focus
+        if let InputEvent::PointerButton {
+            state: ButtonState::Pressed,
+            ..
+        } = event
+        {
+            if ctx.is_pointer_inside() {
+                return crate::widget::InteractionResponse::request_focus(my_id);
+            }
+        }
+
+        if !is_focused {
+            return crate::widget::InteractionResponse::default();
+        }
+
+        // Note: Full keyboard handling requires access to editor state and font_system
+        // (via WidgetContext) which is not available in InteractionContext.
+        // This is a known limitation. The legacy Widget::on_event method handles
+        // keyboard input for now.
+
+        // Mark as handled if focused (for focus retention)
+        crate::widget::InteractionResponse::handled()
     }
 }
 
@@ -342,5 +441,134 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             handled: true,
             clear_focus: false,
         }
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widget::{Identifiable, Layout, Paint, Interact, InteractionContext};
+
+    #[test]
+    fn test_text_edit_implements_separated_traits() {
+        let text_edit = TextEdit::new("test-editor");
+
+        // Should implement Identifiable
+        let id = text_edit.id();
+        assert!(id.is_some());
+        assert_eq!(id.unwrap(), WidgetId::from_key("test-editor"));
+    }
+
+    #[test]
+    fn test_text_edit_layout_constraints_default_flex_grow() {
+        let text_edit = TextEdit::new("test-editor");
+        let constraints = text_edit.constraints();
+
+        // Default should have flex_grow: 1.0
+        assert_eq!(constraints.flex_grow, 1.0);
+    }
+
+    #[test]
+    fn test_text_edit_layout_constraints_with_fixed_size() {
+        let text_edit = TextEdit::new("test-editor")
+            .width(200.0)
+            .height(50.0);
+        let constraints = text_edit.constraints();
+
+        // With fixed size, flex_grow should be 0
+        assert_eq!(constraints.flex_grow, 0.0);
+        assert!(constraints.is_fixed_width());
+        assert!(constraints.is_fixed_height());
+    }
+
+    #[test]
+    fn test_text_edit_apply_layout() {
+        let mut text_edit = TextEdit::new("test-editor");
+
+        assert!(text_edit.computed_layout.is_none());
+
+        let layout = crate::widget::ComputedLayout::new(
+            crate::core::Rect::from_xywh(10.0, 20.0, 200.0, 50.0)
+        );
+        text_edit.apply_layout(layout);
+
+        assert!(text_edit.computed_layout.is_some());
+        let stored = text_edit.computed_layout.unwrap();
+        assert_eq!(stored.x(), 10.0);
+        assert_eq!(stored.y(), 20.0);
+        assert_eq!(stored.width(), 200.0);
+        assert_eq!(stored.height(), 50.0);
+    }
+
+    #[test]
+    fn test_text_edit_paint_returns_commands() {
+        let mut text_edit = TextEdit::new("test-editor");
+
+        // Without computed layout, should return empty
+        let mut ctx = crate::widget::PaintContext::default();
+        let commands = text_edit.paint(&mut ctx);
+        assert!(commands.is_empty());
+
+        // With computed layout, should return commands
+        text_edit.apply_layout(
+            crate::widget::ComputedLayout::new(
+                crate::core::Rect::from_xywh(0.0, 0.0, 200.0, 50.0)
+            )
+        );
+
+        let commands = text_edit.paint(&mut ctx);
+        assert_eq!(commands.len(), 2); // border rect + editor command
+    }
+
+    #[test]
+    fn test_text_edit_interact_click_requests_focus() {
+        let mut text_edit = TextEdit::new("test-editor");
+
+        // Create context with pointer inside bounds
+        let ctx = InteractionContext::new(
+            Point::new(50.0, 25.0),
+            None,
+            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            crate::core::Scale::new(1.0),
+        );
+
+        // Click inside should request focus
+        let event = InputEvent::PointerButton {
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Pressed,
+            position: Point::new(50.0, 25.0),
+        };
+
+        let response: crate::widget::InteractionResponse<()> =
+            Interact::on_event(&mut text_edit, &event, &ctx);
+        assert!(response.handled);
+        assert!(response.focus_request.is_some());
+    }
+
+    #[test]
+    fn test_text_edit_interact_outside_click_ignored() {
+        let mut text_edit = TextEdit::new("test-editor");
+
+        // Create context with pointer outside bounds
+        let ctx = InteractionContext::new(
+            Point::new(150.0, 25.0), // Outside the bounds
+            None,
+            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            crate::core::Scale::new(1.0),
+        );
+
+        let event = InputEvent::PointerButton {
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Pressed,
+            position: Point::new(150.0, 25.0),
+        };
+
+        let response: crate::widget::InteractionResponse<()> =
+            Interact::on_event(&mut text_edit, &event, &ctx);
+        assert!(!response.handled);
     }
 }
