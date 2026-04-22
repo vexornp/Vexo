@@ -186,7 +186,7 @@ impl<A: Application + 'static> WindowState<A> {
         let new_root_node_id = new_root_widget.layout(&mut layout_ctx, &mut self.widget_context);
 
         // Compute layout
-        self.layout_engine.compute(new_root_node_id, logical_size);
+        self.layout_engine.compute(new_root_node_id, logical_size, &mut self.widget_context.font_system);
 
         self.root_widget = new_root_widget;
         self.root_node_id = new_root_node_id;

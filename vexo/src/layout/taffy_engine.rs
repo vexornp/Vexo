@@ -7,9 +7,11 @@ use crate::core::{Rect, Size};
 use crate::core::Logical;
 
 use super::engine::LayoutEngine;
+use super::measurement::{measure_text_node, MeasureCache, MeasureContext};
 use super::node::{ComputedLayout, LayoutNodeId};
 use super::Layout;
 
+use glyphon::FontSystem;
 use std::collections::HashMap;
 use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 
@@ -22,12 +24,14 @@ use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 /// This engine wraps the Taffy library and provides a `LayoutEngine`
 /// implementation using CSS Flexbox-style layout.
 pub struct TaffyLayoutEngine {
-    /// The underlying Taffy tree.
-    inner: taffy::TaffyTree,
+    /// The underlying Taffy tree with measure context support.
+    inner: taffy::TaffyTree<MeasureContext>,
     /// Mapping from our LayoutNodeId to Taffy's NodeId.
     node_map: HashMap<LayoutNodeId, TaffyNodeId>,
     /// Mapping from LayoutNodeId to its children (for traversal).
     children_map: HashMap<LayoutNodeId, Vec<LayoutNodeId>>,
+    /// Cache for text measurement results.
+    cache: MeasureCache,
     /// Counter for generating unique node IDs.
     next_id: u64,
 }
@@ -39,6 +43,7 @@ impl TaffyLayoutEngine {
             inner: taffy::TaffyTree::new(),
             node_map: HashMap::new(),
             children_map: HashMap::new(),
+            cache: MeasureCache::new(),
             next_id: 0,
         }
     }
@@ -66,6 +71,18 @@ impl LayoutEngine for TaffyLayoutEngine {
         id
     }
 
+    fn create_leaf_with_context(
+        &mut self,
+        layout: &Layout,
+        context: MeasureContext,
+    ) -> LayoutNodeId {
+        let id = self.generate_id();
+        let style = layout.to_taffy_style();
+        let taffy_id = self.inner.new_leaf_with_context(style, context).unwrap();
+        self.node_map.insert(id, taffy_id);
+        id
+    }
+
     fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeId]) -> LayoutNodeId {
         let id = self.generate_id();
         let style = layout.to_taffy_style();
@@ -82,13 +99,28 @@ impl LayoutEngine for TaffyLayoutEngine {
         id
     }
 
-    fn compute(&mut self, root: LayoutNodeId, available_size: Size<Logical>) {
+    fn compute(
+        &mut self,
+        root: LayoutNodeId,
+        available_size: Size<Logical>,
+        font_system: &mut FontSystem,
+    ) {
         if let Some(&root_taffy_id) = self.node_map.get(&root) {
-            let _ = self.inner.compute_layout(
+            let cache = &mut self.cache;
+            let _ = self.inner.compute_layout_with_measure(
                 root_taffy_id,
                 taffy::Size {
                     width: AvailableSpace::Definite(available_size.width),
                     height: AvailableSpace::Definite(available_size.height),
+                },
+                |known_dimensions, available_space, _node_id, node_context, _style| {
+                    measure_text_node(
+                        known_dimensions,
+                        available_space,
+                        node_context,
+                        font_system,
+                        cache,
+                    )
                 },
             );
         }
@@ -117,6 +149,7 @@ impl LayoutEngine for TaffyLayoutEngine {
         self.inner.clear();
         self.node_map.clear();
         self.children_map.clear();
+        self.cache.clear();
         self.next_id = 0;
     }
 }
@@ -130,14 +163,21 @@ mod tests {
     use super::*;
     use crate::layout::FlexDirection;
 
+    fn create_test_font_system() -> FontSystem {
+        let font_data = include_bytes!("../../font.ttf").to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        FontSystem::new_with_fonts([binary])
+    }
+
     #[test]
     fn test_create_leaf() {
         let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
 
         let layout = Layout::default().width(100.0).height(50.0);
         let node_id = engine.create_leaf(&layout);
 
-        engine.compute(node_id, Size::new(200.0, 200.0));
+        engine.compute(node_id, Size::new(200.0, 200.0), &mut font_system);
 
         let computed = engine.get_layout(node_id).unwrap();
         assert_eq!(computed.width(), 100.0);
@@ -147,6 +187,7 @@ mod tests {
     #[test]
     fn test_create_container() {
         let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
 
         // Create two leaf children
         let child1 = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
@@ -158,7 +199,7 @@ mod tests {
             &[child1, child2],
         );
 
-        engine.compute(parent, Size::new(200.0, 100.0));
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
 
         // Check that children are laid out horizontally
         let child1_layout = engine.get_layout(child1).unwrap();
