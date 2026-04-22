@@ -74,6 +74,37 @@ impl LayoutConstraints {
     pub fn is_fixed_height(&self) -> bool {
         (self.min_height - self.max_height).abs() < f32::EPSILON
     }
+
+    /// Create constraints from a Layout struct.
+    ///
+    /// This converts the CSS-style Layout properties into LayoutConstraints
+    /// that can be used by the layout engine.
+    pub fn from_layout(layout: &crate::layout::Layout) -> Self {
+        use crate::layout::Dimension;
+
+        // Convert width dimension to min/max constraints
+        let (min_width, max_width) = match &layout.width {
+            Some(Dimension::Length(w)) => (*w, *w),
+            Some(Dimension::Percent(_)) => (0.0, f32::INFINITY), // Percentage not directly supported
+            Some(Dimension::Auto) | None => (0.0, f32::INFINITY),
+        };
+
+        // Convert height dimension to min/max constraints
+        let (min_height, max_height) = match &layout.height {
+            Some(Dimension::Length(h)) => (*h, *h),
+            Some(Dimension::Percent(_)) => (0.0, f32::INFINITY), // Percentage not directly supported
+            Some(Dimension::Auto) | None => (0.0, f32::INFINITY),
+        };
+
+        Self {
+            min_width,
+            max_width,
+            min_height,
+            max_height,
+            flex_grow: layout.flex_grow.unwrap_or(0.0),
+            flex_shrink: layout.flex_shrink.unwrap_or(1.0),
+        }
+    }
 }
 
 /// The computed layout result delivered to a widget.
@@ -201,5 +232,18 @@ mod tests {
         assert_eq!(layout.y(), 20.0);
         assert_eq!(layout.width(), 100.0);
         assert_eq!(layout.height(), 50.0);
+    }
+
+    #[test]
+    fn test_layout_constraints_from_layout() {
+        use crate::layout::Layout;
+
+        let layout = Layout::default().width(100.0).height(50.0);
+        let constraints = LayoutConstraints::from_layout(&layout);
+
+        assert!(constraints.is_fixed_width());
+        assert!(constraints.is_fixed_height());
+        assert_eq!(constraints.min_width, 100.0);
+        assert_eq!(constraints.min_height, 50.0);
     }
 }
