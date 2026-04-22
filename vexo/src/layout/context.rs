@@ -4,6 +4,7 @@
 //! use to interact with the layout engine during layout, draw, and event handling.
 
 use super::{ComputedLayout, Layout, LayoutEngine, LayoutNodeId};
+use super::measurement::MeasureContext;
 
 // ============================================================================
 // LAYOUT CONTEXT
@@ -30,10 +31,25 @@ impl<'a> LayoutContext<'a> {
         self.engine.create_leaf(layout)
     }
 
+    /// Create a leaf node with custom measurement context.
+    ///
+    /// Used for nodes like text that need accurate intrinsic size calculation.
+    pub fn create_leaf_with_context(
+        &mut self,
+        layout: &Layout,
+        context: MeasureContext,
+    ) -> LayoutNodeId {
+        self.engine.create_leaf_with_context(layout, context)
+    }
+
     /// Create a container node with children.
     ///
     /// Returns a handle to reference this node later.
-    pub fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeId]) -> LayoutNodeId {
+    pub fn create_container(
+        &mut self,
+        layout: &Layout,
+        children: &[LayoutNodeId],
+    ) -> LayoutNodeId {
         self.engine.create_container(layout, children)
     }
 
