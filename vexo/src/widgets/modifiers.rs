@@ -46,6 +46,7 @@ pub struct Background<W, M> {
     child: W,
     color: Color,
     _marker: PhantomData<M>,
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl<W, M: Clone + std::fmt::Debug + Send> Background<W, M> {
@@ -54,10 +55,67 @@ impl<W, M: Clone + std::fmt::Debug + Send> Background<W, M> {
             child,
             color,
             _marker: PhantomData,
+            computed_layout: None,
         }
     }
 }
 
+// Identifiable implementation
+impl<W: crate::widget::Identifiable, M> crate::widget::Identifiable for Background<W, M> {
+    fn id(&self) -> Option<crate::core::WidgetId> {
+        self.child.id()
+    }
+}
+
+// Layout implementation
+impl<W: crate::widget::Layout, M> crate::widget::Layout for Background<W, M> {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        self.child.constraints()
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+        self.child.apply_layout(layout);
+    }
+}
+
+// Paint implementation
+impl<W: crate::widget::Paint, M> crate::widget::Paint for Background<W, M> {
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<crate::render::RenderCommand> {
+        use crate::render::RenderCommand;
+
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
+
+        let mut commands = Vec::new();
+
+        // Background rect first (behind child)
+        let pos = crate::core::Point::new(ctx.offset().x + layout.x(), ctx.offset().y + layout.y());
+        let size = crate::core::Size::new(layout.width(), layout.height());
+        let bounds = crate::core::Rect::new(pos, size);
+        commands.push(RenderCommand::rect(bounds, self.color.into()));
+
+        // Then child
+        commands.extend(self.child.paint(ctx));
+
+        commands
+    }
+}
+
+// Interact implementation
+impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Background<W, M> {
+    fn on_event(
+        &mut self,
+        event: &crate::input::InputEvent,
+        ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        self.child.on_event(event, ctx)
+    }
+}
+
+// Legacy Widget trait implementation for backwards compatibility
 impl<W: Widget<M>, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
