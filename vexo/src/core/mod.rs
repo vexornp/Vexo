@@ -17,10 +17,10 @@
 //! (screen pixel) coordinates using marker types:
 //!
 //! ```
-//! use vexo::core::{Point, Logical, Physical};
+//! use vexo::core::{Point, Logical, Physical, Scale};
 //!
 //! let logical = Point::<Logical>::new(100.0, 100.0);
-//! let physical = logical.to_physical(2.0); // 2x scale factor
+//! let physical = logical.to_physical(Scale::new(2.0)); // 2x scale factor
 //! assert_eq!(physical.x, 200.0);
 //! ```
 

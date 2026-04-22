@@ -171,11 +171,11 @@ impl<A: Application + 'static> WindowState<A> {
         self.taffy.clear();
         self.batcher.clear();
 
-        let scale_factor = self.widget_context.scale.factor();
+        let scale = self.widget_context.scale;
 
         // Taffy should layout in logical points so that 24.0 size means 24 points.
-        let logical_width = self.backend.width() as f32 / scale_factor;
-        let logical_height = self.backend.height() as f32 / scale_factor;
+        let logical_width = self.backend.width() as f32 / scale.factor();
+        let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
         // Set screen size once per frame
@@ -247,7 +247,7 @@ impl<A: Application + 'static> WindowState<A> {
             .iter_mut()
             .map(|(buffer, req)| {
                 // Convert logical position to physical for glyphon
-                let physical_pos = req.position.to_physical(scale_factor);
+                let physical_pos = req.position.to_physical(scale);
 
                 let bounds_left: i32 = physical_pos.x.floor() as i32;
                 let bounds_top = physical_pos.y.floor() as i32;
@@ -265,7 +265,7 @@ impl<A: Application + 'static> WindowState<A> {
                     buffer: buffer,
                     left: physical_pos.x,
                     top: physical_pos.y,
-                    scale: scale_factor,
+                    scale: scale.factor(),
                     bounds: TextBounds {
                         left: bounds_left,
                         top: bounds_top,
@@ -292,7 +292,7 @@ impl<A: Application + 'static> WindowState<A> {
 
         for req in self.batcher.editor_requests.iter_mut() {
             // Convert logical bounds to physical
-            let physical_rect = req.bounds.to_physical(scale_factor);
+            let physical_rect = req.bounds.to_physical(scale);
 
             let bounds_left: i32 = physical_rect.origin.x.floor() as i32;
             let bounds_top: i32 = physical_rect.origin.y.floor() as i32;

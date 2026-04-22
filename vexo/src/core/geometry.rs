@@ -62,8 +62,8 @@ impl<T> Point<T> {
 
 impl Point<Logical> {
     /// Convert logical point to physical pixels.
-    pub fn to_physical(self, scale: f32) -> Point<Physical> {
-        Point::new(self.x * scale, self.y * scale)
+    pub fn to_physical(self, scale: Scale) -> Point<Physical> {
+        Point::new(self.x * scale.factor(), self.y * scale.factor())
     }
 
     /// Convert from Taffy's Point type.
@@ -79,8 +79,8 @@ impl Point<Logical> {
 
 impl Point<Physical> {
     /// Convert physical point to logical coordinates.
-    pub fn to_logical(self, scale: f32) -> Point<Logical> {
-        Point::new(self.x / scale, self.y / scale)
+    pub fn to_logical(self, scale: Scale) -> Point<Logical> {
+        Point::new(self.x / scale.factor(), self.y / scale.factor())
     }
 }
 
@@ -123,8 +123,8 @@ impl<T> Size<T> {
 
 impl Size<Logical> {
     /// Convert logical size to physical pixels.
-    pub fn to_physical(self, scale: f32) -> Size<Physical> {
-        Size::new(self.width * scale, self.height * scale)
+    pub fn to_physical(self, scale: Scale) -> Size<Physical> {
+        Size::new(self.width * scale.factor(), self.height * scale.factor())
     }
 
     /// Convert from Taffy's Size type.
@@ -140,8 +140,8 @@ impl Size<Logical> {
 
 impl Size<Physical> {
     /// Convert physical size to logical coordinates.
-    pub fn to_logical(self, scale: f32) -> Size<Logical> {
-        Size::new(self.width / scale, self.height / scale)
+    pub fn to_logical(self, scale: Scale) -> Size<Logical> {
+        Size::new(self.width / scale.factor(), self.height / scale.factor())
     }
 
     /// Get width as u32 for GPU APIs.
@@ -185,7 +185,7 @@ impl<T> Rect<T> {
 
 impl Rect<Logical> {
     /// Convert logical rect to physical pixels.
-    pub fn to_physical(self, scale: f32) -> Rect<Physical> {
+    pub fn to_physical(self, scale: Scale) -> Rect<Physical> {
         Rect::new(
             self.origin.to_physical(scale),
             self.size.to_physical(scale),
@@ -223,7 +223,7 @@ impl Rect<Logical> {
 
 impl Rect<Physical> {
     /// Convert physical rect to logical coordinates.
-    pub fn to_logical(self, scale: f32) -> Rect<Logical> {
+    pub fn to_logical(self, scale: Scale) -> Rect<Logical> {
         Rect::new(
             self.origin.to_logical(scale),
             self.size.to_logical(scale),
@@ -254,11 +254,68 @@ impl Scale {
     pub fn factor_f64(&self) -> f64 {
         self.0
     }
+
+    /// Check if this is a HiDPI/Retina scale (>= 2.0).
+    pub fn is_hidpi(&self) -> bool {
+        self.0 >= 2.0
+    }
 }
 
 impl Default for Scale {
     fn default() -> Self {
         Self(1.0)
+    }
+}
+
+impl From<f64> for Scale {
+    fn from(factor: f64) -> Self {
+        Self(factor)
+    }
+}
+
+impl From<f32> for Scale {
+    fn from(factor: f32) -> Self {
+        Self(factor as f64)
+    }
+}
+
+impl PartialEq<f64> for Scale {
+    fn eq(&self, other: &f64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<f32> for Scale {
+    fn eq(&self, other: &f32) -> bool {
+        self.0 == *other as f64
+    }
+}
+
+impl std::ops::Mul<f64> for Scale {
+    type Output = f64;
+    fn mul(self, rhs: f64) -> f64 {
+        self.0 * rhs
+    }
+}
+
+impl std::ops::Mul<f32> for Scale {
+    type Output = f32;
+    fn mul(self, rhs: f32) -> f32 {
+        (self.0 * rhs as f64) as f32
+    }
+}
+
+impl std::ops::Div<f64> for Scale {
+    type Output = f64;
+    fn div(self, rhs: f64) -> f64 {
+        self.0 / rhs
+    }
+}
+
+impl std::ops::Div<f32> for Scale {
+    type Output = f32;
+    fn div(self, rhs: f32) -> f32 {
+        (self.0 / rhs as f64) as f32
     }
 }
 
@@ -307,7 +364,7 @@ mod tests {
     #[test]
     fn test_point_logical_to_physical() {
         let logical = Point::<Logical>::new(100.0, 200.0);
-        let physical = logical.to_physical(2.0);
+        let physical = logical.to_physical(Scale::new(2.0));
         assert_eq!(physical.x, 200.0);
         assert_eq!(physical.y, 400.0);
     }
@@ -315,7 +372,7 @@ mod tests {
     #[test]
     fn test_point_physical_to_logical() {
         let physical = Point::<Physical>::new(200.0, 400.0);
-        let logical = physical.to_logical(2.0);
+        let logical = physical.to_logical(Scale::new(2.0));
         assert_eq!(logical.x, 100.0);
         assert_eq!(logical.y, 200.0);
     }
@@ -343,5 +400,43 @@ mod tests {
         let scale = Scale::new(2.0);
         assert_eq!(scale.factor(), 2.0);
         assert_eq!(scale.factor_f64(), 2.0);
+    }
+
+    #[test]
+    fn test_scale_from() {
+        let scale: Scale = 2.0_f64.into();
+        assert_eq!(scale.factor_f64(), 2.0);
+
+        let scale: Scale = 1.5_f32.into();
+        assert_eq!(scale.factor_f64(), 1.5);
+    }
+
+    #[test]
+    fn test_scale_partial_eq() {
+        let scale = Scale::new(2.0);
+        assert!(scale == 2.0_f64);
+        assert!(scale == 2.0_f32);
+    }
+
+    #[test]
+    fn test_scale_mul() {
+        let scale = Scale::new(2.0);
+        assert_eq!(scale * 10.0_f64, 20.0);
+        assert_eq!(scale * 10.0_f32, 20.0);
+    }
+
+    #[test]
+    fn test_scale_div() {
+        let scale = Scale::new(2.0);
+        assert_eq!(scale / 4.0_f64, 0.5);
+        assert_eq!(scale / 4.0_f32, 0.5);
+    }
+
+    #[test]
+    fn test_scale_is_hidpi() {
+        assert!(!Scale::new(1.0).is_hidpi());
+        assert!(!Scale::new(1.5).is_hidpi());
+        assert!(Scale::new(2.0).is_hidpi());
+        assert!(Scale::new(3.0).is_hidpi());
     }
 }

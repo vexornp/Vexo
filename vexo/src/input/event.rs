@@ -236,7 +236,7 @@ impl InputEvent {
         match event {
             WindowEvent::PointerMoved { position, .. } => {
                 let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
-                let logical = physical.to_logical(scale.factor());
+                let logical = physical.to_logical(scale);
                 Some(InputEvent::PointerMoved {
                     position: logical,
                 })
@@ -249,7 +249,7 @@ impl InputEvent {
                 ..
             } => {
                 let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
-                let logical = physical.to_logical(scale.factor());
+                let logical = physical.to_logical(scale);
 
                 // For now, treat all pointer button events as primary button
                 // The button field in winit 0.31 is a ButtonSource which is more complex
