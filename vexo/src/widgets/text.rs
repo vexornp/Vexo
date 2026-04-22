@@ -1,9 +1,9 @@
-use crate::core::{Logical, Point};
+use crate::core::{Color, Logical, Point};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView, MeasureContext, TextMeasureContext};
 use crate::renderer::UiBatcher;
+use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
-use crate::Color;
 use crate::input::InputEvent;
 
 pub struct Text {
@@ -13,6 +13,29 @@ pub struct Text {
     pub key: Option<String>,
     pub layout: Layout,
     pub line_height: f32,
+    /// Stored computed layout from the layout phase.
+    computed_layout: Option<crate::widget::ComputedLayout>,
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widget::{Identifiable, Layout};
+
+    #[test]
+    fn test_text_implements_separated_traits() {
+        let text = Text::new("Hello");
+
+        // Should implement Identifiable
+        let _id: Option<WidgetId> = text.id();
+
+        // Should implement Layout
+        let _constraints = text.constraints();
+    }
 }
 
 impl Text {
@@ -24,6 +47,7 @@ impl Text {
             key: None,
             layout: Layout::default(),
             line_height: 1.2,
+            computed_layout: None,
         }
     }
 
@@ -83,6 +107,57 @@ impl Text {
     }
 }
 
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+impl crate::widget::Identifiable for Text {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl crate::widget::Layout for Text {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        crate::widget::LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl crate::widget::Paint for Text {
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
+
+        let pos = Point::new(
+            ctx.offset().x + layout.x(),
+            ctx.offset().y + layout.y(),
+        );
+
+        vec![RenderCommand::text(
+            self.content.clone(),
+            pos,
+            self.font_size,
+            self.color,
+        )]
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Text {
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        crate::widget::InteractionResponse::default()
+    }
+}
+
 #[allow(unused_variables)]
 impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     fn key(&self) -> Option<&str> {
@@ -117,7 +192,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
                 offset.y + layout.y(),
             );
 
-            renderer.add_text(self.content.clone(), pos, self.font_size, self.color);
+            // Convert core::Color to crate::Color for legacy renderer
+            let color = crate::Color::new(self.color.r, self.color.g, self.color.b, self.color.a);
+            renderer.add_text(self.content.clone(), pos, self.font_size, color);
         }
     }
 
