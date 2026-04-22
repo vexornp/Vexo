@@ -141,6 +141,20 @@ impl From<Color> for cosmic_text::Color {
     }
 }
 
+// Conversion from the legacy crate::Color to core::Color
+impl From<crate::color::Color> for Color {
+    fn from(color: crate::color::Color) -> Self {
+        Self::new(color.r, color.g, color.b, color.a)
+    }
+}
+
+// Conversion from core::Color to the legacy crate::Color
+impl From<Color> for crate::color::Color {
+    fn from(color: Color) -> Self {
+        Self::new(color.r, color.g, color.b, color.a)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

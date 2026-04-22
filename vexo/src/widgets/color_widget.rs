@@ -1,15 +1,13 @@
-use crate::core::{Logical, Point, Size};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
-use crate::renderer::UiBatcher;
-use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
-use crate::Color;
-use crate::Widget;
+use crate::core::{Color, Point, Rect, Size, WidgetId};
 use crate::input::InputEvent;
+use crate::layout::Layout;
+use crate::render::RenderCommand;
 
 pub struct ColorWidget {
     pub color: Color,
     pub key: Option<String>,
     pub layout: Layout,
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl ColorWidget {
@@ -18,6 +16,7 @@ impl ColorWidget {
             color: color.into(),
             key: None,
             layout: Layout::default(),
+            computed_layout: None,
         }
     }
 
@@ -63,56 +62,55 @@ impl ColorWidget {
     }
 }
 
-#[allow(unused_variables)]
-impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
+impl crate::widget::Identifiable for ColorWidget {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl crate::widget::Layout for ColorWidget {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        let mut constraints = crate::widget::LayoutConstraints::from_layout(&self.layout);
+        // Default to flex_grow: 1.0 if not specified
+        if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
+            constraints.flex_grow = 1.0;
+        }
+        constraints
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
-        // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
-        let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
-            Layout::default().flex_grow(1.0)
-        } else {
-            self.layout.clone()
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl crate::widget::Paint for ColorWidget {
+    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
         };
 
-        layout_context.create_leaf(&layout)
+        let pos = Point::new(
+            ctx.offset().x + layout.x(),
+            ctx.offset().y + layout.y(),
+        );
+        let size = Size::new(layout.width(), layout.height());
+
+        vec![RenderCommand::rect_with_border(
+            Rect::new(pos, size),
+            self.color,
+            Color::WHITE,
+            1.0,
+        )]
     }
+}
 
-    fn draw(
-        &self,
-        layout_view: &LayoutView,
-        node: LayoutNodeId,
-        renderer: &mut UiBatcher,
-        offset: Point<Logical>,
-        focused_id: Option<WidgetId>,
-        _cursor_blink: &crate::CursorBlinkState,
-        widget_context: &mut WidgetContext,
-    ) {
-        if let Some(layout) = layout_view.get_layout(node) {
-            let x = offset.x + layout.x();
-            let y = offset.y + layout.y();
-
-            let pos = Point::<Logical>::new(x, y);
-            let size = Size::<Logical>::new(layout.width(), layout.height());
-
-            let border_color = crate::Color::WHITE;
-            let border_width = 1.0;
-
-            renderer.add_rect(pos.to_array(), size.to_array(), self.color, border_color, border_width, 0.0);
-        }
-    }
-
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for ColorWidget {
     fn on_event(
         &mut self,
-        layout_view: &LayoutView,
-        node: LayoutNodeId,
-        offset: Point<Logical>,
-        event: &InputEvent,
-        focused_id: Option<WidgetId>,
-        widget_context: &mut WidgetContext,
-    ) -> WidgetResponse<M> {
-        WidgetResponse::default()
+        _event: &InputEvent,
+        _ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        crate::widget::InteractionResponse::default()
     }
 }
