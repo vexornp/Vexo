@@ -9,7 +9,7 @@ pub struct ColorWidget {
     pub color: Color,
     pub key: Option<String>,
     pub layout: Layout,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl ColorWidget {
@@ -64,15 +64,15 @@ impl ColorWidget {
     }
 }
 
-impl crate::widget::Identifiable for ColorWidget {
+impl crate::testable::Identifiable for ColorWidget {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl crate::widget::Layout for ColorWidget {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        let mut constraints = crate::widget::LayoutConstraints::from_layout(&self.layout);
+impl crate::testable::Layout for ColorWidget {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        let mut constraints = crate::testable::LayoutConstraints::from_layout(&self.layout);
         // Default to flex_grow: 1.0 if not specified
         if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             constraints.flex_grow = 1.0;
@@ -80,13 +80,13 @@ impl crate::widget::Layout for ColorWidget {
         constraints
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl crate::widget::Paint for ColorWidget {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl crate::testable::Paint for ColorWidget {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         let layout = match &self.computed_layout {
             Some(l) => l,
             None => return Vec::new(),
@@ -107,13 +107,13 @@ impl crate::widget::Paint for ColorWidget {
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for ColorWidget {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for ColorWidget {
     fn on_event(
         &mut self,
         _event: &InputEvent,
-        _ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
-        crate::widget::InteractionResponse::default()
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
+        crate::testable::InteractionResponse::default()
     }
 }
 
@@ -128,12 +128,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         layout_context.create_leaf(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(

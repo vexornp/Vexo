@@ -151,7 +151,7 @@ impl<M> InteractionResponse<M> {
 /// # Example
 ///
 /// ```
-/// use vexo::widget::{Interact, InteractionContext, InteractionResponse};
+/// use vexo::testable::{Interact, InteractionContext, InteractionResponse};
 /// use vexo::input::{InputEvent, ButtonState};
 ///
 /// #[derive(Clone, Debug)]

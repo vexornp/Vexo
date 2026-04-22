@@ -179,7 +179,7 @@ impl ComputedLayout {
 /// # Example
 ///
 /// ```
-/// use vexo::widget::{Layout, LayoutConstraints, ComputedLayout};
+/// use vexo::testable::{Layout, LayoutConstraints, ComputedLayout};
 ///
 /// struct FixedSizeWidget {
 ///     layout: Option<ComputedLayout>,

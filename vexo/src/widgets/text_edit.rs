@@ -16,7 +16,7 @@ pub struct TextEdit {
     pub key: Option<String>,
     pub layout: Layout,
     /// Stored computed layout from the layout phase.
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl TextEdit {
@@ -90,15 +90,15 @@ impl TextEdit {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl crate::widget::Identifiable for TextEdit {
+impl crate::testable::Identifiable for TextEdit {
     fn id(&self) -> Option<WidgetId> {
         Some(WidgetId::from_key(&self.editor_id))
     }
 }
 
-impl crate::widget::Layout for TextEdit {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        let mut constraints = crate::widget::LayoutConstraints::from_layout(&self.layout);
+impl crate::testable::Layout for TextEdit {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        let mut constraints = crate::testable::LayoutConstraints::from_layout(&self.layout);
         // Default to flex_grow: 1.0 if no sizing is specified
         if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             constraints.flex_grow = 1.0;
@@ -106,13 +106,13 @@ impl crate::widget::Layout for TextEdit {
         constraints
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl crate::widget::Paint for TextEdit {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl crate::testable::Paint for TextEdit {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         let layout = match &self.computed_layout {
             Some(l) => l,
             None => return Vec::new(),
@@ -148,12 +148,12 @@ impl crate::widget::Paint for TextEdit {
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TextEdit {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for TextEdit {
     fn on_event(
         &mut self,
         event: &InputEvent,
-        ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         let my_id = WidgetId::from_key(&self.editor_id);
         let is_focused = ctx.is_focused(my_id);
 
@@ -164,12 +164,12 @@ impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TextEdit 
         } = event
         {
             if ctx.is_pointer_inside() {
-                return crate::widget::InteractionResponse::request_focus(my_id);
+                return crate::testable::InteractionResponse::request_focus(my_id);
             }
         }
 
         if !is_focused {
-            return crate::widget::InteractionResponse::default();
+            return crate::testable::InteractionResponse::default();
         }
 
         // Note: Full keyboard handling requires access to editor state and font_system
@@ -178,7 +178,7 @@ impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TextEdit 
         // keyboard input for now.
 
         // Mark as handled if focused (for focus retention)
-        crate::widget::InteractionResponse::handled()
+        crate::testable::InteractionResponse::handled()
     }
 }
 
@@ -201,12 +201,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         layout_context.create_leaf(&layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -459,7 +459,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{Identifiable, Layout, Paint, Interact, InteractionContext};
+    use crate::testable::{Identifiable, Layout, Paint, Interact, InteractionContext};
 
     #[test]
     fn test_text_edit_implements_separated_traits() {
@@ -499,10 +499,10 @@ mod tests {
 
         assert!(text_edit.computed_layout.is_none());
 
-        let layout = crate::widget::ComputedLayout::new(
+        let layout = crate::testable::ComputedLayout::new(
             crate::core::Rect::from_xywh(10.0, 20.0, 200.0, 50.0)
         );
-        crate::widget::Layout::apply_layout(&mut text_edit, layout);
+        crate::testable::Layout::apply_layout(&mut text_edit, layout);
 
         assert!(text_edit.computed_layout.is_some());
         let stored = text_edit.computed_layout.unwrap();
@@ -517,19 +517,19 @@ mod tests {
         let mut text_edit = TextEdit::new("test-editor");
 
         // Without computed layout, should return empty
-        let mut ctx = crate::widget::PaintContext::default();
-        let commands = crate::widget::Paint::paint(&text_edit, &mut ctx);
+        let mut ctx = crate::testable::PaintContext::default();
+        let commands = crate::testable::Paint::paint(&text_edit, &mut ctx);
         assert!(commands.is_empty());
 
         // With computed layout, should return commands
-        crate::widget::Layout::apply_layout(
+        crate::testable::Layout::apply_layout(
             &mut text_edit,
-            crate::widget::ComputedLayout::new(
+            crate::testable::ComputedLayout::new(
                 crate::core::Rect::from_xywh(0.0, 0.0, 200.0, 50.0)
             )
         );
 
-        let commands = crate::widget::Paint::paint(&text_edit, &mut ctx);
+        let commands = crate::testable::Paint::paint(&text_edit, &mut ctx);
         assert_eq!(commands.len(), 2); // border rect + editor command
     }
 
@@ -552,7 +552,7 @@ mod tests {
             position: Point::new(50.0, 25.0),
         };
 
-        let response: crate::widget::InteractionResponse<()> =
+        let response: crate::testable::InteractionResponse<()> =
             Interact::on_event(&mut text_edit, &event, &ctx);
         assert!(response.handled);
         assert!(response.focus_request.is_some());
@@ -576,7 +576,7 @@ mod tests {
             position: Point::new(150.0, 25.0),
         };
 
-        let response: crate::widget::InteractionResponse<()> =
+        let response: crate::testable::InteractionResponse<()> =
             Interact::on_event(&mut text_edit, &event, &ctx);
         assert!(!response.handled);
     }

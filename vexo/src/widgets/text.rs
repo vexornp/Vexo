@@ -14,7 +14,7 @@ pub struct Text {
     pub layout: Layout,
     pub line_height: f32,
     /// Stored computed layout from the layout phase.
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 // ============================================================================
@@ -24,7 +24,7 @@ pub struct Text {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{Identifiable, Layout};
+    use crate::testable::{Identifiable, Layout};
 
     #[test]
     fn test_text_implements_separated_traits() {
@@ -111,24 +111,24 @@ impl Text {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl crate::widget::Identifiable for Text {
+impl crate::testable::Identifiable for Text {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl crate::widget::Layout for Text {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        crate::widget::LayoutConstraints::from_layout(&self.layout)
+impl crate::testable::Layout for Text {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl crate::widget::Paint for Text {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl crate::testable::Paint for Text {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         let layout = match &self.computed_layout {
             Some(l) => l,
             None => return Vec::new(),
@@ -148,13 +148,13 @@ impl crate::widget::Paint for Text {
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Text {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Text {
     fn on_event(
         &mut self,
         _event: &InputEvent,
-        _ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
-        crate::widget::InteractionResponse::default()
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
+        crate::testable::InteractionResponse::default()
     }
 }
 
@@ -176,12 +176,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         layout_context.create_leaf_with_context(&self.layout, measure_context)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(

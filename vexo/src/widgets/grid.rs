@@ -12,7 +12,7 @@ pub struct Grid<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
     pub layout: Layout,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Grid<M> {
@@ -111,12 +111,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         layout_context.create_container(&layout, &child_nodes)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -183,36 +183,36 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Grid<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Identifiable for Grid<M> {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Grid<M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        crate::widget::LayoutConstraints::from_layout(&self.layout)
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Layout for Grid<M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Grid<M> {
-    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Paint for Grid<M> {
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         // Grid is a transparent container - children paint themselves
         Vec::new()
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Grid<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Grid<M> {
     fn on_event(
         &mut self,
         _event: &InputEvent,
-        _ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         // Grid delegates event handling to children via legacy Widget trait
-        crate::widget::InteractionResponse::default()
+        crate::testable::InteractionResponse::default()
     }
 }

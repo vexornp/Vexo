@@ -11,7 +11,7 @@ pub struct Button<M: Clone + std::fmt::Debug + Send> {
     pub on_press: M,
     pub key: Option<String>,
     pub layout: Layout,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Button<M> {
@@ -91,12 +91,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         layout_context.create_container(&layout, &[content_node])
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -186,42 +186,42 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Button<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Identifiable for Button<M> {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Button<M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        crate::widget::LayoutConstraints::from_layout(&self.layout)
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Layout for Button<M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Button<M> {
-    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Paint for Button<M> {
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         // Button is transparent - content paints itself
         Vec::new()
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Button<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Button<M> {
     fn on_event(
         &mut self,
         event: &InputEvent,
-        ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         if let InputEvent::PointerButton {
             state: ButtonState::Pressed,
             ..
         } = event
         {
             if ctx.is_pointer_inside() {
-                return crate::widget::InteractionResponse {
+                return crate::testable::InteractionResponse {
                     message: Some(self.on_press.clone()),
                     focus_request: None,
                     handled: true,
@@ -230,6 +230,6 @@ impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Button<M>
             }
         }
 
-        crate::widget::InteractionResponse::default()
+        crate::testable::InteractionResponse::default()
     }
 }

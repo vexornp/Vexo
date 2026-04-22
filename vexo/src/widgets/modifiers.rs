@@ -47,7 +47,7 @@ pub struct Background<W, M> {
     child: W,
     color: Color,
     _marker: PhantomData<M>,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<W, M: Clone + std::fmt::Debug + Send> Background<W, M> {
@@ -62,27 +62,27 @@ impl<W, M: Clone + std::fmt::Debug + Send> Background<W, M> {
 }
 
 // Identifiable implementation
-impl<W: crate::widget::Identifiable, M> crate::widget::Identifiable for Background<W, M> {
+impl<W: crate::testable::Identifiable, M> crate::testable::Identifiable for Background<W, M> {
     fn id(&self) -> Option<crate::core::WidgetId> {
         self.child.id()
     }
 }
 
 // Layout implementation
-impl<W: crate::widget::Layout, M> crate::widget::Layout for Background<W, M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
+impl<W: crate::testable::Layout, M> crate::testable::Layout for Background<W, M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
         self.child.constraints()
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 }
 
 // Paint implementation
-impl<W: crate::widget::Paint, M> crate::widget::Paint for Background<W, M> {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<crate::render::RenderCommand> {
+impl<W: crate::testable::Paint, M> crate::testable::Paint for Background<W, M> {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<crate::render::RenderCommand> {
         use crate::render::RenderCommand;
 
         let layout = match &self.computed_layout {
@@ -106,18 +106,18 @@ impl<W: crate::widget::Paint, M> crate::widget::Paint for Background<W, M> {
 }
 
 // Interact implementation
-impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Background<W, M> {
+impl<W: crate::testable::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Background<W, M> {
     fn on_event(
         &mut self,
         event: &crate::input::InputEvent,
-        ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         self.child.on_event(event, ctx)
     }
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
+impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Background<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
@@ -127,13 +127,13 @@ impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Wid
         self.child.layout(layout_context, widget_context)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -185,7 +185,7 @@ pub struct Border<W, M> {
     color: Color,
     width: f32,
     _marker: PhantomData<M>,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<W, M: Clone + std::fmt::Debug + Send> Border<W, M> {
@@ -205,27 +205,27 @@ impl<W, M: Clone + std::fmt::Debug + Send> Border<W, M> {
 // ============================================================================
 
 // Identifiable implementation
-impl<W: crate::widget::Identifiable, M> crate::widget::Identifiable for Border<W, M> {
+impl<W: crate::testable::Identifiable, M> crate::testable::Identifiable for Border<W, M> {
     fn id(&self) -> Option<crate::core::WidgetId> {
         self.child.id()
     }
 }
 
 // Layout implementation
-impl<W: crate::widget::Layout, M> crate::widget::Layout for Border<W, M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
+impl<W: crate::testable::Layout, M> crate::testable::Layout for Border<W, M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
         self.child.constraints()
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 }
 
 // Paint implementation
-impl<W: crate::widget::Paint, M> crate::widget::Paint for Border<W, M> {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<crate::render::RenderCommand> {
+impl<W: crate::testable::Paint, M> crate::testable::Paint for Border<W, M> {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<crate::render::RenderCommand> {
         use crate::core::Rect;
         use crate::render::RenderCommand;
 
@@ -255,18 +255,18 @@ impl<W: crate::widget::Paint, M> crate::widget::Paint for Border<W, M> {
 }
 
 // Interact implementation
-impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Border<W, M> {
+impl<W: crate::testable::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Border<W, M> {
     fn on_event(
         &mut self,
         event: &crate::input::InputEvent,
-        ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         self.child.on_event(event, ctx)
     }
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
+impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for Border<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
@@ -276,13 +276,13 @@ impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Wid
         self.child.layout(layout_context, widget_context)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -333,7 +333,7 @@ pub struct CornerRadius<W, M> {
     child: W,
     radius: f32,
     _marker: PhantomData<M>,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<W, M: Clone + std::fmt::Debug + Send> CornerRadius<W, M> {
@@ -348,27 +348,27 @@ impl<W, M: Clone + std::fmt::Debug + Send> CornerRadius<W, M> {
 }
 
 // Identifiable implementation
-impl<W: crate::widget::Identifiable, M> crate::widget::Identifiable for CornerRadius<W, M> {
+impl<W: crate::testable::Identifiable, M> crate::testable::Identifiable for CornerRadius<W, M> {
     fn id(&self) -> Option<crate::core::WidgetId> {
         self.child.id()
     }
 }
 
 // Layout implementation
-impl<W: crate::widget::Layout, M> crate::widget::Layout for CornerRadius<W, M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
+impl<W: crate::testable::Layout, M> crate::testable::Layout for CornerRadius<W, M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
         self.child.constraints()
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 }
 
 // Paint implementation
-impl<W: crate::widget::Paint, M> crate::widget::Paint for CornerRadius<W, M> {
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<crate::render::RenderCommand> {
+impl<W: crate::testable::Paint, M> crate::testable::Paint for CornerRadius<W, M> {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<crate::render::RenderCommand> {
         use crate::render::RenderCommand;
 
         let mut commands = Vec::new();
@@ -387,18 +387,18 @@ impl<W: crate::widget::Paint, M> crate::widget::Paint for CornerRadius<W, M> {
 }
 
 // Interact implementation
-impl<W: crate::widget::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for CornerRadius<W, M> {
+impl<W: crate::testable::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for CornerRadius<W, M> {
     fn on_event(
         &mut self,
         event: &crate::input::InputEvent,
-        ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         self.child.on_event(event, ctx)
     }
 }
 
 // Legacy Widget trait implementation for backwards compatibility
-impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
+impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
     }
@@ -407,13 +407,13 @@ impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Wid
         self.child.layout(layout_context, widget_context)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
         self.child.apply_layout(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(
@@ -457,7 +457,7 @@ impl<W: Widget<M> + crate::widget::Paint, M: Clone + std::fmt::Debug + Send> Wid
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{Identifiable, Layout, Paint, PaintContext, LayoutConstraints, ComputedLayout};
+    use crate::testable::{Identifiable, Layout, Paint, PaintContext, LayoutConstraints, ComputedLayout};
     use crate::core::{Color as CoreColor, Rect, WidgetId};
 
     /// Test widget that implements all separated traits.
@@ -497,13 +497,13 @@ mod tests {
         }
     }
 
-    impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for TestWidget {
+    impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for TestWidget {
         fn on_event(
             &mut self,
             _event: &crate::input::InputEvent,
-            _ctx: &crate::widget::InteractionContext,
-        ) -> crate::widget::InteractionResponse<M> {
-            crate::widget::InteractionResponse::default()
+            _ctx: &crate::testable::InteractionContext,
+        ) -> crate::testable::InteractionResponse<M> {
+            crate::testable::InteractionResponse::default()
         }
     }
 

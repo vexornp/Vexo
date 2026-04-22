@@ -10,7 +10,7 @@ pub struct Row<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
     pub layout: Layout,
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Row<M> {
@@ -110,37 +110,37 @@ impl<M: Clone + std::fmt::Debug + Send> Default for Row<M> {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Row<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Identifiable for Row<M> {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Row<M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        crate::widget::LayoutConstraints::from_layout(&self.layout)
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Layout for Row<M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Row<M> {
-    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Paint for Row<M> {
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         // Containers don't paint directly - children paint themselves
         Vec::new()
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Row<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Row<M> {
     fn on_event(
         &mut self,
         _event: &InputEvent,
-        _ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         // Containers delegate to children via the Widget trait
-        crate::widget::InteractionResponse::default()
+        crate::testable::InteractionResponse::default()
     }
 }
 
@@ -151,7 +151,7 @@ impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Row<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{Identifiable, Layout};
+    use crate::testable::{Identifiable, Layout};
 
     #[test]
     fn test_row_implements_separated_traits() {
@@ -174,9 +174,9 @@ mod tests {
 
     #[test]
     fn test_row_paint_returns_empty() {
-        use crate::widget::Paint;
+        use crate::testable::Paint;
         let row: Row<()> = Row::new();
-        let mut ctx = crate::widget::PaintContext::default();
+        let mut ctx = crate::testable::PaintContext::default();
         let commands = Paint::paint(&row, &mut ctx);
         assert!(commands.is_empty());
     }
@@ -202,12 +202,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
         layout_context.create_container(&layout, &child_nodes)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(

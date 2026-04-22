@@ -25,7 +25,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     ///
     /// This method is called by the rendering pipeline after layout computation
     /// so widgets can store their computed bounds for use during painting.
-    fn apply_layout(&mut self, _layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, _layout: crate::testable::ComputedLayout) {
         // Default: no-op. Widgets that need layout should override this.
     }
 
@@ -33,7 +33,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     ///
     /// Returns render commands that will be processed by the rendering pipeline.
     /// This is the new painting method that replaces `draw()`.
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand>;
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand>;
 
     fn draw(
         &self,
@@ -76,11 +76,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         (**self).layout(layout_context, widget_context)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         (**self).apply_layout(layout)
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         (**self).paint(ctx)
     }
 

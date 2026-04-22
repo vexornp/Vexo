@@ -29,7 +29,7 @@ mod renderer;
 mod resource;
 pub mod state;
 mod utils;
-pub mod widget;
+pub mod testable;
 pub mod widgets;
 
 use renderer::{TextRequest, UiBatcher};

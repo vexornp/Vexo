@@ -10,7 +10,7 @@ use crate::core::WidgetId;
 /// # Example
 ///
 /// ```
-/// use vexo::widget::Identifiable;
+/// use vexo::testable::Identifiable;
 /// use vexo::core::WidgetId;
 ///
 /// struct MyWidget {

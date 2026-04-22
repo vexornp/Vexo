@@ -77,12 +77,12 @@ vexo/src/
 │   ├── id.rs                   # WidgetId
 │   ├── geometry.rs             # Point, Size, Rect, Scale
 │   └── color.rs                # Color
-├── widget/                     # Separated widget traits
+├── testable/                    # Separated traits for unit testing
 │   ├── mod.rs
-│   ├── identifiable.rs         # Identifiable trait
-│   ├── layout.rs               # Layout trait, LayoutConstraints
-│   ├── paint.rs                # Paint trait, PaintContext
-│   └── interact.rs             # Interact trait, InteractionContext
+│   ├── identifiable.rs          # Identifiable trait
+│   ├── layout.rs                # Layout trait, LayoutConstraints
+│   ├── paint.rs                 # Paint trait, PaintContext
+│   └── interact.rs              # Interact trait, InteractionContext
 ├── widgets/                    # Widget implementations
 │   ├── mod.rs                  # Widget<M> trait (compatibility)
 │   ├── text.rs
@@ -191,7 +191,7 @@ Widgets in Vexo implement two complementary trait systems:
 #### Example: Custom Leaf Widget
 
 ```rust
-use vexo::widget::{Identifiable, Layout, LayoutConstraints, ComputedLayout, Paint, PaintContext, Interact, InteractionContext, InteractionResponse};
+use vexo::testable::{Identifiable, Layout, LayoutConstraints, ComputedLayout, Paint, PaintContext, Interact, InteractionContext, InteractionResponse};
 use vexo::widgets::{WidgetId, WidgetResponse};
 use vexo::render::RenderCommand;
 use vexo::input::InputEvent;
@@ -375,7 +375,7 @@ backend.render();
 ## Key File Locations
 
 - Widget trait definition: `vexo/src/widgets/mod.rs`
-- Separated widget traits: `vexo/src/widget/`
+- Separated widget traits: `vexo/src/testable/`
 - Application trait definition: `vexo/src/lib.rs`
 - WindowState: `vexo/src/lib.rs`
 - Render backend: `vexo/src/render/wgpu_backend.rs`

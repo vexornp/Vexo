@@ -149,7 +149,7 @@ impl PaintContext {
 /// # Example
 ///
 /// ```
-/// use vexo::widget::{Paint, PaintContext};
+/// use vexo::testable::{Paint, PaintContext};
 /// use vexo::render::RenderCommand;
 /// use vexo::core::{Color, Rect, Logical};
 ///

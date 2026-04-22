@@ -11,7 +11,7 @@ pub struct Column<M: Clone + std::fmt::Debug + Send> {
     pub key: Option<String>,
     pub layout: Layout,
     /// Stored computed layout from the layout phase.
-    computed_layout: Option<crate::widget::ComputedLayout>,
+    computed_layout: Option<crate::testable::ComputedLayout>,
 }
 
 // ============================================================================
@@ -21,7 +21,7 @@ pub struct Column<M: Clone + std::fmt::Debug + Send> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widget::{Identifiable, Layout};
+    use crate::testable::{Identifiable, Layout};
 
     #[test]
     fn test_column_implements_separated_traits() {
@@ -154,39 +154,39 @@ impl<M: Clone + std::fmt::Debug + Send> Default for Column<M> {
 // SEPARATED TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Column<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Identifiable for Column<M> {
     fn id(&self) -> Option<WidgetId> {
         self.key.as_ref().map(|k| WidgetId::from_key(k))
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Column<M> {
-    fn constraints(&self) -> crate::widget::LayoutConstraints {
-        crate::widget::LayoutConstraints::from_layout(&self.layout)
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Layout for Column<M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Column<M> {
-    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Paint for Column<M> {
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
         // Container widgets don't paint themselves - children paint
         // The framework will handle child painting
         Vec::new()
     }
 }
 
-impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Column<M> {
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Column<M> {
     fn on_event(
         &mut self,
         _event: &InputEvent,
-        _ctx: &crate::widget::InteractionContext,
-    ) -> crate::widget::InteractionResponse<M> {
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
         // Container widgets delegate event handling to children
         // The framework will handle child event propagation
-        crate::widget::InteractionResponse::default()
+        crate::testable::InteractionResponse::default()
     }
 }
 
@@ -210,12 +210,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         layout_context.create_container(&layout, &child_nodes)
     }
 
-    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
         self.computed_layout = Some(layout);
     }
 
-    fn paint(&self, ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
-        crate::widget::Paint::paint(self, ctx)
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
     }
 
     fn draw(

@@ -1,15 +1,16 @@
-//! Widget trait definitions for the Vexo UI framework.
+//! Testable traits for the Vexo UI framework.
 //!
-//! This module provides separated traits for widget concerns, following the
-//! Single Responsibility Principle. Each trait handles a specific aspect of
-//! widget behavior:
+//! This module provides separated traits for widget concerns, enabling
+//! unit testing of widgets without GPU or window. Each trait handles
+//! a specific aspect of widget behavior:
 //!
 //! - `Identifiable` - Widget identity for focus/hover tracking
 //! - `Layout` - Layout constraints and receiving computed layout
 //! - `Paint` - Generating render commands
 //! - `Interact` - Handling input events
 //!
-//! The composite `Widget<M>` trait combines all concerns for full widgets.
+//! These traits allow testing each concern in isolation with pure data
+//! structures, no rendering backend required.
 
 mod identifiable;
 mod layout;
