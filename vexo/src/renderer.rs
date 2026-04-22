@@ -45,6 +45,7 @@ pub struct UiBatcher {
 
     screen_size: Size<Logical>, // Logical size: pixel_size * scale_factor
     corner_radius_stack: Vec<f32>, // Stack for nested radius contexts
+    clip_stack: Vec<Bounds>, // Stack for clipping regions
 }
 
 impl UiBatcher {
@@ -57,6 +58,7 @@ impl UiBatcher {
             quad_instances: Vec::new(),
             screen_size: Size::new(1.0, 1.0),
             corner_radius_stack: Vec::new(),
+            clip_stack: Vec::new(),
         }
     }
 
@@ -67,6 +69,7 @@ impl UiBatcher {
         self.editor_requests.clear();
         self.quad_instances.clear();
         self.corner_radius_stack.clear();
+        self.clip_stack.clear();
     }
 
     /// Set logical screen size.
@@ -95,6 +98,23 @@ impl UiBatcher {
     /// Returns 0.0 if no radius is set.
     pub fn current_corner_radius(&self) -> f32 {
         self.corner_radius_stack.last().copied().unwrap_or(0.0)
+    }
+
+    /// Push a clipping region onto the stack.
+    /// All subsequent commands should be clipped to this region.
+    pub fn push_clip(&mut self, bounds: Bounds) {
+        self.clip_stack.push(bounds);
+    }
+
+    /// Pop the most recent clipping region from the stack.
+    pub fn pop_clip(&mut self) {
+        self.clip_stack.pop();
+    }
+
+    /// Get the current clipping region from the stack.
+    /// Returns None if no clip is set.
+    pub fn current_clip(&self) -> Option<Bounds> {
+        self.clip_stack.last().copied()
     }
 
     pub fn add_rect(

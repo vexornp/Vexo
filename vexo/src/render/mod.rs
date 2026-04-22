@@ -24,10 +24,12 @@
 
 mod backend;
 mod command;
+mod command_processor;
 mod mock_backend;
 mod wgpu_backend;
 
 pub use backend::{RenderBackend, RenderConfig, RenderError};
 pub use command::{RenderCommand, RenderCommandList, Stroke};
+pub use command_processor::process_commands;
 pub use mock_backend::MockBackend;
 pub use wgpu_backend::WgpuBackend;
