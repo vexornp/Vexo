@@ -1,6 +1,6 @@
 //! Paint trait for widget rendering.
 
-use crate::core::{Point, Rect, WidgetId, Logical};
+use crate::core::{Color, Point, Rect, WidgetId, Logical};
 use crate::render::RenderCommand;
 
 /// Context provided to widgets during the paint phase.
@@ -122,6 +122,22 @@ impl PaintContext {
     pub fn clear(&mut self) {
         self.commands.clear();
     }
+
+    /// Add a text render command.
+    pub fn add_text(
+        &mut self,
+        content: String,
+        position: Point<Logical>,
+        font_size: f32,
+        color: Color,
+    ) {
+        self.commands.push(RenderCommand::text(content, position, font_size, color));
+    }
+
+    /// Add an editor render command.
+    pub fn add_editor(&mut self, id: String, bounds: Rect<Logical>) {
+        self.commands.push(RenderCommand::editor(id, bounds));
+    }
 }
 
 /// Trait for widgets that render visual content.
@@ -218,5 +234,26 @@ mod tests {
 
         let commands = ctx.into_commands();
         assert_eq!(commands.len(), 1);
+    }
+
+    #[test]
+    fn test_paint_context_add_text() {
+        let mut ctx = PaintContext::default();
+        ctx.add_text(
+            "Hello".to_string(),
+            Point::new(10.0, 20.0),
+            16.0,
+            crate::core::Color::BLACK,
+        );
+
+        assert_eq!(ctx.commands().len(), 1);
+    }
+
+    #[test]
+    fn test_paint_context_add_editor() {
+        let mut ctx = PaintContext::default();
+        ctx.add_editor("editor-1".to_string(), Rect::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        assert_eq!(ctx.commands().len(), 1);
     }
 }
