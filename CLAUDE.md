@@ -172,18 +172,157 @@ impl Application for MyState {
 ```
 
 ### Creating Custom Widgets
-Implement `Widget<M>` in `vexo/src/widgets/`. Required methods:
-- `layout()`: Register node with Taffy, return NodeId
-- `draw()`: Emit geometry to UiBatcher or text to glyphon
-- `on_event()`: Handle `InputEvent`, return `WidgetResponse<M>`
-- `key()`: Return unique key for identity (optional)
 
-**New - Separated Traits (SRP)**:
-For better testability, implement the separated traits:
-- `Identifiable`: `id()` - stable identity for focus/hover
+Widgets in Vexo implement two complementary trait systems:
+
+**1. Separated Traits (for testability)** - Each concern is isolated:
+- `Identifiable`: `id()` - stable identity for focus/hover tracking
 - `Layout`: `constraints()`, `apply_layout()` - layout participation
-- `Paint`: `paint()` - generate `RenderCommand`s
-- `Interact<M>`: `on_event()` - handle `InputEvent`
+- `Paint`: `paint()` - generate `RenderCommand`s (testable without GPU)
+- `Interact<M>`: `on_event()` - handle `InputEvent` (testable without UI)
+
+**2. Legacy `Widget<M>` Trait (for runtime)** - Used for:
+- Child traversal via `dyn Widget<M>` trait objects
+- Container widgets use `Vec<Box<dyn Widget<M>>>` for children
+- Full layout/draw/event pipeline with `LayoutContext`, `UiBatcher`
+
+**All widgets implement both systems.** The separated traits enable unit testing of individual concerns, while the legacy trait enables runtime behavior.
+
+#### Example: Custom Leaf Widget
+
+```rust
+use vexo::widget::{Identifiable, Layout, LayoutConstraints, ComputedLayout, Paint, PaintContext, Interact, InteractionContext, InteractionResponse};
+use vexo::widgets::{WidgetId, WidgetResponse};
+use vexo::render::RenderCommand;
+use vexo::input::InputEvent;
+
+pub struct MyWidget {
+    key: Option<String>,
+    layout: vexo::layout::Layout,
+    computed_layout: Option<ComputedLayout>,
+}
+
+impl MyWidget {
+    pub fn new() -> Self {
+        Self {
+            key: None,
+            layout: vexo::layout::Layout::default(),
+            computed_layout: None,
+        }
+    }
+
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+// === Separated Traits (for unit testing) ===
+
+impl Identifiable for MyWidget {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl Layout for MyWidget {
+    fn constraints(&self) -> LayoutConstraints {
+        LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl Paint for MyWidget {
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        let layout = match &self.computed_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
+        // Generate render commands (testable without GPU)
+        vec![RenderCommand::rect(layout.bounds, vexo::core::Color::BLUE)]
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Interact<M> for MyWidget {
+    fn on_event(
+        &mut self,
+        event: &InputEvent,
+        ctx: &InteractionContext,
+    ) -> InteractionResponse<M> {
+        // Handle input events (testable without UI)
+        InteractionResponse::default()
+    }
+}
+
+// === Legacy Widget<M> Trait (for runtime) ===
+
+impl<M: Clone + std::fmt::Debug + Send> vexo::Widget<M> for MyWidget {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(
+        &mut self,
+        layout_ctx: &mut vexo::layout::LayoutContext,
+        widget_ctx: &mut vexo::widgets::WidgetContext,
+    ) -> vexo::layout::LayoutNodeId {
+        layout_ctx.create_leaf(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        Paint::paint(self, ctx)  // Delegate to separated trait
+    }
+
+    fn draw(
+        &self,
+        layout_view: &vexo::layout::LayoutView,
+        node: vexo::layout::LayoutNodeId,
+        renderer: &mut vexo::renderer::UiBatcher,
+        offset: vexo::core::Point<vexo::core::Logical>,
+        focused_id: Option<WidgetId>,
+        cursor_blink: &vexo::CursorBlinkState,
+        widget_ctx: &mut vexo::widgets::WidgetContext,
+    ) {
+        // Legacy draw to UiBatcher (for text, etc.)
+    }
+
+    fn on_event(
+        &mut self,
+        layout_view: &vexo::layout::LayoutView,
+        node: vexo::layout::LayoutNodeId,
+        offset: vexo::core::Point<vexo::core::Logical>,
+        event: &InputEvent,
+        focused_id: Option<WidgetId>,
+        widget_ctx: &mut vexo::widgets::WidgetContext,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
+    }
+}
+```
+
+#### Testing with Separated Traits
+
+The separated traits enable unit testing without GPU or window:
+
+```rust
+#[test]
+fn test_widget_paint() {
+    let mut widget = MyWidget::new();
+    widget.apply_layout(ComputedLayout::new(0.0, 0.0, 100.0, 50.0));
+
+    let mut ctx = PaintContext::new(vexo::core::Point::origin());
+    let commands = widget.paint(&mut ctx);
+
+    assert_eq!(commands.len(), 1);
+}
+```
 
 ### Input Events
 Use the platform-independent `InputEvent` enum:
