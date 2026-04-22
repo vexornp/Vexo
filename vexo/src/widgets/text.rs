@@ -1,5 +1,5 @@
 use crate::core::{Logical, Point};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView, MeasureContext, TextMeasureContext};
 use crate::renderer::UiBatcher;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
@@ -12,6 +12,7 @@ pub struct Text {
     pub color: Color,
     pub key: Option<String>,
     pub layout: Layout,
+    pub line_height: f32,
 }
 
 impl Text {
@@ -22,6 +23,7 @@ impl Text {
             color: Color::BLACK,
             key: None,
             layout: Layout::default(),
+            line_height: 1.2,
         }
     }
 
@@ -71,6 +73,14 @@ impl Text {
         self.layout = layout;
         self
     }
+
+    /// Set custom line height multiplier.
+    ///
+    /// Default is 1.2. A value of 1.5 gives 50% extra spacing between lines.
+    pub fn line_height(mut self, multiplier: f32) -> Self {
+        self.line_height = multiplier;
+        self
+    }
 }
 
 #[allow(unused_variables)]
@@ -80,22 +90,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     }
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
-        // Calculate intrinsic size based on content and font size
-        let intrinsic_width = self.content.len() as f32 * (self.font_size * 0.5);
-        let intrinsic_height = self.font_size * 1.2;
+        // Create measurement context for accurate text sizing
+        let measure_context = MeasureContext::Text(TextMeasureContext {
+            content: self.content.clone(),
+            font_size: self.font_size,
+            line_height: self.line_height,
+        });
 
-        // Use Layout properties, falling back to intrinsic size for auto dimensions
-        let layout = if self.layout.width.is_none() || self.layout.height.is_none() {
-            Layout {
-                width: self.layout.width.or(Some(crate::layout::Dimension::Length(intrinsic_width))),
-                height: self.layout.height.or(Some(crate::layout::Dimension::Length(intrinsic_height))),
-                ..self.layout.clone()
-            }
-        } else {
-            self.layout.clone()
-        };
-
-        layout_context.create_leaf(&layout)
+        // Create node with context - Taffy will call measure during compute
+        layout_context.create_leaf_with_context(&self.layout, measure_context)
     }
 
     fn draw(
