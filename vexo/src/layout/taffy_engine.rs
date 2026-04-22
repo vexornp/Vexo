@@ -236,4 +236,59 @@ mod tests {
         assert!(engine.node_map.is_empty());
         assert!(engine.children_map.is_empty());
     }
+
+    #[test]
+    fn test_text_widget_accurate_layout() {
+        use super::super::measurement::TextMeasureContext;
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a text node with known content
+        let context = MeasureContext::Text(TextMeasureContext {
+            content: "Hello World".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+        });
+
+        let text_node = engine.create_leaf_with_context(&Layout::default(), context);
+
+        // Compute layout with available space
+        engine.compute(text_node, Size::new(800.0, 600.0), &mut font_system);
+
+        let layout = engine.get_layout(text_node).unwrap();
+
+        // The width should be accurate based on actual glyph widths
+        // "Hello World" at 24px should be roughly 100-150px wide
+        assert!(layout.width() > 50.0, "Text width should be reasonable");
+        assert!(layout.width() < 300.0, "Text width should not be excessive");
+        assert!(layout.height() > 0.0, "Text height should be positive");
+    }
+
+    #[test]
+    fn test_text_widget_with_wrapping() {
+        use super::super::measurement::TextMeasureContext;
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a text node with long content
+        let context = MeasureContext::Text(TextMeasureContext {
+            content: "This is a long text that should wrap when constrained".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+        });
+
+        let text_node = engine.create_leaf_with_context(&Layout::default(), context);
+
+        // Compute layout with narrow width
+        engine.compute(text_node, Size::new(100.0, 600.0), &mut font_system);
+
+        let layout = engine.get_layout(text_node).unwrap();
+
+        // Text should wrap, so width should be constrained
+        assert!(layout.width() <= 100.0, "Text should wrap to fit width");
+        // Height should be multiple lines
+        assert!(layout.height() > 24.0 * 1.2, "Wrapped text should have multiple lines");
+    }
 }
