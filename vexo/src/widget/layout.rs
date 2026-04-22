@@ -124,6 +124,27 @@ impl ComputedLayout {
 /// computes final positions and sizes. After computation, widgets
 /// receive their computed layout via `apply_layout`.
 ///
+/// # Implementation Pattern
+///
+/// Widgets should store the `ComputedLayout` received in `apply_layout`
+/// for use during the paint phase:
+///
+/// ```ignore
+/// struct MyWidget {
+///     layout: Option<ComputedLayout>,
+/// }
+///
+/// impl Layout for MyWidget {
+///     fn constraints(&self) -> LayoutConstraints {
+///         LayoutConstraints::fixed(100.0, 50.0)
+///     }
+///
+///     fn apply_layout(&mut self, layout: ComputedLayout) {
+///         self.layout = Some(layout);
+///     }
+/// }
+/// ```
+///
 /// # Example
 ///
 /// ```
