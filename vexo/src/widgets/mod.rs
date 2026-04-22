@@ -159,20 +159,21 @@ type EditorRef = crate::state::EditorRef;
 
 mod button;
 mod color_widget;
-mod containers;
+mod column;
 mod grid;
 mod modifiers;
+mod row;
 mod text;
 mod text_edit;
 
 pub use button::Button;
 pub use color_widget::ColorWidget;
-pub use containers::Column;
-pub use containers::Row;
+pub use column::Column;
 pub use grid::Grid;
 pub use modifiers::Background;
 pub use modifiers::Border;
 pub use modifiers::CornerRadius;
 pub use modifiers::WidgetExt;
+pub use row::Row;
 pub use text::Text;
 pub use text_edit::TextEdit;
