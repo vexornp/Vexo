@@ -1,16 +1,18 @@
 //! Grid container widget for 2D layouts.
 
-use crate::core::{Logical, Point, Size};
+use crate::core::{Logical, Point, Size, WidgetId};
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView, TrackSizing};
+use crate::layout::{Display, Layout, LayoutContext, LayoutNodeId, LayoutView, TrackSizing};
+use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
-use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
+use crate::widgets::{Widget, WidgetContext, WidgetResponse};
 
 /// Grid container for 2D layouts with rows and columns.
 pub struct Grid<M: Clone + std::fmt::Debug + Send> {
     pub children: Vec<Box<dyn Widget<M>>>,
     pub key: Option<String>,
     pub layout: Layout,
+    computed_layout: Option<crate::widget::ComputedLayout>,
 }
 
 impl<M: Clone + std::fmt::Debug + Send> Grid<M> {
@@ -19,6 +21,7 @@ impl<M: Clone + std::fmt::Debug + Send> Grid<M> {
             children: Vec::new(),
             key: None,
             layout: Layout::default(),
+            computed_layout: None,
         }
     }
 
@@ -101,7 +104,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
 
         // Build grid layout with display: Grid
         let layout = Layout {
-            display: Some(crate::layout::Display::Grid),
+            display: Some(Display::Grid),
             ..self.layout.clone()
         };
 
@@ -165,5 +168,43 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
             }
         }
         WidgetResponse::default()
+    }
+}
+
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Identifiable for Grid<M> {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Layout for Grid<M> {
+    fn constraints(&self) -> crate::widget::LayoutConstraints {
+        crate::widget::LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::widget::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Paint for Grid<M> {
+    fn paint(&self, _ctx: &mut crate::widget::PaintContext) -> Vec<RenderCommand> {
+        // Grid is a transparent container - children paint themselves
+        Vec::new()
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::widget::Interact<M> for Grid<M> {
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _ctx: &crate::widget::InteractionContext,
+    ) -> crate::widget::InteractionResponse<M> {
+        // Grid delegates event handling to children via legacy Widget trait
+        crate::widget::InteractionResponse::default()
     }
 }
