@@ -266,30 +266,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
             );
 
             // Handle PointerMoved - propagate to child that contains pointer
-            if let InputEvent::PointerMoved { position } = event {
-                for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-                    if let Some(child_layout) = layout_view.get_layout(child_node_id) {
-                        let child_rect = crate::core::Rect::from_xywh(
-                            my_offset.x + child_layout.x(),
-                            my_offset.y + child_layout.y(),
-                            child_layout.width(),
-                            child_layout.height(),
-                        );
-                        if child_rect.contains(position) {
-                            // Propagate event to child and let it return its cursor
-                            return child.on_event(
-                                layout_view,
-                                child_node_id,
-                                my_offset,
-                                event,
-                                focused_id,
-                                widget_context,
-                            );
-                        }
-                    }
-                }
-                // Pointer not inside any child - return default cursor
-                return WidgetResponse::default();
+            if let InputEvent::PointerMoved { .. } = event {
+                return super::propagate_pointer_moved_to_containing_child(
+                    &mut self.children,
+                    &child_ids,
+                    layout_view,
+                    my_offset,
+                    event,
+                    focused_id,
+                    widget_context,
+                );
             }
 
             // Handle other events

@@ -195,6 +195,51 @@ impl WidgetContext {
 
 type EditorRef = crate::state::EditorRef;
 
+/// Helper function for container widgets to propagate PointerMoved events.
+///
+/// This function hit-tests children and propagates the PointerMoved event to the
+/// child that contains the pointer position. It returns that child's WidgetResponse,
+/// which includes the cursor to display.
+///
+/// This is used by Row, Column, and other container widgets to deduplicate
+/// PointerMoved handling logic.
+pub(crate) fn propagate_pointer_moved_to_containing_child<M: Clone + std::fmt::Debug + Send>(
+    children: &mut [Box<dyn Widget<M>>],
+    child_ids: &[LayoutNodeId],
+    layout_view: &LayoutView,
+    offset: Point<Logical>,
+    event: &InputEvent,
+    focused_id: Option<WidgetId>,
+    widget_context: &mut WidgetContext,
+) -> WidgetResponse<M> {
+    let position = match event {
+        InputEvent::PointerMoved { position } => *position,
+        _ => return WidgetResponse::default(),
+    };
+
+    for (child, child_node_id) in children.iter_mut().zip(child_ids.iter()) {
+        if let Some(child_layout) = layout_view.get_layout(*child_node_id) {
+            let child_rect = crate::core::Rect::from_xywh(
+                offset.x + child_layout.x(),
+                offset.y + child_layout.y(),
+                child_layout.width(),
+                child_layout.height(),
+            );
+            if child_rect.contains(&position) {
+                return child.on_event(
+                    layout_view,
+                    *child_node_id,
+                    offset,
+                    event,
+                    focused_id,
+                    widget_context,
+                );
+            }
+        }
+    }
+    WidgetResponse::default()
+}
+
 mod button;
 mod color_widget;
 mod column;

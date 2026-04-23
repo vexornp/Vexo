@@ -62,34 +62,30 @@ impl Application for State {
             .padding(10.0)
             .background(Color::BLUE),
             // Cyan rectangle with fixed size - now using CSS-like layout directly
-            color_widget!(Color::CYAN)
-                .width(110.0)
-                .height(30.0),
+            color_widget!(Color::CYAN).width(110.0).height(30.0),
             // Row with two colored rectangles - now using CSS-like layout directly
             row![
-                color_widget!(Color::RED)
-                    .width(60.0)
-                    .height(70.0),
-                color_widget!(Color::YELLOW)
-                    .width(90.0)
-                    .height(40.0),
+                color_widget!(Color::RED).width(60.0).height(70.0),
+                color_widget!(Color::YELLOW).width(90.0).height(40.0),
             ],
-            // Grid demonstration: 2x3 grid with different sized cells
+            // Grid demonstration: 2x3 grid with button and text edit for cursor testing
             column![
-                text!("Grid Demo (2x3):").font_size(18.0),
+                text!("Grid Demo - hover for cursor changes:").font_size(18.0),
                 grid![
-                    text!("Cell 1,1").background(Color::RED),
-                    text!("Cell 1,2 (2x wide)").background(Color::GREEN),
-                    text!("Cell 2,1").background(Color::BLUE),
-                    text!("Cell 2,2").background(Color::YELLOW),
-                    text!("Cell 3,1").background(Color::MAGENTA),
-                    text!("Cell 3,2").background(Color::CYAN),
+                    button!(text!("Click me"), Message::None).background(Color::rgb(0.2, 0.5, 0.2)),
+                    color_widget!(Color::GREEN).height(40.0),
+                    text_edit!("grid_edit")
+                        .content("Edit me")
+                        .background(Color::rgb(0.9, 0.9, 0.9)),
+                    color_widget!(Color::YELLOW).height(40.0),
+                    color_widget!(Color::MAGENTA).height(40.0),
+                    color_widget!(Color::CYAN).height(40.0),
                 ]
                 .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)])
                 .rows(vec![
-                    TrackSizing::Px(40.0),
-                    TrackSizing::Px(40.0),
-                    TrackSizing::Px(40.0),
+                    TrackSizing::Px(50.0),
+                    TrackSizing::Px(50.0),
+                    TrackSizing::Px(50.0),
                 ])
                 .border(Color::BLACK, 2.0),
             ],

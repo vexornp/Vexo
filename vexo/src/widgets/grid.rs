@@ -166,6 +166,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
                 offset.y + layout.y(),
             );
 
+            // Handle PointerMoved - propagate to child that contains pointer
+            if let InputEvent::PointerMoved { .. } = event {
+                return super::propagate_pointer_moved_to_containing_child(
+                    &mut self.children,
+                    &child_ids,
+                    layout_view,
+                    my_offset,
+                    event,
+                    focused_id,
+                    widget_context,
+                );
+            }
+
+            // Handle other events
             for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
                 let child_response =
                     child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
