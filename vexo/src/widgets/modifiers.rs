@@ -122,6 +122,10 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         self.child.key()
     }
 
+    fn cursor(&self) -> crate::input::CursorIcon {
+        self.child.cursor()
+    }
+
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, background uses same bounds
         self.child.layout(layout_context, widget_context)
@@ -271,6 +275,10 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         self.child.key()
     }
 
+    fn cursor(&self) -> crate::input::CursorIcon {
+        self.child.cursor()
+    }
+
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Layout child, border uses same bounds
         self.child.layout(layout_context, widget_context)
@@ -401,6 +409,10 @@ impl<W: crate::testable::Interact<M>, M: Clone + std::fmt::Debug + Send> crate::
 impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> Widget<M> for CornerRadius<W, M> {
     fn key(&self) -> Option<&str> {
         self.child.key()
+    }
+
+    fn cursor(&self) -> crate::input::CursorIcon {
+        self.child.cursor()
     }
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {

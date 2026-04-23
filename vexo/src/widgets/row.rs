@@ -257,9 +257,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                 offset.y + layout.y(),
             );
 
-            // Handle PointerMoved - find which child contains the pointer and return its cursor
+            // Handle PointerMoved - propagate to child that contains pointer
             if let InputEvent::PointerMoved { position } = event {
-                for (child, child_node_id) in self.children.iter().zip(child_ids.clone()) {
+                for (child, child_node_id) in self.children.iter_mut().zip(child_ids.clone()) {
                     if let Some(child_layout) = layout_view.get_layout(child_node_id) {
                         let child_rect = crate::core::Rect::from_xywh(
                             my_offset.x + child_layout.x(),
@@ -268,13 +268,15 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
                             child_layout.height(),
                         );
                         if child_rect.contains(position) {
-                            return WidgetResponse {
-                                message: None,
-                                focus_request: None,
-                                handled: false,
-                                clear_focus: false,
-                                cursor: Some(child.cursor()),
-                            };
+                            // Propagate event to child and let it return its cursor
+                            return child.on_event(
+                                layout_view,
+                                child_node_id,
+                                my_offset,
+                                event,
+                                focused_id,
+                                widget_context,
+                            );
                         }
                     }
                 }
