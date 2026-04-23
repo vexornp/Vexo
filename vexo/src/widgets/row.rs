@@ -259,7 +259,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Row<M> {
 
             // Handle PointerMoved - propagate to child that contains pointer
             if let InputEvent::PointerMoved { position } = event {
-                for (child, child_node_id) in self.children.iter_mut().zip(child_ids.clone()) {
+                for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
                     if let Some(child_layout) = layout_view.get_layout(child_node_id) {
                         let child_rect = crate::core::Rect::from_xywh(
                             my_offset.x + child_layout.x(),
