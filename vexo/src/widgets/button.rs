@@ -73,6 +73,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         self.key.as_deref()
     }
 
+    fn cursor(&self) -> CursorIcon {
+        CursorIcon::Pointer
+    }
+
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         let content_node = self.content.layout(layout_context, widget_context);
 
@@ -146,19 +150,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
             let rect = Rect::<Logical>::from_xywh(x, y, layout.width(), layout.height());
 
-            // Handle pointer moved - request pointer cursor when hovering
-            if let InputEvent::PointerMoved { position } = event {
-                if rect.contains(position) {
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: None,
-                        handled: false,
-                        clear_focus: false,
-                        cursor: Some(CursorIcon::Pointer),
-                    };
-                }
-            }
-
             // Handle pointer button events
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
@@ -171,13 +162,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                         message: Some(self.on_press.clone()),
                         focus_request: None,
                         handled: true,
-                        clear_focus: true, // Clear focus from other widgets
-                        cursor: Some(CursorIcon::Pointer),
+                        clear_focus: true,
+                        cursor: None, // Cursor is handled declaratively via cursor() method
                     };
                 }
             }
 
-            // Child event propagation
+            // Child event propagation for other events
             let child_ids = layout_view.children(node);
             if let Some(content_node) = child_ids.get(0) {
                 let content_offset = Point::new(x, y);

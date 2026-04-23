@@ -203,6 +203,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         self.key.as_deref()
     }
 
+    fn cursor(&self) -> CursorIcon {
+        CursorIcon::Text
+    }
+
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
@@ -307,33 +311,16 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             if let Some(layout) = layout_view.get_layout(node) {
                 let abs_x = offset.x + layout.x();
                 let abs_y = offset.y + layout.y();
-                let rect = Rect::from_xywh(
-                    abs_x,
-                    abs_y,
-                    layout.width(),
-                    layout.height(),
-                );
+                let rect = Rect::from_xywh(abs_x, abs_y, layout.width(), layout.height());
                 rect.contains(position)
             } else {
                 false
             }
         };
 
-        if !is_focused {
-            // Handle pointer moved - request text cursor when hovering
-            if let InputEvent::PointerMoved { position } = event {
-                if bounds_check(position) {
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: None,
-                        handled: false,
-                        clear_focus: false,
-                        cursor: Some(CursorIcon::Text),
-                    };
-                }
-                // Pointer outside our bounds - don't set cursor, let other widgets handle it
-            }
+        // Cursor is handled declaratively via cursor() method - no need to handle PointerMoved
 
+        if !is_focused {
             // Check for click to grab focus
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
@@ -347,7 +334,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                         focus_request: Some(my_id),
                         handled: true,
                         clear_focus: false,
-                        cursor: Some(CursorIcon::Text),
+                        cursor: None,
                     };
                 }
             }
@@ -359,60 +346,29 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let mut editor_ref = editor_rc.borrow_mut();
 
         match event {
-            InputEvent::PointerMoved { position } => {
-                // When focused, still request text cursor only when hovering inside bounds
-                if bounds_check(position) {
-                    return WidgetResponse {
-                        message: None,
-                        focus_request: None,
-                        handled: false,
-                        clear_focus: false,
-                        cursor: Some(CursorIcon::Text),
-                    };
-                }
-                // Pointer outside bounds - don't handle, let other widgets set cursor
-                return WidgetResponse::default();
-            }
-            InputEvent::ModifiersChanged { modifiers } => {
-                // Store modifiers for later use if needed
-                let _ctrl_pressed = modifiers.control;
-            }
             InputEvent::PointerButton {
                 state: ButtonState::Pressed,
                 position,
                 ..
             } => {
-                // Check if click is inside our bounds
-                if let Some(layout) = layout_view.get_layout(node) {
-                    let abs_x = offset.x + layout.x();
-                    let abs_y = offset.y + layout.y();
-                    let rect = Rect::from_xywh(
-                        abs_x,
-                        abs_y,
-                        layout.width(),
-                        layout.height(),
-                    );
-
-                    if rect.contains(position) {
-                        // Click inside - retain focus
-                        return WidgetResponse {
-                            message: None,
-                            focus_request: Some(my_id),
-                            handled: true,
-                            clear_focus: false,
-                            cursor: Some(CursorIcon::Text),
-                        };
-                    }
-                    // Click outside - don't handle, let framework clear focus
-                    return WidgetResponse::default();
+                if bounds_check(position) {
+                    // Click inside - retain focus
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: Some(my_id),
+                        handled: true,
+                        clear_focus: false,
+                        cursor: None,
+                    };
                 }
+                // Click outside - don't handle, let framework clear focus
+                return WidgetResponse::default();
             }
             InputEvent::Keyboard {
                 key,
                 state: ButtonState::Pressed,
                 text,
                 modifiers,
-                ..
             } => {
                 let ctrl_pressed = modifiers.control;
 

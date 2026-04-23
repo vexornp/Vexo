@@ -19,6 +19,12 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         Layout::default()
     }
 
+    /// Return the cursor to show when hovering over this widget.
+    /// Default implementation returns Default (arrow cursor).
+    fn cursor(&self) -> CursorIcon {
+        CursorIcon::Default
+    }
+
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId;
 
     /// Receive computed layout after layout computation.
@@ -70,6 +76,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
 
     fn layout_props(&self) -> Layout {
         (**self).layout_props()
+    }
+
+    fn cursor(&self) -> CursorIcon {
+        (**self).cursor()
     }
 
     fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {

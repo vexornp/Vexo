@@ -37,7 +37,14 @@
       "Bash(grep -r \"pub struct Style\" ~/.cargo/registry/src/**/taffy-*/src/)",
       "Bash(find ~/.cargo/registry/src -name \"*.rs\" -path \"*taffy*\" -exec grep -l \"pub struct Style\" {} \\\\;)",
       "Bash(grep -E \"\\(pub struct Line|pub struct GridPlacement|pub enum|impl\\)\" ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/taffy-0.9.2/src/geometry/*.rs)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:api.flutter.dev)",
+      "Bash(pkill -f desktop_demo)",
+      "Bash(grep -r \"Cursor\" /Users/peiyan_wang/.cargo/registry/src/*/winit-0.31*/src/*.rs)",
+      "Bash(ls -la /Users/peiyan_wang/.cargo/registry/src/*/winit-0.31*/src/cursor.rs)",
+      "Bash(ls -la /Users/peiyan_wang/.cargo/registry/src/*/winit-0.31*/src/cursor/)",
+      "Bash(grep -r \"CursorIcon\" /Users/peiyan_wang/.cargo/registry/src/*/winit-0.31*/src/lib.rs)"
     ]
   }
 }
