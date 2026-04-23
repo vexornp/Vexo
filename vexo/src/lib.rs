@@ -39,6 +39,7 @@ pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
+use crate::input::CursorIcon;
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 
 pub use layout::AlignItems;
@@ -65,6 +66,9 @@ pub struct WindowState<A: Application + 'static> {
 
     // Cursor blink state (global - only one focused widget at a time)
     cursor_blink: CursorBlinkState,
+
+    // Current cursor icon (for detecting changes)
+    current_cursor: CursorIcon,
 }
 
 /// Tracks cursor blink timing for focused text inputs.
@@ -116,6 +120,22 @@ impl CursorBlinkState {
     }
 }
 
+/// Convert CursorIcon to winit's Cursor type.
+fn winit_cursor_from_icon(icon: CursorIcon) -> winit::cursor::Cursor {
+    // Map our CursorIcon to winit's CursorIcon, then convert to Cursor via From trait
+    let winit_icon = match icon {
+        CursorIcon::Default => winit::cursor::CursorIcon::Default,
+        CursorIcon::Pointer => winit::cursor::CursorIcon::Pointer,
+        CursorIcon::Text => winit::cursor::CursorIcon::Text,
+        CursorIcon::Crosshair => winit::cursor::CursorIcon::Crosshair,
+        CursorIcon::Move => winit::cursor::CursorIcon::Move,
+        CursorIcon::NotAllowed => winit::cursor::CursorIcon::NotAllowed,
+        CursorIcon::ResizeHorizontal => winit::cursor::CursorIcon::EwResize,
+        CursorIcon::ResizeVertical => winit::cursor::CursorIcon::NsResize,
+    };
+    winit::cursor::Cursor::Icon(winit_icon)
+}
+
 impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
         let backend = WgpuBackend::new(window.clone()).await?;
@@ -139,6 +159,7 @@ impl<A: Application + 'static> WindowState<A> {
             focused_widget_id: None,
             widget_context: ctx,
             cursor_blink: CursorBlinkState::new(),
+            current_cursor: CursorIcon::default(),
         })
     }
 
@@ -431,6 +452,22 @@ impl<A: Application + 'static> WindowState<A> {
         if let Some(msg) = widget_response.message {
             println!("User message received: {:?}", msg);
             self.update(msg);
+        }
+
+        // Handle cursor changes
+        if let Some(cursor) = widget_response.cursor {
+            if cursor != self.current_cursor {
+                self.current_cursor = cursor;
+                if let Some(window) = &self.window {
+                    window.set_cursor(winit_cursor_from_icon(cursor));
+                }
+            }
+        } else if self.current_cursor != CursorIcon::Default {
+            // No cursor requested - reset to default
+            self.current_cursor = CursorIcon::Default;
+            if let Some(window) = &self.window {
+                window.set_cursor(winit_cursor_from_icon(CursorIcon::Default));
+            }
         }
     }
 
