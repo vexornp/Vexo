@@ -4,7 +4,7 @@ use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
 use crate::Widget;
-use crate::input::{InputEvent, ButtonState, Key, NamedKey};
+use crate::input::{CursorIcon, InputEvent, ButtonState, Key, NamedKey};
 use glyphon::{cosmic_text::Motion, Action, SwashCache};
 
 pub struct TextEdit {
@@ -164,7 +164,10 @@ impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for TextEdi
         } = event
         {
             if ctx.is_pointer_inside() {
-                return crate::testable::InteractionResponse::request_focus(my_id);
+                return crate::testable::InteractionResponse {
+                    cursor: Some(CursorIcon::Text),
+                    ..crate::testable::InteractionResponse::request_focus(my_id)
+                };
             }
         }
 
@@ -178,7 +181,10 @@ impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for TextEdi
         // keyboard input for now.
 
         // Mark as handled if focused (for focus retention)
-        crate::testable::InteractionResponse::handled()
+        crate::testable::InteractionResponse {
+            cursor: Some(CursorIcon::Text),
+            ..crate::testable::InteractionResponse::handled()
+        }
     }
 }
 
@@ -287,6 +293,36 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let my_id = WidgetId::from_key(&self.editor_id);
         let is_focused = focused_id == Some(my_id);
 
+        // Helper to check if position is inside our bounds
+        let bounds_check = |position: &Point<Logical>| -> bool {
+            if let Some(layout) = layout_view.get_layout(node) {
+                let abs_x = offset.x + layout.x();
+                let abs_y = offset.y + layout.y();
+                let rect = Rect::from_xywh(
+                    abs_x,
+                    abs_y,
+                    layout.width(),
+                    layout.height(),
+                );
+                rect.contains(position)
+            } else {
+                false
+            }
+        };
+
+        // Handle pointer moved - request text cursor when hovering
+        if let InputEvent::PointerMoved { position } = event {
+            if bounds_check(position) {
+                return WidgetResponse {
+                    message: None,
+                    focus_request: None,
+                    handled: false,
+                    clear_focus: false,
+                    cursor: Some(CursorIcon::Text),
+                };
+            }
+        }
+
         if !is_focused {
             // Check for click to grab focus
             if let InputEvent::PointerButton {
@@ -295,26 +331,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } = event
             {
-                if let Some(layout) = layout_view.get_layout(node) {
-                    // Add offset to get absolute position
-                    let abs_x = offset.x + layout.x();
-                    let abs_y = offset.y + layout.y();
-                    let rect = Rect::from_xywh(
-                        abs_x,
-                        abs_y,
-                        layout.width(),
-                        layout.height(),
-                    );
-
-                    if rect.contains(position) {
-                        return WidgetResponse {
-                            message: None,
-                            focus_request: Some(my_id),
-                            handled: true,
-                            clear_focus: false,
-                            cursor: None,
-                        };
-                    }
+                if bounds_check(position) {
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: Some(my_id),
+                        handled: true,
+                        clear_focus: false,
+                        cursor: Some(CursorIcon::Text),
+                    };
                 }
             }
             return WidgetResponse::default();
@@ -352,7 +376,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                             focus_request: Some(my_id),
                             handled: true,
                             clear_focus: false,
-                            cursor: None,
+                            cursor: Some(CursorIcon::Text),
                         };
                     }
                     // Click outside - don't handle, let framework clear focus
@@ -450,7 +474,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             focus_request: None,
             handled: true,
             clear_focus: false,
-            cursor: None,
+            cursor: Some(CursorIcon::Text),
         }
     }
 }
