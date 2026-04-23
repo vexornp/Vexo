@@ -41,4 +41,9 @@ impl Editor {
         self.raw.cursor_position()
     }
 
+    /// Set the cursor position from a Cursor object.
+    pub fn set_cursor(&mut self, cursor: glyphon::Cursor) {
+        self.raw.set_cursor(cursor);
+    }
+
 }
