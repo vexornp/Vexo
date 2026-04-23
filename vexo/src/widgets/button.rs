@@ -224,9 +224,9 @@ impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for Button<
             if ctx.is_pointer_inside() {
                 return crate::testable::InteractionResponse {
                     message: Some(self.on_press.clone()),
-                    focus_request: None,
                     handled: true,
                     clear_focus: true,
+                    ..crate::testable::InteractionResponse::default()
                 };
             }
         }

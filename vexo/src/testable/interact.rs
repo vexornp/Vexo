@@ -1,7 +1,7 @@
 //! Interact trait for widget input handling.
 
 use crate::core::{Point, Rect, Scale, WidgetId, Logical};
-use crate::input::{InputEvent, Modifiers};
+use crate::input::{CursorIcon, InputEvent, Modifiers};
 
 /// Context provided to widgets during event handling.
 #[derive(Debug, Clone)]
@@ -79,6 +79,8 @@ pub struct InteractionResponse<M> {
     pub handled: bool,
     /// Whether to clear focus from the currently focused widget.
     pub clear_focus: bool,
+    /// Request to change the mouse cursor.
+    pub cursor: Option<CursorIcon>,
 }
 
 /// Focus change request.
@@ -97,6 +99,7 @@ impl<M> Default for InteractionResponse<M> {
             focus_request: None,
             handled: false,
             clear_focus: false,
+            cursor: None,
         }
     }
 }
