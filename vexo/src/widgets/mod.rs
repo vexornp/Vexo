@@ -1,7 +1,7 @@
 use crate::renderer::UiBatcher;
 use crate::core::{Logical, Physical, Point, Scale, WidgetId};
 use crate::state::WidgetStateRegistry;
-use crate::input::InputEvent;
+use crate::input::{CursorIcon, InputEvent};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::render::RenderCommand;
 use glyphon::FontSystem;
@@ -123,6 +123,10 @@ pub struct WidgetResponse<M> {
     /// Should the framework clear focus from the currently focused widget?
     /// Used by non-focusable widgets (like Button) to clear focus when clicked.
     pub clear_focus: bool,
+
+    /// Request to change the mouse cursor when hovering over this widget.
+    /// None means "no opinion" - use parent's cursor or default.
+    pub cursor: Option<CursorIcon>,
 }
 
 impl<M> Default for WidgetResponse<M> {
@@ -132,6 +136,7 @@ impl<M> Default for WidgetResponse<M> {
             focus_request: None,
             handled: false,
             clear_focus: false,
+            cursor: None,
         }
     }
 }

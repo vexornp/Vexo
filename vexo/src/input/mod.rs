@@ -38,6 +38,7 @@ mod event;
 
 pub use event::{
     ButtonState,
+    CursorIcon,
     InputEvent,
     Key,
     Modifiers,

@@ -312,6 +312,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                             focus_request: Some(my_id),
                             handled: true,
                             clear_focus: false,
+                            cursor: None,
                         };
                     }
                 }
@@ -351,6 +352,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                             focus_request: Some(my_id),
                             handled: true,
                             clear_focus: false,
+                            cursor: None,
                         };
                     }
                     // Click outside - don't handle, let framework clear focus
@@ -448,6 +450,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             focus_request: None,
             handled: true,
             clear_focus: false,
+            cursor: None,
         }
     }
 }

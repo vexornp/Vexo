@@ -159,6 +159,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                         focus_request: None,
                         handled: true,
                         clear_focus: true, // Clear focus from other widgets
+                        cursor: None,
                     };
                 }
             }
