@@ -39,7 +39,7 @@ pub use widgets::WidgetExt;
 pub use winit::dpi::PhysicalPosition;
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
-use crate::input::CursorIcon;
+use crate::input::{CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 
 pub use layout::AlignItems;
@@ -455,6 +455,7 @@ impl<A: Application + 'static> WindowState<A> {
         }
 
         // Handle cursor changes
+        // Only update cursor on PointerMoved events to avoid resetting during clicks
         if let Some(cursor) = widget_response.cursor {
             if cursor != self.current_cursor {
                 self.current_cursor = cursor;
@@ -462,11 +463,14 @@ impl<A: Application + 'static> WindowState<A> {
                     window.set_cursor(winit_cursor_from_icon(cursor));
                 }
             }
-        } else if self.current_cursor != CursorIcon::Default {
-            // No cursor requested - reset to default
-            self.current_cursor = CursorIcon::Default;
-            if let Some(window) = &self.window {
-                window.set_cursor(winit_cursor_from_icon(CursorIcon::Default));
+        } else if matches!(input_event, InputEvent::PointerMoved { .. }) {
+            // Only reset to default on PointerMoved when no cursor is requested
+            // This prevents cursor from resetting during click/release events
+            if self.current_cursor != CursorIcon::Default {
+                self.current_cursor = CursorIcon::Default;
+                if let Some(window) = &self.window {
+                    window.set_cursor(winit_cursor_from_icon(CursorIcon::Default));
+                }
             }
         }
     }
