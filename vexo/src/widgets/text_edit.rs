@@ -319,20 +319,21 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             }
         };
 
-        // Handle pointer moved - request text cursor when hovering
-        if let InputEvent::PointerMoved { position } = event {
-            if bounds_check(position) {
-                return WidgetResponse {
-                    message: None,
-                    focus_request: None,
-                    handled: false,
-                    clear_focus: false,
-                    cursor: Some(CursorIcon::Text),
-                };
-            }
-        }
-
         if !is_focused {
+            // Handle pointer moved - request text cursor when hovering
+            if let InputEvent::PointerMoved { position } = event {
+                if bounds_check(position) {
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: None,
+                        handled: false,
+                        clear_focus: false,
+                        cursor: Some(CursorIcon::Text),
+                    };
+                }
+                // Pointer outside our bounds - don't set cursor, let other widgets handle it
+            }
+
             // Check for click to grab focus
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
@@ -358,6 +359,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         let mut editor_ref = editor_rc.borrow_mut();
 
         match event {
+            InputEvent::PointerMoved { position } => {
+                // When focused, still request text cursor only when hovering inside bounds
+                if bounds_check(position) {
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: None,
+                        handled: false,
+                        clear_focus: false,
+                        cursor: Some(CursorIcon::Text),
+                    };
+                }
+                // Pointer outside bounds - don't handle, let other widgets set cursor
+                return WidgetResponse::default();
+            }
             InputEvent::ModifiersChanged { modifiers } => {
                 // Store modifiers for later use if needed
                 let _ctrl_pressed = modifiers.control;
