@@ -269,7 +269,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                 let child_response =
                     child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
 
-                if child_response.handled || child_response.focus_request.is_some() {
+                // Propagate handled events, focus requests, or cursor requests
+                if child_response.handled || child_response.focus_request.is_some() || child_response.cursor.is_some() {
                     return child_response;
                 }
             }
