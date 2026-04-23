@@ -318,7 +318,19 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             }
         };
 
-        // Cursor is handled declaratively via cursor() method - no need to handle PointerMoved
+        // Handle PointerMoved - return text cursor when hovering
+        if let InputEvent::PointerMoved { position } = event {
+            if bounds_check(position) {
+                return WidgetResponse {
+                    message: None,
+                    focus_request: None,
+                    handled: false,
+                    clear_focus: false,
+                    cursor: Some(CursorIcon::Text),
+                };
+            }
+            return WidgetResponse::<M>::default();
+        }
 
         if !is_focused {
             // Check for click to grab focus

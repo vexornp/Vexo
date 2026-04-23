@@ -150,6 +150,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
             let rect = Rect::<Logical>::from_xywh(x, y, layout.width(), layout.height());
 
+            // Handle PointerMoved - return pointer cursor when hovering
+            if let InputEvent::PointerMoved { position } = event {
+                if rect.contains(position) {
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: None,
+                        handled: false,
+                        clear_focus: false,
+                        cursor: Some(CursorIcon::Pointer),
+                    };
+                }
+                return WidgetResponse::<M>::default();
+            }
+
             // Handle pointer button events
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
@@ -163,7 +177,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                         focus_request: None,
                         handled: true,
                         clear_focus: true,
-                        cursor: None, // Cursor is handled declaratively via cursor() method
+                        cursor: None,
                     };
                 }
             }

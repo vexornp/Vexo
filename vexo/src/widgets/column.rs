@@ -277,8 +277,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
                         );
                         if child_rect.contains(position) {
                             return WidgetResponse {
+                                message: None,
+                                focus_request: None,
+                                handled: false,
+                                clear_focus: false,
                                 cursor: Some(child.cursor()),
-                                ..WidgetResponse::default()
                             };
                         }
                     }
