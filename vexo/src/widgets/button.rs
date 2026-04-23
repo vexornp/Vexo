@@ -3,7 +3,7 @@ use crate::renderer::UiBatcher;
 use crate::core::{Logical, Point, Rect, WidgetId};
 use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
-use crate::input::{InputEvent, ButtonState};
+use crate::input::{CursorIcon, InputEvent, ButtonState};
 use crate::render::RenderCommand;
 
 pub struct Button<M: Clone + std::fmt::Debug + Send> {
@@ -146,7 +146,20 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
             let rect = Rect::<Logical>::from_xywh(x, y, layout.width(), layout.height());
 
-            // Handle pointer events
+            // Handle pointer moved - request pointer cursor when hovering
+            if let InputEvent::PointerMoved { position } = event {
+                if rect.contains(position) {
+                    return WidgetResponse {
+                        message: None,
+                        focus_request: None,
+                        handled: false,
+                        clear_focus: false,
+                        cursor: Some(CursorIcon::Pointer),
+                    };
+                }
+            }
+
+            // Handle pointer button events
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
                 position,
@@ -159,7 +172,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                         focus_request: None,
                         handled: true,
                         clear_focus: true, // Clear focus from other widgets
-                        cursor: None,
+                        cursor: Some(CursorIcon::Pointer),
                     };
                 }
             }
