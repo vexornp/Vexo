@@ -172,7 +172,16 @@ impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for TextEdi
         }
 
         if !is_focused {
-            return crate::testable::InteractionResponse::default();
+            // Return text cursor if pointer is inside bounds (for hover)
+            let cursor = if ctx.is_pointer_inside() {
+                Some(CursorIcon::Text)
+            } else {
+                None
+            };
+            return crate::testable::InteractionResponse {
+                cursor,
+                ..crate::testable::InteractionResponse::default()
+            };
         }
 
         // Note: Full keyboard handling requires access to editor state and font_system
@@ -469,12 +478,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
         editor_ref.shape_as_needed(&mut widget_context.font_system, true);
 
+        // For keyboard events, don't set cursor - cursor is based on hover position, not focus
         WidgetResponse {
             message: None,
             focus_request: None,
             handled: true,
             clear_focus: false,
-            cursor: Some(CursorIcon::Text),
+            cursor: None,
         }
     }
 }
