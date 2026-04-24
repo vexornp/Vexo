@@ -31,6 +31,7 @@ pub mod state;
 mod utils;
 pub mod testable;
 pub mod widgets;
+pub mod component;
 
 use renderer::{TextRequest, UiBatcher};
 use render::{RenderBackend, WgpuBackend};
