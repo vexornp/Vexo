@@ -191,6 +191,22 @@ impl WidgetContext {
     pub fn state_mut(&mut self) -> &mut WidgetStateRegistry {
         &mut self.state
     }
+
+    /// Create a ComponentContext for use with components.
+    ///
+    /// This method handles the internal borrow splitting required to provide
+    /// mutable access to both the component storage and font system.
+    pub fn create_component_context<'a, M: Clone + std::fmt::Debug + Send>(
+        &'a mut self,
+        key_path: crate::component::KeyPath,
+    ) -> crate::component::ComponentContext<'a, M> {
+        crate::component::ComponentContext::new(
+            key_path,
+            self.state.component_storage(),
+            &mut self.font_system,
+            self.scale,
+        )
+    }
 }
 
 type EditorRef = crate::state::EditorRef;

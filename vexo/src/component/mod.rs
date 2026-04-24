@@ -30,7 +30,7 @@ pub trait Component: Sized + 'static {
     fn view(
         state: &Self::State,
         ctx: &mut ComponentContext<'_, Self::Message>,
-    ) -> Box<dyn Widget<Self::Output>>;
+    ) -> Box<dyn Widget<Self::Message>>;
 
     fn map_message(message: Self::Message, state: &Self::State) -> Option<Self::Output>;
 }
