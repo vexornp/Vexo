@@ -368,6 +368,22 @@ backend.render();
 - `shared_app/src/lib.rs` defines `#[uniffi::Object]` struct `MobileApp` with `#[uniffi::export]` methods
 - Methods callable from Swift for iOS integration
 
+## Development Workflow
+
+- Always run `cargo build` after making edits to Rust files, and `cargo test` after implementing features. Never assume tests pass without running them.
+
+## Git Workflow
+
+- After completing a feature or fix, offer to commit the changes with a descriptive message summarizing what was done.
+
+## Refactoring Guidelines
+
+- When refactoring across multiple files, verify each file builds before moving to the next batch to catch import conflicts early.
+
+## Debugging
+
+- For UI rendering bugs, trace the full event/data propagation path before implementing fixes, as initial fixes often miss edge cases.
+
 ## Commit Guidelines
 
 - Do not include "Co-Authored-By: Claude" or similar attribution strings in commit messages
