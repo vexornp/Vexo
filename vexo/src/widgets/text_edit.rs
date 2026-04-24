@@ -364,23 +364,17 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 ..
             } => {
                 if bounds_check(position) {
-                    // Click inside - retain focus and move cursor to click position
+                    // Move cursor to click position
                     if let Some(layout) = layout_view.get_layout(node) {
-                        let abs_x = offset.x + layout.x();
-                        let abs_y = offset.y + layout.y();
+                        let widget_origin = Point::<Logical>::new(
+                            offset.x + layout.x(),
+                            offset.y + layout.y(),
+                        );
+                        let relative = *position - widget_origin;
+                        let physical = relative.to_physical(widget_context.scale);
 
-                        // Calculate click position relative to widget
-                        let rel_x = position.x - abs_x;
-                        let rel_y = position.y - abs_y;
-
-                        // Convert to physical pixels (buffer uses physical coordinates)
-                        let scale = widget_context.scale.factor();
-                        let phys_x = rel_x * scale;
-                        let phys_y = rel_y * scale;
-
-                        // Hit-test to find cursor position
                         let buffer = editor_ref.buffer();
-                        if let Some(cursor) = buffer.hit(phys_x, phys_y) {
+                        if let Some(cursor) = buffer.hit(physical.x, physical.y) {
                             editor_ref.set_cursor(cursor);
                         }
                     }
