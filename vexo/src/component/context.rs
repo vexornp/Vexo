@@ -104,6 +104,11 @@ impl<'a, M: Clone + std::fmt::Debug + Send> ComponentContext<'a, M> {
     pub fn state_storage(&mut self) -> &mut ComponentStateStorage {
         self.state_storage
     }
+
+    /// Get or create component state from storage.
+    pub fn get_or_create_state<S: Default + 'static>(&mut self, key: &str) -> &mut S {
+        self.state_storage.get_or_create(key)
+    }
 }
 
 #[cfg(test)]

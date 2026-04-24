@@ -29,6 +29,14 @@ impl ComponentStateStorage {
             .expect("State type mismatch - same key used with different types")
     }
 
+    /// Get state by key without creating (returns None if not exists).
+    pub fn get<S: 'static + Clone>(&self, key: &str) -> Option<S> {
+        self.states
+            .get(key)
+            .and_then(|state| state.downcast_ref::<S>())
+            .cloned()
+    }
+
     pub fn contains(&self, key: &str) -> bool {
         self.states.contains_key(key)
     }

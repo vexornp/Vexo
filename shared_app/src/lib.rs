@@ -26,7 +26,7 @@ pub enum CounterOutput {
     CountReached(u32),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CounterState {
     count: u32,
 }

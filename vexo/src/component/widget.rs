@@ -13,12 +13,15 @@ use crate::widgets::{Widget, WidgetContext, WidgetResponse};
 use crate::CursorBlinkState;
 
 /// Widget wrapper that hosts a Component.
+///
+/// State is stored in `WidgetContext.state.component_storage()` to persist
+/// across view tree rebuilds. The `storage_key` is used as the key.
 pub struct ComponentWidget<C: Component> {
-    state: C::State,
     storage_key: String,
     key_path: KeyPath,
     cached_view: Option<Box<dyn Widget<C::Message>>>,
     computed_layout: Option<ComputedLayout>,
+    _marker: std::marker::PhantomData<C>,
 }
 
 impl<C: Component> ComponentWidget<C> {
@@ -26,29 +29,16 @@ impl<C: Component> ComponentWidget<C> {
         let storage_key = storage_key.into();
         let key_path = KeyPath::root().child(&storage_key);
         Self {
-            state: C::initial_state(),
             storage_key,
             key_path,
             cached_view: None,
             computed_layout: None,
+            _marker: std::marker::PhantomData,
         }
-    }
-
-    pub fn with_state(mut self, state: C::State) -> Self {
-        self.state = state;
-        self
     }
 
     pub fn storage_key(&self) -> &str {
         &self.storage_key
-    }
-
-    pub fn state(&self) -> &C::State {
-        &self.state
-    }
-
-    pub fn state_mut(&mut self) -> &mut C::State {
-        &mut self.state
     }
 }
 
@@ -78,9 +68,14 @@ impl<C: Component> Widget<C::Output> for ComponentWidget<C> {
         layout_ctx: &mut LayoutContext,
         widget_ctx: &mut WidgetContext,
     ) -> LayoutNodeId {
+        // Create component context first - it has access to ComponentStateStorage
         let mut component_ctx = widget_ctx.create_component_context(self.key_path.clone());
 
-        let view = C::view(&self.state, &mut component_ctx);
+        // Get or create state from persistent storage through the context
+        let state = component_ctx.get_or_create_state::<C::State>(&self.storage_key);
+        let state_clone = state.clone();
+
+        let view = C::view(&state_clone, &mut component_ctx);
         self.cached_view = Some(view);
 
         if let Some(ref mut view) = self.cached_view {
@@ -151,8 +146,10 @@ impl<C: Component> Widget<C::Output> for ComponentWidget<C> {
         };
 
         if let Some(internal_msg) = response.message {
-            C::update(&mut self.state, internal_msg.clone());
-            let output_msg = C::map_message(internal_msg, &self.state);
+            // Get state from persistent storage and update it
+            let state = widget_ctx.state_mut().get_or_create_component_state::<C::State>(&self.storage_key);
+            C::update(state, internal_msg.clone());
+            let output_msg = C::map_message(internal_msg, state);
 
             WidgetResponse {
                 message: output_msg,

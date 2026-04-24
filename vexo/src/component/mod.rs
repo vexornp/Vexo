@@ -19,7 +19,7 @@ use crate::widgets::Widget;
 pub trait Component: Sized + 'static {
     type Message: Clone + std::fmt::Debug + Send;
     type Output: Clone + std::fmt::Debug + Send;
-    type State: Default;
+    type State: Default + Clone;
 
     fn initial_state() -> Self::State {
         Self::State::default()
@@ -57,7 +57,7 @@ mod tests {
         CountReached(u32),
     }
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct TestState {
         count: u32,
     }
@@ -96,25 +96,29 @@ mod tests {
     fn test_component_widget_creation() {
         let widget = ComponentWidget::<TestComponent>::new("test");
         assert_eq!(widget.storage_key(), "test");
-        assert_eq!(widget.state().count, 0);
     }
 
     #[test]
     fn test_component_state_update() {
-        let mut widget = ComponentWidget::<TestComponent>::new("test");
-        TestComponent::update(&mut widget.state_mut(), TestMessage::Increment);
-        assert_eq!(widget.state().count, 1);
-        TestComponent::update(&mut widget.state_mut(), TestMessage::Increment);
-        assert_eq!(widget.state().count, 2);
+        let mut storage = ComponentStateStorage::new();
+        let state = storage.get_or_create::<TestState>("test");
+        TestComponent::update(state, TestMessage::Increment);
+        let state = storage.get_or_create::<TestState>("test");
+        assert_eq!(state.count, 1);
+        TestComponent::update(state, TestMessage::Increment);
+        let state = storage.get_or_create::<TestState>("test");
+        assert_eq!(state.count, 2);
     }
 
     #[test]
     fn test_component_message_mapping() {
-        let mut widget = ComponentWidget::<TestComponent>::new("test");
+        let mut storage = ComponentStateStorage::new();
+        let state = storage.get_or_create::<TestState>("test");
         for _ in 0..3 {
-            TestComponent::update(&mut widget.state_mut(), TestMessage::Increment);
+            TestComponent::update(state, TestMessage::Increment);
         }
-        let output = TestComponent::map_message(TestMessage::Increment, &widget.state());
+        let state = storage.get_or_create::<TestState>("test");
+        let output = TestComponent::map_message(TestMessage::Increment, state);
         assert!(matches!(output, Some(TestOutput::CountReached(3))));
     }
 

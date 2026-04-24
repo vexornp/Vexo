@@ -158,6 +158,14 @@ impl WidgetStateRegistry {
         self.component_storage.get_or_create(key)
     }
 
+    /// Get component state by key without creating (returns None if not exists).
+    pub fn get_component_state<S: 'static + Clone>(
+        &self,
+        key: &str,
+    ) -> Option<S> {
+        self.component_storage.get::<S>(key)
+    }
+
     /// Check if component state exists.
     pub fn has_component_state(&self, key: &str) -> bool {
         self.component_storage.contains(key)

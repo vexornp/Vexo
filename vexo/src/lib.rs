@@ -26,6 +26,7 @@ mod macros;
 mod quad_instance;
 pub mod render;
 mod renderer;
+pub use renderer::UiBatcher;
 mod resource;
 pub mod state;
 mod utils;
@@ -33,7 +34,7 @@ pub mod testable;
 pub mod widgets;
 pub mod component;
 
-use renderer::{TextRequest, UiBatcher};
+use renderer::TextRequest;
 use render::{RenderBackend, WgpuBackend};
 use widgets::{Column, Widget, WidgetContext};
 pub use widgets::WidgetExt;
