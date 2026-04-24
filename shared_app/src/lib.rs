@@ -1,5 +1,5 @@
 use vexo::{
-    widgets::Widget,
+    widgets::{MapWidget, Widget},
     Application, WidgetExt,
 };
 uniffi::setup_scaffolding!();
@@ -84,121 +84,6 @@ impl vexo::component::Component for CounterComponent {
                 Some(CounterOutput::CountReached(10))
             }
             _ => None,
-        }
-    }
-}
-
-// --- Message Mapping Widget ---
-
-/// A widget wrapper that maps messages from one type to another.
-pub struct MapWidget<M1, M2, F>
-where
-    M1: Clone + std::fmt::Debug + Send,
-    M2: Clone + std::fmt::Debug + Send,
-    F: Fn(M1) -> M2 + Send,
-{
-    inner: Box<dyn vexo::widgets::Widget<M1>>,
-    mapper: F,
-    computed_layout: Option<vexo::testable::ComputedLayout>,
-}
-
-impl<M1, M2, F> MapWidget<M1, M2, F>
-where
-    M1: Clone + std::fmt::Debug + Send,
-    M2: Clone + std::fmt::Debug + Send,
-    F: Fn(M1) -> M2 + Send,
-{
-    pub fn new(inner: Box<dyn vexo::widgets::Widget<M1>>, mapper: F) -> Self {
-        Self {
-            inner,
-            mapper,
-            computed_layout: None,
-        }
-    }
-}
-
-impl<M1, M2, F> vexo::widgets::Widget<M2> for MapWidget<M1, M2, F>
-where
-    M1: Clone + std::fmt::Debug + Send,
-    M2: Clone + std::fmt::Debug + Send,
-    F: Fn(M1) -> M2 + Send,
-{
-    fn key(&self) -> Option<&str> {
-        self.inner.key()
-    }
-
-    fn layout_props(&self) -> vexo::layout::Layout {
-        self.inner.layout_props()
-    }
-
-    fn cursor(&self) -> vexo::input::CursorIcon {
-        self.inner.cursor()
-    }
-
-    fn layout(
-        &mut self,
-        layout_ctx: &mut vexo::layout::LayoutContext,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) -> vexo::layout::LayoutNodeId {
-        self.inner.layout(layout_ctx, widget_ctx)
-    }
-
-    fn apply_layout(&mut self, layout: vexo::testable::ComputedLayout) {
-        self.computed_layout = Some(layout);
-        self.inner.apply_layout(layout);
-    }
-
-    fn paint(&self, ctx: &mut vexo::testable::PaintContext) -> Vec<vexo::render::RenderCommand> {
-        self.inner.paint(ctx)
-    }
-
-    fn draw(
-        &self,
-        layout_view: &vexo::layout::LayoutView,
-        node: vexo::layout::LayoutNodeId,
-        renderer: &mut vexo::UiBatcher,
-        offset: vexo::core::Point<vexo::core::Logical>,
-        focused_id: Option<vexo::core::WidgetId>,
-        cursor_blink: &vexo::CursorBlinkState,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) {
-        self.inner.draw(
-            layout_view,
-            node,
-            renderer,
-            offset,
-            focused_id,
-            cursor_blink,
-            widget_ctx,
-        );
-    }
-
-    fn on_event(
-        &mut self,
-        layout_view: &vexo::layout::LayoutView,
-        node: vexo::layout::LayoutNodeId,
-        offset: vexo::core::Point<vexo::core::Logical>,
-        event: &vexo::input::InputEvent,
-        focused_id: Option<vexo::core::WidgetId>,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) -> vexo::widgets::WidgetResponse<M2> {
-        let response = self.inner.on_event(
-            layout_view,
-            node,
-            offset,
-            event,
-            focused_id,
-            widget_ctx,
-        );
-
-        let mapped_message = response.message.map(&self.mapper);
-
-        vexo::widgets::WidgetResponse {
-            message: mapped_message,
-            focus_request: response.focus_request,
-            handled: response.handled,
-            clear_focus: response.clear_focus,
-            cursor: response.cursor,
         }
     }
 }
