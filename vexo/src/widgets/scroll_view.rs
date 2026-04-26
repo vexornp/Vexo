@@ -63,11 +63,11 @@ pub struct ScrollView<M: Clone + std::fmt::Debug + Send> {
 }
 
 // ============================================================================
-// BUILDER API (Minimal for tests)
+// BUILDER API
 // ============================================================================
 
 impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
-    /// Create a new ScrollView.
+    /// Create a new empty ScrollView.
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -75,14 +75,28 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
             layout: Layout::default(),
             computed_layout: None,
             content_height: 0.0,
-            scrollbar_width: 10.0,
+            scrollbar_width: 8.0,
             _marker: PhantomData,
         }
     }
 
-    /// Set the key for state persistence.
+    /// Add a child widget.
+    pub fn push(mut self, widget: impl Widget<M> + 'static) -> Self {
+        self.children.push(Box::new(widget));
+        self
+    }
+
+    /// Set a key for state persistence.
+    ///
+    /// The key allows scroll position to persist across view rebuilds.
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set the entire Layout struct.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -95,6 +109,12 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
     /// Set fixed height.
     pub fn height(mut self, value: f32) -> Self {
         self.layout = self.layout.height(value);
+        self
+    }
+
+    /// Set scrollbar width in logical pixels.
+    pub fn scrollbar_width(mut self, width: f32) -> Self {
+        self.scrollbar_width = width;
         self
     }
 }
