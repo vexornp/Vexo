@@ -1,10 +1,10 @@
 //! ScrollView widget - a vertical scrollable container.
 
-use crate::core::{Logical, Point, WidgetId};
+use crate::core::{Color, Logical, Point, Rect, WidgetId};
 use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
-use crate::input::InputEvent;
+use crate::input::{CursorIcon, InputEvent};
 use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
 use std::marker::PhantomData;
@@ -57,8 +57,6 @@ pub struct ScrollView<M: Clone + std::fmt::Debug + Send> {
     layout: Layout,
     /// Computed viewport bounds from layout phase.
     computed_layout: Option<crate::testable::ComputedLayout>,
-    /// Total content height (sum of children heights).
-    content_height: f32,
     /// Scrollbar width in logical pixels.
     scrollbar_width: f32,
     _marker: PhantomData<M>,
@@ -76,7 +74,6 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
             key: None,
             layout: Layout::default(),
             computed_layout: None,
-            content_height: 0.0,
             scrollbar_width: 8.0,
             _marker: PhantomData,
         }
@@ -118,6 +115,45 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
     pub fn scrollbar_width(mut self, width: f32) -> Self {
         self.scrollbar_width = width;
         self
+    }
+
+    /// Draw the scrollbar indicator.
+    fn draw_scrollbar(
+        &self,
+        renderer: &mut UiBatcher,
+        viewport: Rect<Logical>,
+        offset_y: f32,
+        content_height: f32,
+    ) {
+        let max_scroll = content_height - viewport.size.height;
+        if max_scroll <= 0.0 {
+            return;
+        }
+
+        // Calculate scrollbar dimensions
+        let scrollbar_height = (viewport.size.height * viewport.size.height / content_height)
+            .min(viewport.size.height)
+            .max(20.0); // Minimum thumb size
+
+        let scroll_ratio = offset_y / max_scroll;
+        let scrollbar_y = viewport.origin.y + scroll_ratio * (viewport.size.height - scrollbar_height);
+
+        // Draw scrollbar thumb
+        let scrollbar_bounds: Rect<Logical> = Rect::from_xywh(
+            viewport.origin.x + viewport.size.width - self.scrollbar_width - 2.0,
+            scrollbar_y,
+            self.scrollbar_width,
+            scrollbar_height,
+        );
+
+        renderer.add_rect(
+            [scrollbar_bounds.origin.x, scrollbar_bounds.origin.y],
+            [scrollbar_bounds.size.width, scrollbar_bounds.size.height],
+            Color::new(0.5, 0.5, 0.5, 0.5),
+            Color::TRANSPARENT,
+            self.scrollbar_width / 2.0, // Rounded corners
+            0.0,
+        );
     }
 }
 
@@ -213,26 +249,67 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         cursor_blink: &crate::CursorBlinkState,
         widget_context: &mut WidgetContext,
     ) {
-        // TODO: Implement clipping for scroll viewport (Task 5)
-        if let Some(layout) = layout_view.get_layout(node) {
-            let my_offset = Point::<Logical>::new(
-                offset.x + layout.x(),
-                offset.y + layout.y(),
-            );
+        let viewport_layout = match layout_view.get_layout(node) {
+            Some(l) => l,
+            None => return,
+        };
 
-            let child_ids = layout_view.children(node);
-            for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+        let viewport_bounds = viewport_layout.bounds;
+        let viewport_offset: Point<Logical> = Point::new(
+            offset.x + viewport_layout.x(),
+            offset.y + viewport_layout.y(),
+        );
+
+        // Get scroll state
+        let state_key = self.key.clone().unwrap_or_else(|| "__scroll_default__".to_string());
+        let scroll_state = widget_context.state_mut()
+            .component_storage()
+            .get_or_create::<ScrollState>(&state_key);
+        let offset_y = scroll_state.offset_y;
+
+        // Calculate content height from children
+        let child_ids = layout_view.children(node);
+        let content_height: f32 = child_ids.iter()
+            .filter_map(|id| layout_view.get_layout(*id))
+            .map(|l| l.bounds.origin.y - viewport_bounds.origin.y + l.bounds.size.height)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0);
+
+        // Push clip for viewport
+        renderer.push_clip(viewport_bounds);
+
+        // Draw children with scroll offset applied
+        for (child_widget, child_node_id) in self.children.iter().zip(child_ids.iter()) {
+            if let Some(child_layout) = layout_view.get_layout(*child_node_id) {
+                // Apply scroll offset to child position
+                let child_offset = Point::new(
+                    viewport_offset.x,
+                    viewport_offset.y - offset_y,
+                );
+
                 child_widget.draw(
                     layout_view,
-                    child_node_id,
+                    *child_node_id,
                     renderer,
-                    my_offset,
+                    child_offset,
                     focused_id,
                     cursor_blink,
                     widget_context,
                 );
             }
         }
+
+        // Pop clip
+        renderer.pop_clip();
+
+        // Draw scrollbar if content exceeds viewport
+        if content_height > viewport_bounds.size.height {
+            self.draw_scrollbar(renderer, viewport_bounds, offset_y, content_height);
+        }
+    }
+
+    fn cursor(&self) -> CursorIcon {
+        CursorIcon::Default
     }
 
     fn on_event(
