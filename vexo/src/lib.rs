@@ -1,21 +1,22 @@
 use glyphon::{cosmic_text, Metrics, TextBounds};
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Instant;
 
 use winit::dpi::PhysicalSize;
-use winit::event::*;
 use winit::event_loop::EventLoop;
-use winit::window::{WindowAttributes, WindowId};
 
 use winit::{
-    application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
+    event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
 };
 
 pub use color::Color;
 pub use uniffi;
+
+mod app;
+pub use app::{KeyBindingAction, VexoApp};
 
 mod color;
 pub mod core;
@@ -27,17 +28,17 @@ mod quad_instance;
 pub mod render;
 mod renderer;
 pub use renderer::UiBatcher;
+pub mod component;
 mod resource;
 pub mod state;
-mod utils;
 pub mod testable;
+mod utils;
 pub mod widgets;
-pub mod component;
 
-use renderer::TextRequest;
 use render::{RenderBackend, WgpuBackend};
-use widgets::{Column, Widget, WidgetContext};
+use renderer::TextRequest;
 pub use widgets::WidgetExt;
+use widgets::{Column, Widget, WidgetContext};
 pub use winit::dpi::PhysicalPosition;
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
@@ -47,6 +48,40 @@ use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, Taffy
 pub use layout::AlignItems;
 
 extern crate alloc;
+
+// ============================================================================
+// TEXT BUFFER CACHE
+// ============================================================================
+
+/// Cache key for text buffers to avoid recreating/shaping every frame.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TextCacheKey {
+    content: String,
+    font_size_bits: u32,
+    color_bits: [u32; 4],
+}
+
+impl TextCacheKey {
+    fn from_request(req: &TextRequest) -> Self {
+        Self {
+            content: req.content.clone(),
+            font_size_bits: req.size.to_bits(),
+            color_bits: [
+                req.color[0].to_bits(),
+                req.color[1].to_bits(),
+                req.color[2].to_bits(),
+                req.color[3].to_bits(),
+            ],
+        }
+    }
+}
+
+/// Cached text buffer with its shaped content.
+struct CachedTextBuffer {
+    buffer: glyphon::Buffer,
+    /// Generation counter to detect stale entries
+    generation: u64,
+}
 
 pub struct WindowState<A: Application + 'static> {
     // GPU rendering backend
@@ -71,6 +106,11 @@ pub struct WindowState<A: Application + 'static> {
 
     // Current cursor icon (for detecting changes)
     current_cursor: CursorIcon,
+
+    // Text buffer cache to avoid recreating/shaping every frame
+    text_cache: HashMap<TextCacheKey, CachedTextBuffer>,
+    /// Generation counter for cache invalidation
+    cache_generation: u64,
 }
 
 /// Tracks cursor blink timing for focused text inputs.
@@ -162,14 +202,14 @@ impl<A: Application + 'static> WindowState<A> {
             widget_context: ctx,
             cursor_blink: CursorBlinkState::new(),
             current_cursor: CursorIcon::default(),
+            text_cache: HashMap::new(),
+            cache_generation: 0,
         })
     }
 
     pub fn resize_physical(&mut self, size: Size<Physical>) {
-        let config = render::RenderConfig::new(
-            size,
-            Scale::new(self.widget_context.scale.factor() as f64),
-        );
+        let config =
+            render::RenderConfig::new(size, Scale::new(self.widget_context.scale.factor() as f64));
         self.backend.resize(config);
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -209,7 +249,11 @@ impl<A: Application + 'static> WindowState<A> {
         let new_root_node_id = new_root_widget.layout(&mut layout_ctx, &mut self.widget_context);
 
         // Compute layout
-        self.layout_engine.compute(new_root_node_id, logical_size, &mut self.widget_context.font_system);
+        self.layout_engine.compute(
+            new_root_node_id,
+            logical_size,
+            &mut self.widget_context.font_system,
+        );
 
         self.root_widget = new_root_widget;
         self.root_node_id = new_root_node_id;
@@ -227,39 +271,64 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
-        let physical_size = Size::<Physical>::new(
-            self.backend.width() as f32,
-            self.backend.height() as f32,
-        );
+        let physical_size =
+            Size::<Physical>::new(self.backend.width() as f32, self.backend.height() as f32);
 
         // Update viewport resolution
         self.backend.update_viewport(physical_size);
 
+        // Increment generation for cache eviction tracking
+        self.cache_generation += 1;
+        let current_gen = self.cache_generation;
+
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 
         for req in self.batcher.text_requests.drain(..) {
-            // Create the Glyphon text buffer
-            let mut buffer = glyphon::Buffer::new(
-                &mut self.widget_context.font_system,
-                Metrics::new(req.size, req.size * 1.2),
-            );
+            let cache_key = TextCacheKey::from_request(&req);
 
-            // Convert float color to u8 color for cosmic_text::Color (Glyphon's color type)
-            let color_rgba_u8 = cosmic_text::Color::rgba(
-                (req.color[0] * 255.0) as u8,
-                (req.color[1] * 255.0) as u8,
-                (req.color[2] * 255.0) as u8,
-                (req.color[3] * 255.0) as u8,
-            );
+            // Try to get cached buffer
+            let buffer = if let Some(cached) = self.text_cache.get_mut(&cache_key) {
+                cached.generation = current_gen;
+                cached.buffer.clone()
+            } else {
+                // Create and shape new buffer
+                let mut buffer = glyphon::Buffer::new(
+                    &mut self.widget_context.font_system,
+                    Metrics::new(req.size, req.size * 1.2),
+                );
 
-            buffer.set_text(
-                &mut self.widget_context.font_system,
-                &req.content,
-                &glyphon::Attrs::new().color(color_rgba_u8),
-                glyphon::Shaping::Advanced,
-            );
-            buffer.shape_until_scroll(&mut self.widget_context.font_system, true);
+                let color_rgba_u8 = cosmic_text::Color::rgba(
+                    (req.color[0] * 255.0) as u8,
+                    (req.color[1] * 255.0) as u8,
+                    (req.color[2] * 255.0) as u8,
+                    (req.color[3] * 255.0) as u8,
+                );
+
+                buffer.set_text(
+                    &mut self.widget_context.font_system,
+                    &req.content,
+                    &glyphon::Attrs::new().color(color_rgba_u8),
+                    glyphon::Shaping::Advanced,
+                );
+                buffer.shape_until_scroll(&mut self.widget_context.font_system, true);
+
+                // Cache the buffer
+                self.text_cache.insert(cache_key, CachedTextBuffer {
+                    buffer: buffer.clone(),
+                    generation: current_gen,
+                });
+
+                buffer
+            };
+
             processed_texts.push((buffer, req));
+        }
+
+        // Periodically evict stale cache entries (every 100 frames)
+        if current_gen % 100 == 0 {
+            self.text_cache.retain(|_, cached| {
+                current_gen - cached.generation < 100
+            });
         }
 
         // Create Text Areas from the processed buffers and Taffy positions
@@ -270,7 +339,9 @@ impl<A: Application + 'static> WindowState<A> {
                 let physical_pos = req.position.to_physical(scale);
 
                 // Use clip bounds if set, otherwise use screen bounds
-                let (bounds_left, bounds_top, bounds_right, bounds_bottom) = if req.clip_bounds[2] > 0.0 {
+                let (bounds_left, bounds_top, bounds_right, bounds_bottom) = if req.clip_bounds[2]
+                    > 0.0
+                {
                     // Clip bounds are in logical coordinates - convert to physical
                     let clip_left = req.clip_bounds[0] * scale.factor();
                     let clip_top = req.clip_bounds[1] * scale.factor();
@@ -334,8 +405,10 @@ impl<A: Application + 'static> WindowState<A> {
 
             let bounds_left: i32 = physical_rect.origin.x.floor() as i32;
             let bounds_top: i32 = physical_rect.origin.y.floor() as i32;
-            let bounds_right: i32 = (physical_rect.origin.x + physical_rect.size.width).ceil() as i32;
-            let bounds_bottom: i32 = (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
+            let bounds_right: i32 =
+                (physical_rect.origin.x + physical_rect.size.width).ceil() as i32;
+            let bounds_bottom: i32 =
+                (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
 
             let color_rgba_u8 = cosmic_text::Color::rgba(
                 (req.color[0] * 255.0) as u8,
@@ -392,11 +465,13 @@ impl<A: Application + 'static> WindowState<A> {
         combined_text_areas.extend(editor_areas.into_iter());
 
         // Prepare text rendering
-        self.backend.prepare_text(&mut self.widget_context.font_system, combined_text_areas);
+        self.backend
+            .prepare_text(&mut self.widget_context.font_system, combined_text_areas);
 
         // Execute render pass
         let instance_count = self.batcher.quad_instances.len();
-        self.backend.execute_render_pass(instance_count)
+        self.backend
+            .execute_render_pass(instance_count)
             .map_err(|e| match e {
                 render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
                 render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,
@@ -421,10 +496,8 @@ impl<A: Application + 'static> WindowState<A> {
         event: &winit::event::WindowEvent,
     ) {
         // Convert winit event to InputEvent
-        let input_event = crate::input::InputEvent::from_winit(
-            event,
-            self.widget_context.scale.clone(),
-        );
+        let input_event =
+            crate::input::InputEvent::from_winit(event, self.widget_context.scale.clone());
 
         // Only process events that convert to InputEvent
         let Some(input_event) = input_event else {
@@ -461,7 +534,6 @@ impl<A: Application + 'static> WindowState<A> {
 
         // Check if event if handled, notify if needed
         if widget_response.handled {
-            println!("Event handled by widget");
             // Reset cursor blink on keyboard input
             if let crate::input::InputEvent::Keyboard { .. } = input_event {
                 self.cursor_blink.reset();
@@ -515,170 +587,6 @@ impl<A: Application + 'static> WindowState<A> {
     }
 }
 
-pub struct MyApp<A: Application + 'static> {
-    receiver: Receiver<KeyBindingAction>,
-    sender: Sender<KeyBindingAction>,
-    windows: HashMap<WindowId, WindowState<A>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyBindingAction {
-    CloseWindow,
-    Message,
-}
-
-impl<A: Application + 'static> MyApp<A> {
-    pub fn new(
-        _event_loop: &EventLoop,
-        receiver: Receiver<KeyBindingAction>,
-        sender: Sender<KeyBindingAction>,
-    ) -> Self {
-        Self {
-            receiver,
-            sender,
-            windows: Default::default(),
-        }
-    }
-
-    pub fn try_init_framework_state(&mut self, window: Box<dyn Window>) -> Option<WindowId> {
-        let window: Arc<dyn Window> = Arc::from(window);
-        let window_id = window.id();
-        let size = window.surface_size();
-        let width = size.width;
-        let height = size.height;
-        let window_state = self.windows.get(&window_id);
-        if width > 0 && height > 0 && window_state.is_none() {
-            println!(
-                "SUCCESS: Window ready at {}x{}, scale: {}",
-                size.width,
-                size.height,
-                window.scale_factor()
-            );
-            let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
-            state.resize_physical(Size::new(width as f32, height as f32));
-            self.windows.insert(window_id, state);
-            return Some(window_id);
-        }
-
-        return None;
-    }
-
-    fn handle_action_from_proxy(
-        &mut self,
-        _event_loop: &dyn ActiveEventLoop,
-        action: KeyBindingAction,
-    ) {
-        match action {
-            KeyBindingAction::Message => {
-                println!("Use wake up")
-            }
-            _ => {}
-        }
-    }
-
-    fn create_window(
-        &mut self,
-        event_loop: &dyn ActiveEventLoop,
-    ) -> Result<WindowId, Box<dyn Error>> {
-        let window_attr = WindowAttributes::default();
-        let window = event_loop.create_window(window_attr).unwrap();
-        let wid = self.try_init_framework_state(window);
-        return Result::Ok(wid.unwrap());
-    }
-}
-
-impl<A: Application + 'static> ApplicationHandler for MyApp<A> {
-    // fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
-    //     if !self.windows.is_empty() {
-    //         println!("app resumed, already have window");
-    //         return;
-    //     }
-
-    //     println!("app resumed, create initial window");
-    //     let window_attributes = WindowAttributes::default();
-    //     let window = event_loop.create_window(window_attributes).unwrap();
-    //     self.try_init_framework_state(window);
-    // }
-
-    fn window_event(
-        &mut self,
-        event_loop: &dyn ActiveEventLoop,
-        window_id: winit::window::WindowId,
-        event: WindowEvent,
-    ) {
-        let window_state = match self.windows.get_mut(&window_id) {
-            Some(ws) => ws,
-            None => return,
-        };
-
-        match event {
-            WindowEvent::SurfaceResized(size) => {
-                window_state.resize(size);
-            }
-            WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                surface_size_writer: _,
-            } => {
-                window_state.widget_context.scale = Scale::new(scale_factor);
-                println!("Scale factor changed to {}", scale_factor);
-            }
-            WindowEvent::PointerMoved {
-                device_id: _,
-                position,
-                primary: _,
-                source: _,
-            } => {
-                window_state.widget_context.cursor_pos = Point::<Physical>::new(position.x as f32, position.y as f32);
-            }
-            WindowEvent::RedrawRequested => {
-                if let Err(err) = window_state.render() {
-                    println!("Error drawing window: {err}")
-                }
-            }
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-                println!("Window closed by user");
-            }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: winit::keyboard::PhysicalKey::Code(KeyCode::Escape),
-                        state: ElementState::Pressed,
-                        repeat: false,
-                        ..
-                    },
-                ..
-            } => {
-                event_loop.exit();
-                println!("Escape pressed, exiting");
-            }
-            _ => (),
-        }
-
-        window_state.handle_window_event(event_loop, window_id, &event);
-    }
-
-    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
-        while let Ok(action) = self.receiver.try_recv() {
-            self.handle_action_from_proxy(event_loop, action);
-        }
-    }
-
-    fn device_event(
-        &mut self,
-        _event_loop: &dyn ActiveEventLoop,
-        _device_id: Option<DeviceId>,
-        _event: DeviceEvent,
-    ) {
-    }
-
-    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
-        println!("Ready to create surfaces");
-        self.create_window(event_loop)
-            .expect("Failed to create initial window");
-    }
-}
-
 pub trait Application {
     type Message: Clone + std::fmt::Debug + Send;
     type State: Sized;
@@ -710,10 +618,10 @@ pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>
         });
     }
 
-    let app = MyApp::<A>::new(&event_loop, receiver, sender);
+    let app = VexoApp::<A>::new(&event_loop, receiver, sender);
 
     // let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
-    // let mut app = crate::MyApp::<A>::new();
+    // let mut app = crate::VexoApp::<A>::new();
     // event_loop.run_app(&mut app)?;
     Result::Ok(event_loop.run_app(app)?)
 }
