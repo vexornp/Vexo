@@ -4,7 +4,7 @@ use crate::core::{Color, Logical, Point, Rect, WidgetId};
 use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
-use crate::input::{CursorIcon, InputEvent};
+use crate::input::{ButtonState, CursorIcon, InputEvent, Key, NamedKey, PointerButton};
 use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
 use std::marker::PhantomData;
@@ -321,37 +321,136 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         focused_id: Option<WidgetId>,
         widget_context: &mut WidgetContext,
     ) -> WidgetResponse<M> {
-        // TODO: Implement scroll-specific event handling (Task 6)
-        if let Some(layout) = layout_view.get_layout(node) {
-            let child_ids = layout_view.children(node);
-            let my_offset = Point::new(
-                offset.x + layout.x(),
-                offset.y + layout.y(),
-            );
+        let viewport_layout = match layout_view.get_layout(node) {
+            Some(l) => l,
+            None => return WidgetResponse::default(),
+        };
 
-            // Handle PointerMoved - propagate to child that contains pointer
-            if let InputEvent::PointerMoved { .. } = event {
-                return super::propagate_pointer_moved_to_containing_child(
-                    &mut self.children,
-                    &child_ids,
-                    layout_view,
-                    my_offset,
-                    event,
-                    focused_id,
-                    widget_context,
-                );
+        let viewport_bounds = viewport_layout.bounds;
+        let viewport_offset: Point<Logical> = Point::new(
+            offset.x + viewport_layout.x(),
+            offset.y + viewport_layout.y(),
+        );
+
+        // Calculate content height from children
+        let child_ids = layout_view.children(node);
+        let content_height: f32 = child_ids.iter()
+            .filter_map(|id| layout_view.get_layout(*id))
+            .map(|l| l.bounds.origin.y - viewport_bounds.origin.y + l.bounds.size.height)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0);
+
+        let max_scroll = (content_height - viewport_bounds.size.height).max(0.0);
+
+        // Get or create scroll state
+        let state_key = self.key.clone().unwrap_or_else(|| "__scroll_default__".to_string());
+        let scroll_state = widget_context.state_mut()
+            .component_storage()
+            .get_or_create::<ScrollState>(&state_key);
+
+        // Handle scroll wheel
+        if let InputEvent::Scroll { delta } = event {
+            if max_scroll > 0.0 {
+                scroll_state.offset_y = (scroll_state.offset_y + delta.y).clamp(0.0, max_scroll);
+                return WidgetResponse { handled: true, ..Default::default() };
             }
+        }
 
-            // Handle other events
-            for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
-                let child_response =
-                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
+        // Handle drag gesture start
+        if let InputEvent::PointerButton {
+            position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        } = event {
+            if viewport_bounds.contains(position) && max_scroll > 0.0 {
+                scroll_state.is_dragging = true;
+                scroll_state.drag_start_y = position.y;
+                scroll_state.drag_start_offset = scroll_state.offset_y;
+                return WidgetResponse { handled: true, ..Default::default() };
+            }
+        }
 
-                if child_response.handled || child_response.focus_request.is_some() {
-                    return child_response;
+        // Handle drag gesture move
+        if let InputEvent::PointerMoved { position } = event {
+            if scroll_state.is_dragging {
+                let drag_delta = scroll_state.drag_start_y - position.y;
+                scroll_state.offset_y = (scroll_state.drag_start_offset + drag_delta)
+                    .clamp(0.0, max_scroll);
+                return WidgetResponse { handled: true, ..Default::default() };
+            }
+        }
+
+        // Handle drag gesture end
+        if let InputEvent::PointerButton {
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+            ..
+        } = event {
+            scroll_state.is_dragging = false;
+        }
+
+        // Handle keyboard navigation
+        if let InputEvent::Keyboard { key, state: ButtonState::Pressed, .. } = event {
+            let scroll_id = self.key.as_ref().map(|k| WidgetId::from_key(k));
+            if focused_id == scroll_id {
+                match key {
+                    Key::Named(NamedKey::ArrowDown) => {
+                        scroll_state.offset_y = (scroll_state.offset_y + 20.0)
+                            .clamp(0.0, max_scroll);
+                        return WidgetResponse { handled: true, ..Default::default() };
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        scroll_state.offset_y = (scroll_state.offset_y - 20.0)
+                            .clamp(0.0, max_scroll);
+                        return WidgetResponse { handled: true, ..Default::default() };
+                    }
+                    Key::Named(NamedKey::PageDown) => {
+                        scroll_state.offset_y = (scroll_state.offset_y + viewport_bounds.size.height)
+                            .clamp(0.0, max_scroll);
+                        return WidgetResponse { handled: true, ..Default::default() };
+                    }
+                    Key::Named(NamedKey::PageUp) => {
+                        scroll_state.offset_y = (scroll_state.offset_y - viewport_bounds.size.height)
+                            .clamp(0.0, max_scroll);
+                        return WidgetResponse { handled: true, ..Default::default() };
+                    }
+                    _ => {}
                 }
             }
         }
+
+        // Extract scroll offset before propagating to children (to release borrow on widget_context)
+        let offset_y = scroll_state.offset_y;
+
+        // Propagate events to children with scroll offset applied
+        for (child, child_node_id) in self.children.iter_mut().zip(child_ids.iter()) {
+            if let Some(child_layout) = layout_view.get_layout(*child_node_id) {
+                let child_top = child_layout.bounds.origin.y - viewport_bounds.origin.y - offset_y;
+                let child_bottom = child_top + child_layout.bounds.size.height;
+
+                // Only propagate to visible children
+                if child_bottom >= 0.0 && child_top <= viewport_bounds.size.height {
+                    let child_offset = Point::new(
+                        viewport_offset.x,
+                        viewport_offset.y - offset_y,
+                    );
+
+                    let response = child.on_event(
+                        layout_view,
+                        *child_node_id,
+                        child_offset,
+                        event,
+                        focused_id,
+                        widget_context,
+                    );
+
+                    if response.handled || response.focus_request.is_some() {
+                        return response;
+                    }
+                }
+            }
+        }
+
         WidgetResponse::default()
     }
 }
