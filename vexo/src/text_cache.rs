@@ -10,6 +10,9 @@ use glyphon::{cosmic_text, Attrs, Buffer, FontSystem, Metrics, Shaping};
 
 use crate::renderer::TextRequest;
 
+/// Maximum number of frames a cache entry can remain unused before eviction.
+const MAX_STALE_FRAMES: u64 = 100;
+
 /// Cache key for text buffers to avoid recreating/shaping every frame.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TextCacheKey {
@@ -108,10 +111,10 @@ impl TextCache {
 
     /// Evict cache entries not used in recent frames.
     ///
-    /// Should be called periodically (e.g., every 100 frames).
+    /// Entries unused for more than `MAX_STALE_FRAMES` are removed.
     pub fn evict_stale(&mut self) {
         let current_gen = self.generation;
-        self.cache.retain(|_, cached| current_gen - cached.generation < 100);
+        self.cache.retain(|_, cached| current_gen - cached.generation < MAX_STALE_FRAMES);
     }
 }
 
