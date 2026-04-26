@@ -7,6 +7,7 @@ struct VertexOutput {
     @location(3) border_width: f32,
     @location(4) size: vec2<f32>,
     @location(5) corner_radius: f32,
+    @location(6) clip_bounds: vec4<f32>, // x, y, width, height in logical coords
 };
 
 struct GlobalUniforms {
@@ -25,6 +26,7 @@ fn vs_main(
     @location(4) inst_border_color: vec4<f32>,
     @location(5) inst_border_width: f32,
     @location(6) inst_corner_radius: f32,
+    @location(7) inst_clip_bounds: vec4<f32>,
 ) -> VertexOutput {
     // Multiply incoming logical points by the scale factor to get physical pixels
     let scaled_pos = inst_pos * globals.scale_factor;
@@ -45,12 +47,32 @@ fn vs_main(
     out.size = scaled_size;
     out.border_width = inst_border_width;
     out.corner_radius = inst_corner_radius * globals.scale_factor;
+    out.clip_bounds = inst_clip_bounds;
     return out;
 }
 
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Clipping: discard pixels outside clip bounds
+    // clip_bounds is (x, y, width, height) in logical coordinates
+    // If width <= 0 or height <= 0, no clipping is applied
+    if (in.clip_bounds.z > 0.0 && in.clip_bounds.w > 0.0) {
+        // Convert UV to absolute pixel position in logical coordinates
+        let rect_pos = in.clip_position.xy;
+        // Convert from NDC back to logical coordinates
+        let logical_x = (rect_pos.x + 1.0) * 0.5 * (globals.screen_size.x / globals.scale_factor);
+        let logical_y = (1.0 - rect_pos.y) * 0.5 * (globals.screen_size.y / globals.scale_factor);
+
+        // Check if outside clip bounds
+        if (logical_x < in.clip_bounds.x ||
+            logical_y < in.clip_bounds.y ||
+            logical_x > in.clip_bounds.x + in.clip_bounds.z ||
+            logical_y > in.clip_bounds.y + in.clip_bounds.w) {
+            discard;
+        }
+    }
+
     // Clamp radius to at most half the smallest dimension
     let radius = min(in.corner_radius, min(in.size.x, in.size.y) * 0.5);
 

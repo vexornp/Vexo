@@ -9,6 +9,8 @@ pub struct QuadInstance {
     pub border_color: [f32; 4],
     pub border_width: f32,
     pub corner_radius: f32,
+    // Clipping bounds (x, y, width, height). If width/height <= 0, no clipping.
+    pub clip_bounds: [f32; 4],
     pub _padding: [f32; 2], // Maintain 16-byte alignment for safety
 }
 
@@ -29,6 +31,7 @@ impl QuadInstance {
             border_color: border_color.to_array(),
             border_width,
             corner_radius,
+            clip_bounds: [-1.0, -1.0, -1.0, -1.0], // No clipping by default
             _padding: [0.0; 2],
         }
     }
@@ -69,6 +72,11 @@ impl QuadInstance {
                     shader_location: 6,
                     format: wgpu::VertexFormat::Float32,
                 }, // corner_radius
+                wgpu::VertexAttribute {
+                    offset: 56,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                }, // clip_bounds
             ],
         }
     }

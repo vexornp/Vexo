@@ -136,6 +136,12 @@ impl UiBatcher {
             self.current_corner_radius()
         };
 
+        // Get current clip bounds, or use negative values to indicate no clipping
+        let clip_bounds = match self.current_clip() {
+            Some(bounds) => [bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height],
+            None => [-1.0, -1.0, -1.0, -1.0], // No clipping
+        };
+
         self.quad_instances.push(quad_instance::QuadInstance {
             position: pos,
             size,
@@ -143,6 +149,7 @@ impl UiBatcher {
             border_color: border_color.to_array(),
             border_width,
             corner_radius: radius,
+            clip_bounds,
             _padding: [0.0; 2],
         });
     }
