@@ -268,10 +268,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         let offset_y = scroll_state.offset_y;
 
         // Calculate content height from children
+        // Children are laid out relative to the ScrollView's content origin (0, 0)
+        // Find the maximum bottom edge among all children
         let child_ids = layout_view.children(node);
         let content_height: f32 = child_ids.iter()
             .filter_map(|id| layout_view.get_layout(*id))
-            .map(|l| l.bounds.origin.y - viewport_bounds.origin.y + l.bounds.size.height)
+            .map(|l| l.bounds.origin.y + l.bounds.size.height)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
@@ -339,10 +341,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         );
 
         // Calculate content height from children
+        // Children are laid out relative to the ScrollView's content origin (0, 0)
+        // Find the maximum bottom edge among all children
         let child_ids = layout_view.children(node);
         let content_height: f32 = child_ids.iter()
             .filter_map(|id| layout_view.get_layout(*id))
-            .map(|l| l.bounds.origin.y - viewport_bounds.origin.y + l.bounds.size.height)
+            .map(|l| l.bounds.origin.y + l.bounds.size.height)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
