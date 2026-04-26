@@ -26,6 +26,8 @@ pub struct TextRequest {
     pub position: Point<Logical>,
     pub size: f32,
     pub color: [f32; 4],
+    // Clipping bounds (x, y, width, height). If width <= 0, no clipping.
+    pub clip_bounds: [f32; 4],
 }
 
 pub type Bounds = Rect<Logical>;
@@ -162,11 +164,19 @@ impl UiBatcher {
         color: impl Into<Color>,
     ) {
         let color: Color = color.into();
+
+        // Get current clip bounds, or use negative values to indicate no clipping
+        let clip_bounds = match self.current_clip() {
+            Some(bounds) => [bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height],
+            None => [-1.0, -1.0, -1.0, -1.0], // No clipping
+        };
+
         self.text_requests.push(TextRequest {
             content,
             position,
             size,
             color: color.to_array(),
+            clip_bounds,
         });
     }
 

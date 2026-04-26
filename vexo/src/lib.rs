@@ -269,10 +269,28 @@ impl<A: Application + 'static> WindowState<A> {
                 // Convert logical position to physical for glyphon
                 let physical_pos = req.position.to_physical(scale);
 
-                let bounds_left: i32 = physical_pos.x.floor() as i32;
-                let bounds_top = physical_pos.y.floor() as i32;
-                let bounds_right = physical_size.width_u32() as i32;
-                let bounds_bottom: i32 = physical_size.height_u32() as i32;
+                // Use clip bounds if set, otherwise use screen bounds
+                let (bounds_left, bounds_top, bounds_right, bounds_bottom) = if req.clip_bounds[2] > 0.0 {
+                    // Clip bounds are in logical coordinates - convert to physical
+                    let clip_left = req.clip_bounds[0] * scale.factor();
+                    let clip_top = req.clip_bounds[1] * scale.factor();
+                    let clip_right = (req.clip_bounds[0] + req.clip_bounds[2]) * scale.factor();
+                    let clip_bottom = (req.clip_bounds[1] + req.clip_bounds[3]) * scale.factor();
+                    (
+                        clip_left.floor() as i32,
+                        clip_top.floor() as i32,
+                        clip_right.ceil() as i32,
+                        clip_bottom.ceil() as i32,
+                    )
+                } else {
+                    // No clipping - use full screen
+                    (
+                        physical_pos.x.floor() as i32,
+                        physical_pos.y.floor() as i32,
+                        physical_size.width_u32() as i32,
+                        physical_size.height_u32() as i32,
+                    )
+                };
 
                 let color_rgba_u8 = cosmic_text::Color::rgba(
                     (req.color[0] * 255.0) as u8,
