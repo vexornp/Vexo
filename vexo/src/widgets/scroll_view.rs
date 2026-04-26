@@ -1,9 +1,11 @@
 //! ScrollView widget - a vertical scrollable container.
 
-use crate::core::{WidgetId};
-use crate::layout::{Layout};
+use crate::core::{Logical, Point, WidgetId};
+use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
 use crate::input::InputEvent;
+use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
 use std::marker::PhantomData;
 
@@ -160,6 +162,120 @@ impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for ScrollV
     ) -> crate::testable::InteractionResponse<M> {
         // Container widgets delegate event handling to children
         crate::testable::InteractionResponse::default()
+    }
+}
+
+// ============================================================================
+// WIDGET TRAIT IMPLEMENTATION
+// ============================================================================
+
+#[allow(unused_variables)]
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
+    fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    fn layout(
+        &mut self,
+        layout_context: &mut LayoutContext,
+        widget_context: &mut WidgetContext,
+    ) -> LayoutNodeId {
+        // Layout all children first, collecting their node IDs
+        let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
+        for child in self.children.iter_mut() {
+            child_nodes.push(child.layout(layout_context, widget_context));
+        }
+
+        // Create container with flex direction Column
+        let layout = Layout {
+            flex_direction: Some(FlexDirection::Column),
+            ..self.layout.clone()
+        };
+
+        layout_context.create_container(&layout, &child_nodes)
+    }
+
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+
+    fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        crate::testable::Paint::paint(self, ctx)
+    }
+
+    fn draw(
+        &self,
+        layout_view: &LayoutView,
+        node: LayoutNodeId,
+        renderer: &mut UiBatcher,
+        offset: Point<Logical>,
+        focused_id: Option<WidgetId>,
+        cursor_blink: &crate::CursorBlinkState,
+        widget_context: &mut WidgetContext,
+    ) {
+        // TODO: Implement clipping for scroll viewport (Task 5)
+        if let Some(layout) = layout_view.get_layout(node) {
+            let my_offset = Point::<Logical>::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+
+            let child_ids = layout_view.children(node);
+            for (child_widget, child_node_id) in self.children.iter().zip(child_ids) {
+                child_widget.draw(
+                    layout_view,
+                    child_node_id,
+                    renderer,
+                    my_offset,
+                    focused_id,
+                    cursor_blink,
+                    widget_context,
+                );
+            }
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        layout_view: &LayoutView,
+        node: LayoutNodeId,
+        offset: Point<Logical>,
+        event: &InputEvent,
+        focused_id: Option<WidgetId>,
+        widget_context: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        // TODO: Implement scroll-specific event handling (Task 6)
+        if let Some(layout) = layout_view.get_layout(node) {
+            let child_ids = layout_view.children(node);
+            let my_offset = Point::new(
+                offset.x + layout.x(),
+                offset.y + layout.y(),
+            );
+
+            // Handle PointerMoved - propagate to child that contains pointer
+            if let InputEvent::PointerMoved { .. } = event {
+                return super::propagate_pointer_moved_to_containing_child(
+                    &mut self.children,
+                    &child_ids,
+                    layout_view,
+                    my_offset,
+                    event,
+                    focused_id,
+                    widget_context,
+                );
+            }
+
+            // Handle other events
+            for (child, child_node_id) in self.children.iter_mut().zip(child_ids) {
+                let child_response =
+                    child.on_event(layout_view, child_node_id, my_offset, event, focused_id, widget_context);
+
+                if child_response.handled || child_response.focus_request.is_some() {
+                    return child_response;
+                }
+            }
+        }
+        WidgetResponse::default()
     }
 }
 
