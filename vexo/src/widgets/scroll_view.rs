@@ -355,9 +355,10 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             .get_or_create::<ScrollState>(&state_key);
 
         // Handle scroll wheel
+        // Note: macOS natural scrolling - scrolling down (positive delta.y) should move content up (decrease offset)
         if let InputEvent::Scroll { delta } = event {
             if max_scroll > 0.0 {
-                scroll_state.offset_y = (scroll_state.offset_y + delta.y).clamp(0.0, max_scroll);
+                scroll_state.offset_y = (scroll_state.offset_y - delta.y).clamp(0.0, max_scroll);
                 return WidgetResponse { handled: true, ..Default::default() };
             }
         }
