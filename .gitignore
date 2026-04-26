@@ -1,6 +1,7 @@
 /target
 /out
 /VexoDemo/SharedApp/.build
+/VexoDemo/SharedApp/shared_appFFI.xcframework/
 **/*.xcodeproj
 **/*.xcuserdata
 **/xcuserdata/
