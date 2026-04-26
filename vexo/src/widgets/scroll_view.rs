@@ -275,8 +275,14 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
-        // Push clip for viewport
-        renderer.push_clip(viewport_bounds);
+        // Push clip for viewport - use absolute screen coordinates
+        let clip_bounds = Rect::from_xywh(
+            viewport_offset.x,
+            viewport_offset.y,
+            viewport_bounds.size.width,
+            viewport_bounds.size.height,
+        );
+        renderer.push_clip(clip_bounds);
 
         // Draw children with scroll offset applied
         for (child_widget, child_node_id) in self.children.iter().zip(child_ids.iter()) {
