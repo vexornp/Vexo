@@ -7,6 +7,7 @@ use crate::render::RenderCommand;
 use crate::input::{ButtonState, CursorIcon, InputEvent, Key, NamedKey, PointerButton};
 use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
 // ============================================================================
@@ -26,6 +27,8 @@ pub struct ScrollState {
     pub drag_start_y: f32,
     /// Scroll offset when drag started.
     pub drag_start_offset: f32,
+    /// Cached content height from last layout calculation.
+    pub content_height: f32,
 }
 
 // ============================================================================
@@ -53,6 +56,8 @@ pub struct ScrollView<M: Clone + std::fmt::Debug + Send> {
     children: Vec<Box<dyn Widget<M>>>,
     /// Optional key for state persistence.
     key: Option<String>,
+    /// Cached state key for component storage (avoids allocations).
+    state_key: Cow<'static, str>,
     /// Layout properties for the viewport.
     layout: Layout,
     /// Computed viewport bounds from layout phase.
@@ -72,6 +77,7 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
         Self {
             children: Vec::new(),
             key: None,
+            state_key: Cow::Borrowed("__scroll_default__"),
             layout: Layout::default(),
             computed_layout: None,
             scrollbar_width: 8.0,
@@ -89,7 +95,9 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
     ///
     /// The key allows scroll position to persist across view rebuilds.
     pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
+        let key_str = key.into();
+        self.state_key = Cow::Owned(key_str.clone());
+        self.key = Some(key_str);
         self
     }
 
@@ -260,14 +268,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             offset.y + viewport_layout.y(),
         );
 
-        // Get scroll state
-        let state_key = self.key.clone().unwrap_or_else(|| "__scroll_default__".to_string());
+        // Get scroll state using cached state_key (no allocation)
         let scroll_state = widget_context.state_mut()
             .component_storage()
-            .get_or_create::<ScrollState>(&state_key);
+            .get_or_create::<ScrollState>(&self.state_key);
         let offset_y = scroll_state.offset_y;
 
-        // Calculate content height from children
+        // Calculate content height from children and cache it
         // Children are laid out relative to the ScrollView's content origin (0, 0)
         // Find the maximum bottom edge among all children
         let child_ids = layout_view.children(node);
@@ -276,6 +283,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             .map(|l| l.bounds.origin.y + l.bounds.size.height)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
+
+        // Update cached content height
+        scroll_state.content_height = content_height;
 
         // Push clip for viewport - use absolute screen coordinates
         let clip_bounds = Rect::from_xywh(
@@ -340,23 +350,25 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             offset.y + viewport_layout.y(),
         );
 
-        // Calculate content height from children
-        // Children are laid out relative to the ScrollView's content origin (0, 0)
-        // Find the maximum bottom edge among all children
-        let child_ids = layout_view.children(node);
-        let content_height: f32 = child_ids.iter()
-            .filter_map(|id| layout_view.get_layout(*id))
-            .map(|l| l.bounds.origin.y + l.bounds.size.height)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0);
-
-        let max_scroll = (content_height - viewport_bounds.size.height).max(0.0);
-
-        // Get or create scroll state
-        let state_key = self.key.clone().unwrap_or_else(|| "__scroll_default__".to_string());
+        // Get or create scroll state first using cached state_key (no allocation)
         let scroll_state = widget_context.state_mut()
             .component_storage()
-            .get_or_create::<ScrollState>(&state_key);
+            .get_or_create::<ScrollState>(&self.state_key);
+
+        // Use cached content height if available, otherwise calculate it
+        let child_ids = layout_view.children(node);
+        let content_height = if scroll_state.content_height > 0.0 {
+            scroll_state.content_height
+        } else {
+            // Fallback: calculate if not yet cached
+            child_ids.iter()
+                .filter_map(|id| layout_view.get_layout(*id))
+                .map(|l| l.bounds.origin.y + l.bounds.size.height)
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(0.0)
+        };
+
+        let max_scroll = (content_height - viewport_bounds.size.height).max(0.0);
 
         // Handle scroll wheel
         // Note: macOS natural scrolling - scrolling down (positive delta.y) should move content up (decrease offset)
@@ -524,6 +536,7 @@ mod tests {
         assert!(!state.is_dragging);
         assert_eq!(state.drag_start_y, 0.0);
         assert_eq!(state.drag_start_offset, 0.0);
+        assert_eq!(state.content_height, 0.0);
     }
 
     #[test]
