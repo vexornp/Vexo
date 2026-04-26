@@ -210,3 +210,44 @@ macro_rules! grid {
         }
     };
 }
+
+/// Create a Component widget with message mapping.
+///
+/// This macro simplifies the boilerplate of wrapping a `ComponentWidget`
+/// in a `MapWidget` to convert component outputs to parent messages.
+///
+/// Returns `MapWidget<M1, M2, F>` (unboxed) so you can chain methods
+/// before calling `.boxed()`.
+///
+/// # Arguments
+/// * `$component` - The component type (implements `Component` trait)
+/// * `$key` - Storage key for the component's state
+/// * `$mapper` - Closure to convert `Component::Output` to parent message type
+///
+/// # Example
+/// ```ignore
+/// use vexo::component;
+///
+/// #[derive(Debug, Clone)]
+/// enum Message {
+///     CounterOutput(CounterOutput),
+/// }
+///
+/// // Before (verbose):
+/// let counter = MapWidget::new(
+///     Box::new(ComponentWidget::<CounterComponent>::new("counter")),
+///     |output| Message::CounterOutput(output),
+/// );
+///
+/// // After (simplified):
+/// let counter = component!(CounterComponent, "counter", |output| Message::CounterOutput(output));
+/// ```
+#[macro_export]
+macro_rules! component {
+    ($component:ty, $key:expr, $mapper:expr) => {
+        $crate::widgets::MapWidget::new(
+            Box::new(<$crate::component::ComponentWidget<$component>>::new($key)),
+            $mapper,
+        )
+    };
+}

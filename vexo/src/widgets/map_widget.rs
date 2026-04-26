@@ -14,6 +14,9 @@ use crate::CursorBlinkState;
 /// This is useful when a child widget produces messages of one type,
 /// but the parent expects messages of a different type.
 ///
+/// For wrapping `ComponentWidget`, prefer the `component!` macro which
+/// simplifies the boilerplate.
+///
 /// # Example
 ///
 /// ```ignore
@@ -24,6 +27,10 @@ use crate::CursorBlinkState;
 ///     Box::new(component_widget),
 ///     |output| Message::CounterOutput(output),
 /// );
+///
+/// // Or use the component! macro for ComponentWidget:
+/// use vexo::component;
+/// let counter = component!(CounterComponent, "counter", |output| Message::CounterOutput(output));
 /// ```
 pub struct MapWidget<M1, M2, F>
 where
