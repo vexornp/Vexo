@@ -26,6 +26,7 @@ pub mod testable;
 mod utils;
 pub mod widgets;
 mod window;
+mod text_cache;
 pub use window::WindowState;
 
 use widgets::Widget;

@@ -1,5 +1,4 @@
-use glyphon::{cosmic_text, Metrics, TextBounds};
-use std::collections::HashMap;
+use glyphon::{cosmic_text, TextBounds};
 use std::sync::Arc;
 
 use winit::{
@@ -12,42 +11,9 @@ use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, Taffy
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::renderer::TextRequest;
 use crate::state::CursorBlinkState;
+use crate::text_cache::TextCache;
 use crate::widgets::{Column, Widget, WidgetContext};
 use crate::Application;
-
-// ============================================================================
-// TEXT BUFFER CACHE
-// ============================================================================
-
-/// Cache key for text buffers to avoid recreating/shaping every frame.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct TextCacheKey {
-    content: String,
-    font_size_bits: u32,
-    color_bits: [u32; 4],
-}
-
-impl TextCacheKey {
-    fn from_request(req: &TextRequest) -> Self {
-        Self {
-            content: req.content.clone(),
-            font_size_bits: req.size.to_bits(),
-            color_bits: [
-                req.color[0].to_bits(),
-                req.color[1].to_bits(),
-                req.color[2].to_bits(),
-                req.color[3].to_bits(),
-            ],
-        }
-    }
-}
-
-/// Cached text buffer with its shaped content.
-struct CachedTextBuffer {
-    buffer: glyphon::Buffer,
-    /// Generation counter to detect stale entries
-    generation: u64,
-}
 
 pub struct WindowState<A: Application + 'static> {
     // GPU rendering backend
@@ -74,9 +40,7 @@ pub struct WindowState<A: Application + 'static> {
     current_cursor: CursorIcon,
 
     // Text buffer cache to avoid recreating/shaping every frame
-    text_cache: HashMap<TextCacheKey, CachedTextBuffer>,
-    /// Generation counter for cache invalidation
-    cache_generation: u64,
+    text_cache: TextCache,
 }
 
 /// Convert CursorIcon to winit's Cursor type.
@@ -119,8 +83,7 @@ impl<A: Application + 'static> WindowState<A> {
             widget_context: ctx,
             cursor_blink: CursorBlinkState::new(),
             current_cursor: CursorIcon::default(),
-            text_cache: HashMap::new(),
-            cache_generation: 0,
+            text_cache: TextCache::new(),
         })
     }
 
@@ -194,59 +157,18 @@ impl<A: Application + 'static> WindowState<A> {
         // Update viewport resolution
         self.backend.update_viewport(physical_size);
 
-        // Increment generation for cache eviction tracking
-        self.cache_generation += 1;
-        let current_gen = self.cache_generation;
-
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 
         for req in self.batcher.text_requests.drain(..) {
-            let cache_key = TextCacheKey::from_request(&req);
-
-            // Try to get cached buffer
-            let buffer = if let Some(cached) = self.text_cache.get_mut(&cache_key) {
-                cached.generation = current_gen;
-                cached.buffer.clone()
-            } else {
-                // Create and shape new buffer
-                let mut buffer = glyphon::Buffer::new(
-                    &mut self.widget_context.font_system,
-                    Metrics::new(req.size, req.size * 1.2),
-                );
-
-                let color_rgba_u8 = cosmic_text::Color::rgba(
-                    (req.color[0] * 255.0) as u8,
-                    (req.color[1] * 255.0) as u8,
-                    (req.color[2] * 255.0) as u8,
-                    (req.color[3] * 255.0) as u8,
-                );
-
-                buffer.set_text(
-                    &mut self.widget_context.font_system,
-                    &req.content,
-                    &glyphon::Attrs::new().color(color_rgba_u8),
-                    glyphon::Shaping::Advanced,
-                );
-                buffer.shape_until_scroll(&mut self.widget_context.font_system, true);
-
-                // Cache the buffer
-                self.text_cache.insert(cache_key, CachedTextBuffer {
-                    buffer: buffer.clone(),
-                    generation: current_gen,
-                });
-
-                buffer
-            };
-
+            let buffer = self.text_cache.get_or_create(
+                &mut self.widget_context.font_system,
+                &req,
+            );
             processed_texts.push((buffer, req));
         }
 
-        // Periodically evict stale cache entries (every 100 frames)
-        if current_gen % 100 == 0 {
-            self.text_cache.retain(|_, cached| {
-                current_gen - cached.generation < 100
-            });
-        }
+        // Periodically evict stale cache entries
+        self.text_cache.evict_stale();
 
         // Create Text Areas from the processed buffers and Taffy positions
         let text_areas: Vec<glyphon::TextArea> = processed_texts
