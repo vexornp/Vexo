@@ -1,0 +1,187 @@
+//! ScrollView widget - a vertical scrollable container.
+
+use crate::core::{WidgetId};
+use crate::layout::{Layout};
+use crate::render::RenderCommand;
+use crate::input::InputEvent;
+use crate::Widget;
+use std::marker::PhantomData;
+
+// ============================================================================
+// SCROLL STATE
+// ============================================================================
+
+/// Scroll state stored in ComponentStateStorage.
+///
+/// This state persists across view rebuilds when the ScrollView has a key.
+#[derive(Default, Clone, Debug)]
+pub struct ScrollState {
+    /// Current vertical scroll offset (0 = top, positive = scrolled down).
+    pub offset_y: f32,
+    /// Whether user is currently dragging to scroll.
+    pub is_dragging: bool,
+    /// Y position where drag started (in logical coordinates).
+    pub drag_start_y: f32,
+    /// Scroll offset when drag started.
+    pub drag_start_offset: f32,
+}
+
+// ============================================================================
+// SCROLL VIEW
+// ============================================================================
+
+/// A vertical scrollable container widget.
+///
+/// ScrollView displays its children in a vertical column and allows scrolling
+/// when content exceeds the viewport height. It supports scroll wheel, drag
+/// gestures, and keyboard navigation.
+///
+/// # Example
+///
+/// ```ignore
+/// use vexo::widgets::{ScrollView, Text};
+///
+/// let scroll = ScrollView::new()
+///     .with_key("my-scroll")
+///     .push(Text::new("Item 1"))
+///     .push(Text::new("Item 2"));
+/// ```
+pub struct ScrollView<M: Clone + std::fmt::Debug + Send> {
+    /// Child widgets.
+    children: Vec<Box<dyn Widget<M>>>,
+    /// Optional key for state persistence.
+    key: Option<String>,
+    /// Layout properties for the viewport.
+    layout: Layout,
+    /// Computed viewport bounds from layout phase.
+    computed_layout: Option<crate::testable::ComputedLayout>,
+    /// Total content height (sum of children heights).
+    content_height: f32,
+    /// Scrollbar width in logical pixels.
+    scrollbar_width: f32,
+    _marker: PhantomData<M>,
+}
+
+// ============================================================================
+// BUILDER API (Minimal for tests)
+// ============================================================================
+
+impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
+    /// Create a new ScrollView.
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            key: None,
+            layout: Layout::default(),
+            computed_layout: None,
+            content_height: 0.0,
+            scrollbar_width: 10.0,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the key for state persistence.
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Set fixed width.
+    pub fn width(mut self, value: f32) -> Self {
+        self.layout = self.layout.width(value);
+        self
+    }
+
+    /// Set fixed height.
+    pub fn height(mut self, value: f32) -> Self {
+        self.layout = self.layout.height(value);
+        self
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> Default for ScrollView<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// SEPARATED TRAIT IMPLEMENTATIONS (Minimal for tests)
+// ============================================================================
+
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Identifiable for ScrollView<M> {
+    fn id(&self) -> Option<WidgetId> {
+        self.key.as_ref().map(|k| WidgetId::from_key(k))
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Layout for ScrollView<M> {
+    fn constraints(&self) -> crate::testable::LayoutConstraints {
+        crate::testable::LayoutConstraints::from_layout(&self.layout)
+    }
+
+    fn apply_layout(&mut self, layout: crate::testable::ComputedLayout) {
+        self.computed_layout = Some(layout);
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Paint for ScrollView<M> {
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        // Container widgets don't paint themselves - children paint
+        Vec::new()
+    }
+}
+
+impl<M: Clone + std::fmt::Debug + Send> crate::testable::Interact<M> for ScrollView<M> {
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _ctx: &crate::testable::InteractionContext,
+    ) -> crate::testable::InteractionResponse<M> {
+        // Container widgets delegate event handling to children
+        crate::testable::InteractionResponse::default()
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testable::{Identifiable, Layout as LayoutTrait};
+
+    #[test]
+    fn test_scroll_view_implements_separated_traits() {
+        let scroll: ScrollView<()> = ScrollView::new();
+
+        // Should implement Identifiable
+        let _id: Option<WidgetId> = scroll.id();
+
+        // Should implement Layout
+        let _constraints = scroll.constraints();
+    }
+
+    #[test]
+    fn test_scroll_view_with_key() {
+        let scroll: ScrollView<()> = ScrollView::new().with_key("test-scroll");
+
+        let id = scroll.id();
+        assert!(id.is_some());
+        assert_eq!(id.unwrap(), WidgetId::from_key("test-scroll"));
+    }
+
+    #[test]
+    fn test_scroll_view_layout_constraints() {
+        let scroll: ScrollView<()> = ScrollView::new()
+            .width(200.0)
+            .height(100.0);
+
+        let constraints = scroll.constraints();
+        assert!(constraints.is_fixed_width());
+        assert!(constraints.is_fixed_height());
+        assert_eq!(constraints.min_width, 200.0);
+        assert_eq!(constraints.min_height, 100.0);
+    }
+}

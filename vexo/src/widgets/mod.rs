@@ -263,6 +263,7 @@ mod grid;
 mod map_widget;
 mod modifiers;
 mod row;
+mod scroll_view;
 mod text;
 mod text_edit;
 
@@ -276,5 +277,6 @@ pub use modifiers::Border;
 pub use modifiers::CornerRadius;
 pub use modifiers::WidgetExt;
 pub use row::Row;
+pub use scroll_view::{ScrollView, ScrollState};
 pub use text::Text;
 pub use text_edit::TextEdit;
