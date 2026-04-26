@@ -124,7 +124,7 @@ impl<A: Application + 'static> WindowState<A> {
         })
     }
 
-    pub fn resize_physical(&mut self, size: Size<Physical>) {
+    pub fn resize(&mut self, size: Size<Physical>) {
         let config =
             crate::render::RenderConfig::new(size, Scale::new(self.widget_context.scale.factor() as f64));
         self.backend.resize(config);
@@ -497,9 +497,5 @@ impl<A: Application + 'static> WindowState<A> {
 
     fn view(&self) -> Box<dyn Widget<A::Message>> {
         A::view(&self.user_app_state)
-    }
-
-    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        self.resize_physical(Size::new(size.width as f32, size.height as f32));
     }
 }

@@ -153,6 +153,11 @@ impl Size<Physical> {
     pub fn height_u32(&self) -> u32 {
         self.height as u32
     }
+
+    /// Convert from winit's PhysicalSize<u32>.
+    pub fn from_winit(size: winit::dpi::PhysicalSize<u32>) -> Self {
+        Size::new(size.width as f32, size.height as f32)
+    }
 }
 
 // ============================================================================

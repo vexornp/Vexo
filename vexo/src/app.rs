@@ -43,10 +43,8 @@ impl<A: Application + 'static> VexoApp<A> {
         let window: Arc<dyn Window> = Arc::from(window);
         let window_id = window.id();
         let size = window.surface_size();
-        let width = size.width;
-        let height = size.height;
         let window_state = self.windows.get(&window_id);
-        if width > 0 && height > 0 && window_state.is_none() {
+        if size.width > 0 && size.height > 0 && window_state.is_none() {
             println!(
                 "SUCCESS: Window ready at {}x{}, scale: {}",
                 size.width,
@@ -54,7 +52,7 @@ impl<A: Application + 'static> VexoApp<A> {
                 window.scale_factor()
             );
             let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
-            state.resize_physical(Size::new(width as f32, height as f32));
+            state.resize(Size::from_winit(size));
             self.windows.insert(window_id, state);
             return Some(window_id);
         }
@@ -112,7 +110,7 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
 
         match event {
             WindowEvent::SurfaceResized(size) => {
-                window_state.resize(size);
+                window_state.resize(Size::from_winit(size));
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor,
