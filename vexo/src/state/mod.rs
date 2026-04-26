@@ -21,10 +21,12 @@
 //! let editor = registry.get_or_create_editor("my-editor", "initial text", &mut font_system);
 //! ```
 
+pub mod cursor_blink;
 pub mod editor;
 mod focus;
 mod registry;
 
+pub use cursor_blink::CursorBlinkState;
 pub use editor::EditorRef;
 pub use focus::FocusState;
 pub use registry::WidgetStateRegistry;
