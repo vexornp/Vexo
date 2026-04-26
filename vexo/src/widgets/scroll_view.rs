@@ -496,4 +496,39 @@ mod tests {
         assert_eq!(constraints.min_width, 200.0);
         assert_eq!(constraints.min_height, 100.0);
     }
+
+    #[test]
+    fn test_scroll_view_paint_returns_empty_without_layout() {
+        use crate::testable::{Paint, PaintContext};
+        let scroll: ScrollView<()> = ScrollView::new();
+        let mut ctx = PaintContext::default();
+        let commands = Paint::paint(&scroll, &mut ctx);
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn test_scroll_state_default() {
+        let state = ScrollState::default();
+        assert_eq!(state.offset_y, 0.0);
+        assert!(!state.is_dragging);
+        assert_eq!(state.drag_start_y, 0.0);
+        assert_eq!(state.drag_start_offset, 0.0);
+    }
+
+    #[test]
+    fn test_scroll_view_with_children() {
+        let scroll: ScrollView<()> = ScrollView::new()
+            .push(crate::widgets::Text::new("Item 1"))
+            .push(crate::widgets::Text::new("Item 2"));
+
+        assert_eq!(scroll.children.len(), 2);
+    }
+
+    #[test]
+    fn test_scroll_view_scrollbar_width() {
+        let scroll: ScrollView<()> = ScrollView::new()
+            .scrollbar_width(12.0);
+
+        assert_eq!(scroll.scrollbar_width, 12.0);
+    }
 }
