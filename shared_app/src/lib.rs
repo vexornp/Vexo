@@ -1,7 +1,4 @@
-use vexo::{
-    widgets::{MapWidget, Widget},
-    Application, WidgetExt,
-};
+use vexo::{widgets::Widget, Application, WidgetExt};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -120,46 +117,48 @@ impl Application for State {
         let text_content = format!("You clicked {} times!", state.click_count);
         let milestone_text = format!("Milestones reached: {}", state.milestones);
 
-        // Create the counter component wrapped in MapWidget
-        let counter_widget = MapWidget::new(
-            Box::new(vexo::component::ComponentWidget::<CounterComponent>::new("counter")),
-            |output| Message::CounterOutput(output),
-        );
-
         vexo::column![
             // Title
-            vexo::text!("Counter Component Demo")
+            vexo::text!("ScrollView Demo")
                 .font_size(28.0),
+            // ScrollView with many items to demonstrate scrolling
+            vexo::widgets::ScrollView::new()
+                .with_key("demo-scroll")
+                .width(350.0)
+                .height(300.0)
+                .push(vexo::text!("Scrollable Content").font_size(20.0))
+                .push(vexo::text!("─────────────────────"))
+                .push(vexo::text!("Item 1: Scroll wheel works!").padding(8.0))
+                .push(vexo::text!("Item 2: Drag to scroll").padding(8.0))
+                .push(vexo::text!("Item 3: Use arrow keys").padding(8.0))
+                .push(vexo::text!("Item 4: Page Up/Down too").padding(8.0))
+                .push(vexo::text!("─────────────────────"))
+                .push(vexo::text!("Item 5").padding(8.0))
+                .push(vexo::text!("Item 6").padding(8.0))
+                .push(vexo::text!("Item 7").padding(8.0))
+                .push(vexo::text!("Item 8").padding(8.0))
+                .push(vexo::text!("Item 9").padding(8.0))
+                .push(vexo::text!("Item 10").padding(8.0))
+                .push(vexo::text!("Item 11").padding(8.0))
+                .push(vexo::text!("Item 12").padding(8.0))
+                .push(vexo::text!("Item 13").padding(8.0))
+                .push(vexo::text!("Item 14").padding(8.0))
+                .push(vexo::text!("Item 15").padding(8.0))
+                .push(vexo::text!("Item 16").padding(8.0))
+                .push(vexo::text!("Item 17").padding(8.0))
+                .push(vexo::text!("Item 18").padding(8.0))
+                .push(vexo::text!("Item 19").padding(8.0))
+                .push(vexo::text!("Item 20 - End of list!").padding(8.0))
+                .background(vexo::Color::rgb(0.95, 0.95, 0.98))
+                .border(vexo::Color::GRAY, 1.0)
+                .corner_radius(8.0)
+                .boxed(),
             // Counter Component with message mapping
-            counter_widget,
+            vexo::component!(CounterComponent, "counter", |output| Message::CounterOutput(output)),
             // Milestone display
             vexo::text!(milestone_text)
                 .font_size(18.0)
                 .padding(10.0),
-            // Existing demo widgets
-            vexo::text_edit!("editor_id_input")
-                .content("Type here...")
-                .width(100.0)
-                .height(50.0),
-            vexo::column![vexo::text!("Modified Text")
-                .font_size(24.0)
-                .background(vexo::Color::RED)
-                .border(vexo::Color::GREEN, 2.0)
-                .corner_radius(8.0)]
-            .padding(10.0),
-            vexo::column![
-                vexo::button!(vexo::text!(text_content).font_size(24.0), Message::Clicked)
-                    .background(vexo::Color::rgb(0.1, 0.4, 0.1))
-                    .border(vexo::Color::BLACK, 1.0)
-                    .corner_radius(8.0)
-            ]
-            .padding(10.0)
-            .background(vexo::Color::BLUE),
-            vexo::color_widget!(vexo::Color::CYAN).width(110.0).height(30.0),
-            vexo::row![
-                vexo::color_widget!(vexo::Color::RED).width(60.0).height(70.0),
-                vexo::color_widget!(vexo::Color::YELLOW).width(90.0).height(40.0),
-            ],
         ]
         .align(vexo::layout::AlignItems::Center)
         .fill()
