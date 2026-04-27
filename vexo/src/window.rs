@@ -1,4 +1,3 @@
-use glyphon::{cosmic_text, TextBounds};
 use std::sync::Arc;
 
 use winit::{
@@ -11,7 +10,6 @@ use crate::input::{CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
-use crate::renderer::TextRequest;
 use crate::state::CursorBlinkState;
 use crate::widgets::{Column, Widget, WidgetContext};
 use crate::Application;
@@ -100,218 +98,83 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // 1. Redraw request & backend check
         if let Some(win) = &self.window {
             win.request_redraw();
         }
-
         if !self.backend.is_ready() {
             return Ok(());
         }
 
-        // Update cursor blink state
+        // 2. Frame timing
         self.cursor_blink.tick();
 
+        // 3. View generation
         let mut new_root_widget = self.view();
+
+        // 4. Clear state
         self.layout_engine.clear();
         self.batcher.clear();
 
+        // 5. Compute layout
         let scale = self.widget_context.scale;
-
-        // Layout should work in logical points so that 24.0 size means 24 points.
         let logical_width = self.backend.width() as f32 / scale.factor();
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
-        // Set screen size once per frame
         self.batcher.set_screen_size(logical_size);
 
-        // Build layout tree
-        let mut layout_ctx = LayoutContext::new(self.layout_engine.as_mut());
-        let new_root_node_id = new_root_widget.layout(&mut layout_ctx, &mut self.widget_context);
-
-        // Compute layout
-        self.layout_engine.compute(
-            new_root_node_id,
-            logical_size,
-            &mut self.widget_context.font_system,
-        );
-
-        self.root_widget = new_root_widget;
-        self.root_node_id = new_root_node_id;
-
-        // 1. DRAW RECTANGLES: Generate geometry data
-        let layout_view = LayoutView::new(self.layout_engine.as_ref());
-        self.root_widget.draw(
-            &layout_view,
+        let layout_output = self.render_pipeline.compute_layout(
+            &mut *new_root_widget,
+            self.layout_engine.as_mut(),
             self.root_node_id,
-            &mut self.batcher,
-            Point::new(0.0, 0.0),
-            self.focused_widget_id,
-            &self.cursor_blink,
+            logical_size,
             &mut self.widget_context,
         );
 
-        // 2. GLYPHON PREPARATION: Prepare text geometry using Taffy positions
+        self.root_widget = new_root_widget;
+        self.root_node_id = layout_output.root_node;
+
+        // 6. Build frame context
         let physical_size =
             Size::<Physical>::new(self.backend.width() as f32, self.backend.height() as f32);
 
-        // Update viewport resolution
+        let ctx = FrameContext {
+            scale,
+            viewport_physical: physical_size,
+            layout_view: layout_output.layout_view,
+            focused_widget_id: self.focused_widget_id,
+            cursor_blink: &self.cursor_blink,
+        };
+
+        // 7. Generate geometry
+        self.render_pipeline.generate_geometry(
+            &*self.root_widget,
+            &mut self.batcher,
+            self.root_node_id,
+            &ctx,
+            &mut self.widget_context,
+        );
+
+        // 8. Update viewport
         self.backend.update_viewport(physical_size);
 
-        let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
+        // 9. Collect text
+        let prepared_text = self.render_pipeline.collect_text(
+            &mut self.batcher,
+            &mut self.widget_context,
+            scale,
+            physical_size,
+        );
 
-        for req in self.batcher.text_requests.drain(..) {
-            let buffer = self.render_pipeline.text_cache_mut().get_or_create(
-                &mut self.widget_context.font_system,
-                &req,
-            );
-            processed_texts.push((buffer, req));
-        }
-
-        // Periodically evict stale cache entries
-        self.render_pipeline.text_cache_mut().evict_stale();
-
-        // Create Text Areas from the processed buffers and Taffy positions
-        let text_areas: Vec<glyphon::TextArea> = processed_texts
-            .iter_mut()
-            .map(|(buffer, req)| {
-                // Convert logical position to physical for glyphon
-                let physical_pos = req.position.to_physical(scale);
-
-                // Use clip bounds if set, otherwise use screen bounds
-                let (bounds_left, bounds_top, bounds_right, bounds_bottom) = if req.clip_bounds[2]
-                    > 0.0
-                {
-                    // Clip bounds are in logical coordinates - convert to physical
-                    let clip_left = req.clip_bounds[0] * scale.factor();
-                    let clip_top = req.clip_bounds[1] * scale.factor();
-                    let clip_right = (req.clip_bounds[0] + req.clip_bounds[2]) * scale.factor();
-                    let clip_bottom = (req.clip_bounds[1] + req.clip_bounds[3]) * scale.factor();
-                    (
-                        clip_left.floor() as i32,
-                        clip_top.floor() as i32,
-                        clip_right.ceil() as i32,
-                        clip_bottom.ceil() as i32,
-                    )
-                } else {
-                    // No clipping - use full screen
-                    (
-                        physical_pos.x.floor() as i32,
-                        physical_pos.y.floor() as i32,
-                        physical_size.width_u32() as i32,
-                        physical_size.height_u32() as i32,
-                    )
-                };
-
-                let color_rgba_u8 = cosmic_text::Color::rgba(
-                    (req.color[0] * 255.0) as u8,
-                    (req.color[1] * 255.0) as u8,
-                    (req.color[2] * 255.0) as u8,
-                    (req.color[3] * 255.0) as u8,
-                );
-
-                glyphon::TextArea {
-                    buffer: buffer,
-                    left: physical_pos.x,
-                    top: physical_pos.y,
-                    scale: scale.factor(),
-                    bounds: TextBounds {
-                        left: bounds_left,
-                        top: bounds_top,
-                        right: bounds_right,
-                        bottom: bounds_bottom,
-                    },
-                    default_color: color_rgba_u8,
-                    custom_glyphs: &[],
-                }
-            })
-            .collect();
-
-        // For editor text areas we must provide a `&Buffer` that lives long
-        // enough for `text_renderer.prepare`. To do that without changing
-        // glyphon's API we clone each editor `Buffer` into a local Vec and
-        // then create `TextArea` instances that borrow from that Vec. The
-        // `editor_buffers` Vec must stay alive until after `prepare`/`render`.
-        // Collect owned editor buffers and metadata first, then create
-        // `TextArea` instances in a separate pass to avoid holding
-        // simultaneous mutable/immutable borrows of `editor_buffers`.
-        let mut editor_buffers: Vec<glyphon::Buffer> = Vec::new();
-        // Metadata: (left, top, left_i, top_i, right_i, bottom_i, color)
-        let mut editor_meta: Vec<(f32, f32, i32, i32, i32, i32, cosmic_text::Color)> = Vec::new();
-
-        for req in self.batcher.editor_requests.iter_mut() {
-            // Convert logical bounds to physical
-            let physical_rect = req.bounds.to_physical(scale);
-
-            let bounds_left: i32 = physical_rect.origin.x.floor() as i32;
-            let bounds_top: i32 = physical_rect.origin.y.floor() as i32;
-            let bounds_right: i32 =
-                (physical_rect.origin.x + physical_rect.size.width).ceil() as i32;
-            let bounds_bottom: i32 =
-                (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
-
-            let color_rgba_u8 = cosmic_text::Color::rgba(
-                (req.color[0] * 255.0) as u8,
-                (req.color[1] * 255.0) as u8,
-                (req.color[2] * 255.0) as u8,
-                (req.color[3] * 255.0) as u8,
-            );
-
-            let editor_ref = self
-                .widget_context
-                .get_or_create_editor(&req.id, "initial_text");
-            let editor = editor_ref.borrow();
-            let buf = editor.buffer().clone();
-            editor_buffers.push(buf);
-            editor_meta.push((
-                physical_rect.origin.x,
-                physical_rect.origin.y,
-                bounds_left,
-                bounds_top,
-                bounds_right,
-                bounds_bottom,
-                color_rgba_u8,
-            ));
-        }
-
-        // Now build TextArea instances borrowing from the owned `editor_buffers`.
-        let mut editor_areas: Vec<glyphon::TextArea> = Vec::new();
-        for (i, buf) in editor_buffers.iter_mut().enumerate() {
-            let (left_pos, top_pos, bounds_left, bounds_top, bounds_right, bounds_bottom, color) =
-                editor_meta[i];
-            buf.shape_until_scroll(&mut self.widget_context.font_system, true);
-
-            editor_areas.push(glyphon::TextArea {
-                buffer: buf,
-                left: left_pos,
-                top: top_pos,
-                scale: self.widget_context.scale.factor(),
-                bounds: TextBounds {
-                    left: bounds_left,
-                    top: bounds_top,
-                    right: bounds_right,
-                    bottom: bounds_bottom,
-                },
-                default_color: color,
-                custom_glyphs: &[],
-            });
-        }
-
-        // Upload geometry to backend
-        self.backend.upload_geometry(&self.batcher);
-
-        // Combine text areas (regular + editor) and prepare glyphon once.
-        let mut combined_text_areas = text_areas;
-        combined_text_areas.extend(editor_areas.into_iter());
-
-        // Prepare text rendering
-        self.backend
-            .prepare_text(&mut self.widget_context.font_system, combined_text_areas);
-
-        // Execute render pass
-        let instance_count = self.batcher.quad_instances.len();
-        self.backend
-            .execute_render_pass(instance_count)
+        // 10. Execute render
+        self.render_pipeline
+            .execute_render(
+                &mut self.backend,
+                &self.batcher,
+                prepared_text,
+                &mut self.widget_context,
+            )
             .map_err(|e| match e {
                 crate::render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
                 crate::render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,

@@ -53,14 +53,6 @@ impl RenderPipeline {
         }
     }
 
-    /// Get mutable access to the text cache.
-    ///
-    /// This is a temporary bridge for legacy code that hasn't been
-    /// refactored to use the pipeline stages yet.
-    pub fn text_cache_mut(&mut self) -> &mut crate::text_cache::TextCache {
-        &mut self.text_processor.cache
-    }
-
     /// Stage 1: Compute layout for the widget tree.
     pub fn compute_layout<'a, M: Clone + std::fmt::Debug + Send>(
         &mut self,
