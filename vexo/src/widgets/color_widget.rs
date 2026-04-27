@@ -1,4 +1,4 @@
-use crate::core::{Bounds, Color, Point, Size, WidgetId};
+use crate::core::{Bounds, Color, Point, WidgetId};
 use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::render::RenderCommand;
@@ -148,12 +148,13 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
-            let pos: Point<crate::core::Logical> = Point::new(
+            let bounds = crate::core::Bounds::from_xywh(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
+                layout.width(),
+                layout.height(),
             );
-            let size: Size<crate::core::Logical> = Size::new(layout.width(), layout.height());
-            renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::WHITE, 1.0, 0.0);
+            renderer.add_rect(bounds, self.color, Color::WHITE, 1.0, 0.0);
         }
     }
 

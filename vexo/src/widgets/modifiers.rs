@@ -1,4 +1,4 @@
-use crate::core::{Bounds, Color, Logical, Point, Size};
+use crate::core::{Bounds, Color, Logical, Point};
 use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
@@ -153,14 +153,15 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
-            let pos = Point::<Logical>::new(
+            let bounds = Bounds::from_xywh(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
+                layout.width(),
+                layout.height(),
             );
-            let size = Size::<Logical>::new(layout.width(), layout.height());
 
             // Draw background rect first (behind child)
-            renderer.add_rect(pos.to_array(), size.to_array(), self.color, Color::TRANSPARENT, 0.0, 0.0);
+            renderer.add_rect(bounds, self.color, Color::TRANSPARENT, 0.0, 0.0);
 
             // Draw child on top - pass original offset since child will add its own layout offset
             self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context);
@@ -308,17 +309,18 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
-            let pos = Point::<Logical>::new(
+            let bounds = Bounds::from_xywh(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
+                layout.width(),
+                layout.height(),
             );
-            let size = Size::<Logical>::new(layout.width(), layout.height());
 
             // Draw child first - pass original offset since child will add its own layout offset
             self.child.draw(layout_view, node, renderer, offset, focused_id, cursor_blink, widget_context);
 
             // Draw border on top (transparent fill, colored border)
-            renderer.add_rect(pos.to_array(), size.to_array(), Color::TRANSPARENT, self.color, self.width, 0.0);
+            renderer.add_rect(bounds, Color::TRANSPARENT, self.color, self.width, 0.0);
         }
     }
 

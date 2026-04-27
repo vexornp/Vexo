@@ -120,8 +120,7 @@ impl UiBatcher {
 
     pub fn add_rect(
         &mut self,
-        pos: [f32; 2],
-        size: [f32; 2],
+        bounds: Bounds,
         color: impl Into<Color>,
         border_color: impl Into<Color>,
         border_width: f32,
@@ -139,13 +138,13 @@ impl UiBatcher {
 
         // Get current clip bounds, or use negative values to indicate no clipping
         let clip_bounds = match self.current_clip() {
-            Some(bounds) => bounds.to_array_xywh(),
+            Some(b) => b.to_array_xywh(),
             None => [-1.0, -1.0, -1.0, -1.0], // No clipping
         };
 
         self.quad_instances.push(quad_instance::QuadInstance {
-            position: pos,
-            size,
+            position: [bounds.left, bounds.top],
+            size: [bounds.width(), bounds.height()],
             color: color.to_array(),
             border_color: border_color.to_array(),
             border_width,

@@ -71,7 +71,8 @@
       "WebFetch(domain:stackoverflow.com)",
       "WebFetch(domain:newsletter.wolfgang-zucker.com)",
       "WebFetch(domain:kartik-mohan.github.io)",
-      "WebFetch(domain:chrisbanes.me)"
+      "WebFetch(domain:chrisbanes.me)",
+      "Bash(grep -l \"TextProcessor\\\\|render pipeline\\\\|text_processor\" /Users/peiyan_wang/.claude/plans/*.md)"
     ]
   }
 }

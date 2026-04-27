@@ -1,4 +1,4 @@
-use crate::core::{Bounds, Color, Logical, Point, Size};
+use crate::core::{Bounds, Color, Logical, Point};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
@@ -240,25 +240,26 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         widget_context: &mut WidgetContext,
     ) {
         if let Some(layout) = layout_view.get_layout(node) {
-            let pos: Point<Logical> = Point::new(
+            let bounds = Bounds::from_xywh(
                 offset.x + layout.x(),
                 offset.y + layout.y(),
+                layout.width(),
+                layout.height(),
             );
-            let size: Size<Logical> = Size::new(layout.width(), layout.height());
 
             // Debug border
             let debug_color = crate::Color::RED;
-            renderer.add_rect(pos.to_array(), size.to_array(), crate::Color::BLACK, debug_color, 1.0, 0.0);
+            renderer.add_rect(bounds, crate::Color::BLACK, debug_color, 1.0, 0.0);
 
             let editor_arc = widget_context.get_or_create_editor(&self.editor_id, &self.initial_text);
             let mut editor_ref = editor_arc.borrow_mut();
 
-            editor_ref.set_size(&mut widget_context.font_system, size);
+            editor_ref.set_size(&mut widget_context.font_system, bounds.size());
             editor_ref.shape_as_needed(&mut widget_context.font_system, true);
 
             renderer.add_editor_request(
                 &self.editor_id,
-                Bounds::from_xywh(pos.x, pos.y, size.width, size.height),
+                bounds,
             );
 
             // Render cursor if focused and visible
@@ -270,8 +271,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                 if let Some((cursor_x, cursor_y)) = editor_ref.cursor_position() {
                     // cursor_position returns coordinates relative to the buffer
                     // Convert to absolute position within the widget
-                    let abs_cursor_x = pos.x + cursor_x as f32;
-                    let abs_cursor_y = pos.y + cursor_y as f32;
+                    let abs_cursor_x = bounds.left + cursor_x as f32;
+                    let abs_cursor_y = bounds.top + cursor_y as f32;
 
                     // Get line height from the buffer metrics
                     let buffer = editor_ref.buffer();
@@ -281,9 +282,9 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     let cursor_width = 2.0;
                     let cursor_height = line_height;
 
+                    let cursor_bounds = Bounds::from_xywh(abs_cursor_x, abs_cursor_y, cursor_width, cursor_height);
                     renderer.add_rect(
-                        [abs_cursor_x, abs_cursor_y],
-                        [cursor_width, cursor_height],
+                        cursor_bounds,
                         self.cursor_color,
                         crate::Color::TRANSPARENT, // No border
                         0.0, // No border width

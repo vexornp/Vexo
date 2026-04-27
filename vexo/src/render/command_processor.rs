@@ -35,17 +35,18 @@ pub fn process_commands(
                 stroke,
                 corner_radius,
             } => {
-                let pos = [
+                let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
-                ];
-                let size = [bounds.width(), bounds.height()];
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
+                );
                 let border_color = stroke
                     .as_ref()
                     .map(|s| s.color)
                     .unwrap_or(Color::TRANSPARENT);
                 let border_width = stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
-                batcher.add_rect(pos, size, *fill, border_color, border_width, *corner_radius);
+                batcher.add_rect(adjusted_bounds, *fill, border_color, border_width, *corner_radius);
             }
             RenderCommand::Text {
                 content,
