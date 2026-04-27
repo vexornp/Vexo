@@ -3,15 +3,13 @@ use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 
-use winit::event::*;
+use winit::event::{DeviceEvent, DeviceId};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-use winit::{
-    application::ApplicationHandler, event_loop::ActiveEventLoop, keyboard::KeyCode,
-};
+use winit::{application::ApplicationHandler, event_loop::ActiveEventLoop};
 
-use crate::core::{Physical, Point, Scale, Size};
+use crate::core::Size;
 use crate::{Application, WindowState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,59 +99,13 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
         &mut self,
         event_loop: &dyn ActiveEventLoop,
         window_id: winit::window::WindowId,
-        event: WindowEvent,
+        event: winit::event::WindowEvent,
     ) {
-        let window_state = match self.windows.get_mut(&window_id) {
-            Some(ws) => ws,
-            None => return,
+        let Some(window_state) = self.windows.get_mut(&window_id) else {
+            return;
         };
 
-        match event {
-            WindowEvent::SurfaceResized(size) => {
-                window_state.resize(Size::from_winit(size));
-            }
-            WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                surface_size_writer: _,
-            } => {
-                window_state.widget_context.scale = Scale::new(scale_factor);
-                println!("Scale factor changed to {}", scale_factor);
-            }
-            WindowEvent::PointerMoved {
-                device_id: _,
-                position,
-                primary: _,
-                source: _,
-            } => {
-                window_state.widget_context.cursor_pos =
-                    Point::<Physical>::new(position.x as f32, position.y as f32);
-            }
-            WindowEvent::RedrawRequested => {
-                if let Err(err) = window_state.render() {
-                    println!("Error drawing window: {err}")
-                }
-            }
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-                println!("Window closed by user");
-            }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: winit::keyboard::PhysicalKey::Code(KeyCode::Escape),
-                        state: ElementState::Pressed,
-                        repeat: false,
-                        ..
-                    },
-                ..
-            } => {
-                event_loop.exit();
-                println!("Escape pressed, exiting");
-            }
-            _ => (),
-        }
-
-        window_state.handle_window_event(event_loop, window_id, &event);
+        window_state.handle_window_event(event_loop, &event);
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {

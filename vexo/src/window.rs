@@ -1,17 +1,20 @@
 use std::sync::Arc;
 
 use winit::{
-    event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
+    event::{ElementState, KeyEvent, WindowEvent},
+    event_loop::ActiveEventLoop,
+    keyboard::{KeyCode, PhysicalKey},
+    window::Window,
 };
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
 use crate::frame_context::FrameContext;
-use crate::input::{CursorIcon, InputEvent};
+use crate::input::{ButtonState, CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
 use crate::state::CursorBlinkState;
-use crate::widgets::{Column, Widget, WidgetContext};
+use crate::widgets::{Column, Widget, WidgetContext, WidgetResponse};
 use crate::Application;
 
 pub struct WindowState<A: Application + 'static> {
@@ -194,20 +197,74 @@ impl<A: Application + 'static> WindowState<A> {
 
     pub fn handle_window_event(
         &mut self,
-        _event_loop: &dyn ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: &winit::event::WindowEvent,
+        event_loop: &dyn ActiveEventLoop,
+        event: &WindowEvent,
     ) {
-        // Convert winit event to InputEvent
-        let input_event =
-            crate::input::InputEvent::from_winit(event, self.widget_context.scale.clone());
+        match event {
+            // Framework events (no InputEvent conversion)
+            WindowEvent::SurfaceResized(size) => {
+                self.resize(Size::from_winit(*size));
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.widget_context.scale = Scale::new(*scale_factor);
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(err) = self.render() {
+                    eprintln!("Error drawing window: {err}");
+                }
+            }
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
 
-        // Only process events that convert to InputEvent
-        let Some(input_event) = input_event else {
-            return;
-        };
+            // User input events with special handling
+            WindowEvent::PointerMoved { position, .. } => {
+                // Store physical coords for rendering
+                self.widget_context.cursor_pos =
+                    Point::<Physical>::new(position.x as f32, position.y as f32);
 
-        // Pass the event to the root widget (which passes it down)
+                // Pass to widget tree for hit-testing
+                if let Some(input_event) =
+                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                {
+                    self.process_input_event(input_event);
+                }
+            }
+            WindowEvent::KeyboardInput { event: key_event, .. } => {
+                // Handle Escape key for app exit (framework-level shortcut)
+                if matches!(
+                    key_event,
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    }
+                ) {
+                    event_loop.exit();
+                    return;
+                }
+                // Other keyboard input goes to widgets
+                if let Some(input_event) =
+                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                {
+                    self.process_input_event(input_event);
+                }
+            }
+
+            // Other events that may convert to InputEvent
+            _ => {
+                if let Some(input_event) =
+                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                {
+                    self.process_input_event(input_event);
+                }
+            }
+        }
+    }
+
+    /// Process an InputEvent through the widget tree and handle responses.
+    fn process_input_event(&mut self, input_event: InputEvent) {
         let layout_view = LayoutView::new(self.layout_engine.as_ref());
         let widget_response = self.root_widget.on_event(
             &layout_view,
@@ -218,15 +275,19 @@ impl<A: Application + 'static> WindowState<A> {
             &mut self.widget_context,
         );
 
-        // Handle Framework Logic
-        if let Some(focus_request) = widget_response.focus_request {
+        self.handle_widget_response(&widget_response, &input_event);
+    }
+
+    /// Handle the response from widget event processing.
+    fn handle_widget_response(&mut self, response: &WidgetResponse<A::Message>, input_event: &InputEvent) {
+        // Handle focus changes
+        if let Some(focus_request) = response.focus_request {
             self.focused_widget_id = Some(focus_request);
-            println!("Focus requested by widget: {:?}", focus_request);
-        } else if widget_response.clear_focus {
+        } else if response.clear_focus {
             self.focused_widget_id = None;
-        } else if !widget_response.handled {
-            if let crate::input::InputEvent::PointerButton {
-                state: crate::input::ButtonState::Pressed,
+        } else if !response.handled {
+            if let InputEvent::PointerButton {
+                state: ButtonState::Pressed,
                 ..
             } = input_event
             {
@@ -235,23 +296,23 @@ impl<A: Application + 'static> WindowState<A> {
             }
         }
 
-        // Check if event if handled, notify if needed
-        if widget_response.handled {
-            // Reset cursor blink on keyboard input
-            if let crate::input::InputEvent::Keyboard { .. } = input_event {
-                self.cursor_blink.reset();
-            }
+        // Reset cursor blink on handled keyboard input
+        if response.handled && matches!(input_event, InputEvent::Keyboard { .. }) {
+            self.cursor_blink.reset();
         }
 
-        //  Handle User Logic
-        if let Some(msg) = widget_response.message {
-            println!("User message received: {:?}", msg);
+        // Handle user messages
+        if let Some(msg) = response.message.clone() {
             self.update(msg);
         }
 
         // Handle cursor changes
-        // Only update cursor on PointerMoved events to avoid resetting during clicks
-        if let Some(cursor) = widget_response.cursor {
+        self.update_cursor(response, input_event);
+    }
+
+    /// Update cursor based on widget response.
+    fn update_cursor(&mut self, response: &WidgetResponse<A::Message>, input_event: &InputEvent) {
+        if let Some(cursor) = response.cursor {
             if cursor != self.current_cursor {
                 self.current_cursor = cursor;
                 if let Some(window) = &self.window {
@@ -260,7 +321,6 @@ impl<A: Application + 'static> WindowState<A> {
             }
         } else if matches!(input_event, InputEvent::PointerMoved { .. }) {
             // Only reset to default on PointerMoved when no cursor is requested
-            // This prevents cursor from resetting during click/release events
             if self.current_cursor != CursorIcon::Default {
                 self.current_cursor = CursorIcon::Default;
                 if let Some(window) = &self.window {
