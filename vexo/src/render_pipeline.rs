@@ -36,7 +36,7 @@ impl CombinedPreparedText {
     pub fn as_text_areas(&mut self) -> Vec<TextArea<'_>> {
         let text_areas = self.regular.as_text_areas();
         let editor_areas = self.editor.as_text_areas();
-        text_areas.into_iter().chain(editor_areas.into_iter()).collect()
+        text_areas.into_iter().chain(editor_areas).collect()
     }
 }
 

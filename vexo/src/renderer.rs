@@ -49,6 +49,12 @@ pub struct UiBatcher {
     clip_stack: Vec<Bounds>, // Stack for clipping regions
 }
 
+impl Default for UiBatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UiBatcher {
     pub fn new() -> Self {
         Self {

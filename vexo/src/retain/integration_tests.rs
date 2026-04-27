@@ -71,7 +71,7 @@ fn test_key_preserves_identity() {
 mod full_pipeline_tests {
     use crate::core::{Point, Size};
     use crate::layout::TaffyLayoutEngine;
-    use crate::retain::{Column, Row, Text, ThreeTreePipeline, Widget};
+    use crate::retain::{Row, Text, ThreeTreePipeline, Widget};
 
     #[test]
     fn test_full_frame_flow() {

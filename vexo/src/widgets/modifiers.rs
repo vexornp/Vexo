@@ -98,7 +98,7 @@ impl<W: crate::testable::Paint, M> crate::testable::Paint for Background<W, M> {
             layout.width(),
             layout.height(),
         );
-        commands.push(RenderCommand::rect(bounds, self.color.into()));
+        commands.push(RenderCommand::rect(bounds, self.color));
 
         // Then child
         commands.extend(self.child.paint(ctx));
@@ -254,8 +254,8 @@ impl<W: crate::testable::Paint, M> crate::testable::Paint for Border<W, M> {
         );
         commands.push(RenderCommand::rect_with_border(
             bounds,
-            Color::TRANSPARENT.into(),  // transparent fill
-            self.color.into(),          // border color
+            Color::TRANSPARENT,  // transparent fill
+            self.color,          // border color
             self.width,                 // border width
         ));
 
@@ -476,7 +476,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
 mod tests {
     use super::*;
     use crate::testable::{Identifiable, Layout, Paint, PaintContext, LayoutConstraints, ComputedLayout};
-    use crate::core::{Color as CoreColor, Bounds, WidgetId};
+    use crate::core::{Bounds, WidgetId};
 
     /// Test widget that implements all separated traits.
     struct TestWidget {

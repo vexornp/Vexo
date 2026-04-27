@@ -89,11 +89,7 @@ impl<'a> ElementContext<'a> {
     ///
     /// Returns the ID of the created render object, or None if no registry is available.
     pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> Option<RenderObjectId> {
-        if let Some(registry) = &mut self.render_objects {
-            Some(registry.create(object, owner))
-        } else {
-            None
-        }
+        self.render_objects.as_mut().map(|registry| registry.create(object, owner))
     }
 
     /// Remove a render object from the registry.

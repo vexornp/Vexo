@@ -49,6 +49,7 @@ pub struct WindowState<A: Application + 'static> {
     retain_pipeline: Option<ThreeTreePipeline>,
 
     // Flag to enable retain mode (false = use immediate mode for compatibility)
+    #[allow(dead_code)]
     use_retain_mode: bool,
 }
 
@@ -234,7 +235,7 @@ impl<A: Application + 'static> WindowState<A> {
 
                 // Pass to widget tree for hit-testing
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                    InputEvent::from_winit(event, self.widget_context.scale)
                 {
                     self.process_input_event(input_event);
                 }
@@ -255,7 +256,7 @@ impl<A: Application + 'static> WindowState<A> {
                 }
                 // Other keyboard input goes to widgets
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                    InputEvent::from_winit(event, self.widget_context.scale)
                 {
                     self.process_input_event(input_event);
                 }
@@ -264,7 +265,7 @@ impl<A: Application + 'static> WindowState<A> {
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.widget_context.scale.clone())
+                    InputEvent::from_winit(event, self.widget_context.scale)
                 {
                     self.process_input_event(input_event);
                 }
@@ -343,9 +344,7 @@ impl<A: Application + 'static> WindowState<A> {
     fn handle_key(&mut self, event_loop: &dyn ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
-            (KeyCode::Space, true) => {
-                return;
-            }
+            (KeyCode::Space, true) => {}
             _ => {}
         }
     }

@@ -121,7 +121,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
             // Button is now a transparent container - use .background() modifier for styling
             let child_ids = layout_view.children(node);
-            if let Some(content_node) = child_ids.get(0) {
+            if let Some(content_node) = child_ids.first() {
                 self.content.draw(
                     layout_view,
                     *content_node,
@@ -184,7 +184,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
 
             // Child event propagation for other events
             let child_ids = layout_view.children(node);
-            if let Some(content_node) = child_ids.get(0) {
+            if let Some(content_node) = child_ids.first() {
                 let content_offset = Point::new(x, y);
                 return self.content.on_event(
                     layout_view,

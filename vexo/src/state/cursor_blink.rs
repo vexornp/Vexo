@@ -12,6 +12,12 @@ pub struct CursorBlinkState {
     blink_period_ms: f32,
 }
 
+impl Default for CursorBlinkState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CursorBlinkState {
     pub fn new() -> Self {
         Self {

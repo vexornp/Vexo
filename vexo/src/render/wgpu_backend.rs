@@ -44,6 +44,7 @@ pub struct WgpuBackend {
     atlas: glyphon::TextAtlas,
     text_renderer: glyphon::TextRenderer,
     viewport: glyphon::Viewport,
+    #[allow(dead_code)]
     cache: glyphon::Cache,
 
     // Current configuration

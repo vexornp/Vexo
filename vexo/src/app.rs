@@ -20,6 +20,7 @@ pub enum KeyBindingAction {
 
 pub struct VexoApp<A: Application + 'static> {
     receiver: Receiver<KeyBindingAction>,
+    #[allow(dead_code)]
     sender: Sender<KeyBindingAction>,
     windows: HashMap<WindowId, WindowState<A>>,
 }
@@ -55,7 +56,7 @@ impl<A: Application + 'static> VexoApp<A> {
             return Some(window_id);
         }
 
-        return None;
+        None
     }
 
     fn handle_action_from_proxy(
@@ -63,11 +64,8 @@ impl<A: Application + 'static> VexoApp<A> {
         _event_loop: &dyn ActiveEventLoop,
         action: KeyBindingAction,
     ) {
-        match action {
-            KeyBindingAction::Message => {
-                println!("Use wake up")
-            }
-            _ => {}
+        if action == KeyBindingAction::Message {
+            println!("Use wake up")
         }
     }
 
@@ -78,7 +76,7 @@ impl<A: Application + 'static> VexoApp<A> {
         let window_attr = WindowAttributes::default();
         let window = event_loop.create_window(window_attr).unwrap();
         let wid = self.try_init_framework_state(window);
-        return Result::Ok(wid.unwrap());
+        Result::Ok(wid.unwrap())
     }
 }
 

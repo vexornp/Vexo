@@ -640,7 +640,7 @@ mod tests {
 
         // Initial widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
-        let initial_root = pipeline.element_registry().root();
+        let _initial_root = pipeline.element_registry().root();
 
         // Clear dirty for comparison
         pipeline.clear_dirty();

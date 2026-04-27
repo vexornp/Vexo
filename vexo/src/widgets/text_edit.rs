@@ -125,21 +125,20 @@ impl crate::testable::Paint for TextEdit {
             layout.height(),
         );
 
-        let mut commands = Vec::new();
-
-        // Debug border
-        commands.push(RenderCommand::rect_with_border(
-            bounds,
-            Color::BLACK,
-            Color::RED,
-            1.0,
-        ));
-
-        // Editor area
-        commands.push(RenderCommand::editor(
-            self.editor_id.clone(),
-            bounds,
-        ));
+        let commands = vec![
+            // Debug border
+            RenderCommand::rect_with_border(
+                bounds,
+                Color::BLACK,
+                Color::RED,
+                1.0,
+            ),
+            // Editor area
+            RenderCommand::editor(
+                self.editor_id.clone(),
+                bounds,
+            ),
+        ];
 
         // Note: Cursor rendering requires access to editor state (via WidgetContext)
         // which is not available in PaintContext. This is a known limitation.
@@ -212,8 +211,6 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
-        } else if self.layout.flex_grow.is_none() {
-            self.layout.clone()
         } else {
             self.layout.clone()
         };
@@ -494,7 +491,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testable::{Identifiable, Layout, Paint, Interact, InteractionContext};
+    use crate::testable::{Identifiable, Layout, Interact, InteractionContext};
 
     #[test]
     fn test_text_edit_implements_separated_traits() {

@@ -63,7 +63,7 @@ impl PaintContext {
 
     /// Push a new offset onto the stack.
     pub fn push_offset(&mut self, offset: Point<Logical>) {
-        self.offset = self.offset + offset;
+        self.offset += offset;
     }
 
     /// Pop the offset from the stack.

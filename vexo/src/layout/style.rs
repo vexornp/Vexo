@@ -10,20 +10,15 @@ use crate::core::{Size, Logical};
 // ============================================================================
 
 /// A dimension value that can be auto, fixed length, or percentage.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Dimension {
     /// Automatic sizing based on content.
+    #[default]
     Auto,
     /// Fixed length in logical points.
     Length(f32),
     /// Percentage of parent size (0.0-1.0).
     Percent(f32),
-}
-
-impl Default for Dimension {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 // ============================================================================
@@ -703,18 +698,6 @@ impl Inset {
 }
 
 impl TrackSizing {
-    /// Convert to a Taffy track sizing function for grid auto tracks.
-    fn to_taffy(&self) -> taffy::prelude::TrackSizingFunction {
-        use taffy::prelude::*;
-        match self {
-            TrackSizing::Auto => auto(),
-            TrackSizing::Fr(v) => fr(*v),
-            TrackSizing::Px(v) => length(*v),
-            TrackSizing::Percent(v) => percent(*v),
-            TrackSizing::MinMax { min, max } => minmax(min.to_taffy_min(), max.to_taffy_max()),
-        }
-    }
-
     /// Convert to a Taffy GridTemplateComponent for grid template tracks.
     fn to_taffy_template(&self) -> taffy::prelude::GridTemplateComponent<String> {
         use taffy::prelude::*;

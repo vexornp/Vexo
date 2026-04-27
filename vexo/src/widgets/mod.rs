@@ -41,6 +41,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     /// This is the new painting method that replaces `draw()`.
     fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand>;
 
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         layout_view: &LayoutView,
@@ -157,6 +158,12 @@ pub struct WidgetContext {
     pub font_system: FontSystem,
     pub scale: Scale,
     pub cursor_pos: Point<Physical>,
+}
+
+impl Default for WidgetContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WidgetContext {
