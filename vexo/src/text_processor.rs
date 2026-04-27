@@ -73,6 +73,41 @@ impl TextProcessor {
         }
     }
 
+    /// Create a TextAreaData from buffer and positioning info.
+    ///
+    /// This private helper extracts the common logic for creating
+    /// text area data used in rendering.
+    fn create_text_area(
+        buffer: Buffer,
+        physical_pos: crate::core::Point<Physical>,
+        scale: Scale,
+        bounds_left: i32,
+        bounds_top: i32,
+        bounds_right: i32,
+        bounds_bottom: i32,
+        color: [f32; 4],
+    ) -> (Buffer, TextAreaData) {
+        let default_color = cosmic_text::Color::rgba(
+            (color[0] * 255.0) as u8,
+            (color[1] * 255.0) as u8,
+            (color[2] * 255.0) as u8,
+            (color[3] * 255.0) as u8,
+        );
+
+        let data = TextAreaData {
+            left: physical_pos.x,
+            top: physical_pos.y,
+            scale: scale.factor(),
+            bounds_left,
+            bounds_top,
+            bounds_right,
+            bounds_bottom,
+            default_color,
+        };
+
+        (buffer, data)
+    }
+
     /// Process regular text requests into prepared text.
     pub fn process_text_requests(
         &mut self,
@@ -114,24 +149,18 @@ impl TextProcessor {
                     )
                 };
 
-            let default_color = cosmic_text::Color::rgba(
-                (req.color[0] * 255.0) as u8,
-                (req.color[1] * 255.0) as u8,
-                (req.color[2] * 255.0) as u8,
-                (req.color[3] * 255.0) as u8,
-            );
-
-            buffers.push(buffer);
-            text_area_data.push(TextAreaData {
-                left: physical_pos.x,
-                top: physical_pos.y,
-                scale: scale.factor(),
+            let (buf, data) = Self::create_text_area(
+                buffer,
+                physical_pos,
+                scale,
                 bounds_left,
                 bounds_top,
                 bounds_right,
                 bounds_bottom,
-                default_color,
-            });
+                req.color,
+            );
+            buffers.push(buf);
+            text_area_data.push(data);
         }
 
         // Periodically evict stale cache entries
@@ -164,29 +193,23 @@ impl TextProcessor {
             let bounds_bottom: i32 =
                 (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
 
-            let default_color = cosmic_text::Color::rgba(
-                (req.color[0] * 255.0) as u8,
-                (req.color[1] * 255.0) as u8,
-                (req.color[2] * 255.0) as u8,
-                (req.color[3] * 255.0) as u8,
-            );
-
             let editor_ref = widget_context.get_or_create_editor(&req.id, "initial_text");
             let editor = editor_ref.borrow();
             let mut buf = editor.buffer().clone();
             buf.shape_until_scroll(&mut widget_context.font_system, true);
 
-            buffers.push(buf);
-            text_area_data.push(TextAreaData {
-                left: physical_rect.origin.x,
-                top: physical_rect.origin.y,
-                scale: scale.factor(),
+            let (buffer, data) = Self::create_text_area(
+                buf,
+                physical_rect.origin,
+                scale,
                 bounds_left,
                 bounds_top,
                 bounds_right,
                 bounds_bottom,
-                default_color,
-            });
+                req.color,
+            );
+            buffers.push(buffer);
+            text_area_data.push(data);
         }
 
         PreparedText {
