@@ -1,10 +1,9 @@
-use crate::core::{Logical, Point, Size};
+use crate::core::{Color, Logical, Point, Size};
 use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
-use crate::Color;
 use std::marker::PhantomData;
 
 /// Extension trait providing visual modifier chaining.

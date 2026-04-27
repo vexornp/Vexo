@@ -7,11 +7,10 @@ use std::sync::Arc;
 use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
-use crate::core::{Physical, Scale, Size};
+use crate::core::{Color, Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
 use crate::renderer::{UiBatcher, Vertex};
-use crate::Color;
 
 /// Global uniforms passed to shaders.
 #[repr(C)]

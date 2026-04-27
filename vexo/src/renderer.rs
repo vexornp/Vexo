@@ -1,6 +1,5 @@
-use crate::core::{Logical, Point, Rect, Size};
+use crate::core::{Color, Logical, Point, Rect, Size};
 use crate::quad_instance;
-use crate::Color;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -25,7 +24,7 @@ pub struct TextRequest {
     pub content: String,
     pub position: Point<Logical>,
     pub size: f32,
-    pub color: [f32; 4],
+    pub color: Color,
     // Clipping bounds (x, y, width, height). If width <= 0, no clipping.
     pub clip_bounds: [f32; 4],
 }
@@ -35,7 +34,7 @@ pub type Bounds = Rect<Logical>;
 pub struct EditorRequest {
     pub id: String,
     pub bounds: Bounds, // x, y, width, height
-    pub color: [f32; 4],
+    pub color: Color,
 }
 
 pub struct UiBatcher {
@@ -175,7 +174,7 @@ impl UiBatcher {
             content,
             position,
             size,
-            color: color.to_array(),
+            color,
             clip_bounds,
         });
     }
@@ -184,7 +183,7 @@ impl UiBatcher {
         self.editor_requests.push(EditorRequest {
             id: id.into(),
             bounds,
-            color: Color::WHITE.to_array(),
+            color: Color::WHITE,
         });
     }
 }

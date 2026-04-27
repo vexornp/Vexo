@@ -27,10 +27,10 @@ impl TextCacheKey {
             content: req.content.clone(),
             font_size_bits: req.size.to_bits(),
             color_bits: [
-                req.color[0].to_bits(),
-                req.color[1].to_bits(),
-                req.color[2].to_bits(),
-                req.color[3].to_bits(),
+                req.color.r.to_bits(),
+                req.color.g.to_bits(),
+                req.color.b.to_bits(),
+                req.color.a.to_bits(),
             ],
         }
     }
@@ -82,12 +82,7 @@ impl TextCache {
             Metrics::new(request.size, request.size * 1.2),
         );
 
-        let color_rgba_u8 = cosmic_text::Color::rgba(
-            (request.color[0] * 255.0) as u8,
-            (request.color[1] * 255.0) as u8,
-            (request.color[2] * 255.0) as u8,
-            (request.color[3] * 255.0) as u8,
-        );
+        let color_rgba_u8: cosmic_text::Color = request.color.into();
 
         buffer.set_text(
             font_system,

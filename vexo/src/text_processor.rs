@@ -3,9 +3,9 @@
 //! Handles conversion of text requests and editor requests into
 //! glyphon TextArea instances ready for rendering.
 
-use glyphon::{cosmic_text, Buffer, FontSystem, TextArea, TextBounds};
+use glyphon::{Buffer, FontSystem, TextArea, TextBounds};
 
-use crate::core::{Physical, Scale, Size};
+use crate::core::{Color, Physical, Scale, Size};
 use crate::renderer::{EditorRequest, TextRequest};
 use crate::text_cache::TextCache;
 use crate::widgets::WidgetContext;
@@ -36,7 +36,7 @@ struct TextAreaData {
     bounds_top: i32,
     bounds_right: i32,
     bounds_bottom: i32,
-    default_color: cosmic_text::Color,
+    default_color: Color,
 }
 
 impl PreparedText {
@@ -59,7 +59,7 @@ impl PreparedText {
                     right: data.bounds_right,
                     bottom: data.bounds_bottom,
                 },
-                default_color: data.default_color,
+                default_color: data.default_color.into(),
                 custom_glyphs: &[],
             })
             .collect()
@@ -86,15 +86,8 @@ impl TextProcessor {
         bounds_top: i32,
         bounds_right: i32,
         bounds_bottom: i32,
-        color: [f32; 4],
+        color: Color,
     ) -> (Buffer, TextAreaData) {
-        let default_color = cosmic_text::Color::rgba(
-            (color[0] * 255.0) as u8,
-            (color[1] * 255.0) as u8,
-            (color[2] * 255.0) as u8,
-            (color[3] * 255.0) as u8,
-        );
-
         let data = TextAreaData {
             left: physical_pos.x,
             top: physical_pos.y,
@@ -103,7 +96,7 @@ impl TextProcessor {
             bounds_top,
             bounds_right,
             bounds_bottom,
-            default_color,
+            default_color: color,
         };
 
         (buffer, data)

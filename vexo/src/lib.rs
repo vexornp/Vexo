@@ -3,13 +3,12 @@ use std::sync::mpsc;
 
 use winit::event_loop::EventLoop;
 
-pub use color::Color;
+pub use core::Color;
 pub use uniffi;
 
 mod app;
 pub use app::{KeyBindingAction, VexoApp};
 
-mod color;
 pub mod core;
 mod editor;
 pub mod input;
