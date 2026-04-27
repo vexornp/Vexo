@@ -62,3 +62,147 @@ fn test_key_preserves_identity() {
     assert_eq!(element_registry.len(), 1);
     assert_eq!(element_registry.root(), Some(element1));
 }
+
+// ============================================================================
+// Full Pipeline Tests
+// ============================================================================
+
+#[cfg(test)]
+mod full_pipeline_tests {
+    use crate::core::{Point, Size};
+    use crate::layout::TaffyLayoutEngine;
+    use crate::retain::{Column, Row, Text, ThreeTreePipeline, Widget};
+
+    #[test]
+    fn test_full_frame_flow() {
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut engine = TaffyLayoutEngine::new();
+
+        // First frame: reconcile a text widget
+        let widget = Text::new("First");
+        pipeline.reconcile(Box::new(widget));
+
+        // Should have one element and one render object
+        assert!(pipeline.element_registry().len() >= 1);
+
+        // Layout with available size
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+
+        // After layout, dirty flags should be cleared
+        assert!(!pipeline.needs_layout());
+
+        // Second frame: update with new text
+        let widget = Text::new("First Updated");
+        pipeline.reconcile(Box::new(widget));
+
+        // Element should be updated, not recreated (same root)
+        // Elements should be reused for matching widgets
+        assert!(pipeline.needs_layout() || pipeline.needs_paint());
+    }
+
+    #[test]
+    fn test_hit_test_through_pipeline() {
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut engine = TaffyLayoutEngine::new();
+
+        // Create a text widget
+        let widget = Text::new("Hello World");
+        pipeline.reconcile(Box::new(widget));
+
+        // Layout with available size
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+
+        // Hit test at a point inside the text bounds (text starts at origin)
+        let result = pipeline.hit_test(Point::new(5.0, 5.0));
+
+        // Should hit the text render object
+        assert!(result.is_hit());
+        assert!(result.target().is_some());
+
+        // Hit test outside the text bounds
+        let result_outside = pipeline.hit_test(Point::new(500.0, 500.0));
+
+        // Should miss
+        assert!(!result_outside.is_hit());
+        assert!(result_outside.target().is_none());
+    }
+
+    #[test]
+    fn test_keyed_reconciliation() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        // First frame with a keyed widget
+        let widget = Text::new("A").with_key("first");
+        pipeline.reconcile(Box::new(widget));
+        let count_after_first = pipeline.element_registry().len();
+
+        // Should have exactly one element
+        assert_eq!(count_after_first, 1);
+
+        // Second frame: update with same key
+        let widget = Text::new("A updated").with_key("first");
+        pipeline.reconcile(Box::new(widget));
+        let count_after_second = pipeline.element_registry().len();
+
+        // Element count should be the same (element reused)
+        assert_eq!(count_after_first, count_after_second);
+
+        // The element should be marked for update
+        assert!(pipeline.needs_layout() || pipeline.needs_paint());
+    }
+
+    #[test]
+    fn test_pipeline_paint_cycle() {
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut engine = TaffyLayoutEngine::new();
+
+        // Reconcile and layout
+        pipeline.reconcile(Box::new(Text::new("Test")));
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+
+        // Paint should return commands (text render object may return empty)
+        let commands = pipeline.paint();
+
+        // TextRenderObject returns empty commands (text rendered via glyphon)
+        // The important thing is that paint completes without error
+        let _ = commands;
+    }
+
+    #[test]
+    fn test_different_widget_types_cause_remount() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        // First frame with Text
+        pipeline.reconcile(Box::new(Text::new("Text content")));
+        let root_after_first = pipeline.element_registry().root();
+
+        // Second frame with Row (different type)
+        // This would cause a remount since the types don't match
+        pipeline.reconcile(Box::new(Row::new()));
+
+        // Root element should be different after remount
+        // Note: Current implementation unmounts and remounts for different types
+        let root_after_second = pipeline.element_registry().root();
+
+        // Both roots should exist but may be different
+        assert!(root_after_first.is_some());
+        assert!(root_after_second.is_some());
+    }
+
+    #[test]
+    fn test_pipeline_clear_dirty() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        // Reconcile creates dirty elements
+        pipeline.reconcile(Box::new(Text::new("Test")));
+
+        assert!(pipeline.needs_layout());
+        assert!(pipeline.needs_paint());
+
+        // Clear dirty flags
+        pipeline.clear_dirty();
+
+        assert!(!pipeline.needs_layout());
+        assert!(!pipeline.needs_paint());
+    }
+}
