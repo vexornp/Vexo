@@ -127,7 +127,7 @@ mod tests {
 
     impl Element for TestElement {
         fn mount(&mut self, _context: &mut crate::retain::ElementContext) {}
-        fn update(&mut self, _context: &mut crate::retain::ElementContext) {}
+        fn update(&mut self, _new_widget: Box<dyn Widget>, _context: &mut crate::retain::ElementContext) {}
         fn unmount(&mut self, _context: &mut crate::retain::ElementContext) {}
         fn visit_children(&self, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<crate::retain::RenderObjectId> {

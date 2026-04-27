@@ -70,7 +70,10 @@ impl Element for ModifierElement {
         }
     }
 
-    fn update(&mut self, context: &mut ElementContext) {
+    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext) {
+        // Store the new widget configuration
+        self.widget = Some(new_widget);
+
         if let Some(ro) = self.render_object {
             context.mark_needs_layout(ro);
             context.mark_needs_paint(ro);

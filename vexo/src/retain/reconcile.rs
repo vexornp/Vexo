@@ -92,7 +92,7 @@ impl ElementRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{Element, ElementContext, RenderObjectId};
+    use super::super::{Element, ElementContext, RenderObjectId, Widget};
     use std::cell::Cell;
 
     struct MockWidget {
@@ -134,7 +134,7 @@ mod tests {
 
     impl Element for MockElement {
         fn mount(&mut self, _context: &mut ElementContext) {}
-        fn update(&mut self, _context: &mut ElementContext) {}
+        fn update(&mut self, _new_widget: Box<dyn Widget>, _context: &mut ElementContext) {}
         fn unmount(&mut self, _context: &mut ElementContext) {}
         fn visit_children(&self, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<RenderObjectId> { self.render_object }

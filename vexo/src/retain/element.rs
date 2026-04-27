@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use super::id::{ElementId, RenderObjectId};
 use super::key::Key;
 use super::element_context::ElementContext;
+use super::widgets::Widget;
 
 /// Persistent element with state and lifecycle.
 ///
@@ -22,7 +23,9 @@ pub trait Element {
     fn mount(&mut self, context: &mut ElementContext);
 
     /// Called when widget configuration changes.
-    fn update(&mut self, context: &mut ElementContext);
+    ///
+    /// The `new_widget` parameter contains the updated widget configuration.
+    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext);
 
     /// Called when element is removed from the tree.
     fn unmount(&mut self, context: &mut ElementContext);
