@@ -162,9 +162,10 @@ impl ThreeTreePipeline {
                     existing_element.update(root_widget, &mut ctx);
                 }
 
-                // Mark the element's render object as needing layout
+                // Mark the element's render object as needing layout and paint
                 if let Some(render_id) = render_object_id {
                     self.dirty.mark_needs_layout(render_id);
+                    self.dirty.mark_needs_paint(render_id);
                 }
 
                 return;
@@ -195,8 +196,9 @@ impl ThreeTreePipeline {
             self.render_objects.set_root(render_id);
         }
 
-        // Mark as needing layout
+        // Mark as needing layout and paint
         self.dirty.mark_needs_layout(render_id);
+        self.dirty.mark_needs_paint(render_id);
 
         // Get the mounted element to perform mount lifecycle
         if let Some(mounted_element) = self.element_registry.get_mut(element_id) {
@@ -258,7 +260,7 @@ impl ThreeTreePipeline {
 
     /// Perform layout on dirty render objects.
     ///
-    /// This method iterates over all render objects marked as needing layout
+    /// This method iterates over render objects marked as needing layout
     /// and calls their `layout()` method with appropriate constraints.
     ///
     /// # Arguments
@@ -277,11 +279,13 @@ impl ThreeTreePipeline {
     /// pipeline.layout(Size::new(800.0, 600.0), &mut engine);
     /// ```
     pub fn layout(&mut self, available_size: Size<Logical>, _engine: &mut dyn crate::layout::LayoutEngine) {
-        // If no root, nothing to layout
-        let root_id = match self.render_objects.root() {
-            Some(id) => id,
-            None => return,
-        };
+        // Get dirty render objects that need layout
+        let dirty_ids: Vec<_> = self.dirty.drain_layout().collect();
+
+        // If no dirty objects, nothing to do
+        if dirty_ids.is_empty() {
+            return;
+        }
 
         // Create layout context
         let mut ctx = LayoutContext::mock();
@@ -295,13 +299,12 @@ impl ThreeTreePipeline {
             ..LayoutConstraints::default()
         };
 
-        // Layout root (simplified - full engine integration pending)
-        if let Some(obj) = self.render_objects.get_mut(root_id) {
-            obj.layout(constraints, &mut ctx);
+        // Layout only dirty objects
+        for id in dirty_ids {
+            if let Some(obj) = self.render_objects.get_mut(id) {
+                obj.layout(constraints, &mut ctx);
+            }
         }
-
-        // Clear layout dirty flags
-        self.dirty.clear();
 
         // Note: For full implementation, we would:
         // 1. Use the layout engine to create nodes for each render object
@@ -312,8 +315,8 @@ impl ThreeTreePipeline {
 
     /// Generate render commands from the render object tree.
     ///
-    /// This method recursively traverses the render object tree from the root
-    /// and collects all render commands.
+    /// This method only paints objects that are marked as needing paint.
+    /// It traverses from the root but only generates commands for dirty objects.
     ///
     /// # Returns
     ///
@@ -328,14 +331,22 @@ impl ThreeTreePipeline {
     ///     renderer.submit(cmd);
     /// }
     /// ```
-    pub fn paint(&self) -> Vec<RenderCommand> {
+    pub fn paint(&mut self) -> Vec<RenderCommand> {
         let mut commands = Vec::new();
+
+        // If no objects need paint, return empty
+        if self.dirty.is_paint_empty() {
+            return commands;
+        }
 
         // If no root, nothing to paint
         let root_id = match self.render_objects.root() {
             Some(id) => id,
             None => return commands,
         };
+
+        // Drain the dirty paint flags (we're about to paint them)
+        let _dirty_ids: Vec<_> = self.dirty.drain_paint().collect();
 
         // Create paint context
         let mut ctx = PaintContext::new(&mut commands);
@@ -425,6 +436,7 @@ impl ThreeTreePipeline {
         // Mark root
         if let Some(root) = self.render_objects.root() {
             self.dirty.mark_needs_layout(root);
+            self.dirty.mark_needs_paint(root);
         }
     }
 }
@@ -519,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_paint_empty() {
-        let pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Paint with no render objects
         let commands = pipeline.paint();
