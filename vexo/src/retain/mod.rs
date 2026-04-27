@@ -21,6 +21,8 @@ mod key_tests;
 mod reconcile_tests;
 #[cfg(test)]
 mod element_registry_tests;
+#[cfg(test)]
+mod integration_tests;
 
 pub use key::Key;
 pub use id::{ElementId, RenderObjectId};
