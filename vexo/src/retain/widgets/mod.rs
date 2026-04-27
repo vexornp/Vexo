@@ -5,11 +5,15 @@
 
 mod container;
 mod text;
+// Public for access to TextRenderObject and ContainerRenderObject
+pub use container::ContainerRenderObject;
+pub use text::TextRenderObject;
 
 use std::any::Any;
 
 use super::element::Element;
 use super::key::Key;
+use super::RenderObject;
 
 pub use container::{Column, Row};
 pub use text::Text;
@@ -42,6 +46,12 @@ pub trait Widget: Any {
     /// Called when a new widget is mounted (no matching element exists).
     fn create_element(&self) -> Box<dyn Element>;
 
+    /// Create the render object for this widget.
+    ///
+    /// Render objects handle layout and painting. They persist across frames
+    /// and are only updated when marked dirty.
+    fn create_render_object(&self) -> Box<dyn RenderObject>;
+
     /// Check if this widget can update an existing element.
     ///
     /// Default implementation checks type and key match.
@@ -51,6 +61,11 @@ pub trait Widget: Any {
     fn can_update(&self, other: &dyn Widget) -> bool {
         Any::type_id(self) == Any::type_id(other) && self.key() == other.key()
     }
+
+    /// Get as Any for downcasting.
+    ///
+    /// This enables downcasting to the concrete widget type for type-specific operations.
+    fn as_any(&self) -> &dyn Any;
 }
 
 #[cfg(test)]
@@ -58,6 +73,9 @@ mod tests {
     use super::*;
     use crate::retain::element::Element;
     use crate::retain::key::Key;
+    use crate::retain::{LayoutContext, RenderObject};
+    use crate::layout::LayoutConstraints;
+    use crate::core::{Size, Logical};
 
     struct TestWidget {
         key: Option<Key>,
@@ -87,6 +105,14 @@ mod tests {
         fn create_element(&self) -> Box<dyn Element> {
             Box::new(TestElement)
         }
+
+        fn create_render_object(&self) -> Box<dyn RenderObject> {
+            Box::new(TestRenderObject)
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
     }
 
     struct TestElement;
@@ -103,6 +129,22 @@ mod tests {
             None
         }
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool {
+            true
+        }
+    }
+
+    struct TestRenderObject;
+
+    impl RenderObject for TestRenderObject {
+        fn layout(&mut self, _constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
+            Size::new(100.0, 50.0)
+        }
+
+        fn paint(&self, _ctx: &mut crate::retain::PaintContext) -> Vec<crate::render::RenderCommand> {
+            vec![]
+        }
+
+        fn hit_test(&self, _position: crate::core::Point<Logical>, _ctx: &crate::retain::HitTestContext) -> bool {
             true
         }
     }
@@ -127,5 +169,25 @@ mod tests {
         let w2 = TestWidget::new(Some("test2"));
 
         assert!(!w1.can_update(&w2));
+    }
+
+    #[test]
+    fn test_widget_creates_render_object() {
+        let widget = Text::new("Hello");
+        let mut render_object = widget.create_render_object();
+
+        // Should be able to layout the render object
+        let constraints = LayoutConstraints {
+            min_width: 0.0,
+            max_width: 100.0,
+            min_height: 0.0,
+            max_height: 100.0,
+            ..LayoutConstraints::default()
+        };
+        let mut ctx = LayoutContext::mock();
+        let size = render_object.layout(constraints, &mut ctx);
+
+        assert!(size.width > 0.0);
+        assert!(size.height > 0.0);
     }
 }

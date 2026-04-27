@@ -33,5 +33,5 @@ pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, Paint
 pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
 
-pub use widgets::{Widget, Text, Column, Row};
+pub use widgets::{Widget, Text, Column, Row, TextRenderObject, ContainerRenderObject};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};
