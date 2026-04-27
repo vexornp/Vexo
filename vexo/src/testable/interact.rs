@@ -1,6 +1,6 @@
 //! Interact trait for widget input handling.
 
-use crate::core::{Point, Rect, Scale, WidgetId, Logical};
+use crate::core::{Bounds, Point, Scale, WidgetId, Logical};
 use crate::input::{CursorIcon, InputEvent, Modifiers};
 
 /// Context provided to widgets during event handling.
@@ -11,7 +11,7 @@ pub struct InteractionContext {
     /// Currently focused widget (if any).
     pub focused_widget: Option<WidgetId>,
     /// Bounds of the widget receiving the event.
-    pub bounds: Rect<Logical>,
+    pub bounds: Bounds<Logical>,
     /// Current DPI scale factor.
     pub scale: Scale,
     /// Current keyboard modifiers.
@@ -23,7 +23,7 @@ impl Default for InteractionContext {
         Self {
             pointer_position: Point::new(0.0, 0.0),
             focused_widget: None,
-            bounds: Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
+            bounds: Bounds::from_xywh(0.0, 0.0, 0.0, 0.0),
             scale: Scale::default(),
             modifiers: Modifiers::default(),
         }
@@ -35,7 +35,7 @@ impl InteractionContext {
     pub fn new(
         pointer_position: Point<Logical>,
         focused_widget: Option<WidgetId>,
-        bounds: Rect<Logical>,
+        bounds: Bounds<Logical>,
         scale: Scale,
     ) -> Self {
         Self {
@@ -206,7 +206,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(50.0, 50.0),
             None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Scale::new(1.0),
         );
         assert!(ctx.is_pointer_inside());
@@ -214,7 +214,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(150.0, 50.0),
             None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Scale::new(1.0),
         );
         assert!(!ctx.is_pointer_inside());
@@ -226,7 +226,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(0.0, 0.0),
             Some(id),
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Scale::new(1.0),
         );
 

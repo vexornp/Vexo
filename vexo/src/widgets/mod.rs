@@ -235,13 +235,13 @@ pub(crate) fn propagate_pointer_moved_to_containing_child<M: Clone + std::fmt::D
 
     for (child, child_node_id) in children.iter_mut().zip(child_ids.iter()) {
         if let Some(child_layout) = layout_view.get_layout(*child_node_id) {
-            let child_rect = crate::core::Rect::from_xywh(
+            let child_bounds = crate::core::Bounds::from_xywh(
                 offset.x + child_layout.x(),
                 offset.y + child_layout.y(),
                 child_layout.width(),
                 child_layout.height(),
             );
-            if child_rect.contains(&position) {
+            if child_bounds.contains(&position) {
                 return child.on_event(
                     layout_view,
                     *child_node_id,

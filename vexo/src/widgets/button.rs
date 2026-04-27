@@ -1,6 +1,6 @@
 use crate::layout::{AlignItems, JustifyContent, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
-use crate::core::{Logical, Point, Rect, WidgetId};
+use crate::core::{Bounds, Logical, Point, WidgetId};
 use crate::widgets::{WidgetContext, WidgetResponse};
 use crate::Widget;
 use crate::input::{CursorIcon, InputEvent, ButtonState};
@@ -148,11 +148,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
             let x = offset.x + layout.x();
             let y = offset.y + layout.y();
 
-            let rect = Rect::<Logical>::from_xywh(x, y, layout.width(), layout.height());
+            let bounds = Bounds::<Logical>::from_xywh(x, y, layout.width(), layout.height());
 
             // Handle PointerMoved - return pointer cursor when hovering
             if let InputEvent::PointerMoved { position } = event {
-                if rect.contains(position) {
+                if bounds.contains(position) {
                     return WidgetResponse {
                         message: None,
                         focus_request: None,
@@ -171,7 +171,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
                 ..
             } = event
             {
-                if rect.contains(position) {
+                if bounds.contains(position) {
                     return WidgetResponse {
                         message: Some(self.on_press.clone()),
                         focus_request: None,

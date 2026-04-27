@@ -1,6 +1,6 @@
 //! Paint trait for widget rendering.
 
-use crate::core::{Color, Point, Rect, WidgetId, Logical};
+use crate::core::{Bounds, Color, Point, WidgetId, Logical};
 use crate::render::RenderCommand;
 
 /// Context provided to widgets during the paint phase.
@@ -12,7 +12,7 @@ pub struct PaintContext {
     /// Current offset for child positioning.
     offset: Point<Logical>,
     /// Stack of clipping regions.
-    clip_stack: Vec<Rect<Logical>>,
+    clip_stack: Vec<Bounds<Logical>>,
     /// Stack of corner radius contexts.
     corner_radius_stack: Vec<f32>,
     /// Currently focused widget (if any).
@@ -97,7 +97,7 @@ impl PaintContext {
     }
 
     /// Push a clipping region.
-    pub fn push_clip(&mut self, bounds: Rect<Logical>) {
+    pub fn push_clip(&mut self, bounds: Bounds<Logical>) {
         self.clip_stack.push(bounds);
         self.commands.push(RenderCommand::PushClip { bounds });
     }
@@ -135,7 +135,7 @@ impl PaintContext {
     }
 
     /// Add an editor render command.
-    pub fn add_editor(&mut self, id: String, bounds: Rect<Logical>) {
+    pub fn add_editor(&mut self, id: String, bounds: Bounds<Logical>) {
         self.commands.push(RenderCommand::editor(id, bounds));
     }
 }
@@ -151,14 +151,14 @@ impl PaintContext {
 /// ```
 /// use vexo::testable::{Paint, PaintContext};
 /// use vexo::render::RenderCommand;
-/// use vexo::core::{Color, Rect, Logical};
+/// use vexo::core::{Color, Bounds, Logical};
 ///
 /// struct RedRect;
 ///
 /// impl Paint for RedRect {
 ///     fn paint(&self, paint_context: &mut PaintContext) -> Vec<RenderCommand> {
 ///         vec![RenderCommand::rect(
-///             Rect::<Logical>::from_xywh(0.0, 0.0, 100.0, 100.0),
+///             Bounds::<Logical>::from_xywh(0.0, 0.0, 100.0, 100.0),
 ///             Color::RED,
 ///         )]
 ///     }
@@ -192,7 +192,7 @@ mod tests {
     fn test_paint_context_add_command() {
         let mut ctx = PaintContext::default();
         ctx.add(RenderCommand::rect(
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             crate::core::Color::RED,
         ));
 
@@ -228,7 +228,7 @@ mod tests {
     fn test_paint_context_into_commands() {
         let mut ctx = PaintContext::default();
         ctx.add(RenderCommand::rect(
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             crate::core::Color::RED,
         ));
 
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_paint_context_add_editor() {
         let mut ctx = PaintContext::default();
-        ctx.add_editor("editor-1".to_string(), Rect::from_xywh(0.0, 0.0, 100.0, 50.0));
+        ctx.add_editor("editor-1".to_string(), Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
 
         assert_eq!(ctx.commands().len(), 1);
     }

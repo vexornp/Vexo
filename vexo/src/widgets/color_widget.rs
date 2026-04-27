@@ -1,4 +1,4 @@
-use crate::core::{Color, Point, Rect, Size, WidgetId};
+use crate::core::{Bounds, Color, Point, Size, WidgetId};
 use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::render::RenderCommand;
@@ -92,14 +92,15 @@ impl crate::testable::Paint for ColorWidget {
             None => return Vec::new(),
         };
 
-        let pos = Point::new(
+        let bounds = Bounds::from_xywh(
             ctx.offset().x + layout.x(),
             ctx.offset().y + layout.y(),
+            layout.width(),
+            layout.height(),
         );
-        let size = Size::new(layout.width(), layout.height());
 
         vec![RenderCommand::rect_with_border(
-            Rect::new(pos, size),
+            bounds,
             self.color,
             Color::WHITE,
             1.0,

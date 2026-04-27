@@ -1,6 +1,6 @@
 //! ScrollView widget - a vertical scrollable container.
 
-use crate::core::{Color, Logical, Point, Rect, WidgetId};
+use crate::core::{Bounds, Color, Logical, Point, WidgetId};
 use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
@@ -129,34 +129,34 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
     fn draw_scrollbar(
         &self,
         renderer: &mut UiBatcher,
-        viewport: Rect<Logical>,
+        viewport: Bounds<Logical>,
         offset_y: f32,
         content_height: f32,
     ) {
-        let max_scroll = content_height - viewport.size.height;
+        let max_scroll = content_height - viewport.height();
         if max_scroll <= 0.0 {
             return;
         }
 
         // Calculate scrollbar dimensions
-        let scrollbar_height = (viewport.size.height * viewport.size.height / content_height)
-            .min(viewport.size.height)
+        let scrollbar_height = (viewport.height() * viewport.height() / content_height)
+            .min(viewport.height())
             .max(20.0); // Minimum thumb size
 
         let scroll_ratio = offset_y / max_scroll;
-        let scrollbar_y = viewport.origin.y + scroll_ratio * (viewport.size.height - scrollbar_height);
+        let scrollbar_y = viewport.top + scroll_ratio * (viewport.height() - scrollbar_height);
 
         // Draw scrollbar thumb
-        let scrollbar_bounds: Rect<Logical> = Rect::from_xywh(
-            viewport.origin.x + viewport.size.width - self.scrollbar_width - 2.0,
+        let scrollbar_bounds: Bounds<Logical> = Bounds::from_xywh(
+            viewport.left + viewport.width() - self.scrollbar_width - 2.0,
             scrollbar_y,
             self.scrollbar_width,
             scrollbar_height,
         );
 
         renderer.add_rect(
-            [scrollbar_bounds.origin.x, scrollbar_bounds.origin.y],
-            [scrollbar_bounds.size.width, scrollbar_bounds.size.height],
+            [scrollbar_bounds.left, scrollbar_bounds.top],
+            [scrollbar_bounds.width(), scrollbar_bounds.height()],
             Color::new(0.5, 0.5, 0.5, 0.5),
             Color::TRANSPARENT,
             self.scrollbar_width / 2.0, // Rounded corners
@@ -280,7 +280,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         let child_ids = layout_view.children(node);
         let content_height: f32 = child_ids.iter()
             .filter_map(|id| layout_view.get_layout(*id))
-            .map(|l| l.bounds.origin.y + l.bounds.size.height)
+            .map(|l| l.bounds.top + l.bounds.height())
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
@@ -288,11 +288,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         scroll_state.content_height = content_height;
 
         // Push clip for viewport - use absolute screen coordinates
-        let clip_bounds = Rect::from_xywh(
+        let clip_bounds = Bounds::from_xywh(
             viewport_offset.x,
             viewport_offset.y,
-            viewport_bounds.size.width,
-            viewport_bounds.size.height,
+            viewport_bounds.width(),
+            viewport_bounds.height(),
         );
         renderer.push_clip(clip_bounds);
 
@@ -321,7 +321,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         renderer.pop_clip();
 
         // Draw scrollbar if content exceeds viewport
-        if content_height > viewport_bounds.size.height {
+        if content_height > viewport_bounds.height() {
             self.draw_scrollbar(renderer, viewport_bounds, offset_y, content_height);
         }
     }
@@ -363,12 +363,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
             // Fallback: calculate if not yet cached
             child_ids.iter()
                 .filter_map(|id| layout_view.get_layout(*id))
-                .map(|l| l.bounds.origin.y + l.bounds.size.height)
+                .map(|l| l.bounds.top + l.bounds.height())
                 .max_by(|a, b| a.partial_cmp(b).unwrap())
                 .unwrap_or(0.0)
         };
 
-        let max_scroll = (content_height - viewport_bounds.size.height).max(0.0);
+        let max_scroll = (content_height - viewport_bounds.height()).max(0.0);
 
         // Handle scroll wheel
         // Note: macOS natural scrolling - scrolling down (positive delta.y) should move content up (decrease offset)
@@ -428,12 +428,12 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
                         return WidgetResponse { handled: true, ..Default::default() };
                     }
                     Key::Named(NamedKey::PageDown) => {
-                        scroll_state.offset_y = (scroll_state.offset_y + viewport_bounds.size.height)
+                        scroll_state.offset_y = (scroll_state.offset_y + viewport_bounds.height())
                             .clamp(0.0, max_scroll);
                         return WidgetResponse { handled: true, ..Default::default() };
                     }
                     Key::Named(NamedKey::PageUp) => {
-                        scroll_state.offset_y = (scroll_state.offset_y - viewport_bounds.size.height)
+                        scroll_state.offset_y = (scroll_state.offset_y - viewport_bounds.height())
                             .clamp(0.0, max_scroll);
                         return WidgetResponse { handled: true, ..Default::default() };
                     }
@@ -448,11 +448,11 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ScrollView<M> {
         // Propagate events to children with scroll offset applied
         for (child, child_node_id) in self.children.iter_mut().zip(child_ids.iter()) {
             if let Some(child_layout) = layout_view.get_layout(*child_node_id) {
-                let child_top = child_layout.bounds.origin.y - viewport_bounds.origin.y - offset_y;
-                let child_bottom = child_top + child_layout.bounds.size.height;
+                let child_top = child_layout.bounds.top - viewport_bounds.top - offset_y;
+                let child_bottom = child_top + child_layout.bounds.height();
 
                 // Only propagate to visible children
-                if child_bottom >= 0.0 && child_top <= viewport_bounds.size.height {
+                if child_bottom >= 0.0 && child_top <= viewport_bounds.height() {
                     let child_offset = Point::new(
                         viewport_offset.x,
                         viewport_offset.y - offset_y,

@@ -3,7 +3,7 @@
 //! This module provides a `LayoutEngine` implementation using the Taffy
 //! layout library (CSS Flexbox-style layout).
 
-use crate::core::{Rect, Size};
+use crate::core::{Bounds, Size};
 use crate::core::Logical;
 
 use super::engine::LayoutEngine;
@@ -132,7 +132,7 @@ impl LayoutEngine for TaffyLayoutEngine {
 
         Some(ComputedLayout::new(
             node,
-            Rect::from_xywh(
+            Bounds::from_xywh(
                 layout.location.x,
                 layout.location.y,
                 layout.size.width,

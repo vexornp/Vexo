@@ -1,4 +1,4 @@
-use crate::core::{Color, Logical, Point, Rect, Size};
+use crate::core::{Bounds, Color, Logical, Point, Size};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
@@ -118,17 +118,18 @@ impl crate::testable::Paint for TextEdit {
             None => return Vec::new(),
         };
 
-        let pos = Point::new(
+        let bounds = Bounds::from_xywh(
             ctx.offset().x + layout.x(),
             ctx.offset().y + layout.y(),
+            layout.width(),
+            layout.height(),
         );
-        let size = Size::new(layout.width(), layout.height());
 
         let mut commands = Vec::new();
 
         // Debug border
         commands.push(RenderCommand::rect_with_border(
-            crate::core::Rect::new(pos, size),
+            bounds,
             Color::BLACK,
             Color::RED,
             1.0,
@@ -137,7 +138,7 @@ impl crate::testable::Paint for TextEdit {
         // Editor area
         commands.push(RenderCommand::editor(
             self.editor_id.clone(),
-            crate::core::Rect::new(pos, size),
+            bounds,
         ));
 
         // Note: Cursor rendering requires access to editor state (via WidgetContext)
@@ -257,7 +258,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
             renderer.add_editor_request(
                 &self.editor_id,
-                Rect::new(pos, size),
+                Bounds::from_xywh(pos.x, pos.y, size.width, size.height),
             );
 
             // Render cursor if focused and visible
@@ -311,8 +312,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
             if let Some(layout) = layout_view.get_layout(node) {
                 let abs_x = offset.x + layout.x();
                 let abs_y = offset.y + layout.y();
-                let rect = Rect::from_xywh(abs_x, abs_y, layout.width(), layout.height());
-                rect.contains(position)
+                let bounds = Bounds::from_xywh(abs_x, abs_y, layout.width(), layout.height());
+                bounds.contains(position)
             } else {
                 false
             }
@@ -534,7 +535,7 @@ mod tests {
         assert!(text_edit.computed_layout.is_none());
 
         let layout = crate::testable::ComputedLayout::new(
-            crate::core::Rect::from_xywh(10.0, 20.0, 200.0, 50.0)
+            crate::core::Bounds::from_xywh(10.0, 20.0, 200.0, 50.0)
         );
         crate::testable::Layout::apply_layout(&mut text_edit, layout);
 
@@ -559,7 +560,7 @@ mod tests {
         crate::testable::Layout::apply_layout(
             &mut text_edit,
             crate::testable::ComputedLayout::new(
-                crate::core::Rect::from_xywh(0.0, 0.0, 200.0, 50.0)
+                crate::core::Bounds::from_xywh(0.0, 0.0, 200.0, 50.0)
             )
         );
 
@@ -575,7 +576,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(50.0, 25.0),
             None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             crate::core::Scale::new(1.0),
         );
 
@@ -600,7 +601,7 @@ mod tests {
         let ctx = InteractionContext::new(
             Point::new(150.0, 25.0), // Outside the bounds
             None,
-            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             crate::core::Scale::new(1.0),
         );
 

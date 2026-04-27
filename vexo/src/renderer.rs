@@ -1,4 +1,4 @@
-use crate::core::{Color, Logical, Point, Rect, Size};
+use crate::core::{Color, Logical, Point, Size};
 use crate::quad_instance;
 
 #[repr(C)]
@@ -29,7 +29,7 @@ pub struct TextRequest {
     pub clip_bounds: [f32; 4],
 }
 
-pub type Bounds = Rect<Logical>;
+pub type Bounds = crate::core::Bounds<Logical>;
 
 pub struct EditorRequest {
     pub id: String,
@@ -139,7 +139,7 @@ impl UiBatcher {
 
         // Get current clip bounds, or use negative values to indicate no clipping
         let clip_bounds = match self.current_clip() {
-            Some(bounds) => [bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height],
+            Some(bounds) => bounds.to_array_xywh(),
             None => [-1.0, -1.0, -1.0, -1.0], // No clipping
         };
 
@@ -166,7 +166,7 @@ impl UiBatcher {
 
         // Get current clip bounds, or use negative values to indicate no clipping
         let clip_bounds = match self.current_clip() {
-            Some(bounds) => [bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height],
+            Some(bounds) => bounds.to_array_xywh(),
             None => [-1.0, -1.0, -1.0, -1.0], // No clipping
         };
 

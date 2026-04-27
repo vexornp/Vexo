@@ -3,7 +3,7 @@
 //! This module provides the types used for layout computation, including
 //! constraints, node IDs, and computed results.
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Bounds, Point, Size};
 use crate::core::Logical;
 
 // ============================================================================
@@ -225,43 +225,43 @@ pub struct ComputedLayout {
     /// The ID of the node this layout belongs to.
     pub id: LayoutNodeId,
     /// The computed bounds (position and size) in logical coordinates.
-    pub bounds: Rect<Logical>,
+    pub bounds: Bounds<Logical>,
 }
 
 impl ComputedLayout {
     /// Create a new computed layout.
-    pub fn new(id: LayoutNodeId, bounds: Rect<Logical>) -> Self {
+    pub fn new(id: LayoutNodeId, bounds: Bounds<Logical>) -> Self {
         Self { id, bounds }
     }
 
-    /// Get the position.
+    /// Get the position (top-left corner).
     pub fn position(&self) -> Point<Logical> {
-        self.bounds.origin
+        Point::new(self.bounds.left, self.bounds.top)
     }
 
     /// Get the size.
     pub fn size(&self) -> Size<Logical> {
-        self.bounds.size
+        Size::new(self.bounds.width(), self.bounds.height())
     }
 
-    /// Get the x coordinate.
+    /// Get the x coordinate (left edge).
     pub fn x(&self) -> f32 {
-        self.bounds.origin.x
+        self.bounds.left
     }
 
-    /// Get the y coordinate.
+    /// Get the y coordinate (top edge).
     pub fn y(&self) -> f32 {
-        self.bounds.origin.y
+        self.bounds.top
     }
 
     /// Get the width.
     pub fn width(&self) -> f32 {
-        self.bounds.size.width
+        self.bounds.width()
     }
 
     /// Get the height.
     pub fn height(&self) -> f32 {
-        self.bounds.size.height
+        self.bounds.height()
     }
 }
 
@@ -294,7 +294,7 @@ mod tests {
     fn test_computed_layout() {
         let layout = ComputedLayout::new(
             LayoutNodeId::new(1),
-            Rect::from_xywh(10.0, 20.0, 100.0, 50.0),
+            Bounds::from_xywh(10.0, 20.0, 100.0, 50.0),
         );
 
         assert_eq!(layout.x(), 10.0);

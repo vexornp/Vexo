@@ -1,6 +1,6 @@
 //! Layout trait for widget layout participation.
 
-use crate::core::{Rect, Logical, Size};
+use crate::core::{Bounds, Logical, Size};
 
 /// Layout constraints that describe how a widget should be sized.
 ///
@@ -111,41 +111,41 @@ impl LayoutConstraints {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedLayout {
     /// The bounds (position and size) in logical coordinates.
-    pub bounds: Rect<Logical>,
+    pub bounds: Bounds<Logical>,
 }
 
 impl Default for ComputedLayout {
     fn default() -> Self {
         Self {
-            bounds: Rect::from_xywh(0.0, 0.0, 0.0, 0.0),
+            bounds: Bounds::from_xywh(0.0, 0.0, 0.0, 0.0),
         }
     }
 }
 
 impl ComputedLayout {
     /// Create a new computed layout.
-    pub fn new(bounds: Rect<Logical>) -> Self {
+    pub fn new(bounds: Bounds<Logical>) -> Self {
         Self { bounds }
     }
 
     /// Get the x position.
     pub fn x(&self) -> f32 {
-        self.bounds.origin.x
+        self.bounds.left
     }
 
     /// Get the y position.
     pub fn y(&self) -> f32 {
-        self.bounds.origin.y
+        self.bounds.top
     }
 
     /// Get the width.
     pub fn width(&self) -> f32 {
-        self.bounds.size.width
+        self.bounds.width()
     }
 
     /// Get the height.
     pub fn height(&self) -> f32 {
-        self.bounds.size.height
+        self.bounds.height()
     }
 }
 
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_computed_layout_new() {
-        let layout = ComputedLayout::new(Rect::from_xywh(10.0, 20.0, 100.0, 50.0));
+        let layout = ComputedLayout::new(Bounds::from_xywh(10.0, 20.0, 100.0, 50.0));
         assert_eq!(layout.x(), 10.0);
         assert_eq!(layout.y(), 20.0);
         assert_eq!(layout.width(), 100.0);

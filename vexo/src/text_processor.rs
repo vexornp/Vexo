@@ -3,9 +3,9 @@
 //! Handles conversion of text requests and editor requests into
 //! glyphon TextArea instances ready for rendering.
 
-use glyphon::{Buffer, FontSystem, TextArea, TextBounds};
+use glyphon::{Buffer, FontSystem, TextArea};
 
-use crate::core::{Color, Physical, Scale, Size};
+use crate::core::{Bounds, Color, Physical, Scale, Size};
 use crate::renderer::{EditorRequest, TextRequest};
 use crate::text_cache::TextCache;
 use crate::widgets::WidgetContext;
@@ -32,10 +32,8 @@ struct TextAreaData {
     left: f32,
     top: f32,
     scale: f32,
-    bounds_left: i32,
-    bounds_top: i32,
-    bounds_right: i32,
-    bounds_bottom: i32,
+    /// Physical bounds for glyphon conversion
+    bounds: Bounds<Physical>,
     default_color: Color,
 }
 
@@ -53,12 +51,7 @@ impl PreparedText {
                 left: data.left,
                 top: data.top,
                 scale: data.scale,
-                bounds: TextBounds {
-                    left: data.bounds_left,
-                    top: data.bounds_top,
-                    right: data.bounds_right,
-                    bottom: data.bounds_bottom,
-                },
+                bounds: data.bounds.to_glyphon_bounds(),
                 default_color: data.default_color.into(),
                 custom_glyphs: &[],
             })
@@ -82,20 +75,14 @@ impl TextProcessor {
         buffer: Buffer,
         physical_pos: crate::core::Point<Physical>,
         scale: Scale,
-        bounds_left: i32,
-        bounds_top: i32,
-        bounds_right: i32,
-        bounds_bottom: i32,
+        bounds: Bounds<Physical>,
         color: Color,
     ) -> (Buffer, TextAreaData) {
         let data = TextAreaData {
             left: physical_pos.x,
             top: physical_pos.y,
             scale: scale.factor(),
-            bounds_left,
-            bounds_top,
-            bounds_right,
-            bounds_bottom,
+            bounds,
             default_color: color,
         };
 
@@ -120,37 +107,30 @@ impl TextProcessor {
             let physical_pos = req.position.to_physical(scale);
 
             // Use clip bounds if set, otherwise use screen bounds
-            let (bounds_left, bounds_top, bounds_right, bounds_bottom) =
-                if req.clip_bounds[2] > 0.0 {
-                    // Clip bounds are in logical coordinates - convert to physical
-                    let clip_left = req.clip_bounds[0] * scale.factor();
-                    let clip_top = req.clip_bounds[1] * scale.factor();
-                    let clip_right = (req.clip_bounds[0] + req.clip_bounds[2]) * scale.factor();
-                    let clip_bottom = (req.clip_bounds[1] + req.clip_bounds[3]) * scale.factor();
-                    (
-                        clip_left.floor() as i32,
-                        clip_top.floor() as i32,
-                        clip_right.ceil() as i32,
-                        clip_bottom.ceil() as i32,
-                    )
-                } else {
-                    // No clipping - use full screen
-                    (
-                        physical_pos.x.floor() as i32,
-                        physical_pos.y.floor() as i32,
-                        viewport_physical.width_u32() as i32,
-                        viewport_physical.height_u32() as i32,
-                    )
-                };
+            let bounds = if req.clip_bounds[2] > 0.0 {
+                // Clip bounds are in logical coordinates - convert to physical
+                let logical_bounds = Bounds::<crate::core::Logical>::from_xywh(
+                    req.clip_bounds[0],
+                    req.clip_bounds[1],
+                    req.clip_bounds[2],
+                    req.clip_bounds[3],
+                );
+                logical_bounds.to_physical(scale)
+            } else {
+                // No clipping - use full screen
+                Bounds::<Physical>::from_xywh(
+                    physical_pos.x,
+                    physical_pos.y,
+                    viewport_physical.width,
+                    viewport_physical.height,
+                )
+            };
 
             let (buf, data) = Self::create_text_area(
                 buffer,
                 physical_pos,
                 scale,
-                bounds_left,
-                bounds_top,
-                bounds_right,
-                bounds_bottom,
+                bounds,
                 req.color,
             );
             buffers.push(buf);
@@ -178,14 +158,7 @@ impl TextProcessor {
 
         for req in &requests {
             // Convert logical bounds to physical
-            let physical_rect = req.bounds.to_physical(scale);
-
-            let bounds_left: i32 = physical_rect.origin.x.floor() as i32;
-            let bounds_top: i32 = physical_rect.origin.y.floor() as i32;
-            let bounds_right: i32 =
-                (physical_rect.origin.x + physical_rect.size.width).ceil() as i32;
-            let bounds_bottom: i32 =
-                (physical_rect.origin.y + physical_rect.size.height).ceil() as i32;
+            let physical_bounds = req.bounds.to_physical(scale);
 
             let editor_ref = widget_context.get_or_create_editor(&req.id, "initial_text");
             let editor = editor_ref.borrow();
@@ -194,12 +167,9 @@ impl TextProcessor {
 
             let (buffer, data) = Self::create_text_area(
                 buf,
-                physical_rect.origin,
+                crate::core::Point::new(physical_bounds.left, physical_bounds.top),
                 scale,
-                bounds_left,
-                bounds_top,
-                bounds_right,
-                bounds_bottom,
+                physical_bounds,
                 req.color,
             );
             buffers.push(buffer);

@@ -10,7 +10,7 @@
 //! - Support different rendering strategies (batching, culling, etc.)
 //! - Allow for render command recording and replay
 
-use crate::core::{Color, Point, Rect};
+use crate::core::{Bounds, Color, Point};
 use crate::core::Logical;
 
 // ============================================================================
@@ -26,7 +26,7 @@ pub enum RenderCommand {
     /// Draw a filled rectangle with optional stroke and corner radius.
     Rect {
         /// The rectangle bounds in logical coordinates.
-        bounds: Rect<Logical>,
+        bounds: Bounds<Logical>,
         /// The fill color.
         fill: Color,
         /// Optional stroke (border).
@@ -54,7 +54,7 @@ pub enum RenderCommand {
         /// Unique identifier for the editor.
         id: String,
         /// Bounds in logical coordinates.
-        bounds: Rect<Logical>,
+        bounds: Bounds<Logical>,
         /// Text color.
         color: Color,
     },
@@ -63,7 +63,7 @@ pub enum RenderCommand {
     /// All subsequent commands are clipped to this region.
     PushClip {
         /// The clipping bounds in logical coordinates.
-        bounds: Rect<Logical>,
+        bounds: Bounds<Logical>,
     },
 
     /// Pop the most recent clipping region from the stack.
@@ -138,7 +138,7 @@ impl Default for Stroke {
 
 impl RenderCommand {
     /// Create a simple filled rectangle.
-    pub fn rect(bounds: Rect<Logical>, fill: Color) -> Self {
+    pub fn rect(bounds: Bounds<Logical>, fill: Color) -> Self {
         Self::Rect {
             bounds,
             fill,
@@ -149,7 +149,7 @@ impl RenderCommand {
 
     /// Create a rectangle with a border.
     pub fn rect_with_border(
-        bounds: Rect<Logical>,
+        bounds: Bounds<Logical>,
         fill: Color,
         border_color: Color,
         border_width: f32,
@@ -163,7 +163,7 @@ impl RenderCommand {
     }
 
     /// Create a rounded rectangle.
-    pub fn rounded_rect(bounds: Rect<Logical>, fill: Color, corner_radius: f32) -> Self {
+    pub fn rounded_rect(bounds: Bounds<Logical>, fill: Color, corner_radius: f32) -> Self {
         Self::Rect {
             bounds,
             fill,
@@ -184,7 +184,7 @@ impl RenderCommand {
     }
 
     /// Create an editor command.
-    pub fn editor(id: impl Into<String>, bounds: Rect<Logical>) -> Self {
+    pub fn editor(id: impl Into<String>, bounds: Bounds<Logical>) -> Self {
         Self::Editor {
             id: id.into(),
             bounds,
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_rect_command() {
-        let bounds = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
         let cmd = RenderCommand::rect(bounds, Color::RED);
 
         match cmd {
@@ -280,8 +280,8 @@ mod tests {
                 stroke,
                 corner_radius,
             } => {
-                assert_eq!(b.origin.x, 10.0);
-                assert_eq!(b.size.width, 100.0);
+                assert_eq!(b.left, 10.0);
+                assert_eq!(b.width(), 100.0);
                 assert_eq!(fill, Color::RED);
                 assert!(stroke.is_none());
                 assert_eq!(corner_radius, 0.0);
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_rect_with_border() {
-        let bounds = Rect::from_xywh(0.0, 0.0, 50.0, 50.0);
+        let bounds = Bounds::from_xywh(0.0, 0.0, 50.0, 50.0);
         let cmd = RenderCommand::rect_with_border(bounds, Color::WHITE, Color::BLACK, 2.0);
 
         match cmd {
@@ -333,7 +333,7 @@ mod tests {
         assert!(list.is_empty());
 
         list.push(RenderCommand::rect(
-            Rect::from_xywh(0.0, 0.0, 100.0, 100.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Color::RED,
         ));
         list.push(RenderCommand::text("Test", Point::new(0.0, 0.0), 12.0, Color::BLACK));

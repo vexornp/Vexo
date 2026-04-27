@@ -16,7 +16,7 @@
 //!
 //! ```
 //! use vexo::render::{RenderBackend, RenderCommand, MockBackend};
-//! use vexo::core::{Rect, Logical, Color};
+//! use vexo::core::{Bounds, Logical, Color};
 //!
 //! let mut backend = MockBackend::new();
 //! // Backend can be used for testing without GPU

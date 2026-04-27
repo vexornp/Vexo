@@ -3,7 +3,7 @@
 //! This module provides the bridge between the new `RenderCommand` output from
 //! `Paint::paint()` and the existing `UiBatcher` renderer.
 
-use crate::core::{Color, Logical, Point, Rect};
+use crate::core::{Bounds, Color, Logical, Point};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 
@@ -36,10 +36,10 @@ pub fn process_commands(
                 corner_radius,
             } => {
                 let pos = [
-                    bounds.origin.x + current_offset.x,
-                    bounds.origin.y + current_offset.y,
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
                 ];
-                let size = [bounds.size.width, bounds.size.height];
+                let size = [bounds.width(), bounds.height()];
                 let border_color = stroke
                     .as_ref()
                     .map(|s| s.color)
@@ -61,22 +61,20 @@ pub fn process_commands(
                 batcher.add_text(content.clone(), pos, *font_size, *color);
             }
             RenderCommand::Editor { id, bounds, .. } => {
-                let rect = Rect::new(
-                    Point::new(
-                        bounds.origin.x + current_offset.x,
-                        bounds.origin.y + current_offset.y,
-                    ),
-                    bounds.size,
+                let adjusted_bounds = Bounds::new(
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
                 );
-                batcher.add_editor_request(id, rect);
+                batcher.add_editor_request(id, adjusted_bounds);
             }
             RenderCommand::PushClip { bounds } => {
-                let adjusted_bounds = Rect::new(
-                    Point::new(
-                        bounds.origin.x + current_offset.x,
-                        bounds.origin.y + current_offset.y,
-                    ),
-                    bounds.size,
+                let adjusted_bounds = Bounds::new(
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
                 );
                 batcher.push_clip(adjusted_bounds);
             }
@@ -119,7 +117,7 @@ mod tests {
     fn test_process_rect_command() {
         let mut batcher = UiBatcher::new();
         let commands = vec![RenderCommand::rect(
-            Rect::from_xywh(10.0, 20.0, 100.0, 50.0),
+            Bounds::from_xywh(10.0, 20.0, 100.0, 50.0),
             Color::RED,
         )];
 
@@ -136,7 +134,7 @@ mod tests {
     fn test_process_rect_with_offset() {
         let mut batcher = UiBatcher::new();
         let commands = vec![RenderCommand::rect(
-            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::RED,
         )];
 
@@ -151,7 +149,7 @@ mod tests {
     fn test_process_rect_with_border() {
         let mut batcher = UiBatcher::new();
         let commands = vec![RenderCommand::rect_with_border(
-            Rect::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::WHITE,
             Color::BLACK,
             2.0,
@@ -208,7 +206,7 @@ mod tests {
         let mut batcher = UiBatcher::new();
         let commands = vec![RenderCommand::editor(
             "editor-1",
-            Rect::from_xywh(10.0, 20.0, 200.0, 30.0),
+            Bounds::from_xywh(10.0, 20.0, 200.0, 30.0),
         )];
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
@@ -216,8 +214,8 @@ mod tests {
         assert_eq!(batcher.editor_requests.len(), 1);
         let editor = &batcher.editor_requests[0];
         assert_eq!(editor.id, "editor-1");
-        assert_eq!(editor.bounds.origin.x, 10.0);
-        assert_eq!(editor.bounds.origin.y, 20.0);
+        assert_eq!(editor.bounds.left, 10.0);
+        assert_eq!(editor.bounds.top, 20.0);
     }
 
     #[test]
@@ -225,14 +223,14 @@ mod tests {
         let mut batcher = UiBatcher::new();
         let commands = vec![RenderCommand::editor(
             "editor-1",
-            Rect::from_xywh(0.0, 0.0, 200.0, 30.0),
+            Bounds::from_xywh(0.0, 0.0, 200.0, 30.0),
         )];
 
         process_commands(&commands, &mut batcher, Point::new(100.0, 50.0));
 
         let editor = &batcher.editor_requests[0];
-        assert_eq!(editor.bounds.origin.x, 100.0);
-        assert_eq!(editor.bounds.origin.y, 50.0);
+        assert_eq!(editor.bounds.left, 100.0);
+        assert_eq!(editor.bounds.top, 50.0);
     }
 
     #[test]
@@ -240,7 +238,7 @@ mod tests {
         let mut batcher = UiBatcher::new();
         let commands = vec![
             RenderCommand::PushCornerRadius { radius: 10.0 },
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 100.0, 100.0), Color::RED),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 100.0), Color::RED),
             RenderCommand::PopCornerRadius,
         ];
 
@@ -254,10 +252,10 @@ mod tests {
     #[test]
     fn test_process_clip_commands() {
         let mut batcher = UiBatcher::new();
-        let clip_bounds = Rect::from_xywh(0.0, 0.0, 100.0, 100.0);
+        let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
         let commands = vec![
             RenderCommand::PushClip { bounds: clip_bounds },
-            RenderCommand::rect(Rect::from_xywh(10.0, 10.0, 50.0, 50.0), Color::RED),
+            RenderCommand::rect(Bounds::from_xywh(10.0, 10.0, 50.0, 50.0), Color::RED),
             RenderCommand::PopClip,
         ];
 
@@ -270,7 +268,7 @@ mod tests {
     #[test]
     fn test_process_clip_with_offset() {
         let mut batcher = UiBatcher::new();
-        let clip_bounds = Rect::from_xywh(0.0, 0.0, 100.0, 100.0);
+        let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
         let commands = vec![RenderCommand::PushClip { bounds: clip_bounds }];
 
         process_commands(&commands, &mut batcher, Point::new(50.0, 25.0));
@@ -279,8 +277,8 @@ mod tests {
         let current_clip = batcher.current_clip();
         assert!(current_clip.is_some());
         let clip = current_clip.unwrap();
-        assert_eq!(clip.origin.x, 50.0);
-        assert_eq!(clip.origin.y, 25.0);
+        assert_eq!(clip.left, 50.0);
+        assert_eq!(clip.top, 25.0);
     }
 
     #[test]
@@ -290,9 +288,9 @@ mod tests {
             RenderCommand::PushOffset {
                 offset: Point::new(100.0, 50.0),
             },
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 50.0, 50.0), Color::RED),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 50.0, 50.0), Color::RED),
             RenderCommand::PopOffset,
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 25.0, 25.0), Color::BLUE),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 25.0, 25.0), Color::BLUE),
         ];
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
@@ -311,13 +309,13 @@ mod tests {
             RenderCommand::PushOffset {
                 offset: Point::new(10.0, 10.0),
             },
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 50.0, 50.0), Color::RED),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 50.0, 50.0), Color::RED),
             RenderCommand::PushOffset {
                 offset: Point::new(20.0, 20.0),
             },
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 50.0, 50.0), Color::GREEN),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 50.0, 50.0), Color::GREEN),
             RenderCommand::PopOffset,
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 50.0, 50.0), Color::BLUE),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 50.0, 50.0), Color::BLUE),
             RenderCommand::PopOffset,
         ];
 
@@ -336,9 +334,9 @@ mod tests {
     fn test_process_multiple_commands() {
         let mut batcher = UiBatcher::new();
         let commands = vec![
-            RenderCommand::rect(Rect::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
             RenderCommand::text("Hello", Point::new(10.0, 10.0), 16.0, Color::BLACK),
-            RenderCommand::rect(Rect::from_xywh(0.0, 60.0, 100.0, 50.0), Color::BLUE),
+            RenderCommand::rect(Bounds::from_xywh(0.0, 60.0, 100.0, 50.0), Color::BLUE),
         ];
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));

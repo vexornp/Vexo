@@ -161,78 +161,129 @@ impl Size<Physical> {
 }
 
 // ============================================================================
-// RECT
+// BOUNDS
 // ============================================================================
 
-/// A rectangle with origin and size in either logical or physical coordinates.
+/// A bounding box with edge coordinates in either logical or physical coordinates.
+///
+/// Bounds uses left/top/right/bottom edges, which is a natural representation
+/// for clipping, intersection testing, and integration with glyphon's TextBounds.
+///
+/// # Example
+///
+/// ```
+/// use vexo::core::{Bounds, Logical, Point};
+///
+/// // Create from position and size
+/// let bounds = Bounds::<Logical>::from_xywh(10.0, 20.0, 100.0, 50.0);
+///
+/// // Or from edges directly
+/// let bounds = Bounds::<Logical>::new(10.0, 20.0, 110.0, 70.0);
+///
+/// // Check containment
+/// assert!(bounds.contains(&Point::new(50.0, 40.0)));
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rect<T> {
-    pub origin: Point<T>,
-    pub size: Size<T>,
+pub struct Bounds<T> {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
     _marker: PhantomData<T>,
 }
 
-impl<T> Rect<T> {
-    /// Create a new rectangle from origin and size.
-    pub fn new(origin: Point<T>, size: Size<T>) -> Self {
+impl<T> Bounds<T> {
+    /// Create bounds from edge coordinates (left, top, right, bottom).
+    pub fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
         Self {
-            origin,
-            size,
+            left,
+            top,
+            right,
+            bottom,
             _marker: PhantomData,
         }
     }
 
-    /// Create a rectangle from x, y, width, height.
+    /// Create bounds from x, y, width, height.
     pub fn from_xywh(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self::new(Point::new(x, y), Size::new(width, height))
+        Self::new(x, y, x + width, y + height)
+    }
+
+    /// Create bounds from position and size.
+    pub fn from_pos_size(position: crate::core::Point<T>, size: crate::core::Size<T>) -> Self {
+        Self::from_xywh(position.x, position.y, size.width, size.height)
+    }
+
+    /// Get the width (right - left).
+    pub fn width(&self) -> f32 {
+        self.right - self.left
+    }
+
+    /// Get the height (bottom - top).
+    pub fn height(&self) -> f32 {
+        self.bottom - self.top
+    }
+
+    /// Get the position (top-left corner).
+    pub fn position(&self) -> crate::core::Point<T> {
+        crate::core::Point::new(self.left, self.top)
+    }
+
+    /// Get the size.
+    pub fn size(&self) -> crate::core::Size<T> {
+        crate::core::Size::new(self.width(), self.height())
+    }
+
+    /// Convert to [x, y, width, height] array for GPU buffers.
+    pub fn to_array_xywh(&self) -> [f32; 4] {
+        [self.left, self.top, self.width(), self.height()]
+    }
+
+    /// Check if a point is inside these bounds.
+    pub fn contains_point(&self, x: f32, y: f32) -> bool {
+        x >= self.left && x <= self.right && y >= self.top && y <= self.bottom
+    }
+
+    /// Check if these bounds are valid (left <= right and top <= bottom).
+    pub fn is_valid(&self) -> bool {
+        self.left <= self.right && self.top <= self.bottom
     }
 }
 
-impl Rect<Logical> {
-    /// Convert logical rect to physical pixels.
-    pub fn to_physical(self, scale: Scale) -> Rect<Physical> {
-        Rect::new(
-            self.origin.to_physical(scale),
-            self.size.to_physical(scale),
-        )
+impl Bounds<Logical> {
+    /// Convert logical bounds to physical pixels.
+    pub fn to_physical(&self, scale: Scale) -> Bounds<Physical> {
+        let f = scale.factor();
+        Bounds::new(self.left * f, self.top * f, self.right * f, self.bottom * f)
     }
 
-    /// Create from layout result.
-    pub fn from_layout(location: taffy::Point<f32>, size: taffy::Size<f32>) -> Self {
-        Rect::new(Point::from_taffy(location), Size::from_taffy(size))
+    /// Create from Taffy layout result.
+    pub fn from_taffy(location: taffy::Point<f32>, size: taffy::Size<f32>) -> Self {
+        Bounds::from_xywh(location.x, location.y, size.width, size.height)
     }
 
-    /// Create from position and size.
-    pub fn from_pos_size(position: Point<Logical>, size: Size<Logical>) -> Self {
-        Rect::new(position, size)
-    }
-
-    /// Check if a logical point is inside this rectangle.
+    /// Check if a logical point is inside these bounds.
     pub fn contains(&self, point: &Point<Logical>) -> bool {
-        point.x >= self.origin.x
-            && point.x <= self.origin.x + self.size.width
-            && point.y >= self.origin.y
-            && point.y <= self.origin.y + self.size.height
-    }
-
-    /// Get the right edge x coordinate.
-    pub fn right(&self) -> f32 {
-        self.origin.x + self.size.width
-    }
-
-    /// Get the bottom edge y coordinate.
-    pub fn bottom(&self) -> f32 {
-        self.origin.y + self.size.height
+        self.contains_point(point.x, point.y)
     }
 }
 
-impl Rect<Physical> {
-    /// Convert physical rect to logical coordinates.
-    pub fn to_logical(self, scale: Scale) -> Rect<Logical> {
-        Rect::new(
-            self.origin.to_logical(scale),
-            self.size.to_logical(scale),
-        )
+impl Bounds<Physical> {
+    /// Convert physical bounds to logical coordinates.
+    pub fn to_logical(&self, scale: Scale) -> Bounds<Logical> {
+        let f = scale.factor();
+        Bounds::new(self.left / f, self.top / f, self.right / f, self.bottom / f)
+    }
+
+    /// Convert to glyphon::TextBounds with proper edge rounding.
+    /// Uses floor for left/top (inclusive) and ceil for right/bottom (exclusive).
+    pub fn to_glyphon_bounds(&self) -> glyphon::TextBounds {
+        glyphon::TextBounds {
+            left: self.left.floor() as i32,
+            top: self.top.floor() as i32,
+            right: self.right.ceil() as i32,
+            bottom: self.bottom.ceil() as i32,
+        }
     }
 }
 
@@ -383,12 +434,12 @@ mod tests {
     }
 
     #[test]
-    fn test_rect_contains() {
-        let rect = Rect::<Logical>::from_xywh(10.0, 10.0, 100.0, 100.0);
-        assert!(rect.contains(&Point::new(50.0, 50.0)));
-        assert!(!rect.contains(&Point::new(5.0, 5.0)));
-        assert!(rect.contains(&Point::new(10.0, 10.0))); // Edge inclusive
-        assert!(rect.contains(&Point::new(110.0, 110.0))); // Edge inclusive
+    fn test_bounds_contains() {
+        let bounds = Bounds::<Logical>::from_xywh(10.0, 10.0, 100.0, 100.0);
+        assert!(bounds.contains(&Point::new(50.0, 50.0)));
+        assert!(!bounds.contains(&Point::new(5.0, 5.0)));
+        assert!(bounds.contains(&Point::new(10.0, 10.0))); // Edge inclusive
+        assert!(bounds.contains(&Point::new(110.0, 110.0))); // Edge inclusive
     }
 
     #[test]

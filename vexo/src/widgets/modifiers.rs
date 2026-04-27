@@ -1,4 +1,4 @@
-use crate::core::{Color, Logical, Point, Size};
+use crate::core::{Bounds, Color, Logical, Point, Size};
 use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
@@ -92,9 +92,12 @@ impl<W: crate::testable::Paint, M> crate::testable::Paint for Background<W, M> {
         let mut commands = Vec::new();
 
         // Background rect first (behind child)
-        let pos = crate::core::Point::new(ctx.offset().x + layout.x(), ctx.offset().y + layout.y());
-        let size = crate::core::Size::new(layout.width(), layout.height());
-        let bounds = crate::core::Rect::new(pos, size);
+        let bounds = Bounds::from_xywh(
+            ctx.offset().x + layout.x(),
+            ctx.offset().y + layout.y(),
+            layout.width(),
+            layout.height(),
+        );
         commands.push(RenderCommand::rect(bounds, self.color.into()));
 
         // Then child
@@ -229,7 +232,6 @@ impl<W: crate::testable::Layout, M> crate::testable::Layout for Border<W, M> {
 // Paint implementation
 impl<W: crate::testable::Paint, M> crate::testable::Paint for Border<W, M> {
     fn paint(&self, ctx: &mut crate::testable::PaintContext) -> Vec<crate::render::RenderCommand> {
-        use crate::core::Rect;
         use crate::render::RenderCommand;
 
         let layout = match &self.computed_layout {
@@ -243,9 +245,12 @@ impl<W: crate::testable::Paint, M> crate::testable::Paint for Border<W, M> {
         commands.extend(self.child.paint(ctx));
 
         // Then border on top
-        let pos = crate::core::Point::new(ctx.offset().x + layout.x(), ctx.offset().y + layout.y());
-        let size = crate::core::Size::new(layout.width(), layout.height());
-        let bounds = Rect::new(pos, size);
+        let bounds = Bounds::from_xywh(
+            ctx.offset().x + layout.x(),
+            ctx.offset().y + layout.y(),
+            layout.width(),
+            layout.height(),
+        );
         commands.push(RenderCommand::rect_with_border(
             bounds,
             Color::TRANSPARENT.into(),  // transparent fill
@@ -469,7 +474,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
 mod tests {
     use super::*;
     use crate::testable::{Identifiable, Layout, Paint, PaintContext, LayoutConstraints, ComputedLayout};
-    use crate::core::{Color as CoreColor, Rect, WidgetId};
+    use crate::core::{Color as CoreColor, Bounds, WidgetId};
 
     /// Test widget that implements all separated traits.
     struct TestWidget {
@@ -537,10 +542,10 @@ mod tests {
     fn test_border_paint_order() {
         let mut child = TestWidget::new("test-child");
         // Set up a computed layout
-        child.apply_layout(ComputedLayout::new(Rect::from_xywh(0.0, 0.0, 100.0, 50.0)));
+        child.apply_layout(ComputedLayout::new(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0)));
 
         let mut border: Border<TestWidget, ()> = Border::new(child, Color::BLACK, 2.0);
-        border.computed_layout = Some(ComputedLayout::new(Rect::from_xywh(0.0, 0.0, 100.0, 50.0)));
+        border.computed_layout = Some(ComputedLayout::new(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0)));
 
         let mut ctx = PaintContext::default();
         let commands = border.paint(&mut ctx);

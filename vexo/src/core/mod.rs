@@ -7,7 +7,7 @@
 //! # Types
 //!
 //! - `WidgetId` - Unique identifier for widgets
-//! - `Point`, `Size`, `Rect` - Geometry types with logical/physical markers
+//! - `Point`, `Size`, `Bounds` - Geometry types with logical/physical markers
 //! - `Scale` - DPI scale factor
 //! - `Color` - RGBA color representation
 //!
@@ -29,5 +29,5 @@ mod geometry;
 mod id;
 
 pub use color::Color;
-pub use geometry::{Logical, Physical, Point, Rect, Scale, Size};
+pub use geometry::{Bounds, Logical, Physical, Point, Scale, Size};
 pub use id::WidgetId;
