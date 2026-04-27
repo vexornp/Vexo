@@ -1,4 +1,5 @@
 use super::key::Key;
+use super::id::{ElementId, RenderObjectId};
 
 #[test]
 fn test_key_creation() {
@@ -31,4 +32,33 @@ fn test_key_hash() {
 fn test_key_from_string() {
     let key: Key = "my-key".into();
     assert_eq!(key.as_str(), "my-key");
+}
+
+// === ElementId tests ===
+
+#[test]
+fn test_element_id_uniqueness() {
+    let id1 = ElementId::new();
+    let id2 = ElementId::new();
+
+    assert_ne!(id1, id2);
+}
+
+#[test]
+fn test_render_object_id_uniqueness() {
+    let id1 = RenderObjectId::new();
+    let id2 = RenderObjectId::new();
+
+    assert_ne!(id1, id2);
+}
+
+#[test]
+fn test_element_id_in_hashmap() {
+    use std::collections::HashMap;
+    let mut map = HashMap::new();
+
+    let id = ElementId::new();
+    map.insert(id, "test");
+
+    assert_eq!(map.get(&id), Some(&"test"));
 }
