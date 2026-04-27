@@ -11,8 +11,9 @@ mod element_context;
 mod render_object;
 mod dirty;
 mod reconcile;
-mod widgets;
-mod elements;
+
+pub mod widgets;
+pub mod elements;
 
 #[cfg(test)]
 mod key_tests;
@@ -26,8 +27,9 @@ pub use id::{ElementId, RenderObjectId};
 pub use state::StateStorage;
 pub use element::{Element, ElementRegistry};
 pub use element_context::ElementContext;
-pub use render_object::{RenderObject, RenderObjectRegistry};
+pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, PaintContext, HitTestContext};
 pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
-pub use widgets::Widget;
-pub use elements::{ContainerElement, LeafElement, ModifierElement};
+
+pub use widgets::{Widget, Text, Column, Row};
+pub use elements::{LeafElement, ContainerElement, ModifierElement};
