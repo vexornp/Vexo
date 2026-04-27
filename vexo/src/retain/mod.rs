@@ -2,6 +2,39 @@
 //!
 //! This module implements Flutter-style three-tree architecture for
 //! efficient incremental updates.
+//!
+//! # Architecture
+//!
+//! The three trees work together:
+//!
+//! - **Widget tree**: Immutable configuration, rebuilt each frame
+//! - **Element tree**: Stateful lifecycle, persistent across frames
+//! - **RenderObject tree**: Layout and painting, dirty tracking
+//!
+//! # Example
+//!
+//! ```ignore
+//! use vexo::retain::{Column, Text, ThreeTreePipeline, Widget};
+//!
+//! let mut pipeline = ThreeTreePipeline::new();
+//!
+//! // Create widget tree
+//! let widget = Column::new()
+//!     .push(Text::new("Hello"))
+//!     .push(Text::new("World"));
+//!
+//! // Reconcile with element tree
+//! pipeline.reconcile(Box::new(widget));
+//!
+//! // Layout and paint
+//! pipeline.layout(available_size, &mut layout_engine);
+//! let commands = pipeline.paint();
+//! ```
+//!
+//! # Migration from Immediate Mode
+//!
+//! The retain-mode system can coexist with the immediate-mode system.
+//! Set `use_retain_mode = true` in WindowState to enable.
 
 mod key;
 mod id;
