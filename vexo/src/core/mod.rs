@@ -27,7 +27,9 @@
 mod color;
 mod geometry;
 mod id;
+mod stroke;
 
 pub use color::Color;
 pub use geometry::{Bounds, Logical, Physical, Point, Scale, Size};
 pub use id::WidgetId;
+pub use stroke::Stroke;

@@ -157,8 +157,7 @@ impl<M: Clone + std::fmt::Debug + Send> ScrollView<M> {
         renderer.add_rect(
             scrollbar_bounds,
             Color::new(0.5, 0.5, 0.5, 0.5),
-            Color::TRANSPARENT,
-            0.0,
+            None,
             self.scrollbar_width / 2.0, // Rounded corners
         );
     }

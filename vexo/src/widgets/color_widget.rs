@@ -1,4 +1,4 @@
-use crate::core::{Bounds, Color, Point, WidgetId};
+use crate::core::{Bounds, Color, Point, Stroke, WidgetId};
 use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::render::RenderCommand;
@@ -154,7 +154,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
                 layout.width(),
                 layout.height(),
             );
-            renderer.add_rect(bounds, self.color, Color::WHITE, 1.0, 0.0);
+            renderer.add_rect(bounds, self.color, Some(Stroke::with_color(Color::WHITE)), 0.0);
         }
     }
 

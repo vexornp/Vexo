@@ -1,4 +1,4 @@
-use crate::core::{Color, Logical, Point, Size};
+use crate::core::{Color, Logical, Point, Size, Stroke};
 use crate::quad_instance;
 
 #[repr(C)]
@@ -121,13 +121,14 @@ impl UiBatcher {
     pub fn add_rect(
         &mut self,
         bounds: Bounds,
-        color: impl Into<Color>,
-        border_color: impl Into<Color>,
-        border_width: f32,
+        fill: impl Into<Color>,
+        stroke: Option<Stroke>,
         corner_radius: f32,
     ) {
-        let color: Color = color.into();
-        let border_color: Color = border_color.into();
+        let fill: Color = fill.into();
+        let (border_color, border_width) = stroke
+            .map(|s| (s.color, s.width))
+            .unwrap_or((Color::TRANSPARENT, 0.0));
 
         // Use explicit radius if > 0, otherwise use context
         let radius = if corner_radius > 0.0 {
@@ -145,7 +146,7 @@ impl UiBatcher {
         self.quad_instances.push(quad_instance::QuadInstance {
             position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
-            color: color.to_array(),
+            color: fill.to_array(),
             border_color: border_color.to_array(),
             border_width,
             corner_radius: radius,

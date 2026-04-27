@@ -10,7 +10,7 @@
 //! - Support different rendering strategies (batching, culling, etc.)
 //! - Allow for render command recording and replay
 
-use crate::core::{Bounds, Color, Point};
+use crate::core::{Bounds, Color, Point, Stroke};
 use crate::core::Logical;
 
 // ============================================================================
@@ -88,48 +88,6 @@ pub enum RenderCommand {
 
     /// Pop the most recent corner radius context from the stack.
     PopCornerRadius,
-}
-
-// ============================================================================
-// STROKE
-// ============================================================================
-
-/// Stroke (border) configuration for shapes.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Stroke {
-    /// The stroke color.
-    pub color: Color,
-    /// The stroke width in logical points.
-    pub width: f32,
-}
-
-impl Stroke {
-    /// Create a new stroke.
-    pub fn new(color: Color, width: f32) -> Self {
-        Self { color, width }
-    }
-
-    /// Create a stroke with default width (1.0).
-    pub fn with_color(color: Color) -> Self {
-        Self { color, width: 1.0 }
-    }
-
-    /// Create a stroke with default color (black).
-    pub fn with_width(width: f32) -> Self {
-        Self {
-            color: Color::BLACK,
-            width,
-        }
-    }
-}
-
-impl Default for Stroke {
-    fn default() -> Self {
-        Self {
-            color: Color::BLACK,
-            width: 1.0,
-        }
-    }
 }
 
 // ============================================================================

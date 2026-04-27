@@ -1,4 +1,4 @@
-use crate::core::{Bounds, Color, Logical, Point};
+use crate::core::{Bounds, Color, Logical, Point, Stroke};
 use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
@@ -249,7 +249,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
 
             // Debug border
             let debug_color = crate::Color::RED;
-            renderer.add_rect(bounds, crate::Color::BLACK, debug_color, 1.0, 0.0);
+            renderer.add_rect(bounds, crate::Color::BLACK, Some(Stroke::with_color(debug_color)), 0.0);
 
             let editor_arc = widget_context.get_or_create_editor(&self.editor_id, &self.initial_text);
             let mut editor_ref = editor_arc.borrow_mut();
@@ -286,8 +286,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
                     renderer.add_rect(
                         cursor_bounds,
                         self.cursor_color,
-                        crate::Color::TRANSPARENT, // No border
-                        0.0, // No border width
+                        None, // No border
                         0.0, // No corner radius
                     );
                 }

@@ -3,7 +3,7 @@
 //! This module provides the bridge between the new `RenderCommand` output from
 //! `Paint::paint()` and the existing `UiBatcher` renderer.
 
-use crate::core::{Bounds, Color, Logical, Point};
+use crate::core::{Bounds, Logical, Point};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 
@@ -41,12 +41,7 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                let border_color = stroke
-                    .as_ref()
-                    .map(|s| s.color)
-                    .unwrap_or(Color::TRANSPARENT);
-                let border_width = stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
-                batcher.add_rect(adjusted_bounds, *fill, border_color, border_width, *corner_radius);
+                batcher.add_rect(adjusted_bounds, *fill, *stroke, *corner_radius);
             }
             RenderCommand::Text {
                 content,
@@ -113,6 +108,7 @@ pub fn process_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Color;
 
     #[test]
     fn test_process_rect_command() {
