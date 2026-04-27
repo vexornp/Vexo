@@ -107,15 +107,9 @@ impl TextProcessor {
             let physical_pos = req.position.to_physical(scale);
 
             // Use clip bounds if set, otherwise use screen bounds
-            let bounds = if req.clip_bounds[2] > 0.0 {
+            let bounds = if let Some(clip) = &req.clip_bounds {
                 // Clip bounds are in logical coordinates - convert to physical
-                let logical_bounds = Bounds::<crate::core::Logical>::from_xywh(
-                    req.clip_bounds[0],
-                    req.clip_bounds[1],
-                    req.clip_bounds[2],
-                    req.clip_bounds[3],
-                );
-                logical_bounds.to_physical(scale)
+                clip.to_physical(scale)
             } else {
                 // No clipping - use full screen
                 Bounds::<Physical>::from_xywh(
