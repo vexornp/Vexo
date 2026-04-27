@@ -5,9 +5,6 @@
 
 mod container;
 mod text;
-// Public for access to TextRenderObject and ContainerRenderObject
-pub use container::ContainerRenderObject;
-pub use text::TextRenderObject;
 
 use std::any::Any;
 

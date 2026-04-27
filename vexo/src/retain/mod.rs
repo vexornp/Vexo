@@ -11,6 +11,7 @@ mod element_context;
 mod render_object;
 mod dirty;
 mod reconcile;
+mod render_objects;
 
 pub mod widgets;
 pub mod elements;
@@ -33,5 +34,6 @@ pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, Paint
 pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
 
-pub use widgets::{Widget, Text, Column, Row, TextRenderObject, ContainerRenderObject};
+pub use widgets::{Widget, Text, Column, Row};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};
+pub use render_objects::{TextRenderObject, ContainerRenderObject};
