@@ -6,12 +6,13 @@ use winit::{
 };
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
+use crate::frame_context::FrameContext;
 use crate::input::{CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
+use crate::render_pipeline::RenderPipeline;
 use crate::renderer::TextRequest;
 use crate::state::CursorBlinkState;
-use crate::text_cache::TextCache;
 use crate::widgets::{Column, Widget, WidgetContext};
 use crate::Application;
 
@@ -39,8 +40,8 @@ pub struct WindowState<A: Application + 'static> {
     // Current cursor icon (for detecting changes)
     current_cursor: CursorIcon,
 
-    // Text buffer cache to avoid recreating/shaping every frame
-    text_cache: TextCache,
+    // Render pipeline for orchestrating render stages
+    render_pipeline: RenderPipeline,
 }
 
 /// Convert CursorIcon to winit's Cursor type.
@@ -83,7 +84,7 @@ impl<A: Application + 'static> WindowState<A> {
             widget_context: ctx,
             cursor_blink: CursorBlinkState::new(),
             current_cursor: CursorIcon::default(),
-            text_cache: TextCache::new(),
+            render_pipeline: RenderPipeline::new(),
         })
     }
 
@@ -160,7 +161,7 @@ impl<A: Application + 'static> WindowState<A> {
         let mut processed_texts: Vec<(glyphon::Buffer, TextRequest)> = Vec::new();
 
         for req in self.batcher.text_requests.drain(..) {
-            let buffer = self.text_cache.get_or_create(
+            let buffer = self.render_pipeline.text_cache_mut().get_or_create(
                 &mut self.widget_context.font_system,
                 &req,
             );
@@ -168,7 +169,7 @@ impl<A: Application + 'static> WindowState<A> {
         }
 
         // Periodically evict stale cache entries
-        self.text_cache.evict_stale();
+        self.render_pipeline.text_cache_mut().evict_stale();
 
         // Create Text Areas from the processed buffers and Taffy positions
         let text_areas: Vec<glyphon::TextArea> = processed_texts

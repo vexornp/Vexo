@@ -12,7 +12,9 @@ use crate::widgets::WidgetContext;
 
 /// Processes text requests into TextArea instances for rendering.
 pub struct TextProcessor {
-    cache: TextCache,
+    /// Text cache for buffer reuse.
+    /// Public for temporary legacy access via RenderPipeline.
+    pub cache: TextCache,
 }
 
 /// Owned text data ready for rendering.
