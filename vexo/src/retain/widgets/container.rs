@@ -49,7 +49,7 @@ impl Widget for Column {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(super::elements::ContainerElement::new())
+        Box::new(crate::retain::elements::ContainerElement::new())
     }
 }
 
@@ -98,7 +98,7 @@ impl Widget for Row {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(super::elements::ContainerElement::new())
+        Box::new(crate::retain::elements::ContainerElement::new())
     }
 }
 

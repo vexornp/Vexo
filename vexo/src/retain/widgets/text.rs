@@ -36,7 +36,7 @@ impl Widget for Text {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(super::elements::LeafElement::new())
+        Box::new(crate::retain::elements::LeafElement::new())
     }
 }
 
