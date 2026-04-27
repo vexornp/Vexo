@@ -45,6 +45,15 @@ impl Default for Column {
     }
 }
 
+impl Clone for Column {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+        }
+    }
+}
+
 impl Widget for Column {
     fn key(&self) -> Option<Key> {
         self.key.clone()
@@ -56,6 +65,10 @@ impl Widget for Column {
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
         Box::new(ContainerRenderObject::new_column())
+    }
+
+    fn clone_box(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -102,6 +115,15 @@ impl Default for Row {
     }
 }
 
+impl Clone for Row {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            children: self.children.iter().map(|c| c.clone_box()).collect(),
+        }
+    }
+}
+
 impl Widget for Row {
     fn key(&self) -> Option<Key> {
         self.key.clone()
@@ -113,6 +135,10 @@ impl Widget for Row {
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
         Box::new(ContainerRenderObject::new_row())
+    }
+
+    fn clone_box(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -5,13 +5,14 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId};
+use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId, Widget};
 
 /// Element for modifier widgets (wraps single child).
 pub struct ModifierElement {
     id: Option<ElementId>,
     key: Option<Key>,
     render_object: Option<RenderObjectId>,
+    widget: Option<Box<dyn Widget>>,
 }
 
 impl ModifierElement {
@@ -21,6 +22,7 @@ impl ModifierElement {
             id: None,
             key: None,
             render_object: None,
+            widget: None,
         }
     }
 
@@ -30,7 +32,16 @@ impl ModifierElement {
             id: None,
             key,
             render_object: None,
+            widget: None,
         }
+    }
+
+    /// Set the widget for this element.
+    ///
+    /// Must be called before mount to create the render object.
+    pub fn set_widget(&mut self, widget: &dyn Widget) {
+        self.widget = Some(widget.clone_box());
+        self.key = widget.key();
     }
 
     /// Get the element ID.
@@ -46,8 +57,17 @@ impl Default for ModifierElement {
 }
 
 impl Element for ModifierElement {
-    fn mount(&mut self, _context: &mut ElementContext) {
+    fn mount(&mut self, context: &mut ElementContext) {
         self.id = Some(ElementId::new());
+
+        // Create render object if widget is set
+        if let (Some(widget), Some(id)) = (&self.widget, self.id) {
+            let render_obj = widget.create_render_object();
+            if let Some(ro_id) = context.create_render_object(render_obj, id) {
+                self.render_object = Some(ro_id);
+                context.render_object = Some(ro_id);
+            }
+        }
     }
 
     fn update(&mut self, context: &mut ElementContext) {
@@ -58,7 +78,9 @@ impl Element for ModifierElement {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Remove render object from registry
         if let Some(ro) = self.render_object {
+            context.remove_render_object(ro);
             context.dirty.mark_needs_paint(ro);
         }
         if let Some(id) = self.id {

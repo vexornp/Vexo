@@ -5,13 +5,14 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId};
+use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId, Widget};
 
 /// Element for leaf widgets (no children).
 pub struct LeafElement {
     id: Option<ElementId>,
     key: Option<Key>,
     render_object: Option<RenderObjectId>,
+    widget: Option<Box<dyn Widget>>,
 }
 
 impl LeafElement {
@@ -21,6 +22,7 @@ impl LeafElement {
             id: None,
             key: None,
             render_object: None,
+            widget: None,
         }
     }
 
@@ -30,7 +32,16 @@ impl LeafElement {
             id: None,
             key,
             render_object: None,
+            widget: None,
         }
+    }
+
+    /// Set the widget for this element.
+    ///
+    /// Must be called before mount to create the render object.
+    pub fn set_widget(&mut self, widget: &dyn Widget) {
+        self.widget = Some(widget.clone_box());
+        self.key = widget.key();
     }
 
     /// Get the element ID.
@@ -46,8 +57,17 @@ impl Default for LeafElement {
 }
 
 impl Element for LeafElement {
-    fn mount(&mut self, _context: &mut ElementContext) {
+    fn mount(&mut self, context: &mut ElementContext) {
         self.id = Some(ElementId::new());
+
+        // Create render object if widget is set
+        if let (Some(widget), Some(id)) = (&self.widget, self.id) {
+            let render_obj = widget.create_render_object();
+            if let Some(ro_id) = context.create_render_object(render_obj, id) {
+                self.render_object = Some(ro_id);
+                context.render_object = Some(ro_id);
+            }
+        }
     }
 
     fn update(&mut self, context: &mut ElementContext) {
@@ -58,7 +78,9 @@ impl Element for LeafElement {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Remove render object from registry
         if let Some(ro) = self.render_object {
+            context.remove_render_object(ro);
             context.dirty.mark_needs_paint(ro);
         }
         if let Some(id) = self.id {
@@ -86,7 +108,7 @@ impl Element for LeafElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::{DirtyTracking, StateStorage};
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text};
 
     #[test]
     fn test_leaf_element_mount() {
@@ -98,6 +120,52 @@ mod tests {
         element.mount(&mut context);
 
         assert!(element.id().is_some());
+    }
+
+    #[test]
+    fn test_leaf_element_mount_creates_render_object() {
+        // This test verifies that mounting a leaf element with a widget
+        // creates a render object in the registry.
+        let mut element = LeafElement::new();
+        let widget = Text::new("Hello");
+        element.set_widget(&widget);
+
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects);
+
+        element.mount(&mut context);
+
+        // After mount, the element should have a render object ID
+        assert!(element.render_object().is_some());
+
+        // The registry should contain the render object
+        let ro_id = element.render_object().unwrap();
+        assert!(render_objects.get(ro_id).is_some());
+    }
+
+    #[test]
+    fn test_leaf_element_unmount_removes_render_object() {
+        // This test verifies that unmounting a leaf element removes
+        // the render object from the registry.
+        let mut element = LeafElement::new();
+        let widget = Text::new("Hello");
+        element.set_widget(&widget);
+
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects);
+
+        element.mount(&mut context);
+        let ro_id = element.render_object().unwrap();
+
+        // Now unmount
+        element.unmount(&mut context);
+
+        // The render object should be removed from the registry
+        assert!(render_objects.get(ro_id).is_none());
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub use text::Text;
 ///
 /// All widgets should implement `Clone`. This is not enforced at the trait level
 /// to allow the trait to be dyn-compatible (usable as `&dyn Widget`).
+/// Use the `clone_box` method to clone a boxed widget trait object.
 pub trait Widget: Any {
     /// Optional key for identity across frames.
     ///
@@ -48,6 +49,12 @@ pub trait Widget: Any {
     /// Render objects handle layout and painting. They persist across frames
     /// and are only updated when marked dirty.
     fn create_render_object(&self) -> Box<dyn RenderObject>;
+
+    /// Clone this widget into a boxed trait object.
+    ///
+    /// Required for storing widgets in elements. Implementations should
+    /// delegate to their `Clone` implementation.
+    fn clone_box(&self) -> Box<dyn Widget>;
 
     /// Check if this widget can update an existing element.
     ///
@@ -105,6 +112,10 @@ mod tests {
 
         fn create_render_object(&self) -> Box<dyn RenderObject> {
             Box::new(TestRenderObject)
+        }
+
+        fn clone_box(&self) -> Box<dyn Widget> {
+            Box::new(self.clone())
         }
 
         fn as_any(&self) -> &dyn std::any::Any {

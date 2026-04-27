@@ -3,6 +3,7 @@
 use super::id::{ElementId, RenderObjectId};
 use super::state::StateStorage;
 use super::dirty::DirtyTracking;
+use super::render_object::{RenderObjectRegistry, RenderObject};
 
 /// Context provided to element lifecycle methods.
 pub struct ElementContext<'a> {
@@ -17,6 +18,9 @@ pub struct ElementContext<'a> {
 
     /// Dirty tracking for layout/paint.
     pub dirty: &'a mut DirtyTracking,
+
+    /// Render object registry.
+    pub render_objects: Option<&'a mut RenderObjectRegistry>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -31,6 +35,23 @@ impl<'a> ElementContext<'a> {
             render_object: None,
             state,
             dirty,
+            render_objects: None,
+        }
+    }
+
+    /// Create a new element context with render object registry.
+    pub fn new_with_registry(
+        parent: Option<ElementId>,
+        state: &'a mut StateStorage,
+        dirty: &'a mut DirtyTracking,
+        render_objects: &'a mut RenderObjectRegistry,
+    ) -> Self {
+        Self {
+            parent,
+            render_object: None,
+            state,
+            dirty,
+            render_objects: Some(render_objects),
         }
     }
 
@@ -62,5 +83,23 @@ impl<'a> ElementContext<'a> {
     /// Remove state for this element.
     pub fn remove_state(&mut self, id: ElementId) {
         self.state.remove(id);
+    }
+
+    /// Create a render object in the registry.
+    ///
+    /// Returns the ID of the created render object, or None if no registry is available.
+    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> Option<RenderObjectId> {
+        if let Some(registry) = &mut self.render_objects {
+            Some(registry.create(object, owner))
+        } else {
+            None
+        }
+    }
+
+    /// Remove a render object from the registry.
+    pub fn remove_render_object(&mut self, id: RenderObjectId) {
+        if let Some(registry) = &mut self.render_objects {
+            registry.remove(id);
+        }
     }
 }

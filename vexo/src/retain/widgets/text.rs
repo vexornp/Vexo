@@ -45,6 +45,10 @@ impl Widget for Text {
         Box::new(TextRenderObject::new(&self.content))
     }
 
+    fn clone_box(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
