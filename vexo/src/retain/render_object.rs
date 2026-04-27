@@ -174,6 +174,16 @@ pub trait RenderObject {
     fn children(&self) -> &[RenderObjectId] {
         &[]
     }
+
+    /// Get as Any for downcasting.
+    ///
+    /// This enables runtime type inspection for container-specific operations.
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Get as Any for mutable downcasting.
+    ///
+    /// This enables runtime type inspection for container-specific operations.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 // ============================================================================
@@ -330,6 +340,14 @@ mod tests {
 
         fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
             true
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
         }
     }
 

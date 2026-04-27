@@ -12,6 +12,7 @@ mod render_object;
 mod dirty;
 mod reconcile;
 mod render_objects;
+mod hit_test;
 
 pub mod widgets;
 pub mod elements;
@@ -33,6 +34,7 @@ pub use element_context::ElementContext;
 pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, PaintContext, HitTestContext};
 pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
+pub use hit_test::HitTestResult;
 
 pub use widgets::{Widget, Text, Column, Row};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};

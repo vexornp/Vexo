@@ -155,6 +155,14 @@ mod tests {
         fn hit_test(&self, _position: crate::core::Point<Logical>, _ctx: &crate::retain::HitTestContext) -> bool {
             true
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
     }
 
     #[test]
