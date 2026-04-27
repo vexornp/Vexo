@@ -26,3 +26,4 @@ pub use element::{Element, ElementRegistry};
 pub use element_context::ElementContext;
 pub use render_object::{RenderObject, RenderObjectRegistry};
 pub use dirty::DirtyTracking;
+pub use reconcile::Reconcilable;
