@@ -13,6 +13,7 @@ use crate::input::{ButtonState, CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
+use crate::retain::{ThreeTreePipeline, Widget as RetainWidget, Column as RetainColumn};
 use crate::state::CursorBlinkState;
 use crate::widgets::{Column, Widget, WidgetContext, WidgetResponse};
 use crate::Application;
@@ -43,6 +44,12 @@ pub struct WindowState<A: Application + 'static> {
 
     // Render pipeline for orchestrating render stages
     render_pipeline: RenderPipeline,
+
+    // Three-tree pipeline (new retain-mode system)
+    retain_pipeline: Option<ThreeTreePipeline>,
+
+    // Flag to enable retain mode (false = use immediate mode for compatibility)
+    use_retain_mode: bool,
 }
 
 /// Convert CursorIcon to winit's Cursor type.
@@ -86,6 +93,8 @@ impl<A: Application + 'static> WindowState<A> {
             cursor_blink: CursorBlinkState::new(),
             current_cursor: CursorIcon::default(),
             render_pipeline: RenderPipeline::new(),
+            retain_pipeline: Some(ThreeTreePipeline::new()),
+            use_retain_mode: false, // Start with immediate mode for compatibility
         })
     }
 
@@ -343,5 +352,73 @@ impl<A: Application + 'static> WindowState<A> {
 
     fn view(&self) -> Box<dyn Widget<A::Message>> {
         A::view(&self.user_app_state)
+    }
+
+    /// Generate a retain-mode widget tree (placeholder for migration).
+    ///
+    /// This method returns a placeholder widget tree for the retain-mode system.
+    /// During migration, this will be updated to convert the Application::view()
+    /// output to retain-mode widgets.
+    fn view_retain(&self) -> Box<dyn RetainWidget> {
+        // Placeholder for migration - returns an empty column
+        // TODO: Convert Application::view() to retain widgets during migration
+        Box::new(RetainColumn::new())
+    }
+
+    /// Render using the three-tree retain-mode pipeline.
+    ///
+    /// This method implements the full retain-mode rendering flow:
+    /// 1. Generate widget tree from view_retain()
+    /// 2. Reconcile widget tree with element tree
+    /// 3. Layout dirty render objects
+    /// 4. Paint dirty render objects
+    /// 5. Submit to GPU
+    ///
+    /// Currently disabled by default (use_retain_mode = false).
+    #[allow(dead_code)]
+    fn render_retain(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // 1. Redraw request & backend check
+        if let Some(win) = &self.window {
+            win.request_redraw();
+        }
+        if !self.backend.is_ready() {
+            return Ok(());
+        }
+
+        // 2. Frame timing
+        self.cursor_blink.tick();
+
+        // 3. Generate widget tree
+        let widget_tree = self.view_retain();
+
+        // 4. Get pipeline (return early if not initialized)
+        let pipeline = match &mut self.retain_pipeline {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+
+        // 5. Reconcile widget tree with element tree
+        pipeline.reconcile(widget_tree);
+
+        // 6. Compute logical size
+        let scale = self.widget_context.scale;
+        let logical_width = self.backend.width() as f32 / scale.factor();
+        let logical_height = self.backend.height() as f32 / scale.factor();
+        let logical_size = Size::<Logical>::new(logical_width, logical_height);
+
+        // 7. Layout dirty render objects
+        pipeline.layout(logical_size, self.layout_engine.as_mut());
+
+        // 8. Paint dirty render objects
+        let _commands = pipeline.paint();
+
+        // 9. Submit to GPU (placeholder - will be integrated with batcher)
+        // TODO: Process RenderCommands through batcher
+        // self.batcher.clear();
+        // for cmd in commands {
+        //     // Convert RenderCommand to batcher operations
+        // }
+
+        Ok(())
     }
 }
