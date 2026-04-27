@@ -27,6 +27,7 @@ mod utils;
 pub mod widgets;
 mod window;
 mod text_cache;
+mod text_processor;
 mod frame_context;
 pub use window::WindowState;
 pub use frame_context::FrameContext;
