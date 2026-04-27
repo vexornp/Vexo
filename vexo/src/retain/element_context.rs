@@ -1,4 +1,66 @@
 //! Context passed to Elements during operations.
 
-/// Context for Element operations.
-pub struct ElementContext;
+use super::id::{ElementId, RenderObjectId};
+use super::state::StateStorage;
+use super::dirty::DirtyTracking;
+
+/// Context provided to element lifecycle methods.
+pub struct ElementContext<'a> {
+    /// The parent element (None for root).
+    pub parent: Option<ElementId>,
+
+    /// The render object created for this element (set during mount).
+    pub render_object: Option<RenderObjectId>,
+
+    /// State storage for this element.
+    pub state: &'a mut StateStorage,
+
+    /// Dirty tracking for layout/paint.
+    pub dirty: &'a mut DirtyTracking,
+}
+
+impl<'a> ElementContext<'a> {
+    /// Create a new element context.
+    pub fn new(
+        parent: Option<ElementId>,
+        state: &'a mut StateStorage,
+        dirty: &'a mut DirtyTracking,
+    ) -> Self {
+        Self {
+            parent,
+            render_object: None,
+            state,
+            dirty,
+        }
+    }
+
+    /// Mark a render object as needing layout.
+    pub fn mark_needs_layout(&mut self, id: RenderObjectId) {
+        self.dirty.mark_needs_layout(id);
+    }
+
+    /// Mark a render object as needing paint.
+    pub fn mark_needs_paint(&mut self, id: RenderObjectId) {
+        self.dirty.mark_needs_paint(id);
+    }
+
+    /// Get state for this element.
+    pub fn get_state<T: 'static>(&self, id: ElementId) -> Option<&T> {
+        self.state.get::<T>(id)
+    }
+
+    /// Get mutable state for this element.
+    pub fn get_state_mut<T: 'static>(&mut self, id: ElementId) -> Option<&mut T> {
+        self.state.get_mut::<T>(id)
+    }
+
+    /// Insert state for this element.
+    pub fn insert_state<T: 'static>(&mut self, id: ElementId, state: T) {
+        self.state.insert(id, state);
+    }
+
+    /// Remove state for this element.
+    pub fn remove_state(&mut self, id: ElementId) {
+        self.state.remove(id);
+    }
+}
