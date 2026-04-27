@@ -42,13 +42,25 @@ pub use layout::AlignItems;
 
 extern crate alloc;
 
-pub trait Application {
+pub trait Application: Sized + 'static {
     type Message: Clone + std::fmt::Debug + Send;
-    type State: Sized;
+    type State;
 
     fn new() -> Self::State;
     fn update(state: &mut Self::State, message: Self::Message);
     fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>>;
+
+    /// Retain-mode view (optional, for migration).
+    ///
+    /// Returns a retain-mode widget tree. Applications can implement this
+    /// to migrate to the three-tree architecture incrementally.
+    ///
+    /// Default implementation returns `None`, allowing existing applications
+    /// to continue using immediate-mode rendering without changes.
+    fn retain_view(state: &Self::State) -> Option<Box<dyn retain::Widget>> {
+        let _ = state;
+        None
+    }
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
