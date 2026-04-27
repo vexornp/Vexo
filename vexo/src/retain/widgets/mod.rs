@@ -3,10 +3,16 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
+mod elements;
+mod text;
+
 use std::any::Any;
 
 use super::element::Element;
 use super::key::Key;
+
+pub use elements::LeafElement;
+pub use text::Text;
 
 /// Immutable widget configuration - rebuilt each frame.
 ///
