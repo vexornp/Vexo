@@ -216,3 +216,80 @@ mod full_pipeline_tests {
         assert!(!pipeline.needs_paint());
     }
 }
+
+// ============================================================================
+// Event Handling Tests
+// ============================================================================
+
+#[cfg(test)]
+mod event_handling_tests {
+    use super::*;
+    use crate::core::{Point, Size};
+    use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+    use crate::layout::TaffyLayoutEngine;
+    use crate::retain::{ElementId, ThreeTreePipeline};
+    use std::sync::Arc;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    #[test]
+    fn test_pipeline_handle_event_no_root() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        let event = InputEvent::PointerButton {
+            position: Point::new(10.0, 10.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+
+        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default());
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn test_pipeline_handle_event_with_text_widget() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        // Reconcile a text widget
+        pipeline.reconcile(Box::new(Text::new("Hello")));
+
+        // Layout
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+        // Click on the text (position depends on layout)
+        let event = InputEvent::PointerButton {
+            position: Point::new(5.0, 5.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+
+        // Text element doesn't handle events, so should return None
+        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default());
+
+        // Text element returns None by default
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn test_pipeline_focus_management() {
+        let mut pipeline = ThreeTreePipeline::new();
+
+        // Initially no focus
+        assert!(pipeline.focused_element().is_none());
+
+        // Set focus
+        let element_id = ElementId::new();
+        pipeline.set_focus(Some(element_id));
+        assert_eq!(pipeline.focused_element(), Some(element_id));
+
+        // Clear focus
+        pipeline.set_focus(None);
+        assert!(pipeline.focused_element().is_none());
+    }
+}
