@@ -3,10 +3,10 @@
 use std::any::Any;
 
 use crate::core::{Bounds, Logical, Point, Size};
-use crate::layout::LayoutConstraints;
+use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, HitTestContext, Key, LayoutContext,
+    Element, HitTestContext, Key, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectId, Widget,
 };
 
@@ -77,12 +77,15 @@ impl Widget for CornerRadius {
 }
 
 /// RenderObject for CornerRadius - applies rounded corners.
+#[allow(dead_code)]
 pub struct CornerRadiusRenderObject {
     radius: f32,
     child: Option<RenderObjectId>,
     computed_bounds: Option<Bounds<Logical>>,
+    layout_node: Option<LayoutNodeId>,
 }
 
+#[allow(dead_code)]
 impl CornerRadiusRenderObject {
     /// Create a new corner radius render object.
     pub fn new(radius: f32) -> Self {
@@ -90,6 +93,7 @@ impl CornerRadiusRenderObject {
             radius,
             child: None,
             computed_bounds: None,
+            layout_node: None,
         }
     }
 
@@ -100,18 +104,28 @@ impl CornerRadiusRenderObject {
 }
 
 impl RenderObject for CornerRadiusRenderObject {
-    fn layout(&mut self, constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
-        // CornerRadius sizes to its content (child's size from min constraints)
-        // If no child, use available space
-        let size = if constraints.min_width > 0.0 && constraints.min_height > 0.0 {
-            // Use child's size
-            Size::new(constraints.min_width, constraints.min_height)
-        } else {
-            // No child, fill available space
-            Size::new(constraints.max_width, constraints.max_height)
-        };
-        self.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, size.width, size.height));
-        size
+    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult {
+        // CornerRadius is a pass-through modifier - it uses the child's layout
+        // The child will be laid out by the pipeline's recursive traversal
+        // We just need to create a placeholder node for ourselves
+        let node = ctx.engine().create_leaf(&Layout::default());
+        self.layout_node = Some(node);
+
+        LayoutResult {
+            node,
+            size: Size::new(0.0, 0.0),
+        }
+    }
+
+    fn apply_layout(&mut self, ctx: &LayoutContext) {
+        // CornerRadius uses child's bounds
+        // Child's apply_layout is called by pipeline traversal
+        // We'll get bounds from our layout_node after Taffy computes
+        if let Some(node) = self.layout_node {
+            if let Some(computed) = ctx.engine_ref().get_layout(node) {
+                self.computed_bounds = Some(computed.bounds);
+            }
+        }
     }
 
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
@@ -172,24 +186,27 @@ mod tests {
     }
 
     #[test]
-    fn test_corner_radius_creates_render_object() {
-        let child = Box::new(Text::new("Hello"));
-        let cr = CornerRadius::new(child, 10.0);
+    fn test_corner_radius_render_object_children() {
+        let mut ro = CornerRadiusRenderObject::new(10.0);
 
-        let mut ro = cr.create_render_object();
+        // Initially, no children
+        assert_eq!(ro.children().len(), 0);
 
-        // Must layout first to set computed_bounds
-        let constraints = LayoutConstraints {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: 100.0,
-            max_height: 50.0,
-            ..LayoutConstraints::default()
-        };
-        let mut layout_ctx = LayoutContext::mock();
-        ro.layout(constraints, &mut layout_ctx);
+        // Set a child
+        let child_id = RenderObjectId::new();
+        ro.set_child_id(child_id);
 
-        // Should be able to paint
+        // Now children() should return the child
+        let children = ro.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0], child_id);
+    }
+
+    #[test]
+    fn test_corner_radius_paint_without_layout() {
+        let ro = CornerRadiusRenderObject::new(10.0);
+
+        // Without layout, paint still returns push/pop commands
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
         let cmds = ro.paint(&mut ctx);
