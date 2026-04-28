@@ -107,6 +107,15 @@ impl<A: Application + 'static> WindowState<A> {
         self.use_retain_mode = enabled;
     }
 
+    /// Toggle retain mode and sync with application state.
+    fn toggle_retain_mode(&mut self) {
+        self.use_retain_mode = !self.use_retain_mode;
+        if let Some(win) = &self.window {
+            win.request_redraw();
+        }
+        println!("Retain mode: {}", self.use_retain_mode);
+    }
+
     pub fn resize(&mut self, size: Size<Physical>) {
         let config =
             crate::render::RenderConfig::new(size, Scale::new(self.widget_context.scale.factor() as f64));
@@ -273,6 +282,21 @@ impl<A: Application + 'static> WindowState<A> {
                     event_loop.exit();
                     return;
                 }
+
+                // Handle 'R' key to toggle retain mode
+                if matches!(
+                    key_event,
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    }
+                ) {
+                    self.toggle_retain_mode();
+                    return;
+                }
+
                 // Other keyboard input goes to widgets
                 if let Some(input_event) =
                     InputEvent::from_winit(event, self.widget_context.scale)
