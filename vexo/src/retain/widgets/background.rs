@@ -108,8 +108,15 @@ impl BackgroundRenderObject {
 
 impl RenderObject for BackgroundRenderObject {
     fn layout(&mut self, constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
-        // Background takes the available space
-        let size = Size::new(constraints.max_width, constraints.max_height);
+        // Background sizes to its content (child's size from min constraints)
+        // If no child, use available space
+        let size = if constraints.min_width > 0.0 && constraints.min_height > 0.0 {
+            // Use child's size
+            Size::new(constraints.min_width, constraints.min_height)
+        } else {
+            // No child, fill available space
+            Size::new(constraints.max_width, constraints.max_height)
+        };
         self.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, size.width, size.height));
         size
     }

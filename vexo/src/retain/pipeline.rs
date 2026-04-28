@@ -282,8 +282,8 @@ impl ThreeTreePipeline {
 
     /// Perform layout on dirty render objects.
     ///
-    /// This method iterates over render objects marked as needing layout
-    /// and calls their `layout()` method with appropriate constraints.
+    /// Layout is performed bottom-up: children are laid out first, then parents
+    /// use the child's size to determine their own size.
     ///
     /// # Arguments
     ///
@@ -301,13 +301,11 @@ impl ThreeTreePipeline {
     /// pipeline.layout(Size::new(800.0, 600.0), &mut engine);
     /// ```
     pub fn layout(&mut self, available_size: Size<Logical>, _engine: &mut dyn crate::layout::LayoutEngine) {
-        // Get dirty render objects that need layout
-        let dirty_ids: Vec<_> = self.dirty.drain_layout().collect();
-
-        // If no dirty objects, nothing to do
-        if dirty_ids.is_empty() {
-            return;
-        }
+        // Get the root render object
+        let root_id = match self.render_objects.root() {
+            Some(id) => id,
+            None => return,
+        };
 
         // Create layout context
         let mut ctx = LayoutContext::mock();
@@ -321,18 +319,54 @@ impl ThreeTreePipeline {
             ..LayoutConstraints::default()
         };
 
-        // Layout only dirty objects
-        for id in dirty_ids {
-            if let Some(obj) = self.render_objects.get_mut(id) {
-                obj.layout(constraints, &mut ctx);
-            }
-        }
+        // Layout the tree bottom-up
+        self.layout_recursive(root_id, constraints, &mut ctx);
+
+        // Clear layout dirty flags
+        self.dirty.drain_layout().for_each(drop);
 
         // Note: For full implementation, we would:
         // 1. Use the layout engine to create nodes for each render object
         // 2. Compute layout with the engine
         // 3. Apply computed layout to each render object
         // 4. Mark children for layout if parent size changed
+    }
+
+    /// Recursively layout a render object and its children (bottom-up).
+    ///
+    /// Children are laid out first, then the parent uses the child's size
+    /// to determine its own size.
+    fn layout_recursive(
+        &mut self,
+        id: RenderObjectId,
+        constraints: LayoutConstraints,
+        ctx: &mut LayoutContext,
+    ) -> Size<Logical> {
+        // Get children first (clone to avoid borrow issues)
+        let children: Vec<RenderObjectId> = self.render_objects.get(id)
+            .map(|obj| obj.children().to_vec())
+            .unwrap_or_default();
+
+        // Layout children first (bottom-up)
+        let mut child_size = Size::new(0.0, 0.0);
+        for child_id in children {
+            // Children get the same constraints (modifiers pass through)
+            child_size = self.layout_recursive(child_id, constraints, ctx);
+        }
+
+        // Now layout this object, passing child_size through context
+        // For now, we store child_size in the constraints' min dimensions
+        let adjusted_constraints = LayoutConstraints {
+            min_width: child_size.width,
+            min_height: child_size.height,
+            ..constraints
+        };
+
+        if let Some(obj) = self.render_objects.get_mut(id) {
+            obj.layout(adjusted_constraints, ctx)
+        } else {
+            Size::new(0.0, 0.0)
+        }
     }
 
     /// Generate render commands from the render object tree.
