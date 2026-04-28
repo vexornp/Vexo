@@ -219,6 +219,16 @@ impl Element for ModifierElement {
     fn can_update(&self, _widget: &dyn Any) -> bool {
         true
     }
+
+    fn on_event(
+        &mut self,
+        _event: &crate::input::InputEvent,
+        _context: &mut crate::retain::EventContext,
+    ) -> Option<Box<dyn Any>> {
+        // Modifier elements don't handle events themselves
+        // The hit test already found the correct target
+        None
+    }
 }
 
 #[cfg(test)]
