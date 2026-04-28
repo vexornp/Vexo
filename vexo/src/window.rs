@@ -9,7 +9,7 @@ use winit::{
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
 use crate::frame_context::FrameContext;
-use crate::input::{ButtonState, CursorIcon, InputEvent};
+use crate::input::{ButtonState, CursorIcon, InputEvent, Modifiers};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
@@ -318,6 +318,13 @@ impl<A: Application + 'static> WindowState<A> {
 
     /// Process an InputEvent through the widget tree and handle responses.
     fn process_input_event(&mut self, input_event: InputEvent) {
+        // Check if we should use retain mode
+        if self.use_retain_mode && self.view_retain().is_some() {
+            self.process_input_event_retain(input_event);
+            return;
+        }
+
+        // Otherwise use immediate mode
         let layout_view = LayoutView::new(self.layout_engine.as_ref());
         let widget_response = self.root_widget.on_event(
             &layout_view,
@@ -329,6 +336,38 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         self.handle_widget_response(&widget_response, &input_event);
+    }
+
+    /// Process an input event through the retain-mode pipeline.
+    fn process_input_event_retain(&mut self, input_event: InputEvent) {
+        let position = match &input_event {
+            InputEvent::PointerMoved { position } => *position,
+            InputEvent::PointerButton { position, .. } => *position,
+            _ => Point::new(0.0, 0.0),
+        };
+
+        // Get current modifiers - use default for now
+        let modifiers = Modifiers::default();
+
+        let pipeline = match &mut self.retain_pipeline {
+            Some(p) => p,
+            None => return,
+        };
+
+        let message = pipeline.handle_event(position, &input_event, modifiers);
+
+        if let Some(msg) = message {
+            // Downcast to A::Message and call update
+            if let Some(typed_msg) = msg.downcast_ref::<A::Message>() {
+                self.update(typed_msg.clone());
+            } else {
+                // Type mismatch - log warning
+                eprintln!(
+                    "Warning: Element returned message of wrong type. Expected {}",
+                    std::any::type_name::<A::Message>()
+                );
+            }
+        }
     }
 
     /// Handle the response from widget event processing.
