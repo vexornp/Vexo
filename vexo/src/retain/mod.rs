@@ -61,6 +61,8 @@ mod element_registry_tests;
 mod integration_tests;
 #[cfg(test)]
 mod e2e_test;
+#[cfg(test)]
+mod window_integration_test;
 
 pub use key::Key;
 pub use id::{ElementId, RenderObjectId};
