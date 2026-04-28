@@ -88,6 +88,41 @@ impl<'a> LayoutContext<'a> {
     pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
         self.font_system
     }
+
+    /// Layout a child render object.
+    ///
+    /// This is the core of top-down layout: the parent calls this method
+    /// to lay out each child. The child's layout() method is called,
+    /// which may recursively call layout_child() on its own children.
+    ///
+    /// Returns the LayoutResult containing the child's layout node.
+    /// Returns None if the child doesn't exist or no registry is available.
+    pub fn layout_child(&mut self, child_id: RenderObjectId) -> Option<LayoutResult> {
+        // Take the registry out to avoid double borrow
+        let registry = self.render_objects.take()?;
+
+        // Get the child and call its layout method
+        let result = registry.get_mut(child_id).map(|child| {
+            child.layout(self, &[])
+        });
+
+        // Put the registry back
+        self.render_objects = Some(registry);
+
+        result
+    }
+
+    /// Layout multiple children and return their layout node IDs.
+    ///
+    /// Convenience method for containers with multiple children.
+    pub fn layout_children(&mut self, children: &[RenderObjectId]) -> Vec<LayoutNodeId> {
+        children
+            .iter()
+            .filter_map(|child_id| {
+                self.layout_child(*child_id).map(|result| result.node)
+            })
+            .collect()
+    }
 }
 
 // ============================================================================
