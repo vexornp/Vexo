@@ -1,4 +1,4 @@
-use vexo::{widgets::Widget, Application, WidgetExt};
+use vexo::{widgets::Widget, Application, WidgetExt, retain, Color};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -169,6 +169,25 @@ impl Application for State {
         .fill()
         .background(vexo::Color::WHITE)
         .boxed()
+    }
+
+    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
+        // Simple widget tree to test retain-mode rendering:
+        // Background(Color::BLUE)
+        // └── Border(Color::BLACK, 2.0)
+        //     └── Text("Retain Mode Active")
+        Some(Box::new(
+            retain::Background::new(
+                Box::new(
+                    retain::Border::new(
+                        Box::new(retain::Text::new("Retain Mode Active")),
+                        Color::BLACK,
+                        2.0,
+                    )
+                ),
+                Color::BLUE,
+            )
+        ))
     }
 }
 
