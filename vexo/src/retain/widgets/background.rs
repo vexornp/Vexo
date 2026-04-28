@@ -129,8 +129,10 @@ impl RenderObject for BackgroundRenderObject {
     }
 
     fn children(&self) -> &[RenderObjectId] {
-        // Return empty for now - child is managed separately
-        &[]
+        match &self.child {
+            Some(child) => std::slice::from_ref(child),
+            None => &[],
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -139,6 +141,10 @@ impl RenderObject for BackgroundRenderObject {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn set_child_id(&mut self, child: RenderObjectId) {
+        self.child = Some(child);
     }
 }
 
@@ -192,5 +198,35 @@ mod tests {
 
         // Background should return a rect command
         assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn test_background_render_object_children() {
+        let mut ro = BackgroundRenderObject::new(Color::RED);
+
+        // Initially, no children
+        assert_eq!(ro.children().len(), 0);
+
+        // Set a child
+        let child_id = RenderObjectId::new();
+        ro.set_child_id(child_id);
+
+        // Now children() should return the child
+        let children = ro.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0], child_id);
+    }
+
+    #[test]
+    fn test_background_render_object_set_child() {
+        let mut ro = BackgroundRenderObject::new(Color::BLUE);
+
+        // Use the set_child method
+        let child_id = RenderObjectId::new();
+        ro.set_child(child_id);
+
+        // Verify the child is set
+        assert!(ro.child.is_some());
+        assert_eq!(ro.child, Some(child_id));
     }
 }

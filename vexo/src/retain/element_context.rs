@@ -129,4 +129,13 @@ impl<'a> ElementContext<'a> {
     pub fn mount_child_element(&mut self, element: Box<dyn super::Element>, parent: ElementId) -> Option<ElementId> {
         self.element_registry.as_mut().map(|registry| registry.mount(element, Some(parent)))
     }
+
+    /// Set the child render object on a parent render object.
+    ///
+    /// Used by modifier elements to link their render object to their child's.
+    pub fn set_render_object_child(&mut self, parent: RenderObjectId, child: RenderObjectId) {
+        if let Some(registry) = &mut self.render_objects {
+            registry.set_child(parent, child);
+        }
+    }
 }

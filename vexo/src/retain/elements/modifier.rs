@@ -94,6 +94,12 @@ impl Element for ModifierElement {
             if let Some(child_id) = context.mount_child_element(child_element, parent_id) {
                 self.child_element = Some(child_id);
             }
+
+            // Link child render object to parent render object for tree traversal
+            // After child_element.mount(), context.render_object is the child's render object
+            if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+                context.set_render_object_child(parent_ro, child_ro);
+            }
         }
     }
 
@@ -276,5 +282,41 @@ mod tests {
 
         // can_update should return true for any widget
         assert!(element.can_update(&"any widget" as &dyn Any));
+    }
+
+    #[test]
+    fn test_modifier_element_links_child_render_object() {
+        use crate::retain::element::ElementRegistry;
+
+        let mut element = ModifierElement::new();
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut element_registry = ElementRegistry::new();
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Create a Background widget with a Text child
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED);
+        element.set_widget(&bg);
+        element.mount(&mut context);
+
+        // Get the parent render object
+        let parent_ro_id = element.render_object().unwrap();
+        let parent_ro = render_objects.get(parent_ro_id).unwrap();
+
+        // Verify the parent's children() returns the child render object
+        let children = parent_ro.children();
+        assert_eq!(children.len(), 1, "Background render object should have one child");
+
+        // The child should be the Text render object
+        let child_ro_id = children[0];
+        assert!(render_objects.get(child_ro_id).is_some(), "Child render object should exist in registry");
     }
 }

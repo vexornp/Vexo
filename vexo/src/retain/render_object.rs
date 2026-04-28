@@ -184,6 +184,15 @@ pub trait RenderObject {
     ///
     /// This enables runtime type inspection for container-specific operations.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
+    /// Set a child render object ID.
+    ///
+    /// Only relevant for modifier render objects (e.g., Background, Padding, Border).
+    /// Default implementation does nothing. This enables linking the render tree
+    /// so that paint_recursive() can traverse to children.
+    fn set_child_id(&mut self, _child: RenderObjectId) {
+        // Default: no-op (leaf nodes and multi-children containers don't use this)
+    }
 }
 
 // ============================================================================
@@ -304,6 +313,16 @@ impl RenderObjectRegistry {
         self.objects.clear();
         self.element_map.clear();
         self.root = None;
+    }
+
+    /// Set the child render object for a parent.
+    ///
+    /// This is used by modifier elements to link their render object
+    /// to their child's render object for tree traversal.
+    pub fn set_child(&mut self, parent: RenderObjectId, child: RenderObjectId) {
+        if let Some(obj) = self.objects.get_mut(&parent) {
+            obj.set_child_id(child);
+        }
     }
 }
 
@@ -480,5 +499,67 @@ mod tests {
         let ctx = HitTestContext::mock();
         // Just verify it can be created
         let _ = ctx;
+    }
+
+    #[test]
+    fn test_registry_set_child() {
+        // Create a mock render object that supports set_child_id
+        struct MockParentObject {
+            child: Option<RenderObjectId>,
+        }
+
+        impl RenderObject for MockParentObject {
+            fn layout(&mut self, _constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
+                Size::new(100.0, 50.0)
+            }
+
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+
+            fn children(&self) -> &[RenderObjectId] {
+                static EMPTY: &[RenderObjectId] = &[];
+                match &self.child {
+                    Some(child) => std::slice::from_ref(child),
+                    None => EMPTY,
+                }
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+
+            fn set_child_id(&mut self, child: RenderObjectId) {
+                self.child = Some(child);
+            }
+        }
+
+        let mut registry = RenderObjectRegistry::new();
+        let element_id = ElementId::new();
+
+        let parent = Box::new(MockParentObject { child: None });
+        let parent_id = registry.create(parent, element_id);
+
+        // Initially no children
+        let parent_obj = registry.get(parent_id).unwrap();
+        assert_eq!(parent_obj.children().len(), 0);
+
+        // Set a child
+        let child_id = RenderObjectId::new();
+        registry.set_child(parent_id, child_id);
+
+        // Now the parent should have the child
+        let parent_obj = registry.get(parent_id).unwrap();
+        let children = parent_obj.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0], child_id);
     }
 }
