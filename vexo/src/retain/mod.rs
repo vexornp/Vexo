@@ -59,6 +59,8 @@ mod reconcile_tests;
 mod element_registry_tests;
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+mod e2e_test;
 
 pub use key::Key;
 pub use id::{ElementId, RenderObjectId};
