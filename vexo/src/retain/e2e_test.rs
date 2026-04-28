@@ -97,11 +97,13 @@ fn test_retain_pipeline_update_flow() {
 ///
 /// This test verifies that the Background modifier widget correctly:
 /// 1. Reconciles with the element tree
-/// 2. Creates render objects
+/// 2. Creates render objects with proper tree structure
 /// 3. Performs layout
 /// 4. Paints and produces render commands
 #[test]
 fn test_background_widget_in_pipeline() {
+    use crate::render::RenderCommand;
+
     // Create a widget tree with Background wrapping a Text
     let child = Box::new(Text::new("Hello"));
     let bg = Background::new(child, Color::RED);
@@ -114,13 +116,32 @@ fn test_background_widget_in_pipeline() {
     assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
     assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
 
-    // Layout
+    // === Verify render tree structure ===
+    let root_ro = pipeline.render_objects().root().expect("should have root render object");
+    let root_obj = pipeline.render_objects().get(root_ro).expect("root render object should exist");
+
+    // Background render object should have the Text render object as a child
+    let children = root_obj.children();
+    assert_eq!(children.len(), 1, "Background render object should have exactly one child");
+
+    // The child render object should exist
+    let child_ro_id = children[0];
+    let child_obj = pipeline.render_objects().get(child_ro_id).expect("child render object should exist");
+    // The child should be a leaf (no children of its own)
+    // TextRenderObject returns empty children by default
+    assert_eq!(child_obj.children().len(), 0, "Text render object should be a leaf");
+
+    // === Layout ===
     let mut engine = TaffyLayoutEngine::new();
     pipeline.layout(Size::new(800.0, 600.0), &mut engine);
 
-    // Paint
+    // === Paint ===
     let commands = pipeline.paint();
 
-    // Background should produce at least one command (the rect)
+    // Background should produce a rect command
     assert!(commands.len() >= 1, "Background should produce at least one command");
+
+    // Verify the render commands include a rect command (the background fill)
+    let has_rect = commands.iter().any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(has_rect, "Commands should include a Rect command for background fill");
 }

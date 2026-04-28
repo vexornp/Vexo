@@ -38,7 +38,9 @@ impl Widget for Text {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(crate::retain::elements::LeafElement::new())
+        let mut elem = crate::retain::elements::LeafElement::new();
+        elem.set_widget(self);
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {

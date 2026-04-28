@@ -141,6 +141,11 @@ impl ElementRegistry {
         self.root
     }
 
+    /// Set the root element ID.
+    pub fn set_root(&mut self, id: ElementId) {
+        self.root = Some(id);
+    }
+
     /// Get the number of elements.
     pub fn len(&self) -> usize {
         self.elements.len()

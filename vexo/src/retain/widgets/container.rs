@@ -60,7 +60,9 @@ impl Widget for Column {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(crate::retain::elements::ContainerElement::new())
+        let mut elem = crate::retain::elements::ContainerElement::new();
+        elem.set_widget(self);
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
@@ -130,7 +132,9 @@ impl Widget for Row {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(crate::retain::elements::ContainerElement::new())
+        let mut elem = crate::retain::elements::ContainerElement::new();
+        elem.set_widget(self);
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {

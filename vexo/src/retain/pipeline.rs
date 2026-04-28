@@ -180,39 +180,44 @@ impl ThreeTreePipeline {
     }
 
     /// Mount an element tree from a widget.
+    ///
+    /// This method creates an element and calls its mount() lifecycle.
+    /// The element's mount() method creates render objects and links children.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
         // Create element
-        let element = widget.create_element();
+        let mut element = widget.create_element();
 
-        // Mount element
+        // Create context with all registries for mount
+        let mut ctx = ElementContext::new_full(
+            parent,
+            &mut self.state,
+            &mut self.dirty,
+            &mut self.render_objects,
+            &mut self.element_registry,
+        );
+
+        // Call mount lifecycle - element creates render objects and links children
+        element.mount(&mut ctx);
+
+        // Note: After element.mount(), ctx.render_object is the LAST render object created
+        // (which could be a child's). We need to get the element's own render object.
+        // We retrieve it from the registry after mounting.
+
+        // Drop context to release borrows
+        drop(ctx);
+
+        // Mount the element in the registry
         let element_id = self.element_registry.mount(element, parent);
 
-        // Create render object for this widget
-        let render_object = widget.create_render_object();
-        let render_id = self.render_objects.create(render_object, element_id);
+        // Get the render object from the element after it's in the registry
+        let render_object_id = self.element_registry.get(element_id)
+            .and_then(|el| el.render_object());
 
-        // Set as root if this is the root element
+        // Set the render object as root if this is the root element
         if parent.is_none() {
-            self.render_objects.set_root(render_id);
-        }
-
-        // Mark as needing layout and paint
-        self.dirty.mark_needs_layout(render_id);
-        self.dirty.mark_needs_paint(render_id);
-
-        // Get the mounted element to perform mount lifecycle
-        if let Some(mounted_element) = self.element_registry.get_mut(element_id) {
-            let mut ctx = ElementContext::new_with_registry(
-                parent,
-                &mut self.state,
-                &mut self.dirty,
-                &mut self.render_objects,
-            );
-
-            ctx.render_object = Some(render_id);
-
-            // Call mount lifecycle
-            mounted_element.mount(&mut ctx);
+            if let Some(render_id) = render_object_id {
+                self.render_objects.set_root(render_id);
+            }
         }
 
         element_id

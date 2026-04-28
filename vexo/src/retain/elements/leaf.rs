@@ -66,6 +66,10 @@ impl Element for LeafElement {
             if let Some(ro_id) = context.create_render_object(render_obj, id) {
                 self.render_object = Some(ro_id);
                 context.render_object = Some(ro_id);
+
+                // Mark the new render object as needing layout and paint
+                context.mark_needs_layout(ro_id);
+                context.mark_needs_paint(ro_id);
             }
         }
     }
