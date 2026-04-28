@@ -43,16 +43,35 @@ pub struct LayoutResult {
 
 /// Context passed to RenderObject.layout().
 ///
-/// Provides access to the layout engine and font system for text measurement.
+/// Provides access to the layout engine, font system, and render object registry
+/// for child layout operations.
 pub struct LayoutContext<'a> {
     engine: &'a mut dyn LayoutEngine,
     font_system: &'a mut glyphon::FontSystem,
+    render_objects: Option<&'a mut RenderObjectRegistry>,
 }
 
 impl<'a> LayoutContext<'a> {
-    /// Create a new layout context.
+    /// Create a new layout context without registry access.
     pub fn new(engine: &'a mut dyn LayoutEngine, font_system: &'a mut glyphon::FontSystem) -> Self {
-        Self { engine, font_system }
+        Self {
+            engine,
+            font_system,
+            render_objects: None,
+        }
+    }
+
+    /// Create a layout context with registry access for child layout.
+    pub fn new_with_registry(
+        engine: &'a mut dyn LayoutEngine,
+        font_system: &'a mut glyphon::FontSystem,
+        render_objects: &'a mut RenderObjectRegistry,
+    ) -> Self {
+        Self {
+            engine,
+            font_system,
+            render_objects: Some(render_objects),
+        }
     }
 
     /// Get the layout engine (mutable for creating nodes).
