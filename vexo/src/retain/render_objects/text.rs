@@ -124,6 +124,10 @@ impl RenderObject for TextRenderObject {
     fn layout_node(&self) -> Option<LayoutNodeId> {
         self.layout_node
     }
+
+    fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+        self.computed_bounds
+    }
 }
 
 #[cfg(test)]

@@ -175,6 +175,10 @@ impl RenderObject for CornerRadiusRenderObject {
     fn layout_node(&self) -> Option<LayoutNodeId> {
         self.layout_node
     }
+
+    fn computed_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
+        self.computed_bounds
+    }
 }
 
 #[cfg(test)]

@@ -43,35 +43,16 @@ pub struct LayoutResult {
 
 /// Context passed to RenderObject.layout().
 ///
-/// Provides access to the layout engine, font system, and render object registry
-/// for child layout operations.
+/// Provides access to the layout engine and font system for text measurement.
 pub struct LayoutContext<'a> {
     engine: &'a mut dyn LayoutEngine,
     font_system: &'a mut glyphon::FontSystem,
-    render_objects: Option<&'a mut RenderObjectRegistry>,
 }
 
 impl<'a> LayoutContext<'a> {
-    /// Create a new layout context without registry access.
+    /// Create a new layout context.
     pub fn new(engine: &'a mut dyn LayoutEngine, font_system: &'a mut glyphon::FontSystem) -> Self {
-        Self {
-            engine,
-            font_system,
-            render_objects: None,
-        }
-    }
-
-    /// Create a layout context with registry access for child layout.
-    pub fn new_with_registry(
-        engine: &'a mut dyn LayoutEngine,
-        font_system: &'a mut glyphon::FontSystem,
-        render_objects: &'a mut RenderObjectRegistry,
-    ) -> Self {
-        Self {
-            engine,
-            font_system,
-            render_objects: Some(render_objects),
-        }
+        Self { engine, font_system }
     }
 
     /// Get the layout engine (mutable for creating nodes).
@@ -87,41 +68,6 @@ impl<'a> LayoutContext<'a> {
     /// Get the font system.
     pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
         self.font_system
-    }
-
-    /// Layout a child render object.
-    ///
-    /// This is the core of top-down layout: the parent calls this method
-    /// to lay out each child. The child's layout() method is called,
-    /// which may recursively call layout_child() on its own children.
-    ///
-    /// Returns the LayoutResult containing the child's layout node.
-    /// Returns None if the child doesn't exist or no registry is available.
-    pub fn layout_child(&mut self, child_id: RenderObjectId) -> Option<LayoutResult> {
-        // Take the registry out to avoid double borrow
-        let registry = self.render_objects.take()?;
-
-        // Get the child and call its layout method
-        let result = registry.get_mut(child_id).map(|child| {
-            child.layout(self)
-        });
-
-        // Put the registry back
-        self.render_objects = Some(registry);
-
-        result
-    }
-
-    /// Layout multiple children and return their layout node IDs.
-    ///
-    /// Convenience method for containers with multiple children.
-    pub fn layout_children(&mut self, children: &[RenderObjectId]) -> Vec<LayoutNodeId> {
-        children
-            .iter()
-            .filter_map(|child_id| {
-                self.layout_child(*child_id).map(|result| result.node)
-            })
-            .collect()
     }
 }
 
@@ -189,22 +135,11 @@ impl HitTestContext {
 /// RenderObjects form the third tree in the three-tree architecture.
 /// They persist across frames and are only updated when marked dirty.
 ///
-/// # Layout (Top-Down)
+/// # Layout
 ///
-/// The `layout` method is called by the parent (or pipeline for root).
-/// For containers and modifiers, call `ctx.layout_child()` to recursively
-/// lay out children and get their node IDs:
-///
-/// ```ignore
-/// fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult {
-///     // Layout children first (top-down)
-///     let child_nodes: Vec<LayoutNodeId> = ctx.layout_children(self.children());
-///
-///     // Create container node with child nodes
-///     let node = ctx.engine().create_container(&self.layout, &child_nodes);
-///     LayoutResult { node, size: Size::new(0.0, 0.0) }
-/// }
-/// ```
+/// The `layout` method is called with a `LayoutContext` that provides access
+/// to the layout engine. The render object creates Taffy node(s) and returns
+/// a `LayoutResult` containing the node ID.
 ///
 /// The `apply_layout` method is called after Taffy::compute() to read back
 /// computed bounds from the engine.
@@ -222,17 +157,16 @@ pub trait RenderObject {
     /// Perform layout with the layout engine, creating Taffy node(s).
     ///
     /// This method creates the Taffy node for this render object.
-    /// For containers and modifiers, call `ctx.layout_child()` or
-    /// `ctx.layout_children()` to recursively lay out children and
-    /// get their node IDs.
+    /// The pipeline handles calling this method on children first (bottom-up),
+    /// then passes child node IDs to the parent.
     ///
-    /// - For leaf nodes (Text): create a leaf node directly
-    /// - For modifiers (Background, Border): call `ctx.layout_child()` for the single child
-    /// - For containers (Column, Row): call `ctx.layout_children()` for all children
+    /// - For leaf nodes (Text): `child_nodes` is empty, create a leaf node
+    /// - For modifiers (Background, Border): `child_nodes` has one element, pass through
+    /// - For containers (Column, Row): `child_nodes` has multiple elements, create container
     ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
-    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult;
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult;
 
     /// Apply computed layout from Taffy.
     ///
@@ -281,6 +215,14 @@ pub trait RenderObject {
     /// Returns the Taffy node ID that was created during layout().
     /// Used by the pipeline to call engine.compute() on the root node.
     fn layout_node(&self) -> Option<LayoutNodeId> {
+        None
+    }
+
+    /// Get the computed bounds after layout.
+    ///
+    /// Returns `None` if layout has not been applied yet.
+    /// Used by event handling to determine element bounds.
+    fn computed_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
         None
     }
 }
@@ -439,7 +381,7 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
+        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -598,7 +540,7 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
+            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 
