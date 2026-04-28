@@ -119,6 +119,17 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Check if we should use retain mode
+        if self.use_retain_mode && self.view_retain().is_some() {
+            return self.render_retain();
+        }
+
+        // Otherwise use immediate mode
+        self.render_immediate()
+    }
+
+    /// Render using the immediate-mode pipeline (legacy).
+    fn render_immediate(&mut self) -> Result<(), wgpu::SurfaceError> {
         // 1. Redraw request & backend check
         if let Some(win) = &self.window {
             win.request_redraw();
