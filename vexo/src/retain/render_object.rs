@@ -156,14 +156,17 @@ impl HitTestContext {
 pub trait RenderObject {
     /// Perform layout with the layout engine, creating Taffy node(s).
     ///
-    /// For modifiers (single-child), `child_result` contains the child's LayoutResult.
-    /// Modifiers should pass through the child's node instead of creating their own.
+    /// This method creates the Taffy node for this render object.
+    /// The pipeline handles calling this method on children first (bottom-up),
+    /// then passes child node IDs to the parent.
     ///
-    /// For containers, `child_result` is None and the container should manage its children.
+    /// - For leaf nodes (Text): `child_nodes` is empty, create a leaf node
+    /// - For modifiers (Background, Border): `child_nodes` has one element, pass through
+    /// - For containers (Column, Row): `child_nodes` has multiple elements, create container
     ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
-    fn layout(&mut self, ctx: &mut LayoutContext, child_result: Option<&LayoutResult>) -> LayoutResult;
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult;
 
     /// Apply computed layout from Taffy.
     ///
@@ -370,7 +373,7 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
+        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -529,7 +532,7 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
+            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 

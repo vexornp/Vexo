@@ -78,7 +78,8 @@
       "Read(//Users/peiyan_wang/.tavily/bin/**)",
       "Read(//Users/peiyan_wang/.local/share/uv/tools/tavily-cli/bin/**)",
       "Read(//usr/local/bin/**)",
-      "Bash(/Users/peiyan_wang/.local/bin/tvly:*)"
+      "Bash(/Users/peiyan_wang/.local/bin/tvly:*)",
+      "Bash(cargo fix:*)"
     ]
   }
 }

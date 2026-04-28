@@ -310,51 +310,49 @@ impl ThreeTreePipeline {
             None => return,
         };
 
-        // Phase 1: Build Taffy tree (creates nodes)
+        // Phase 1: Build Taffy tree (bottom-up: children first, then parent)
+        // The pipeline traverses children first, collects their node IDs,
+        // then passes them to the parent's layout method.
         {
             let mut ctx = LayoutContext::new(engine, font_system);
-            let _result = self.layout_build_recursive(root_id, &mut ctx);
+            self.layout_build_recursive(root_id, &mut ctx);
         }
 
         // Phase 2: Compute layout with Taffy
-        // The root node is stored in the root render object
         if let Some(root_node) = self.get_layout_node(root_id) {
             engine.compute(root_node, available_size, font_system);
         }
 
         // Phase 3: Apply computed layouts back to render objects
         {
-            let mut ctx = LayoutContext::new(engine, font_system);
-            self.apply_layout_recursive(root_id, &mut ctx);
+            let ctx = LayoutContext::new(engine, font_system);
+            self.apply_layout_recursive(root_id, &ctx);
         }
 
         // Clear dirty flags
         self.dirty.drain_layout().for_each(drop);
     }
 
-    /// Recursively build Taffy tree by calling layout() on each RenderObject.
+    /// Recursively build Taffy tree (bottom-up: children first).
     fn layout_build_recursive(
         &mut self,
         id: RenderObjectId,
         ctx: &mut LayoutContext,
     ) -> LayoutResult {
-        // Get children first
+        // Get children
         let children: Vec<RenderObjectId> = self.render_objects.get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
-        // Layout children recursively and collect results
-        let child_results: Vec<LayoutResult> = children
+        // Layout children first (bottom-up)
+        let child_nodes: Vec<LayoutNodeId> = children
             .iter()
-            .map(|child_id| self.layout_build_recursive(*child_id, ctx))
+            .map(|child_id| self.layout_build_recursive(*child_id, ctx).node)
             .collect();
 
-        // Pass the first child's result to the parent (for single-child modifiers)
-        let child_result = child_results.first();
-
-        // Now layout this object
+        // Now layout this object with child nodes
         if let Some(obj) = self.render_objects.get_mut(id) {
-            obj.layout(ctx, child_result)
+            obj.layout(ctx, &child_nodes)
         } else {
             // Fallback: create empty node
             let node = ctx.engine().create_leaf(&Layout::default());
@@ -368,7 +366,7 @@ impl ThreeTreePipeline {
     }
 
     /// Recursively apply computed layouts.
-    fn apply_layout_recursive(&mut self, id: RenderObjectId, ctx: &mut LayoutContext) {
+    fn apply_layout_recursive(&mut self, id: RenderObjectId, ctx: &LayoutContext) {
         // Apply to this object
         if let Some(obj) = self.render_objects.get_mut(id) {
             obj.apply_layout(ctx);

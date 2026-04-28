@@ -119,21 +119,20 @@ impl BorderRenderObject {
 }
 
 impl RenderObject for BorderRenderObject {
-    fn layout(&mut self, _ctx: &mut LayoutContext, child_result: Option<&LayoutResult>) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
         // Border is a pass-through modifier - it uses the child's layout node
-        // This ensures the Taffy tree is connected (child's node is used by parent)
-        match child_result {
-            Some(result) => {
-                // Store the child's node so we can get bounds later
-                self.layout_node = Some(result.node);
+        match child_nodes.first() {
+            Some(child_node) => {
+                // Pass through child's node
+                self.layout_node = Some(*child_node);
                 LayoutResult {
-                    node: result.node,
-                    size: result.size,
+                    node: *child_node,
+                    size: Size::new(0.0, 0.0),
                 }
             }
             None => {
                 // No child, create empty leaf
-                let node = _ctx.engine().create_leaf(&Layout::default());
+                let node = ctx.engine().create_leaf(&Layout::default());
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,

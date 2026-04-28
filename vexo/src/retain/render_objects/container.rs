@@ -1,7 +1,7 @@
 //! ContainerRenderObject implementation for Column and Row.
 
 use crate::core::{Bounds, Logical, Point, Size};
-use crate::layout::{Layout, LayoutNodeId};
+use crate::layout::{FlexDirection, Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectId};
 
@@ -78,10 +78,16 @@ impl ContainerRenderObject {
 }
 
 impl RenderObject for ContainerRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
-        // Container creates a container node in Taffy
-        // For now, we create a leaf node - proper container layout would need child nodes
-        let node = ctx.engine().create_leaf(&Layout::default());
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
+        // Create container layout with flex direction
+        let layout = if self.is_row {
+            Layout::default().flex_direction(FlexDirection::Row)
+        } else {
+            Layout::default().flex_direction(FlexDirection::Column)
+        };
+
+        // Create container node with children
+        let node = ctx.engine().create_container(&layout, child_nodes);
         self.layout_node = Some(node);
 
         LayoutResult {
@@ -199,7 +205,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
 
-        let result = obj.layout(&mut ctx, None);
+        let result = obj.layout(&mut ctx, &[]);
 
         // Should have created a layout node
         assert!(obj.layout_node.is_some());
@@ -215,7 +221,7 @@ mod tests {
         // Create node
         {
             let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-            let _result = obj.layout(&mut ctx, None);
+            let _result = obj.layout(&mut ctx, &[]);
         }
 
         // Compute layout
