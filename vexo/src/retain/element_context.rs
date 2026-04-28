@@ -4,6 +4,7 @@ use super::id::{ElementId, RenderObjectId};
 use super::state::StateStorage;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObjectRegistry, RenderObject};
+use super::element::ElementRegistry;
 
 /// Context provided to element lifecycle methods.
 pub struct ElementContext<'a> {
@@ -21,6 +22,9 @@ pub struct ElementContext<'a> {
 
     /// Render object registry.
     pub render_objects: Option<&'a mut RenderObjectRegistry>,
+
+    /// Element registry for mounting child elements.
+    pub element_registry: Option<&'a mut ElementRegistry>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -36,6 +40,7 @@ impl<'a> ElementContext<'a> {
             state,
             dirty,
             render_objects: None,
+            element_registry: None,
         }
     }
 
@@ -52,6 +57,25 @@ impl<'a> ElementContext<'a> {
             state,
             dirty,
             render_objects: Some(render_objects),
+            element_registry: None,
+        }
+    }
+
+    /// Create a new element context with all registries.
+    pub fn new_full(
+        parent: Option<ElementId>,
+        state: &'a mut StateStorage,
+        dirty: &'a mut DirtyTracking,
+        render_objects: &'a mut RenderObjectRegistry,
+        element_registry: &'a mut ElementRegistry,
+    ) -> Self {
+        Self {
+            parent,
+            render_object: None,
+            state,
+            dirty,
+            render_objects: Some(render_objects),
+            element_registry: Some(element_registry),
         }
     }
 
@@ -97,5 +121,12 @@ impl<'a> ElementContext<'a> {
         if let Some(registry) = &mut self.render_objects {
             registry.remove(id);
         }
+    }
+
+    /// Mount a child element in the registry.
+    ///
+    /// Returns the ID of the mounted element, or None if no registry is available.
+    pub fn mount_child_element(&mut self, element: Box<dyn super::Element>, parent: ElementId) -> Option<ElementId> {
+        self.element_registry.as_mut().map(|registry| registry.mount(element, Some(parent)))
     }
 }
