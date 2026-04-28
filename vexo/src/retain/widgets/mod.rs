@@ -9,7 +9,7 @@ mod text;
 
 use std::any::Any;
 
-use super::element::Element;
+use super::element::{Element, ElementRegistry};
 use super::key::Key;
 use super::RenderObject;
 
@@ -139,7 +139,7 @@ mod tests {
         fn mount(&mut self, _context: &mut crate::retain::ElementContext) {}
         fn update(&mut self, _new_widget: Box<dyn Widget>, _context: &mut crate::retain::ElementContext) {}
         fn unmount(&mut self, _context: &mut crate::retain::ElementContext) {}
-        fn visit_children(&self, _visitor: &mut dyn FnMut(&dyn Element)) {}
+        fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<crate::retain::RenderObjectId> {
             None
         }

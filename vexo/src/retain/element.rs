@@ -31,7 +31,9 @@ pub trait Element {
     fn unmount(&mut self, context: &mut ElementContext);
 
     /// Visit children for traversal.
-    fn visit_children(&self, visitor: &mut dyn FnMut(&dyn Element));
+    ///
+    /// The registry parameter provides access to look up child elements by ID.
+    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element));
 
     /// Get associated render object (if any).
     fn render_object(&self) -> Option<RenderObjectId>;

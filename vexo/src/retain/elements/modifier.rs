@@ -5,7 +5,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
 /// Element for modifier widgets (wraps single child).
 pub struct ModifierElement {
@@ -124,8 +124,12 @@ impl Element for ModifierElement {
         }
     }
 
-    fn visit_children(&self, _visitor: &mut dyn FnMut(&dyn Element)) {
-        // TODO: Modifier elements will visit their single child when implemented
+    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
+        if let Some(child_id) = self.child_element {
+            if let Some(child) = registry.get(child_id) {
+                visitor(child);
+            }
+        }
     }
 
     fn render_object(&self) -> Option<RenderObjectId> {
@@ -265,14 +269,17 @@ mod tests {
 
     #[test]
     fn test_modifier_element_no_children_visited() {
+        use crate::retain::element::ElementRegistry;
+
         let element = ModifierElement::new();
+        let registry = ElementRegistry::new();
         let mut count = 0;
 
-        element.visit_children(&mut |_child| {
+        element.visit_children(&registry, &mut |_child| {
             count += 1;
         });
 
-        // Currently no children are visited (TODO)
+        // No children because element was not mounted
         assert_eq!(count, 0);
     }
 
@@ -318,5 +325,46 @@ mod tests {
         // The child should be the Text render object
         let child_ro_id = children[0];
         assert!(render_objects.get(child_ro_id).is_some(), "Child render object should exist in registry");
+    }
+
+    #[test]
+    fn test_modifier_element_visit_children_with_mounted_child() {
+        use crate::retain::element::ElementRegistry;
+
+        let mut element = ModifierElement::new();
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut element_registry = ElementRegistry::new();
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Create a Background widget with a Text child
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED);
+        element.set_widget(&bg);
+        element.mount(&mut context);
+
+        // Get the element registry from the context (it was modified by mount)
+        // We need to re-borrow it, so we'll drop context and use element_registry directly
+        drop(context);
+
+        // Now visit children - should find the mounted child element
+        let mut visited_count = 0;
+        let mut found_keys = Vec::new();
+        element.visit_children(&element_registry, &mut |child_element| {
+            visited_count += 1;
+            if let Some(key) = child_element.widget_key() {
+                found_keys.push(key);
+            }
+        });
+
+        // Should have visited exactly one child
+        assert_eq!(visited_count, 1, "Should visit exactly one child element");
     }
 }

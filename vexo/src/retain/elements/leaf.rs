@@ -5,7 +5,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
 /// Element for leaf widgets (no children).
 pub struct LeafElement {
@@ -91,7 +91,7 @@ impl Element for LeafElement {
         }
     }
 
-    fn visit_children(&self, _visitor: &mut dyn FnMut(&dyn Element)) {
+    fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {
         // Leaf elements have no children
     }
 
@@ -204,10 +204,13 @@ mod tests {
 
     #[test]
     fn test_leaf_element_no_children() {
+        use crate::retain::element::ElementRegistry;
+
         let element = LeafElement::new();
+        let registry = ElementRegistry::new();
         let mut count = 0;
 
-        element.visit_children(&mut |_child| {
+        element.visit_children(&registry, &mut |_child| {
             count += 1;
         });
 

@@ -5,7 +5,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
 /// Element for container widgets (multiple children).
 pub struct ContainerElement {
@@ -100,10 +100,12 @@ impl Element for ContainerElement {
         }
     }
 
-    fn visit_children(&self, visitor: &mut dyn FnMut(&dyn Element)) {
-        // Note: This requires access to the registry, which we don't have here.
-        // In a full implementation, this would be handled differently.
-        let _ = visitor;
+    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
+        for &child_id in &self.children {
+            if let Some(child) = registry.get(child_id) {
+                visitor(child);
+            }
+        }
     }
 
     fn render_object(&self) -> Option<RenderObjectId> {
@@ -138,6 +140,8 @@ mod tests {
 
     #[test]
     fn test_container_element_children() {
+        use crate::retain::element::ElementRegistry;
+
         let mut element = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
@@ -145,8 +149,9 @@ mod tests {
 
         element.mount(&mut context);
 
+        let registry = ElementRegistry::new();
         let mut count = 0;
-        element.visit_children(&mut |_| count += 1);
+        element.visit_children(&registry, &mut |_| count += 1);
 
         assert_eq!(count, 0);
     }
