@@ -104,16 +104,27 @@ impl CornerRadiusRenderObject {
 }
 
 impl RenderObject for CornerRadiusRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult {
-        // CornerRadius is a pass-through modifier - it uses the child's layout
-        // The child will be laid out by the pipeline's recursive traversal
-        // We just need to create a placeholder node for ourselves
-        let node = ctx.engine().create_leaf(&Layout::default());
-        self.layout_node = Some(node);
-
-        LayoutResult {
-            node,
-            size: Size::new(0.0, 0.0),
+    fn layout(&mut self, _ctx: &mut LayoutContext, child_result: Option<&LayoutResult>) -> LayoutResult {
+        // CornerRadius is a pass-through modifier - it uses the child's layout node
+        // This ensures the Taffy tree is connected (child's node is used by parent)
+        match child_result {
+            Some(result) => {
+                // Store the child's node so we can get bounds later
+                self.layout_node = Some(result.node);
+                LayoutResult {
+                    node: result.node,
+                    size: result.size,
+                }
+            }
+            None => {
+                // No child, create empty leaf
+                let node = _ctx.engine().create_leaf(&Layout::default());
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: Size::new(0.0, 0.0),
+                }
+            }
         }
     }
 

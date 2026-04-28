@@ -1,0 +1,19 @@
+<h2>Cursor behavior on typing?</h2>
+<p class="subtitle">When the user types, should the blink cycle reset?</p>
+
+<div class="options">
+  <div class="option" data-choice="reset-on-type" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Reset on Type</h3>
+      <p>Cursor becomes visible immediately when typing, then starts blinking after a pause — standard behavior in most editors</p>
+    </div>
+  </div>
+  <div class="option" data-choice="continuous-blink" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Continuous Blink</h3>
+      <p>Cursor keeps its current blink phase regardless of typing — simpler implementation but can feel disconnected</p>
+    </div>
+  </div>
+</div>

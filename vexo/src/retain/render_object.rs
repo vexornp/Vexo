@@ -156,9 +156,14 @@ impl HitTestContext {
 pub trait RenderObject {
     /// Perform layout with the layout engine, creating Taffy node(s).
     ///
+    /// For modifiers (single-child), `child_result` contains the child's LayoutResult.
+    /// Modifiers should pass through the child's node instead of creating their own.
+    ///
+    /// For containers, `child_result` is None and the container should manage its children.
+    ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
-    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult;
+    fn layout(&mut self, ctx: &mut LayoutContext, child_result: Option<&LayoutResult>) -> LayoutResult;
 
     /// Apply computed layout from Taffy.
     ///
@@ -365,7 +370,7 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
+        fn layout(&mut self, _ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -524,7 +529,7 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
+            fn layout(&mut self, _ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 

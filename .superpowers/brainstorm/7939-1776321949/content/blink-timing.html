@@ -1,0 +1,42 @@
+<h2>What blink timing feels right?</h2>
+<p class="subtitle">Cursor visibility cycles between on and off states</p>
+
+<div class="options">
+  <div class="option" data-choice="fast" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Fast (400ms)</h3>
+      <p>Quick, energetic blink — common in modern editors</p>
+      <div style="font-family: monospace; background: #1a1a2e; padding: 12px; margin-top: 8px; border-radius: 4px;">
+        <span style="color: #eee;">Hello Wor</span><span style="color: #ff6b6b; animation: blink 0.4s step-end infinite;">|</span>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="standard" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Standard (530ms)</h3>
+      <p>Classic rate — matches most terminal emulators</p>
+      <div style="font-family: monospace; background: #1a1a2e; padding: 12px; margin-top: 8px; border-radius: 4px;">
+        <span style="color: #eee;">Hello Wor</span><span style="color: #ff6b6b; animation: blink 0.53s step-end infinite;">|</span>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="slow" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Slow (800ms)</h3>
+      <p>Relaxed pace — easier on the eyes for long sessions</p>
+      <div style="font-family: monospace; background: #1a1a2e; padding: 12px; margin-top: 8px; border-radius: 4px;">
+        <span style="color: #eee;">Hello Wor</span><span style="color: #ff6b6b; animation: blink 0.8s step-end infinite;">|</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+</style>

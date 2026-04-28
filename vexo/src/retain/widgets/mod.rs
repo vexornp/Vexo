@@ -167,7 +167,7 @@ mod tests {
     }
 
     impl RenderObject for TestRenderObject {
-        fn layout(&mut self, ctx: &mut LayoutContext) -> crate::retain::LayoutResult {
+        fn layout(&mut self, ctx: &mut LayoutContext, _child_result: Option<&crate::retain::LayoutResult>) -> crate::retain::LayoutResult {
             let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
             self.layout_node = Some(node);
             crate::retain::LayoutResult {
@@ -228,7 +228,7 @@ mod tests {
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-        let result = render_object.layout(&mut ctx);
+        let result = render_object.layout(&mut ctx, None);
 
         // Should have created a layout node (node ID is valid)
         // Just verify no panic during layout

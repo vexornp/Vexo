@@ -78,7 +78,7 @@ impl ContainerRenderObject {
 }
 
 impl RenderObject for ContainerRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, _child_result: Option<&LayoutResult>) -> LayoutResult {
         // Container creates a container node in Taffy
         // For now, we create a leaf node - proper container layout would need child nodes
         let node = ctx.engine().create_leaf(&Layout::default());
@@ -199,7 +199,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
 
-        let result = obj.layout(&mut ctx);
+        let result = obj.layout(&mut ctx, None);
 
         // Should have created a layout node
         assert!(obj.layout_node.is_some());
@@ -215,7 +215,7 @@ mod tests {
         // Create node
         {
             let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-            let _result = obj.layout(&mut ctx);
+            let _result = obj.layout(&mut ctx, None);
         }
 
         // Compute layout

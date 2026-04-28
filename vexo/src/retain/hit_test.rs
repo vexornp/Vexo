@@ -249,7 +249,7 @@ mod tests {
         // Layout
         {
             let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.layout(&mut ctx);
+            obj.layout(&mut ctx, None);
         }
 
         // Apply layout to get bounds
@@ -281,7 +281,7 @@ mod tests {
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-        obj.layout(&mut ctx);
+        obj.layout(&mut ctx, None);
 
         let element_id = ElementId::new();
         let id = registry.create(Box::new(obj), element_id);
@@ -315,7 +315,7 @@ mod tests {
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
-        parent.layout(&mut ctx);
+        parent.layout(&mut ctx, None);
 
         let parent_elem = ElementId::new();
         let parent_id = registry.create(Box::new(parent), parent_elem);
@@ -323,7 +323,7 @@ mod tests {
 
         // Create child text with layout
         let mut child = TextRenderObject::new("Child");
-        child.layout(&mut ctx);
+        child.layout(&mut ctx, None);
 
         let child_elem = ElementId::new();
         let child_id = registry.create(Box::new(child), child_elem);

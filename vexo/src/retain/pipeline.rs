@@ -338,19 +338,23 @@ impl ThreeTreePipeline {
         id: RenderObjectId,
         ctx: &mut LayoutContext,
     ) -> LayoutResult {
-        // Layout children first (bottom-up for node creation)
+        // Get children first
         let children: Vec<RenderObjectId> = self.render_objects.get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
-        // Layout children recursively
-        for child_id in children {
-            self.layout_build_recursive(child_id, ctx);
-        }
+        // Layout children recursively and collect results
+        let child_results: Vec<LayoutResult> = children
+            .iter()
+            .map(|child_id| self.layout_build_recursive(*child_id, ctx))
+            .collect();
+
+        // Pass the first child's result to the parent (for single-child modifiers)
+        let child_result = child_results.first();
 
         // Now layout this object
         if let Some(obj) = self.render_objects.get_mut(id) {
-            obj.layout(ctx)
+            obj.layout(ctx, child_result)
         } else {
             // Fallback: create empty node
             let node = ctx.engine().create_leaf(&Layout::default());
