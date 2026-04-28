@@ -123,6 +123,10 @@ impl Application for State {
         let milestone_text = format!("Milestones reached: {}", state.milestones);
 
         vexo::column![
+            // Hint for retain mode toggle
+            vexo::text!("Press R to toggle retain mode")
+                .font_size(14.0)
+                .padding(4.0),
             // Title
             vexo::text!("ScrollView Demo")
                 .font_size(28.0),
