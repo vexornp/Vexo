@@ -43,6 +43,21 @@ pub trait Element {
 
     /// Check if this element can be updated with the given widget.
     fn can_update(&self, widget: &dyn Any) -> bool;
+
+    /// Handle an input event.
+    ///
+    /// Returns `Some(message)` if the event was handled and produces a message.
+    /// The message is type-erased as `Box<dyn Any>` and will be downcast
+    /// by `WindowState` to the application's message type.
+    ///
+    /// Default implementation returns `None` (no interaction).
+    fn on_event(
+        &mut self,
+        _event: &crate::input::InputEvent,
+        _context: &mut super::EventContext,
+    ) -> Option<Box<dyn Any>> {
+        None
+    }
 }
 
 /// Central registry for all live elements.
