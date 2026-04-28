@@ -376,9 +376,8 @@ impl<A: Application + 'static> WindowState<A> {
     /// 2. Reconcile widget tree with element tree
     /// 3. Layout dirty render objects
     /// 4. Paint dirty render objects
-    /// 5. Submit to GPU
-    ///
-    /// Currently disabled by default (use_retain_mode = false).
+    /// 5. Process RenderCommands through batcher
+    /// 6. Submit to GPU
     #[allow(dead_code)]
     fn render_retain(&mut self) -> Result<(), wgpu::SurfaceError> {
         // 1. Redraw request & backend check
@@ -394,37 +393,109 @@ impl<A: Application + 'static> WindowState<A> {
 
         // 3. Generate widget tree
         let widget_tree = match self.view_retain() {
-            Some(tree) => tree,
-            None => return Ok(()), // Application doesn't support retain mode
+            Some(w) => w,
+            None => return Ok(()), // No retain view, skip
         };
 
-        // 4. Get pipeline (return early if not initialized)
+        // 4. Get pipeline
         let pipeline = match &mut self.retain_pipeline {
             Some(p) => p,
             None => return Ok(()),
         };
 
-        // 5. Reconcile widget tree with element tree
+        // 5. Clear batcher
+        self.batcher.clear();
+
+        // 6. Reconcile widget tree with element tree
         pipeline.reconcile(widget_tree);
 
-        // 6. Compute logical size
+        // 7. Compute logical size
         let scale = self.widget_context.scale;
         let logical_width = self.backend.width() as f32 / scale.factor();
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
-        // 7. Layout dirty render objects
+        self.batcher.set_screen_size(logical_size);
+
+        // 8. Layout dirty render objects
         pipeline.layout(logical_size, self.layout_engine.as_mut());
 
-        // 8. Paint dirty render objects
-        let _commands = pipeline.paint();
+        // 9. Paint dirty render objects
+        let commands = pipeline.paint();
 
-        // 9. Submit to GPU (placeholder - will be integrated with batcher)
-        // TODO: Process RenderCommands through batcher
-        // self.batcher.clear();
-        // for cmd in commands {
-        //     // Convert RenderCommand to batcher operations
-        // }
+        // 10. Process RenderCommands through batcher
+        for cmd in commands {
+            match cmd {
+                crate::render::RenderCommand::Rect { bounds, fill, stroke, corner_radius } => {
+                    self.batcher.add_rect(bounds, fill, stroke, corner_radius);
+                }
+                crate::render::RenderCommand::PushCornerRadius { radius } => {
+                    self.batcher.push_corner_radius(radius);
+                }
+                crate::render::RenderCommand::PopCornerRadius => {
+                    self.batcher.pop_corner_radius();
+                }
+                crate::render::RenderCommand::PushClip { bounds } => {
+                    self.batcher.push_clip(bounds);
+                }
+                crate::render::RenderCommand::PopClip => {
+                    self.batcher.pop_clip();
+                }
+                crate::render::RenderCommand::Text { content, position, font_size, color, max_width } => {
+                    // Add text request for glyphon processing
+                    self.batcher.text_requests.push(crate::renderer::TextRequest {
+                        content,
+                        position,
+                        size: font_size,
+                        color,
+                        clip_bounds: self.batcher.current_clip(),
+                    });
+                    let _ = max_width; // TODO: Handle max_width for text wrapping
+                }
+                crate::render::RenderCommand::Editor { id, bounds, color } => {
+                    self.batcher.editor_requests.push(crate::renderer::EditorRequest {
+                        id,
+                        bounds,
+                        color,
+                    });
+                }
+                crate::render::RenderCommand::PushOffset { offset } => {
+                    // TODO: Implement offset stack in batcher
+                    let _ = offset;
+                }
+                crate::render::RenderCommand::PopOffset => {
+                    // TODO: Implement offset stack in batcher
+                }
+            }
+        }
+
+        // 11. Update viewport
+        let physical_size =
+            Size::<Physical>::new(self.backend.width() as f32, self.backend.height() as f32);
+        self.backend.update_viewport(physical_size);
+
+        // 12. Collect text through glyphon
+        let prepared_text = self.render_pipeline.collect_text(
+            &mut self.batcher,
+            &mut self.widget_context,
+            scale,
+            physical_size,
+        );
+
+        // 13. Execute render
+        self.render_pipeline
+            .execute_render(
+                &mut self.backend,
+                &self.batcher,
+                prepared_text,
+                &mut self.widget_context,
+            )
+            .map_err(|e| match e {
+                crate::render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
+                crate::render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,
+                crate::render::RenderError::TextPrepareFailed(_) => wgpu::SurfaceError::Lost,
+                crate::render::RenderError::GpuError(_) => wgpu::SurfaceError::Lost,
+            })?;
 
         Ok(())
     }
