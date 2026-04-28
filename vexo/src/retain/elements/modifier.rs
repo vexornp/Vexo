@@ -59,19 +59,10 @@ impl ModifierElement {
 
     /// Try to get the child widget from the stored widget.
     ///
-    /// This attempts to downcast the widget to Background to get its child.
-    fn get_child_widget(&self) -> Option<Box<dyn Widget>> {
-        // For now, we check if the widget is a Background and get its child
-        // In a more generic system, we'd have a ChildWidget trait
-        let widget = self.widget.as_ref()?;
-        let any = widget.as_any();
-
-        // Try to downcast to Background
-        if let Some(bg) = any.downcast_ref::<crate::retain::widgets::Background>() {
-            Some(bg.child().clone_box())
-        } else {
-            None
-        }
+    /// This uses the `child()` method on the Widget trait, which modifier widgets
+    /// like Background, Padding, and Border override to return their child.
+    fn get_child_widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_ref()?.child()
     }
 }
 

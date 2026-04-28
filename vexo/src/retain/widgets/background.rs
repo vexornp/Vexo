@@ -70,6 +70,10 @@ impl Widget for Background {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn child(&self) -> Option<&dyn Widget> {
+        Some(self.child.as_ref())
+    }
 }
 
 /// RenderObject for Background - draws a colored rect.

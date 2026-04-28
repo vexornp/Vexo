@@ -72,6 +72,14 @@ pub trait Widget: Any {
     ///
     /// This enables downcasting to the concrete widget type for type-specific operations.
     fn as_any(&self) -> &dyn Any;
+
+    /// Get the child widget, if this is a modifier widget.
+    ///
+    /// Returns None for leaf widgets and multi-child containers.
+    /// Returns Some(child) for single-child modifier widgets like Background, Padding, Border.
+    fn child(&self) -> Option<&dyn Widget> {
+        None
+    }
 }
 
 #[cfg(test)]
