@@ -7,6 +7,7 @@ pub enum Message {
     None,
     Clicked,
     CounterOutput(CounterOutput),
+    ToggleRetainMode,
 }
 
 // --- Counter Component ---
@@ -110,6 +111,10 @@ impl Application for State {
                 state.milestones += 1;
             }
             Message::None => {}
+            Message::ToggleRetainMode => {
+                // This message is handled by WindowState, not the app state
+                // The retain mode toggle is a framework-level concern
+            }
         }
     }
 
