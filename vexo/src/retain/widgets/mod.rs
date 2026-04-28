@@ -3,6 +3,7 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
+mod background;
 mod container;
 mod text;
 
@@ -12,6 +13,7 @@ use super::element::Element;
 use super::key::Key;
 use super::RenderObject;
 
+pub use background::Background;
 pub use container::{Column, Row};
 pub use text::Text;
 
