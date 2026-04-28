@@ -13,7 +13,7 @@ use crate::input::{ButtonState, CursorIcon, InputEvent};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
-use crate::retain::{ThreeTreePipeline, Widget as RetainWidget, Column as RetainColumn};
+use crate::retain::{ThreeTreePipeline, Widget as RetainWidget};
 use crate::state::CursorBlinkState;
 use crate::widgets::{Column, Widget, WidgetContext, WidgetResponse};
 use crate::Application;
@@ -97,6 +97,14 @@ impl<A: Application + 'static> WindowState<A> {
             retain_pipeline: Some(ThreeTreePipeline::new()),
             use_retain_mode: false, // Start with immediate mode for compatibility
         })
+    }
+
+    /// Enable or disable retain-mode rendering.
+    ///
+    /// When enabled and the application implements `retain_view()`,
+    /// the three-tree pipeline will be used for rendering.
+    pub fn set_retain_mode(&mut self, enabled: bool) {
+        self.use_retain_mode = enabled;
     }
 
     pub fn resize(&mut self, size: Size<Physical>) {
@@ -353,15 +361,12 @@ impl<A: Application + 'static> WindowState<A> {
         A::view(&self.user_app_state)
     }
 
-    /// Generate a retain-mode widget tree (placeholder for migration).
+    /// Generate a retain-mode widget tree from the application.
     ///
-    /// This method returns a placeholder widget tree for the retain-mode system.
-    /// During migration, this will be updated to convert the Application::view()
-    /// output to retain-mode widgets.
-    fn view_retain(&self) -> Box<dyn RetainWidget> {
-        // Placeholder for migration - returns an empty column
-        // TODO: Convert Application::view() to retain widgets during migration
-        Box::new(RetainColumn::new())
+    /// Returns the widget tree from `Application::retain_view()`,
+    /// or None if the application doesn't implement retain-mode.
+    fn view_retain(&self) -> Option<Box<dyn RetainWidget>> {
+        A::retain_view(&self.user_app_state)
     }
 
     /// Render using the three-tree retain-mode pipeline.
@@ -388,7 +393,10 @@ impl<A: Application + 'static> WindowState<A> {
         self.cursor_blink.tick();
 
         // 3. Generate widget tree
-        let widget_tree = self.view_retain();
+        let widget_tree = match self.view_retain() {
+            Some(tree) => tree,
+            None => return Ok(()), // Application doesn't support retain mode
+        };
 
         // 4. Get pipeline (return early if not initialized)
         let pipeline = match &mut self.retain_pipeline {
