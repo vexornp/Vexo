@@ -4,6 +4,7 @@
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
 mod background;
+mod border;
 mod container;
 mod text;
 
@@ -14,6 +15,7 @@ use super::key::Key;
 use super::RenderObject;
 
 pub use background::Background;
+pub use border::Border;
 pub use container::{Column, Row};
 pub use text::Text;
 
