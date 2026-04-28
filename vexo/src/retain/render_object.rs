@@ -103,7 +103,7 @@ impl<'a> LayoutContext<'a> {
 
         // Get the child and call its layout method
         let result = registry.get_mut(child_id).map(|child| {
-            child.layout(self, &[])
+            child.layout(self)
         });
 
         // Put the registry back
@@ -189,11 +189,22 @@ impl HitTestContext {
 /// RenderObjects form the third tree in the three-tree architecture.
 /// They persist across frames and are only updated when marked dirty.
 ///
-/// # Layout
+/// # Layout (Top-Down)
 ///
-/// The `layout` method is called with a `LayoutContext` that provides access
-/// to the layout engine. The render object creates Taffy node(s) and returns
-/// a `LayoutResult` containing the node ID.
+/// The `layout` method is called by the parent (or pipeline for root).
+/// For containers and modifiers, call `ctx.layout_child()` to recursively
+/// lay out children and get their node IDs:
+///
+/// ```ignore
+/// fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult {
+///     // Layout children first (top-down)
+///     let child_nodes: Vec<LayoutNodeId> = ctx.layout_children(self.children());
+///
+///     // Create container node with child nodes
+///     let node = ctx.engine().create_container(&self.layout, &child_nodes);
+///     LayoutResult { node, size: Size::new(0.0, 0.0) }
+/// }
+/// ```
 ///
 /// The `apply_layout` method is called after Taffy::compute() to read back
 /// computed bounds from the engine.
@@ -211,16 +222,17 @@ pub trait RenderObject {
     /// Perform layout with the layout engine, creating Taffy node(s).
     ///
     /// This method creates the Taffy node for this render object.
-    /// The pipeline handles calling this method on children first (bottom-up),
-    /// then passes child node IDs to the parent.
+    /// For containers and modifiers, call `ctx.layout_child()` or
+    /// `ctx.layout_children()` to recursively lay out children and
+    /// get their node IDs.
     ///
-    /// - For leaf nodes (Text): `child_nodes` is empty, create a leaf node
-    /// - For modifiers (Background, Border): `child_nodes` has one element, pass through
-    /// - For containers (Column, Row): `child_nodes` has multiple elements, create container
+    /// - For leaf nodes (Text): create a leaf node directly
+    /// - For modifiers (Background, Border): call `ctx.layout_child()` for the single child
+    /// - For containers (Column, Row): call `ctx.layout_children()` for all children
     ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult;
+    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult;
 
     /// Apply computed layout from Taffy.
     ///
@@ -427,7 +439,7 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
+        fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -586,7 +598,7 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
+            fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 
