@@ -76,8 +76,19 @@ impl RenderObject for TextRenderObject {
     }
 
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        // Text rendering is handled by glyphon separately
-        vec![]
+        // Emit text render command for glyphon processing
+        match &self.computed_bounds {
+            Some(bounds) => {
+                vec![RenderCommand::Text {
+                    content: self.content.clone(),
+                    position: bounds.position(),
+                    font_size: self.font_size,
+                    color: crate::core::Color::BLACK,
+                    max_width: Some(bounds.width()),
+                }]
+            }
+            None => vec![],
+        }
     }
 
     fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {

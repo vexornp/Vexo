@@ -162,10 +162,10 @@ impl ThreeTreePipeline {
                     existing_element.update(root_widget, &mut ctx);
                 }
 
-                // Mark the element's render object as needing layout and paint
+                // Mark the entire render object tree as needing layout and paint
+                // (not just the root, since children may need repainting too)
                 if let Some(render_id) = render_object_id {
-                    self.dirty.mark_needs_layout(render_id);
-                    self.dirty.mark_needs_paint(render_id);
+                    self.mark_subtree_dirty(render_id);
                 }
 
                 return;
@@ -177,6 +177,23 @@ impl ThreeTreePipeline {
 
         // Mount new root element
         self.mount_element_tree(None, root_widget);
+    }
+
+    /// Mark a render object and all its descendants as dirty.
+    fn mark_subtree_dirty(&mut self, root_id: RenderObjectId) {
+        // Mark the root
+        self.dirty.mark_needs_layout(root_id);
+        self.dirty.mark_needs_paint(root_id);
+
+        // Get children to mark (clone to avoid borrow issues)
+        let children: Vec<_> = self.render_objects.get(root_id)
+            .map(|obj| obj.children().to_vec())
+            .unwrap_or_default();
+
+        // Recursively mark children
+        for child_id in children {
+            self.mark_subtree_dirty(child_id);
+        }
     }
 
     /// Mount an element tree from a widget.

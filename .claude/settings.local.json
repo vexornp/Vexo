@@ -72,7 +72,13 @@
       "WebFetch(domain:newsletter.wolfgang-zucker.com)",
       "WebFetch(domain:kartik-mohan.github.io)",
       "WebFetch(domain:chrisbanes.me)",
-      "Bash(grep -l \"TextProcessor\\\\|render pipeline\\\\|text_processor\" /Users/peiyan_wang/.claude/plans/*.md)"
+      "Bash(grep -l \"TextProcessor\\\\|render pipeline\\\\|text_processor\" /Users/peiyan_wang/.claude/plans/*.md)",
+      "Bash(grep -l \"CornerRadius\\\\|Task 2\" /Users/peiyan_wang/.claude/plans/*.md)",
+      "Bash(tvly --version)",
+      "Read(//Users/peiyan_wang/.tavily/bin/**)",
+      "Read(//Users/peiyan_wang/.local/share/uv/tools/tavily-cli/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(/Users/peiyan_wang/.local/bin/tvly:*)"
     ]
   }
 }
