@@ -36,13 +36,16 @@
 //! - `layout()` only processes objects marked as dirty
 //! - `paint()` recursively collects commands from the root
 
-use crate::core::{Logical, Point, Size};
+use crate::core::{Bounds, Logical, Point, Size};
+use crate::input::{ButtonState, InputEvent, Modifiers};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
+use std::any::Any;
 
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::element_context::ElementContext;
+use super::event_context::EventContext;
 use super::hit_test::HitTestResult;
 use super::id::{ElementId, RenderObjectId};
 use super::render_object::{LayoutContext, LayoutResult, PaintContext, RenderObjectRegistry};
@@ -96,6 +99,9 @@ pub struct ThreeTreePipeline {
 
     /// Dirty tracking for incremental updates.
     dirty: DirtyTracking,
+
+    /// Currently focused element (for keyboard events).
+    focused_element: Option<ElementId>,
 }
 
 impl ThreeTreePipeline {
@@ -106,6 +112,7 @@ impl ThreeTreePipeline {
             render_objects: RenderObjectRegistry::new(),
             state: StateStorage::new(),
             dirty: DirtyTracking::new(),
+            focused_element: None,
         }
     }
 
@@ -472,6 +479,122 @@ impl ThreeTreePipeline {
     /// ```
     pub fn hit_test(&self, position: Point<Logical>) -> HitTestResult {
         self.render_objects.hit_test(position)
+    }
+
+    /// Handle an input event.
+    ///
+    /// For pointer events, performs hit testing to find the target element.
+    /// For keyboard events, dispatches to the focused element.
+    ///
+    /// Returns `Some(message)` if the event was handled.
+    pub fn handle_event(
+        &mut self,
+        _position: Point<Logical>,
+        event: &InputEvent,
+        modifiers: Modifiers,
+    ) -> Option<Box<dyn Any>> {
+        match event {
+            InputEvent::PointerMoved { position } => {
+                self.handle_pointer_event(*position, event, modifiers)
+            }
+            InputEvent::PointerButton { position, .. } => {
+                self.handle_pointer_event(*position, event, modifiers)
+            }
+            InputEvent::Keyboard { .. } => {
+                self.handle_keyboard_event(event, modifiers)
+            }
+            _ => None,
+        }
+    }
+
+    /// Handle a pointer event (moved or button).
+    fn handle_pointer_event(
+        &mut self,
+        position: Point<Logical>,
+        event: &InputEvent,
+        modifiers: Modifiers,
+    ) -> Option<Box<dyn Any>> {
+        // 1. Hit test to find target
+        let hit_result = self.render_objects.hit_test(position);
+
+        // 2. Get target element
+        let target_element = hit_result.target_element()?;
+
+        // 3. Get render object bounds for context
+        let target_render = hit_result.target()?;
+        let bounds = self.render_objects.get(target_render)
+            .and_then(|obj| obj.computed_bounds())
+            .unwrap_or_default();
+
+        // 4. Create event context
+        let mut ctx = EventContext::new(
+            position,
+            self.focused_element,
+            bounds,
+            modifiers,
+            &mut self.state,
+        );
+
+        // 5. Dispatch to element
+        let message = self.element_registry.get_mut(target_element)?
+            .on_event(event, &mut ctx);
+
+        // 6. Handle focus requests
+        if let Some(focus) = ctx.focus_request() {
+            self.focused_element = Some(focus);
+        } else if ctx.should_clear_focus() {
+            self.focused_element = None;
+        } else if message.is_none() {
+            // If event not handled and it's a press, clear focus
+            if let InputEvent::PointerButton { state: ButtonState::Pressed, .. } = event {
+                self.focused_element = None;
+            }
+        }
+
+        message
+    }
+
+    /// Handle a keyboard event.
+    fn handle_keyboard_event(
+        &mut self,
+        event: &InputEvent,
+        modifiers: Modifiers,
+    ) -> Option<Box<dyn Any>> {
+        // Get focused element
+        let focused = self.focused_element?;
+
+        // Bounds not critical for keyboard events
+        let bounds = Bounds::default();
+
+        let mut ctx = EventContext::new(
+            Point::zero(),
+            self.focused_element,
+            bounds,
+            modifiers,
+            &mut self.state,
+        );
+
+        let message = self.element_registry.get_mut(focused)?
+            .on_event(event, &mut ctx);
+
+        // Handle focus requests
+        if let Some(focus) = ctx.focus_request() {
+            self.focused_element = Some(focus);
+        } else if ctx.should_clear_focus() {
+            self.focused_element = None;
+        }
+
+        message
+    }
+
+    /// Get the currently focused element.
+    pub fn focused_element(&self) -> Option<ElementId> {
+        self.focused_element
+    }
+
+    /// Set focus to an element.
+    pub fn set_focus(&mut self, element: Option<ElementId>) {
+        self.focused_element = element;
     }
 
     /// Get the element registry.
