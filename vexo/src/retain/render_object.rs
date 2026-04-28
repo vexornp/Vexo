@@ -55,8 +55,13 @@ impl<'a> LayoutContext<'a> {
         Self { engine, font_system }
     }
 
-    /// Get the layout engine.
+    /// Get the layout engine (mutable for creating nodes).
     pub fn engine(&mut self) -> &mut dyn LayoutEngine {
+        self.engine
+    }
+
+    /// Get the layout engine (immutable for reading computed layouts).
+    pub fn engine_ref(&self) -> &dyn LayoutEngine {
         self.engine
     }
 
@@ -358,7 +363,7 @@ mod tests {
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
         }
 
-        fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
+        fn apply_layout(&mut self, _ctx: &LayoutContext) {
             unimplemented!("MockRenderObject::apply_layout requires a real LayoutEngine")
         }
 
@@ -515,7 +520,7 @@ mod tests {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 
-            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
+            fn apply_layout(&mut self, _ctx: &LayoutContext) {
                 unimplemented!("MockParentObject::apply_layout requires a real LayoutEngine")
             }
 

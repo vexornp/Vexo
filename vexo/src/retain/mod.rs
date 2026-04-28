@@ -69,7 +69,7 @@ pub use id::{ElementId, RenderObjectId};
 pub use state::StateStorage;
 pub use element::{Element, ElementRegistry};
 pub use element_context::ElementContext;
-pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, PaintContext, HitTestContext};
+pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
