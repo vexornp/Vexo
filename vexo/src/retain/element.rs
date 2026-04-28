@@ -150,6 +150,17 @@ impl ElementRegistry {
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
+
+    /// Update an element with a new widget.
+    ///
+    /// Returns true if the element was found and updated, false otherwise.
+    pub fn update_element(&mut self, id: ElementId, widget: Box<dyn Widget>, context: &mut ElementContext) -> bool {
+        if let Some(element) = self.elements.get_mut(&id) {
+            element.update(widget, context);
+            return true;
+        }
+        false
+    }
 }
 
 impl Default for ElementRegistry {

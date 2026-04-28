@@ -104,9 +104,71 @@ impl Element for ModifierElement {
     }
 
     fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext) {
+        // Get the old child widget (cloned to avoid borrow issues)
+        let old_child_widget = self.widget.as_ref().and_then(|w| w.child().map(|c| c.clone_box()));
+
         // Store the new widget configuration
         self.widget = Some(new_widget);
 
+        // Get the new child widget
+        let new_child_widget = self.widget.as_ref().and_then(|w| w.child().map(|c| c.clone_box()));
+
+        // Handle child element lifecycle
+        match (old_child_widget, new_child_widget, self.child_element) {
+            // No change - both None
+            (None, None, _) => {}
+
+            // Child added - create and mount
+            (None, Some(new), None) => {
+                let mut child_element = new.create_element();
+                child_element.mount(context);
+
+                if let Some(parent_id) = self.id {
+                    self.child_element = context.mount_child_element(child_element, parent_id);
+
+                    // Link render objects
+                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+                        context.set_render_object_child(parent_ro, child_ro);
+                    }
+                }
+            }
+
+            // Child removed - unmount
+            (Some(_), None, Some(child_id)) => {
+                context.unmount_child_element(child_id);
+                self.child_element = None;
+            }
+
+            // Child updated - propagate update to existing element
+            (Some(_), Some(new), Some(child_id)) => {
+                context.update_child_element(child_id, new);
+            }
+
+            // Edge cases: mismatched state
+            (None, Some(_), Some(child_id)) => {
+                // Have element but no old child - should not happen, clear and remount
+                context.unmount_child_element(child_id);
+                self.child_element = None;
+            }
+            (Some(_), None, None) => {
+                // Old child but no element - should not happen, nothing to do
+            }
+            (Some(_), Some(new), None) => {
+                // Both have children but no element - mount new
+                let mut child_element = new.create_element();
+                child_element.mount(context);
+
+                if let Some(parent_id) = self.id {
+                    self.child_element = context.mount_child_element(child_element, parent_id);
+
+                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+                        context.set_render_object_child(parent_ro, child_ro);
+                    }
+                }
+            }
+        }
+
+        // Mark render objects dirty
         if let Some(ro) = self.render_object {
             context.mark_needs_layout(ro);
             context.mark_needs_paint(ro);
@@ -366,5 +428,135 @@ mod tests {
 
         // Should have visited exactly one child
         assert_eq!(visited_count, 1, "Should visit exactly one child element");
+    }
+
+    #[test]
+    fn test_modifier_element_update_propagates_to_child() {
+        use crate::retain::element::ElementRegistry;
+
+        let mut element = ModifierElement::new();
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut element_registry = ElementRegistry::new();
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Create a Background widget with a Text child "Hello"
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED);
+        element.set_widget(&bg);
+        element.mount(&mut context);
+
+        // Store the child element ID
+        let child_element_id = element.child_element().unwrap();
+
+        // Now update with a new Background widget with different text "World"
+        let new_child = Box::new(Text::new("World"));
+        let new_bg = Background::new(new_child, Color::BLUE);
+        element.update(Box::new(new_bg), &mut context);
+
+        // The child element should still be the same (same ID)
+        assert_eq!(element.child_element(), Some(child_element_id), "Child element ID should remain the same after update");
+
+        // Drop context to release borrows
+        drop(context);
+
+        // Verify that child element exists in registry
+        assert!(element_registry.contains(child_element_id), "Child element should still be in registry");
+    }
+
+    #[test]
+    fn test_modifier_element_update_child_removed() {
+        use crate::retain::element::ElementRegistry;
+
+        let mut element = ModifierElement::new();
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut element_registry = ElementRegistry::new();
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Create a Background widget with a Text child
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED);
+        element.set_widget(&bg);
+        element.mount(&mut context);
+
+        let child_element_id = element.child_element().unwrap();
+
+        // Update should preserve the child if the new widget also has a child
+        let new_child = Box::new(Text::new("Updated"));
+        let new_bg = Background::new(new_child, Color::GREEN);
+        element.update(Box::new(new_bg), &mut context);
+
+        // Drop context to release borrows
+        drop(context);
+
+        // Child should still exist
+        assert!(element_registry.contains(child_element_id), "Child element should exist after update");
+    }
+
+    #[test]
+    fn test_modifier_element_update_marks_dirty() {
+        use crate::retain::element::ElementRegistry;
+
+        let mut element = ModifierElement::new();
+        let mut state = StateStorage::new();
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let mut element_registry = ElementRegistry::new();
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Create a Background widget with a Text child
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED);
+        element.set_widget(&bg);
+        element.mount(&mut context);
+
+        // Get render object ID before we lose access
+        let ro_id = element.render_object().unwrap();
+
+        // Clear dirty state - need to drop context first
+        drop(context);
+        dirty.clear();
+
+        // Re-create context for update
+        let mut context = ElementContext::new_full(
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+
+        // Update should mark render objects dirty
+        let new_child = Box::new(Text::new("Updated"));
+        let new_bg = Background::new(new_child, Color::BLUE);
+        element.update(Box::new(new_bg), &mut context);
+
+        // Drop context to release borrows
+        drop(context);
+
+        // The render object should be marked dirty
+        assert!(dirty.needs_layout(ro_id), "Render object should be marked for layout after update");
+        assert!(dirty.needs_paint(ro_id), "Render object should be marked for paint after update");
     }
 }

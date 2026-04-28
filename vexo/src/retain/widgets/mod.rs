@@ -9,7 +9,7 @@ mod text;
 
 use std::any::Any;
 
-use super::element::{Element, ElementRegistry};
+use super::element::Element;
 use super::key::Key;
 use super::RenderObject;
 
@@ -85,7 +85,7 @@ pub trait Widget: Any {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::element::Element;
+    use crate::retain::element::{Element, ElementRegistry};
     use crate::retain::key::Key;
     use crate::retain::{LayoutContext, RenderObject};
     use crate::layout::LayoutConstraints;

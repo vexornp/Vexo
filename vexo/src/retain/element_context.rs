@@ -130,6 +130,38 @@ impl<'a> ElementContext<'a> {
         self.element_registry.as_mut().map(|registry| registry.mount(element, Some(parent)))
     }
 
+    /// Update a child element with a new widget.
+    ///
+    /// Returns true if the update was performed, false if no registry or element found.
+    pub fn update_child_element(&mut self, child_id: ElementId, new_widget: Box<dyn super::Widget>) -> bool {
+        // Take the element_registry out temporarily to avoid self-borrow
+        let registry = self.element_registry.take();
+
+        let result = if let Some(registry) = registry {
+            let found = registry.update_element(child_id, new_widget, self);
+            // Put it back
+            self.element_registry = Some(registry);
+            found
+        } else {
+            false
+        };
+
+        result
+    }
+
+    /// Unmount a child element from the registry.
+    ///
+    /// Returns true if the element was unmounted, false if no registry or element found.
+    pub fn unmount_child_element(&mut self, child_id: ElementId) -> bool {
+        if let Some(registry) = self.element_registry.as_mut() {
+            if registry.contains(child_id) {
+                registry.unmount(child_id);
+                return true;
+            }
+        }
+        false
+    }
+
     /// Set the child render object on a parent render object.
     ///
     /// Used by modifier elements to link their render object to their child's.
