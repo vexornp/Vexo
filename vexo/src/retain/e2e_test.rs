@@ -3,6 +3,13 @@
 use crate::retain::{Background, Border, Column, CornerRadius, Text, ThreeTreePipeline};
 use crate::core::{Color, Point, Size};
 use crate::layout::TaffyLayoutEngine;
+use std::sync::Arc;
+
+fn create_test_font_system() -> glyphon::FontSystem {
+    let font_data = crate::resource::file::FONT.to_vec();
+    let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+    glyphon::FontSystem::new_with_fonts([binary])
+}
 
 /// Test the complete three-tree pipeline flow.
 ///
@@ -32,12 +39,13 @@ fn test_retain_pipeline_e2e() {
 
     // === Step 3: Layout ===
     let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
     let available_size = Size::new(800.0, 600.0);
 
     // Verify dirty before layout
     assert!(pipeline.needs_layout(), "Should need layout after reconcile");
 
-    pipeline.layout(available_size, &mut engine);
+    pipeline.layout(available_size, &mut engine, &mut font_system);
 
     // Verify dirty cleared
     assert!(!pipeline.needs_layout(), "Should not need layout after layout");
@@ -69,6 +77,7 @@ fn test_retain_pipeline_e2e() {
 fn test_retain_pipeline_update_flow() {
     let mut pipeline = ThreeTreePipeline::new();
     let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
 
     // First frame: reconcile a text widget
     let widget = Text::new("First");
@@ -78,7 +87,7 @@ fn test_retain_pipeline_update_flow() {
     assert!(pipeline.element_registry().len() >= 1);
 
     // Layout with available size
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
     // After layout, dirty flags should be cleared
     assert!(!pipeline.needs_layout());
@@ -133,7 +142,8 @@ fn test_background_widget_in_pipeline() {
 
     // === Layout ===
     let mut engine = TaffyLayoutEngine::new();
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
     // === Paint ===
     let commands = pipeline.paint();
@@ -171,7 +181,8 @@ fn test_border_widget_in_pipeline() {
 
     // === Layout ===
     let mut engine = TaffyLayoutEngine::new();
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
     // === Paint ===
     let commands = pipeline.paint();
@@ -211,7 +222,8 @@ fn test_corner_radius_widget_in_pipeline() {
 
     // === Layout ===
     let mut engine = TaffyLayoutEngine::new();
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
     // === Paint ===
     let commands = pipeline.paint();

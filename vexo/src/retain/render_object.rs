@@ -201,6 +201,14 @@ pub trait RenderObject {
     fn set_child_id(&mut self, _child: RenderObjectId) {
         // Default: no-op (leaf nodes and multi-children containers don't use this)
     }
+
+    /// Get the layout node ID (for pipeline to use).
+    ///
+    /// Returns the Taffy node ID that was created during layout().
+    /// Used by the pipeline to call engine.compute() on the root node.
+    fn layout_node(&self) -> Option<LayoutNodeId> {
+        None
+    }
 }
 
 // ============================================================================
@@ -347,7 +355,7 @@ impl Default for RenderObjectRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Bounds, Logical, Point, Size};
+    use crate::core::{Bounds, Logical, Point};
 
     /// Mock render object for testing registry operations.
     /// Note: layout() and apply_layout() use unimplemented!() as they're never called

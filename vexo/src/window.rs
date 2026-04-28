@@ -453,7 +453,11 @@ impl<A: Application + 'static> WindowState<A> {
         self.batcher.set_screen_size(logical_size);
 
         // 8. Layout dirty render objects
-        pipeline.layout(logical_size, self.layout_engine.as_mut());
+        pipeline.layout(
+            logical_size,
+            self.layout_engine.as_mut(),
+            &mut self.widget_context.font_system,
+        );
 
         // 9. Paint dirty render objects
         let commands = pipeline.paint();

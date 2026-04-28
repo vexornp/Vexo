@@ -120,12 +120,16 @@ impl RenderObject for TextRenderObject {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+
+    fn layout_node(&self) -> Option<LayoutNodeId> {
+        self.layout_node
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::TaffyLayoutEngine;
+    use crate::layout::{Layout, LayoutEngine, TaffyLayoutEngine};
 
     fn create_test_font_system() -> glyphon::FontSystem {
         let font_data = include_bytes!("../../../font.ttf").to_vec();
@@ -166,17 +170,22 @@ mod tests {
         let mut obj = TextRenderObject::new("Hello World");
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
-        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
 
         // Create node
-        let result = obj.layout(&mut ctx);
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let _result = obj.layout(&mut ctx);
+        }
 
         // Compute layout
         let root = engine.create_leaf(&Layout::default());
         engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
 
         // Apply layout should read computed bounds
-        obj.apply_layout(&ctx);
+        {
+            let ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&ctx);
+        }
 
         // After apply_layout, computed_bounds should be set (though may be zero
         // since the node isn't part of the computed tree properly)

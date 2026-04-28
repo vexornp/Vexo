@@ -161,6 +161,10 @@ impl RenderObject for CornerRadiusRenderObject {
     fn set_child_id(&mut self, child: RenderObjectId) {
         self.child = Some(child);
     }
+
+    fn layout_node(&self) -> Option<LayoutNodeId> {
+        self.layout_node
+    }
 }
 
 #[cfg(test)]

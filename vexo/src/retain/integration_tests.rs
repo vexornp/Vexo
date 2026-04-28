@@ -71,12 +71,20 @@ fn test_key_preserves_identity() {
 mod full_pipeline_tests {
     use crate::core::{Point, Size};
     use crate::layout::TaffyLayoutEngine;
-    use crate::retain::{Row, Text, ThreeTreePipeline, Widget};
+    use crate::retain::{Row, Text, ThreeTreePipeline};
+    use std::sync::Arc;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
 
     #[test]
     fn test_full_frame_flow() {
         let mut pipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
 
         // First frame: reconcile a text widget
         let widget = Text::new("First");
@@ -86,7 +94,7 @@ mod full_pipeline_tests {
         assert!(pipeline.element_registry().len() >= 1);
 
         // Layout with available size
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // After layout, dirty flags should be cleared
         assert!(!pipeline.needs_layout());
@@ -104,13 +112,14 @@ mod full_pipeline_tests {
     fn test_hit_test_through_pipeline() {
         let mut pipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
 
         // Create a text widget
         let widget = Text::new("Hello World");
         pipeline.reconcile(Box::new(widget));
 
         // Layout with available size
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test at a point inside the text bounds (text starts at origin)
         let result = pipeline.hit_test(Point::new(5.0, 5.0));
@@ -155,15 +164,16 @@ mod full_pipeline_tests {
     fn test_pipeline_paint_cycle() {
         let mut pipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Test")));
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Paint should return commands (text render object may return empty)
         let commands = pipeline.paint();
 
-        // TextRenderObject returns empty commands (text rendered via glyphon)
+        // TextRenderObject returns text commands
         // The important thing is that paint completes without error
         let _ = commands;
     }

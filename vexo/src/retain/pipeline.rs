@@ -37,7 +37,7 @@
 //! - `paint()` recursively collects commands from the root
 
 use crate::core::{Logical, Point, Size};
-use crate::layout::LayoutConstraints;
+use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 
 use super::dirty::DirtyTracking;
@@ -45,7 +45,7 @@ use super::element::ElementRegistry;
 use super::element_context::ElementContext;
 use super::hit_test::HitTestResult;
 use super::id::{ElementId, RenderObjectId};
-use super::render_object::{LayoutContext, PaintContext, RenderObjectRegistry};
+use super::render_object::{LayoutContext, LayoutResult, PaintContext, RenderObjectRegistry};
 use super::state::StateStorage;
 use super::widgets::Widget;
 
@@ -280,92 +280,103 @@ impl ThreeTreePipeline {
         self.element_registry.unmount(element_id);
     }
 
-    /// Perform layout on dirty render objects.
+    /// Perform layout using Taffy layout engine.
     ///
-    /// Layout is performed bottom-up: children are laid out first, then parents
-    /// use the child's size to determine their own size.
+    /// Three-phase layout:
+    /// 1. Build Taffy tree (each RenderObject creates nodes)
+    /// 2. Compute layout with Taffy
+    /// 3. Apply computed layouts back to RenderObjects
     ///
     /// # Arguments
     ///
     /// * `available_size` - The size available for the root render object
-    /// * `_engine` - Layout engine placeholder (integration pending)
-    ///
-    /// # Note
-    ///
-    /// Currently uses a simplified layout approach. Full integration with
-    /// the TaffyLayoutEngine will be implemented in a later phase.
+    /// * `engine` - Layout engine for node creation and computation
+    /// * `font_system` - Font system for text measurement
     ///
     /// # Example
     ///
     /// ```ignore
-    /// pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+    /// pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
     /// ```
-    pub fn layout(&mut self, available_size: Size<Logical>, _engine: &mut dyn crate::layout::LayoutEngine) {
+    pub fn layout(
+        &mut self,
+        available_size: Size<Logical>,
+        engine: &mut dyn crate::layout::LayoutEngine,
+        font_system: &mut glyphon::FontSystem,
+    ) {
         // Get the root render object
         let root_id = match self.render_objects.root() {
             Some(id) => id,
             None => return,
         };
 
-        // Create layout context
-        let mut ctx = LayoutContext::mock();
+        // Phase 1: Build Taffy tree (creates nodes)
+        {
+            let mut ctx = LayoutContext::new(engine, font_system);
+            let _result = self.layout_build_recursive(root_id, &mut ctx);
+        }
 
-        // Create constraints from available size
-        let constraints = LayoutConstraints {
-            min_width: 0.0,
-            max_width: available_size.width,
-            min_height: 0.0,
-            max_height: available_size.height,
-            ..LayoutConstraints::default()
-        };
+        // Phase 2: Compute layout with Taffy
+        // The root node is stored in the root render object
+        if let Some(root_node) = self.get_layout_node(root_id) {
+            engine.compute(root_node, available_size, font_system);
+        }
 
-        // Layout the tree bottom-up
-        self.layout_recursive(root_id, constraints, &mut ctx);
+        // Phase 3: Apply computed layouts back to render objects
+        {
+            let mut ctx = LayoutContext::new(engine, font_system);
+            self.apply_layout_recursive(root_id, &mut ctx);
+        }
 
-        // Clear layout dirty flags
+        // Clear dirty flags
         self.dirty.drain_layout().for_each(drop);
-
-        // Note: For full implementation, we would:
-        // 1. Use the layout engine to create nodes for each render object
-        // 2. Compute layout with the engine
-        // 3. Apply computed layout to each render object
-        // 4. Mark children for layout if parent size changed
     }
 
-    /// Recursively layout a render object and its children (bottom-up).
-    ///
-    /// Children are laid out first, then the parent uses the child's size
-    /// to determine its own size.
-    fn layout_recursive(
+    /// Recursively build Taffy tree by calling layout() on each RenderObject.
+    fn layout_build_recursive(
         &mut self,
         id: RenderObjectId,
-        constraints: LayoutConstraints,
         ctx: &mut LayoutContext,
-    ) -> Size<Logical> {
-        // Get children first (clone to avoid borrow issues)
+    ) -> LayoutResult {
+        // Layout children first (bottom-up for node creation)
         let children: Vec<RenderObjectId> = self.render_objects.get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
-        // Layout children first (bottom-up)
-        let mut child_size = Size::new(0.0, 0.0);
+        // Layout children recursively
         for child_id in children {
-            // Children get the same constraints (modifiers pass through)
-            child_size = self.layout_recursive(child_id, constraints, ctx);
+            self.layout_build_recursive(child_id, ctx);
         }
 
-        // Now layout this object, passing child_size through context
-        // For now, we store child_size in the constraints' min dimensions
-        let adjusted_constraints = LayoutConstraints {
-            min_width: child_size.width,
-            min_height: child_size.height,
-            ..constraints
-        };
-
+        // Now layout this object
         if let Some(obj) = self.render_objects.get_mut(id) {
-            obj.layout(adjusted_constraints, ctx)
+            obj.layout(ctx)
         } else {
-            Size::new(0.0, 0.0)
+            // Fallback: create empty node
+            let node = ctx.engine().create_leaf(&Layout::default());
+            LayoutResult { node, size: Size::new(0.0, 0.0) }
+        }
+    }
+
+    /// Get the layout node ID from a render object.
+    fn get_layout_node(&self, id: RenderObjectId) -> Option<LayoutNodeId> {
+        self.render_objects.get(id).and_then(|obj| obj.layout_node())
+    }
+
+    /// Recursively apply computed layouts.
+    fn apply_layout_recursive(&mut self, id: RenderObjectId, ctx: &mut LayoutContext) {
+        // Apply to this object
+        if let Some(obj) = self.render_objects.get_mut(id) {
+            obj.apply_layout(ctx);
+        }
+
+        // Recursively apply to children
+        let children: Vec<RenderObjectId> = self.render_objects.get(id)
+            .map(|obj| obj.children().to_vec())
+            .unwrap_or_default();
+
+        for child_id in children {
+            self.apply_layout_recursive(child_id, ctx);
         }
     }
 
@@ -512,6 +523,13 @@ mod tests {
     use super::*;
     use crate::layout::TaffyLayoutEngine;
     use crate::retain::Text;
+    use std::sync::Arc;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
 
     #[test]
     fn test_pipeline_new() {
@@ -579,7 +597,8 @@ mod tests {
 
         // Layout with available size
         let mut engine = TaffyLayoutEngine::new();
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // After layout, dirty flags should be cleared
         assert!(!pipeline.needs_layout());
@@ -603,15 +622,14 @@ mod tests {
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
         let mut engine = TaffyLayoutEngine::new();
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
-        // Paint - text render object returns empty commands
-        // (text rendering is handled by glyphon separately)
+        // Paint - text render object returns text commands
         let commands = pipeline.paint();
 
-        // TextRenderObject doesn't generate render commands
-        // It returns empty because text is rendered via glyphon
-        assert!(commands.is_empty());
+        // TextRenderObject generates Text render commands
+        assert!(!commands.is_empty());
     }
 
     #[test]
@@ -633,7 +651,8 @@ mod tests {
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
         let mut engine = TaffyLayoutEngine::new();
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test inside the text bounds
         let result = pipeline.hit_test(Point::new(5.0, 5.0));
@@ -651,7 +670,8 @@ mod tests {
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
         let mut engine = TaffyLayoutEngine::new();
-        pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test outside the text bounds
         let result = pipeline.hit_test(Point::new(500.0, 500.0));
