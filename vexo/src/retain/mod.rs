@@ -72,7 +72,7 @@ pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 
-pub use widgets::{Widget, Text, Column, Row, Background, Border};
+pub use widgets::{Widget, Text, Column, Row, Background, Border, CornerRadius};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;
