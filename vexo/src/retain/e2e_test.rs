@@ -1,7 +1,7 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::retain::{Column, Text, ThreeTreePipeline};
-use crate::core::{Point, Size};
+use crate::retain::{Background, Column, Text, ThreeTreePipeline};
+use crate::core::{Color, Point, Size};
 use crate::layout::TaffyLayoutEngine;
 
 /// Test the complete three-tree pipeline flow.
@@ -91,4 +91,36 @@ fn test_retain_pipeline_update_flow() {
     // Element should be updated, not recreated (same root)
     // Elements should be reused for matching widgets
     assert!(pipeline.needs_layout() || pipeline.needs_paint());
+}
+
+/// Test Background widget in the pipeline.
+///
+/// This test verifies that the Background modifier widget correctly:
+/// 1. Reconciles with the element tree
+/// 2. Creates render objects
+/// 3. Performs layout
+/// 4. Paints and produces render commands
+#[test]
+fn test_background_widget_in_pipeline() {
+    // Create a widget tree with Background wrapping a Text
+    let child = Box::new(Text::new("Hello"));
+    let bg = Background::new(child, Color::RED);
+
+    // Create pipeline and reconcile
+    let mut pipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(bg));
+
+    // Should have created elements and render objects
+    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
+    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+
+    // Layout
+    let mut engine = TaffyLayoutEngine::new();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine);
+
+    // Paint
+    let commands = pipeline.paint();
+
+    // Background should produce at least one command (the rect)
+    assert!(commands.len() >= 1, "Background should produce at least one command");
 }
