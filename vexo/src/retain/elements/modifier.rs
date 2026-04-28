@@ -94,14 +94,18 @@ impl Element for ModifierElement {
             let mut child_element = child_widget.create_element();
             child_element.mount(context);
 
+            // Get the child's render object BEFORE moving child_element into the registry
+            // This is important: context.render_object may have been overwritten by nested mounts,
+            // so we must get it from the child element directly.
+            let child_render_object = child_element.render_object();
+
             // Store the child element in the registry if available
             if let Some(child_id) = context.mount_child_element(child_element, parent_id) {
                 self.child_element = Some(child_id);
             }
 
             // Link child render object to parent render object for tree traversal
-            // After child_element.mount(), context.render_object is the child's render object
-            if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+            if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
                 context.set_render_object_child(parent_ro, child_ro);
             }
         }
@@ -127,11 +131,14 @@ impl Element for ModifierElement {
                 let mut child_element = new.create_element();
                 child_element.mount(context);
 
+                // Get child's render object before moving child_element
+                let child_render_object = child_element.render_object();
+
                 if let Some(parent_id) = self.id {
                     self.child_element = context.mount_child_element(child_element, parent_id);
 
                     // Link render objects
-                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
                         context.set_render_object_child(parent_ro, child_ro);
                     }
                 }
@@ -162,10 +169,13 @@ impl Element for ModifierElement {
                 let mut child_element = new.create_element();
                 child_element.mount(context);
 
+                // Get child's render object before moving child_element
+                let child_render_object = child_element.render_object();
+
                 if let Some(parent_id) = self.id {
                     self.child_element = context.mount_child_element(child_element, parent_id);
 
-                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, context.render_object) {
+                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
                         context.set_render_object_child(parent_ro, child_ro);
                     }
                 }

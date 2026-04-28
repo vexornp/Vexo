@@ -367,16 +367,17 @@ impl ThreeTreePipeline {
 
     /// Recursively apply computed layouts.
     fn apply_layout_recursive(&mut self, id: RenderObjectId, ctx: &LayoutContext) {
+        // Get children first
+        let children: Vec<RenderObjectId> = self.render_objects.get(id)
+            .map(|obj| obj.children().to_vec())
+            .unwrap_or_default();
+
         // Apply to this object
         if let Some(obj) = self.render_objects.get_mut(id) {
             obj.apply_layout(ctx);
         }
 
         // Recursively apply to children
-        let children: Vec<RenderObjectId> = self.render_objects.get(id)
-            .map(|obj| obj.children().to_vec())
-            .unwrap_or_default();
-
         for child_id in children {
             self.apply_layout_recursive(child_id, ctx);
         }
