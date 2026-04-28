@@ -17,10 +17,25 @@
 use std::collections::HashMap;
 
 use crate::core::{Point, Size};
-use crate::layout::LayoutConstraints;
+use crate::layout::{LayoutEngine, LayoutNodeId};
 use crate::render::RenderCommand;
 
 use super::id::{ElementId, RenderObjectId};
+
+// ============================================================================
+// LAYOUT RESULT
+// ============================================================================
+
+/// Result of a RenderObject's layout operation.
+///
+/// Contains the Taffy node ID and computed size.
+#[derive(Debug)]
+pub struct LayoutResult {
+    /// The Taffy node ID for this render object.
+    pub node: LayoutNodeId,
+    /// The computed size (available after Taffy computation).
+    pub size: Size<crate::core::Logical>,
+}
 
 // ============================================================================
 // LAYOUT CONTEXT
@@ -28,18 +43,26 @@ use super::id::{ElementId, RenderObjectId};
 
 /// Context passed to RenderObject.layout().
 ///
-/// Provides access to the layout engine and parent constraints.
+/// Provides access to the layout engine and font system for text measurement.
 pub struct LayoutContext<'a> {
-    // Placeholder - will integrate with TaffyLayoutEngine later
-    _phantom: std::marker::PhantomData<&'a ()>,
+    engine: &'a mut dyn LayoutEngine,
+    font_system: &'a mut glyphon::FontSystem,
 }
 
 impl<'a> LayoutContext<'a> {
-    /// Create a mock layout context for testing.
-    pub fn mock() -> Self {
-        Self {
-            _phantom: std::marker::PhantomData,
-        }
+    /// Create a new layout context.
+    pub fn new(engine: &'a mut dyn LayoutEngine, font_system: &'a mut glyphon::FontSystem) -> Self {
+        Self { engine, font_system }
+    }
+
+    /// Get the layout engine.
+    pub fn engine(&mut self) -> &mut dyn LayoutEngine {
+        self.engine
+    }
+
+    /// Get the font system.
+    pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
+        self.font_system
     }
 }
 
@@ -109,8 +132,12 @@ impl HitTestContext {
 ///
 /// # Layout
 ///
-/// The `layout` method is called with constraints and should return the
-/// computed size. It can mutate internal state (e.g., caching layout results).
+/// The `layout` method is called with a `LayoutContext` that provides access
+/// to the layout engine. The render object creates Taffy node(s) and returns
+/// a `LayoutResult` containing the node ID.
+///
+/// The `apply_layout` method is called after Taffy::compute() to read back
+/// computed bounds from the engine.
 ///
 /// # Paint
 ///
@@ -121,42 +148,18 @@ impl HitTestContext {
 ///
 /// The `hit_test` method determines if a pointer event should be handled
 /// by this render object.
-///
-/// # Example
-///
-/// ```ignore
-/// struct ColoredRect {
-///     color: Color,
-///     computed_size: Size<Logical>,
-/// }
-///
-/// impl RenderObject for ColoredRect {
-///     fn layout(&mut self, constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
-///         // Use the constraints to determine size
-///         Size::new(
-///             constraints.min_width.max(constraints.max_width.min(100.0)),
-///             constraints.min_height.max(constraints.max_height.min(50.0)),
-///         )
-///     }
-///
-///     fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
-///         vec![RenderCommand::rect(
-///             Bounds::from_xywh(0.0, 0.0, self.computed_size.width, self.computed_size.height),
-///             self.color,
-///         )]
-///     }
-///
-///     fn hit_test(&self, position: Point, _ctx: &HitTestContext) -> bool {
-///         position.x >= 0.0 && position.x < self.computed_size.width
-///             && position.y >= 0.0 && position.y < self.computed_size.height
-///     }
-/// }
-/// ```
 pub trait RenderObject {
-    /// Perform layout with given constraints, return computed size.
+    /// Perform layout with the layout engine, creating Taffy node(s).
     ///
-    /// This method can mutate internal state (e.g., caching computed layout).
-    fn layout(&mut self, constraints: LayoutConstraints, ctx: &mut LayoutContext) -> Size<crate::core::Logical>;
+    /// Returns a LayoutResult containing the node ID and size.
+    /// The render object should store the node ID for later use in apply_layout().
+    fn layout(&mut self, ctx: &mut LayoutContext) -> LayoutResult;
+
+    /// Apply computed layout from Taffy.
+    ///
+    /// Called after Taffy::compute() to read back computed bounds.
+    /// The render object should read its layout from the engine and update computed_bounds.
+    fn apply_layout(&mut self, ctx: &LayoutContext);
 
     /// Generate paint commands.
     ///
@@ -340,17 +343,23 @@ impl Default for RenderObjectRegistry {
 mod tests {
     use super::*;
     use crate::core::{Bounds, Logical, Point, Size};
-    use crate::layout::LayoutConstraints;
 
-    /// Mock render object for testing.
+    /// Mock render object for testing registry operations.
+    /// Note: layout() and apply_layout() use unimplemented!() as they're never called
+    /// in registry tests. Full layout tests require a mock LayoutEngine.
     struct MockRenderObject {
         layout_count: std::cell::Cell<usize>,
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
+        fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
-            Size::new(100.0, 50.0)
+            // Return a dummy result for registry testing
+            unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
+        }
+
+        fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
+            unimplemented!("MockRenderObject::apply_layout requires a real LayoutEngine")
         }
 
         fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
@@ -469,13 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn test_layout_context_mock() {
-        let ctx = LayoutContext::mock();
-        // Just verify it can be created
-        let _ = ctx;
-    }
-
-    #[test]
     fn test_paint_context() {
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
@@ -509,8 +511,12 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _constraints: LayoutConstraints, _ctx: &mut LayoutContext) -> Size<Logical> {
-                Size::new(100.0, 50.0)
+            fn layout(&mut self, _ctx: &mut LayoutContext) -> LayoutResult {
+                unimplemented!("MockParentObject::layout requires a real LayoutEngine")
+            }
+
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
+                unimplemented!("MockParentObject::apply_layout requires a real LayoutEngine")
             }
 
             fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
