@@ -1,4 +1,4 @@
-use vexo::{widgets::Widget, Application, WidgetExt, retain, Color};
+use vexo::{retain, widgets::Widget, Application, WidgetExt};
 uniffi::setup_scaffolding!();
 
 // --- The User's Code ---
@@ -8,6 +8,7 @@ pub enum Message {
     Clicked,
     CounterOutput(CounterOutput),
     ToggleRetainMode,
+    RetainButtonClicked,
 }
 
 // --- Counter Component ---
@@ -63,8 +64,7 @@ impl vexo::component::Component for CounterComponent {
                 vexo::button!(vexo::text!("+"), CounterMessage::Increment)
                     .width(40.0)
                     .height(40.0),
-                vexo::button!(vexo::text!("Reset"), CounterMessage::Reset)
-                    .height(40.0),
+                vexo::button!(vexo::text!("Reset"), CounterMessage::Reset).height(40.0),
             ]
             .gap(8.0),
         ]
@@ -78,9 +78,7 @@ impl vexo::component::Component for CounterComponent {
 
     fn map_message(message: Self::Message, state: &Self::State) -> Option<Self::Output> {
         match message {
-            CounterMessage::Increment if state.count == 10 => {
-                Some(CounterOutput::CountReached(10))
-            }
+            CounterMessage::Increment if state.count == 10 => Some(CounterOutput::CountReached(10)),
             _ => None,
         }
     }
@@ -107,6 +105,9 @@ impl Application for State {
             Message::Clicked => {
                 state.click_count += 1;
             }
+            Message::RetainButtonClicked => {
+                state.click_count += 1;
+            }
             Message::CounterOutput(CounterOutput::CountReached(_n)) => {
                 state.milestones += 1;
             }
@@ -128,8 +129,7 @@ impl Application for State {
                 .font_size(14.0)
                 .padding(4.0),
             // Title
-            vexo::text!("ScrollView Demo")
-                .font_size(28.0),
+            vexo::text!("ScrollView Demo").font_size(28.0),
             // ScrollView with many items to demonstrate scrolling
             vexo::widgets::ScrollView::new()
                 .with_key("demo-scroll")
@@ -163,11 +163,13 @@ impl Application for State {
                 .corner_radius(8.0)
                 .boxed(),
             // Counter Component with message mapping
-            vexo::component!(CounterComponent, "counter", |output| Message::CounterOutput(output)),
+            vexo::component!(
+                CounterComponent,
+                "counter",
+                |output| Message::CounterOutput(output)
+            ),
             // Milestone display
-            vexo::text!(milestone_text)
-                .font_size(18.0)
-                .padding(10.0),
+            vexo::text!(milestone_text).font_size(18.0).padding(10.0),
         ]
         .align(vexo::layout::AlignItems::Center)
         .fill()
@@ -176,22 +178,16 @@ impl Application for State {
     }
 
     fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
-        // Simple widget tree to test retain-mode rendering:
-        // Background(Color::BLUE)
-        // └── Border(Color::BLACK, 2.0)
-        //     └── Text("Retain Mode Active")
-        Some(Box::new(
-            retain::Background::new(
-                Box::new(
-                    retain::Border::new(
-                        Box::new(retain::Text::new("Retain Mode Active")),
-                        Color::BLACK,
-                        2.0,
-                    )
-                ),
-                Color::BLUE,
-            )
-        ))
+        // Simple retain mode demo: just a button.
+        Some(Box::new(retain::Button::new("Click Me!")))
+    }
+
+    fn retain_button_clicked(button_label: &str) -> Option<Self::Message> {
+        // Handle button clicks from retain mode
+        match button_label {
+            "Click Me!" => Some(Message::RetainButtonClicked),
+            _ => None,
+        }
     }
 }
 

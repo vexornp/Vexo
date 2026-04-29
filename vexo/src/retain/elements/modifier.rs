@@ -74,7 +74,8 @@ impl Default for ModifierElement {
 
 impl Element for ModifierElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        self.id = Some(ElementId::new());
+        // Use the element ID from context (pre-allocated by pipeline)
+        self.id = context.element_id;
 
         // Create render object if widget is set
         if let (Some(widget), Some(id)) = (&self.widget, self.id) {
@@ -242,7 +243,8 @@ mod tests {
         let mut element = ModifierElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
-        let mut context = ElementContext::new(None, &mut state, &mut dirty);
+        let mut context = ElementContext::new(None, &mut state, &mut dirty)
+            .with_element_id(ElementId::new());
 
         element.mount(&mut context);
 
@@ -259,7 +261,8 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects);
+        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects)
+            .with_element_id(ElementId::new());
 
         element.mount(&mut context);
 
@@ -286,7 +289,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child
         let child = Box::new(Text::new("Hello"));
@@ -331,7 +334,8 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects);
+        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects)
+            .with_element_id(ElementId::new());
 
         element.mount(&mut context);
         let ro_id = element.render_object().unwrap();
@@ -392,7 +396,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child
         let child = Box::new(Text::new("Hello"));
@@ -428,7 +432,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child
         let child = Box::new(Text::new("Hello"));
@@ -469,7 +473,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child "Hello"
         let child = Box::new(Text::new("Hello"));
@@ -510,7 +514,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child
         let child = Box::new(Text::new("Hello"));
@@ -547,7 +551,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Create a Background widget with a Text child
         let child = Box::new(Text::new("Hello"));
@@ -569,7 +573,7 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
-        );
+        ).with_element_id(ElementId::new());
 
         // Update should mark render objects dirty
         let new_child = Box::new(Text::new("Updated"));

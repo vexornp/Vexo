@@ -208,17 +208,20 @@ impl ThreeTreePipeline {
     /// This method creates an element and calls its mount() lifecycle.
     /// The element's mount() method creates render objects and links children.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
+        // Pre-allocate element ID so it can be used during mount
+        let element_id = ElementId::new();
+
         // Create element
         let mut element = widget.create_element();
 
-        // Create context with all registries for mount
+        // Create context with all registries for mount, including pre-allocated element ID
         let mut ctx = ElementContext::new_full(
             parent,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
             &mut self.element_registry,
-        );
+        ).with_element_id(element_id);
 
         // Call mount lifecycle - element creates render objects and links children
         element.mount(&mut ctx);
@@ -230,8 +233,8 @@ impl ThreeTreePipeline {
         // Drop context to release borrows
         drop(ctx);
 
-        // Mount the element in the registry
-        let element_id = self.element_registry.mount(element, parent);
+        // Mount the element in the registry with the pre-allocated ID
+        self.element_registry.mount_with_id(element, parent, element_id);
 
         // Get the render object from the element after it's in the registry
         let render_object_id = self.element_registry.get(element_id)
@@ -241,6 +244,59 @@ impl ThreeTreePipeline {
         if parent.is_none() {
             if let Some(render_id) = render_object_id {
                 self.render_objects.set_root(render_id);
+            }
+        }
+
+        // Mount children recursively
+        // First check for single-child modifiers (Background, Border, etc.)
+        if let Some(child_widget) = widget.child() {
+            let child_id = self.mount_element_tree(Some(element_id), child_widget.clone_box());
+
+            // Link child render object to parent
+            if let (Some(parent_ro), Some(child_ro)) = (
+                render_object_id,
+                self.element_registry.get(child_id).and_then(|el| el.render_object()),
+            ) {
+                if let Some(parent_obj) = self.render_objects.get_mut(parent_ro) {
+                    parent_obj.set_child_id(child_ro);
+                }
+            }
+
+            // Update element's children list
+            if let Some(elem) = self.element_registry.get_mut(element_id) {
+                elem.add_child(child_id);
+            }
+        }
+
+        // Then check for multi-child containers (Column, Row)
+        let children: Vec<Box<dyn Widget>> = widget.children().iter().map(|c| c.clone_box()).collect();
+        if !children.is_empty() {
+            let mut child_render_objects = Vec::new();
+            let mut child_element_ids = Vec::new();
+
+            for child_widget in children {
+                let child_id = self.mount_element_tree(Some(element_id), child_widget);
+                child_element_ids.push(child_id);
+
+                if let Some(child_ro) = self.element_registry.get(child_id).and_then(|el| el.render_object()) {
+                    child_render_objects.push(child_ro);
+                }
+            }
+
+            // Link child render objects to parent container
+            if let Some(parent_ro) = render_object_id {
+                if let Some(parent_obj) = self.render_objects.get_mut(parent_ro) {
+                    for child_ro in &child_render_objects {
+                        parent_obj.add_child(*child_ro);
+                    }
+                }
+            }
+
+            // Update element's children list
+            if let Some(elem) = self.element_registry.get_mut(element_id) {
+                for child_id in child_element_ids {
+                    elem.add_child(child_id);
+                }
             }
         }
 
@@ -518,7 +574,9 @@ impl ThreeTreePipeline {
         let hit_result = self.render_objects.hit_test(position);
 
         // 2. Get target element
-        let target_element = hit_result.target_element()?;
+        let target_element = hit_result.target_element();
+
+        let target_element = target_element?;
 
         // 3. Get render object bounds for context
         let target_render = hit_result.target()?;

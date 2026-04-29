@@ -95,7 +95,7 @@ impl<A: Application + 'static> WindowState<A> {
             current_cursor: CursorIcon::default(),
             render_pipeline: RenderPipeline::new(),
             retain_pipeline: Some(ThreeTreePipeline::new()),
-            use_retain_mode: false, // Start with immediate mode for compatibility
+            use_retain_mode: true, // Start with retain mode by default
         })
     }
 
@@ -357,9 +357,17 @@ impl<A: Application + 'static> WindowState<A> {
         let message = pipeline.handle_event(position, &input_event, modifiers);
 
         if let Some(msg) = message {
-            // Downcast to A::Message and call update
+            // Try to downcast to A::Message first
             if let Some(typed_msg) = msg.downcast_ref::<A::Message>() {
                 self.update(typed_msg.clone());
+            } else if let Some(str_msg) = msg.downcast_ref::<String>() {
+                // Handle string messages from retain mode widgets
+                if let Some(button_label) = str_msg.strip_prefix("button:") {
+                    // This is a button click message
+                    if let Some(app_msg) = A::retain_button_clicked(button_label) {
+                        self.update(app_msg);
+                    }
+                }
             } else {
                 // Type mismatch - log warning
                 eprintln!(

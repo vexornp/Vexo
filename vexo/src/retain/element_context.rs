@@ -11,6 +11,9 @@ pub struct ElementContext<'a> {
     /// The parent element (None for root).
     pub parent: Option<ElementId>,
 
+    /// The element ID for this element (pre-allocated before mount).
+    pub element_id: Option<ElementId>,
+
     /// The render object created for this element (set during mount).
     pub render_object: Option<RenderObjectId>,
 
@@ -36,6 +39,7 @@ impl<'a> ElementContext<'a> {
     ) -> Self {
         Self {
             parent,
+            element_id: None,
             render_object: None,
             state,
             dirty,
@@ -53,6 +57,7 @@ impl<'a> ElementContext<'a> {
     ) -> Self {
         Self {
             parent,
+            element_id: None,
             render_object: None,
             state,
             dirty,
@@ -71,12 +76,19 @@ impl<'a> ElementContext<'a> {
     ) -> Self {
         Self {
             parent,
+            element_id: None,
             render_object: None,
             state,
             dirty,
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
         }
+    }
+
+    /// Create a new element context with a pre-allocated element ID.
+    pub fn with_element_id(mut self, id: ElementId) -> Self {
+        self.element_id = Some(id);
+        self
     }
 
     /// Mark a render object as needing layout.

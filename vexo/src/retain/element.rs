@@ -58,6 +58,14 @@ pub trait Element {
     ) -> Option<Box<dyn Any>> {
         None
     }
+
+    /// Add a child element ID.
+    ///
+    /// Called by the pipeline during mount to link children.
+    /// Default implementation does nothing (for leaf elements).
+    fn add_child(&mut self, _child_id: ElementId) {
+        // Default: no-op for leaf elements
+    }
 }
 
 /// Central registry for all live elements.
@@ -97,6 +105,21 @@ impl ElementRegistry {
         }
 
         id
+    }
+
+    /// Mount a new element with a pre-allocated ID.
+    ///
+    /// This is used when the element ID needs to be known before mount()
+    /// is called (e.g., for creating render objects during mount).
+    pub fn mount_with_id(&mut self, element: Box<dyn Element>, parent: Option<ElementId>, id: ElementId) {
+        self.elements.insert(id, element);
+        self.parent_map.insert(id, parent);
+
+        if let Some(p) = parent {
+            self.children_map.entry(p).or_default().push(id);
+        } else {
+            self.root = Some(id);
+        }
     }
 
     /// Unmount an element and all its descendants.

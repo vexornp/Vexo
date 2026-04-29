@@ -152,7 +152,8 @@ impl RenderObjectRegistry {
         if obj.hit_test(position, &ctx) {
             // Add this node to the path
             path.push(id);
-            if let Some(element_id) = self.element_for(id) {
+            let element_id = self.element_for(id);
+            if let Some(element_id) = element_id {
                 element_path.push(element_id);
             }
 
