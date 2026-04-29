@@ -7,12 +7,12 @@ use super::super::RenderObject;
 use super::super::render_objects::ContainerRenderObject;
 
 /// Column widget - arranges children vertically.
-pub struct Column {
+pub struct Column<M: Clone + Send + 'static = ()> {
     key: Option<Key>,
-    children: Vec<Box<dyn Widget>>,
+    children: Vec<Box<dyn Widget<M>>>,
 }
 
-impl Column {
+impl<M: Clone + Send + 'static> Column<M> {
     /// Create a new empty column.
     pub fn new() -> Self {
         Self {
@@ -28,24 +28,24 @@ impl Column {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget<M> + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[Box<dyn Widget>] {
+    pub fn children(&self) -> &[Box<dyn Widget<M>>] {
         &self.children
     }
 }
 
-impl Default for Column {
+impl<M: Clone + Send + 'static> Default for Column<M> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Clone for Column {
+impl<M: Clone + Send + 'static> Clone for Column<M> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
@@ -54,13 +54,13 @@ impl Clone for Column {
     }
 }
 
-impl Widget for Column {
+impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = crate::retain::elements::ContainerElement::new();
+        let mut elem = crate::retain::elements::ContainerElement::<M>::new();
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -69,19 +69,23 @@ impl Widget for Column {
         Box::new(ContainerRenderObject::new_column())
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<M>> {
         Box::new(self.clone())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn children(&self) -> &[Box<dyn Widget<M>>] {
+        &self.children
+    }
 }
 
 /// Row widget - arranges children horizontally.
 pub struct Row {
     key: Option<Key>,
-    children: Vec<Box<dyn Widget>>,
+    children: Vec<Box<dyn Widget<()>>>,
 }
 
 impl Row {
@@ -100,13 +104,13 @@ impl Row {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget<()> + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[Box<dyn Widget>] {
+    pub fn children(&self) -> &[Box<dyn Widget<()>>] {
         &self.children
     }
 }
@@ -126,7 +130,7 @@ impl Clone for Row {
     }
 }
 
-impl Widget for Row {
+impl Widget<()> for Row {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -141,12 +145,16 @@ impl Widget for Row {
         Box::new(ContainerRenderObject::new_row())
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<()>> {
         Box::new(self.clone())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn children(&self) -> &[Box<dyn Widget<()>>] {
+        &self.children
     }
 }
 
