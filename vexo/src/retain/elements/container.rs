@@ -66,13 +66,13 @@ impl Default for ContainerElement {
 
 impl Element for ContainerElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        // Use the element ID from context (pre-allocated by pipeline)
-        self.id = context.element_id;
+        // Use the element ID from context - single source of truth
+        self.id = Some(context.element_id);
 
         // Create render object if widget is set
-        if let (Some(widget), Some(id)) = (&self.widget, self.id) {
+        if let Some(widget) = &self.widget {
             let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, id) {
+            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
                 self.render_object = Some(ro_id);
                 context.render_object = Some(ro_id);
 
@@ -150,8 +150,12 @@ mod tests {
         let mut element = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
-        let mut context = ElementContext::new(None, &mut state, &mut dirty)
-            .with_element_id(ElementId::new());
+        let mut context = ElementContext::new(
+            ElementId::new(),
+            None,
+            &mut state,
+            &mut dirty,
+        );
 
         element.mount(&mut context);
 
@@ -165,8 +169,12 @@ mod tests {
         let mut element = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
-        let mut context = ElementContext::new(None, &mut state, &mut dirty)
-            .with_element_id(ElementId::new());
+        let mut context = ElementContext::new(
+            ElementId::new(),
+            None,
+            &mut state,
+            &mut dirty,
+        );
 
         element.mount(&mut context);
 
@@ -188,8 +196,13 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects)
-            .with_element_id(ElementId::new());
+        let mut context = ElementContext::with_registry(
+            ElementId::new(),
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+        );
 
         element.mount(&mut context);
 
@@ -212,8 +225,13 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::new_with_registry(None, &mut state, &mut dirty, &mut render_objects)
-            .with_element_id(ElementId::new());
+        let mut context = ElementContext::with_registry(
+            ElementId::new(),
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+        );
 
         element.mount(&mut context);
         let ro_id = element.render_object().unwrap();

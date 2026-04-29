@@ -159,7 +159,8 @@ impl ThreeTreePipeline {
 
                 // Update existing element
                 if let Some(existing_element) = self.element_registry.get_mut(root_id) {
-                    let mut ctx = ElementContext::new_with_registry(
+                    let mut ctx = ElementContext::with_registry(
+                        root_id,
                         None,
                         &mut self.state,
                         &mut self.dirty,
@@ -208,20 +209,21 @@ impl ThreeTreePipeline {
     /// This method creates an element and calls its mount() lifecycle.
     /// The element's mount() method creates render objects and links children.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
-        // Pre-allocate element ID so it can be used during mount
+        // Generate element ID - single source of truth
         let element_id = ElementId::new();
 
         // Create element
         let mut element = widget.create_element();
 
-        // Create context with all registries for mount, including pre-allocated element ID
-        let mut ctx = ElementContext::new_full(
+        // Create context with the element ID (single source of truth)
+        let mut ctx = ElementContext::full(
+            element_id,
             parent,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
             &mut self.element_registry,
-        ).with_element_id(element_id);
+        );
 
         // Call mount lifecycle - element creates render objects and links children
         element.mount(&mut ctx);
@@ -233,7 +235,7 @@ impl ThreeTreePipeline {
         // Drop context to release borrows
         drop(ctx);
 
-        // Mount the element in the registry with the pre-allocated ID
+        // Mount the element in the registry with the same ID
         self.element_registry.mount_with_id(element, parent, element_id);
 
         // Get the render object from the element after it's in the registry
@@ -320,7 +322,8 @@ impl ThreeTreePipeline {
 
         // Get the element to perform unmount lifecycle
         if let Some(element) = self.element_registry.get_mut(element_id) {
-            let mut ctx = ElementContext::new_with_registry(
+            let mut ctx = ElementContext::with_registry(
+                element_id,
                 parent,
                 &mut self.state,
                 &mut self.dirty,

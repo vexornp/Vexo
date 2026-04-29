@@ -130,13 +130,13 @@ impl ButtonElement {
 
 impl Element for ButtonElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        // Use the element ID from context (pre-allocated by pipeline)
-        self.id = context.element_id;
+        // Use the element ID from context - single source of truth
+        self.id = Some(context.element_id);
 
         // Create render object if widget is set
-        if let (Some(widget), Some(id)) = (&self.widget, self.id) {
+        if let Some(widget) = &self.widget {
             let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, id) {
+            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
                 self.render_object = Some(ro_id);
                 context.render_object = Some(ro_id);
 

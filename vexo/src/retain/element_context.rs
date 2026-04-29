@@ -11,8 +11,9 @@ pub struct ElementContext<'a> {
     /// The parent element (None for root).
     pub parent: Option<ElementId>,
 
-    /// The element ID for this element (pre-allocated before mount).
-    pub element_id: Option<ElementId>,
+    /// The element ID for this element.
+    /// This is the single source of truth - always provided by the pipeline.
+    pub element_id: ElementId,
 
     /// The render object created for this element (set during mount).
     pub render_object: Option<RenderObjectId>,
@@ -31,15 +32,19 @@ pub struct ElementContext<'a> {
 }
 
 impl<'a> ElementContext<'a> {
-    /// Create a new element context.
+    /// Create a new element context with a specific element ID.
+    ///
+    /// This is the primary constructor - the element ID must be provided.
+    /// The pipeline generates the ID and passes it here.
     pub fn new(
+        element_id: ElementId,
         parent: Option<ElementId>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
     ) -> Self {
         Self {
             parent,
-            element_id: None,
+            element_id,
             render_object: None,
             state,
             dirty,
@@ -49,7 +54,8 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Create a new element context with render object registry.
-    pub fn new_with_registry(
+    pub fn with_registry(
+        element_id: ElementId,
         parent: Option<ElementId>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
@@ -57,7 +63,7 @@ impl<'a> ElementContext<'a> {
     ) -> Self {
         Self {
             parent,
-            element_id: None,
+            element_id,
             render_object: None,
             state,
             dirty,
@@ -67,7 +73,8 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Create a new element context with all registries.
-    pub fn new_full(
+    pub fn full(
+        element_id: ElementId,
         parent: Option<ElementId>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
@@ -76,19 +83,13 @@ impl<'a> ElementContext<'a> {
     ) -> Self {
         Self {
             parent,
-            element_id: None,
+            element_id,
             render_object: None,
             state,
             dirty,
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
         }
-    }
-
-    /// Create a new element context with a pre-allocated element ID.
-    pub fn with_element_id(mut self, id: ElementId) -> Self {
-        self.element_id = Some(id);
-        self
     }
 
     /// Mark a render object as needing layout.
