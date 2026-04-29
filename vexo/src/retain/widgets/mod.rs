@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_widget_creates_render_object() {
-        let widget = Text::new("Hello");
+        let widget: Text<()> = Text::new("Hello");
         let mut render_object = widget.create_render_object();
 
         // Should be able to layout the render object

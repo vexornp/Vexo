@@ -1,22 +1,28 @@
 //! Text widget - displays a string.
 
+use std::marker::PhantomData;
+
 use super::{Element, Key, Widget};
 use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
 
 /// Text widget - displays a string.
-#[derive(Clone)]
-pub struct Text {
+///
+/// Generic over the message type `M` to fit into widget trees with typed messages.
+/// For non-interactive usage, `M = ()` (the default).
+pub struct Text<M: Clone + Send + 'static = ()> {
     key: Option<Key>,
     content: String,
+    _marker: PhantomData<M>,
 }
 
-impl Text {
+impl<M: Clone + Send + 'static> Text<M> {
     /// Create a new text widget.
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             key: None,
             content: content.into(),
+            _marker: PhantomData,
         }
     }
 
@@ -32,13 +38,23 @@ impl Text {
     }
 }
 
-impl Widget<()> for Text {
+impl<M: Clone + Send + 'static> Clone for Text<M> {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            content: self.content.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<M: Clone + Send + 'static> Widget<M> for Text<M> {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = crate::retain::elements::LeafElement::new();
+        let mut elem = crate::retain::elements::LeafElement::<M>::new();
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -47,7 +63,7 @@ impl Widget<()> for Text {
         Box::new(TextRenderObject::new(&self.content))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget<()>> {
+    fn clone_box(&self) -> Box<dyn Widget<M>> {
         Box::new(self.clone())
     }
 
@@ -62,22 +78,34 @@ mod tests {
 
     #[test]
     fn test_text_widget_creation() {
-        let widget = Text::new("Hello");
+        let widget: Text<()> = Text::new("Hello");
         assert_eq!(widget.content(), "Hello");
     }
 
     #[test]
     fn test_text_widget_with_key() {
-        let widget = Text::new("Hello").with_key("greeting");
+        let widget: Text<()> = Text::new("Hello").with_key("greeting");
         assert_eq!(widget.key(), Some(Key::new("greeting")));
     }
 
     #[test]
     fn test_text_widget_clone() {
-        let widget = Text::new("Hello").with_key("greeting");
+        let widget: Text<()> = Text::new("Hello").with_key("greeting");
         let cloned = widget.clone();
 
         assert_eq!(widget.content(), cloned.content());
         assert_eq!(widget.key(), cloned.key());
+    }
+
+    #[test]
+    fn test_text_widget_generic_message() {
+        #[derive(Clone, Debug)]
+        enum MyMessage {
+            Clicked,
+        }
+
+        // Text widget can be used with a custom message type
+        let widget: Text<MyMessage> = Text::new("Hello");
+        assert_eq!(widget.content(), "Hello");
     }
 }

@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_column_creation() {
-        let column = Column::new()
+        let column: Column<()> = Column::new()
             .push(Text::new("First"))
             .push(Text::new("Second"));
 
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_column_with_key() {
-        let column = Column::new()
+        let column: Column<()> = Column::new()
             .with_key("my-column")
             .push(Text::new("Hello"));
 
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_row_creation() {
-        let row = Row::new()
+        let row: Row<()> = Row::new()
             .push(Text::new("Left"))
             .push(Text::new("Right"));
 

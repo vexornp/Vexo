@@ -11,7 +11,7 @@ fn test_full_reconciliation_flow() {
     let dirty = DirtyTracking::new();
 
     // 2. Mount initial widget tree
-    let root_widget = Column::new()
+    let root_widget: Column<()> = Column::new()
         .push(Text::new("First"))
         .push(Text::new("Second"));
 
@@ -23,7 +23,7 @@ fn test_full_reconciliation_flow() {
     assert_eq!(element_registry.len(), 1);
 
     // 3. Reconcile with updated tree
-    let _new_widget = Column::new()
+    let _new_widget: Column<()> = Column::new()
         .push(Text::new("First Updated"))
         .push(Text::new("Second"));
 
@@ -44,11 +44,11 @@ fn test_key_preserves_identity() {
     let mut element_registry = ElementRegistry::new();
 
     // Create widget with key
-    let widget1 = Text::new("Hello").with_key("greeting");
+    let widget1: Text<()> = Text::new("Hello").with_key("greeting");
     let element1 = element_registry.mount(widget1.create_element(), None);
 
     // Create widget with same key
-    let widget2 = Text::new("Hello World").with_key("greeting");
+    let widget2: Text<()> = Text::new("Hello World").with_key("greeting");
 
     // In a full implementation, reconciliation would update the existing element
     // rather than creating a new one
