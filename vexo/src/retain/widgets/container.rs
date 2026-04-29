@@ -83,12 +83,12 @@ impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
 }
 
 /// Row widget - arranges children horizontally.
-pub struct Row {
+pub struct Row<M: Clone + Send + 'static = ()> {
     key: Option<Key>,
-    children: Vec<Box<dyn Widget<()>>>,
+    children: Vec<Box<dyn Widget<M>>>,
 }
 
-impl Row {
+impl<M: Clone + Send + 'static> Row<M> {
     /// Create a new empty row.
     pub fn new() -> Self {
         Self {
@@ -104,24 +104,24 @@ impl Row {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget<()> + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget<M> + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[Box<dyn Widget<()>>] {
+    pub fn children(&self) -> &[Box<dyn Widget<M>>] {
         &self.children
     }
 }
 
-impl Default for Row {
+impl<M: Clone + Send + 'static> Default for Row<M> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Clone for Row {
+impl<M: Clone + Send + 'static> Clone for Row<M> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
@@ -130,13 +130,13 @@ impl Clone for Row {
     }
 }
 
-impl Widget<()> for Row {
+impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = crate::retain::elements::ContainerElement::new();
+        let mut elem = crate::retain::elements::ContainerElement::<M>::new();
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -145,7 +145,7 @@ impl Widget<()> for Row {
         Box::new(ContainerRenderObject::new_row())
     }
 
-    fn clone_box(&self) -> Box<dyn Widget<()>> {
+    fn clone_box(&self) -> Box<dyn Widget<M>> {
         Box::new(self.clone())
     }
 
@@ -153,7 +153,7 @@ impl Widget<()> for Row {
         self
     }
 
-    fn children(&self) -> &[Box<dyn Widget<()>>] {
+    fn children(&self) -> &[Box<dyn Widget<M>>] {
         &self.children
     }
 }
