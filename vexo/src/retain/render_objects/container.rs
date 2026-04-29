@@ -129,6 +129,10 @@ impl RenderObject for ContainerRenderObject {
         self
     }
 
+    fn add_child(&mut self, child: RenderObjectId) {
+        self.children.push(child);
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeId> {
         self.layout_node
     }

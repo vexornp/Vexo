@@ -8,14 +8,17 @@ use std::any::Any;
 use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
 /// Element for leaf widgets (no children).
-pub struct LeafElement {
+///
+/// Generic over the message type `M` to support ELM-style typed messages.
+/// For non-interactive widgets, `M = ()`.
+pub struct LeafElement<M: Clone + Send + 'static = ()> {
     id: Option<ElementId>,
     key: Option<Key>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget>>,
+    widget: Option<Box<dyn Widget<M>>>,
 }
 
-impl LeafElement {
+impl<M: Clone + Send + 'static> LeafElement<M> {
     /// Create a new leaf element.
     pub fn new() -> Self {
         Self {
@@ -39,7 +42,7 @@ impl LeafElement {
     /// Set the widget for this element.
     ///
     /// Must be called before mount to create the render object.
-    pub fn set_widget(&mut self, widget: &dyn Widget) {
+    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
         self.widget = Some(widget.clone_box());
         self.key = widget.key();
     }
@@ -50,13 +53,13 @@ impl LeafElement {
     }
 }
 
-impl Default for LeafElement {
+impl<M: Clone + Send + 'static> Default for LeafElement<M> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Element for LeafElement {
+impl<M: Clone + Send + 'static> Element for LeafElement<M> {
     fn mount(&mut self, context: &mut ElementContext) {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
@@ -75,9 +78,12 @@ impl Element for LeafElement {
         }
     }
 
-    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext) {
-        // Store the new widget configuration
-        self.widget = Some(new_widget);
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // The widget is passed as Box<dyn Widget<M>> but type-erased to Box<dyn Any>
+        // We need to downcast it back
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+        }
 
         if let Some(ro) = self.render_object {
             context.mark_needs_layout(ro);
@@ -129,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_mount() {
-        let mut element = LeafElement::new();
+        let mut element: LeafElement<()> = LeafElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -148,7 +154,7 @@ mod tests {
     fn test_leaf_element_mount_creates_render_object() {
         // This test verifies that mounting a leaf element with a widget
         // creates a render object in the registry.
-        let mut element = LeafElement::new();
+        let mut element: LeafElement<()> = LeafElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
 
@@ -177,7 +183,7 @@ mod tests {
     fn test_leaf_element_unmount_removes_render_object() {
         // This test verifies that unmounting a leaf element removes
         // the render object from the registry.
-        let mut element = LeafElement::new();
+        let mut element: LeafElement<()> = LeafElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
 
@@ -204,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_unmount() {
-        let mut element = LeafElement::new();
+        let mut element: LeafElement<()> = LeafElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -224,14 +230,14 @@ mod tests {
     #[test]
     fn test_leaf_element_with_key() {
         let key = Key::new("test-key");
-        let element = LeafElement::with_key(Some(key.clone()));
+        let element: LeafElement<()> = LeafElement::with_key(Some(key.clone()));
 
         assert_eq!(element.widget_key(), Some(key));
     }
 
     #[test]
     fn test_leaf_element_default() {
-        let element = LeafElement::default();
+        let element: LeafElement<()> = LeafElement::default();
 
         assert!(element.id().is_none());
         assert!(element.widget_key().is_none());
@@ -242,7 +248,7 @@ mod tests {
     fn test_leaf_element_no_children() {
         use crate::retain::element::ElementRegistry;
 
-        let element = LeafElement::new();
+        let element: LeafElement<()> = LeafElement::new();
         let registry = ElementRegistry::new();
         let mut count = 0;
 
@@ -255,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_can_update() {
-        let element = LeafElement::new();
+        let element: LeafElement<()> = LeafElement::new();
 
         // can_update should return true for any widget
         assert!(element.can_update(&"any widget" as &dyn Any));

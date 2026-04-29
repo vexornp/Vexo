@@ -82,7 +82,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_full_frame_flow() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -110,7 +110,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_hit_test_through_pipeline() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -138,7 +138,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_keyed_reconciliation() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // First frame with a keyed widget
         let widget = Text::new("A").with_key("first");
@@ -162,7 +162,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_paint_cycle() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -180,7 +180,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_different_widget_types_cause_remount() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // First frame with Text
         pipeline.reconcile(Box::new(Text::new("Text content")));
@@ -201,7 +201,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // Reconcile creates dirty elements
         pipeline.reconcile(Box::new(Text::new("Test")));
@@ -238,7 +238,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_no_root() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         let event = InputEvent::PointerButton {
             position: Point::new(10.0, 10.0),
@@ -252,7 +252,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_with_text_widget() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // Reconcile a text widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -278,7 +278,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_focus_management() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // Initially no focus
         assert!(pipeline.focused_element().is_none());

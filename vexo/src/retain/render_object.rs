@@ -210,6 +210,15 @@ pub trait RenderObject {
         // Default: no-op (leaf nodes and multi-children containers don't use this)
     }
 
+    /// Add a child render object ID.
+    ///
+    /// Only relevant for container render objects (e.g., Column, Row).
+    /// Default implementation does nothing. This enables linking the render tree
+    /// so that paint_recursive() can traverse to children.
+    fn add_child(&mut self, _child: RenderObjectId) {
+        // Default: no-op (leaf nodes and single-child modifiers don't use this)
+    }
+
     /// Get the layout node ID (for pipeline to use).
     ///
     /// Returns the Taffy node ID that was created during layout().

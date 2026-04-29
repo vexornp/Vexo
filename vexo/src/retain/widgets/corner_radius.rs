@@ -13,13 +13,13 @@ use crate::retain::{
 /// CornerRadius modifier - applies rounded corners to a child widget.
 pub struct CornerRadius {
     key: Option<Key>,
-    child: Box<dyn Widget>,
+    child: Box<dyn Widget<()>>,
     radius: f32,
 }
 
 impl CornerRadius {
     /// Create a new corner radius modifier.
-    pub fn new(child: Box<dyn Widget>, radius: f32) -> Self {
+    pub fn new(child: Box<dyn Widget<()>>, radius: f32) -> Self {
         Self {
             key: None,
             child,
@@ -34,7 +34,7 @@ impl CornerRadius {
     }
 
     /// Get the child widget.
-    pub fn child(&self) -> &dyn Widget {
+    pub fn child(&self) -> &dyn Widget<()> {
         self.child.as_ref()
     }
 
@@ -44,7 +44,7 @@ impl CornerRadius {
     }
 }
 
-impl Widget for CornerRadius {
+impl Widget<()> for CornerRadius {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -59,7 +59,7 @@ impl Widget for CornerRadius {
         Box::new(CornerRadiusRenderObject::new(self.radius))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<()>> {
         Box::new(Self {
             key: self.key.clone(),
             child: self.child.clone_box(),
@@ -71,7 +71,7 @@ impl Widget for CornerRadius {
         self
     }
 
-    fn child(&self) -> Option<&dyn Widget> {
+    fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
 }

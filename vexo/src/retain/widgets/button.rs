@@ -1,6 +1,6 @@
 //! Button widget - clickable button for retain mode.
 //!
-//! This widget demonstrates event handling in retain mode.
+//! This widget demonstrates event handling in retain mode with ELM-style typed messages.
 
 use std::any::Any;
 
@@ -18,15 +18,33 @@ use crate::layout::{Layout, LayoutNodeId};
 
 /// Button widget - clickable button with a label.
 ///
-/// When clicked, emits a message via the Element's on_event method.
-pub struct Button {
+/// When clicked, emits a typed message `M` via the Element's on_event method.
+///
+/// # Type Parameter
+///
+/// `M` - The message type emitted when the button is clicked. Must be `Clone + Send + 'static`.
+///
+/// # Example
+///
+/// ```
+/// use vexo::retain::Button;
+///
+/// #[derive(Clone)]
+/// enum Message {
+///     Increment,
+///     Decrement,
+/// }
+///
+/// let button = Button::new("Click Me").with_message(Message::Increment);
+/// ```
+pub struct Button<M: Clone + Send + 'static> {
     key: Option<Key>,
     label: String,
-    /// The message to emit when clicked (stored as Any for type erasure).
-    message: Option<Box<dyn Any + Send>>,
+    /// The typed message to emit when clicked.
+    message: Option<M>,
 }
 
-impl Button {
+impl<M: Clone + Send + 'static> Button<M> {
     /// Create a new button with a label.
     pub fn new(label: impl Into<String>) -> Self {
         Self {
@@ -43,8 +61,8 @@ impl Button {
     }
 
     /// Set the message to emit when clicked.
-    pub fn with_message<M: Any + Clone + Send>(mut self, message: M) -> Self {
-        self.message = Some(Box::new(message));
+    pub fn with_message(mut self, message: M) -> Self {
+        self.message = Some(message);
         self
     }
 
@@ -54,23 +72,23 @@ impl Button {
     }
 }
 
-impl Clone for Button {
+impl<M: Clone + Send + 'static> Clone for Button<M> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
             label: self.label.clone(),
-            message: None, // Can't clone Box<dyn Any>
+            message: self.message.clone(),
         }
     }
 }
 
-impl Widget for Button {
+impl<M: Clone + Send + 'static> Widget<M> for Button<M> {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = ButtonElement::new(self.label.clone());
+        let mut elem = ButtonElement::new(self.label.clone(), self.message.clone());
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -79,7 +97,7 @@ impl Widget for Button {
         Box::new(ButtonRenderObject::new(&self.label))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<M>> {
         Box::new(self.clone())
     }
 
@@ -95,28 +113,32 @@ impl Widget for Button {
 use crate::retain::{ElementContext, ElementId, ElementRegistry, RenderObjectId};
 
 /// Element for Button widget - handles click events.
-pub struct ButtonElement {
+///
+/// Generic over the message type `M` to emit typed messages on click.
+pub struct ButtonElement<M: Clone + Send + 'static> {
     id: Option<ElementId>,
     key: Option<Key>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget>>,
+    widget: Option<Box<dyn Widget<M>>>,
     label: String,
+    message: Option<M>,
 }
 
-impl ButtonElement {
+impl<M: Clone + Send + 'static> ButtonElement<M> {
     /// Create a new button element.
-    pub fn new(label: impl Into<String>) -> Self {
+    pub fn new(label: impl Into<String>, message: Option<M>) -> Self {
         Self {
             id: None,
             key: None,
             render_object: None,
             widget: None,
             label: label.into(),
+            message,
         }
     }
 
     /// Set the widget for this element.
-    pub fn set_widget(&mut self, widget: &dyn Widget) {
+    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
         self.widget = Some(widget.clone_box());
         self.key = widget.key();
     }
@@ -128,7 +150,7 @@ impl ButtonElement {
     }
 }
 
-impl Element for ButtonElement {
+impl<M: Clone + Send + 'static> Element for ButtonElement<M> {
     fn mount(&mut self, context: &mut ElementContext) {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
@@ -147,9 +169,13 @@ impl Element for ButtonElement {
         }
     }
 
-    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext) {
-        // Store the new widget configuration
-        self.widget = Some(new_widget);
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // The widget is passed as Box<dyn Widget<M>> but type-erased to Box<dyn Any>
+        // We need to downcast it back
+        // Note: This is safe because we know the pipeline only passes widgets of the correct type
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+        }
 
         if let Some(ro) = self.render_object {
             context.mark_needs_layout(ro);
@@ -195,9 +221,10 @@ impl Element for ButtonElement {
                 if *state == ButtonState::Pressed {
                     // Check if click is inside our bounds
                     if context.is_pointer_inside() {
-                        eprintln!("ButtonElement::on_event: button clicked, label={}", self.label);
-                        // Return a click message with the button label
-                        return Some(Box::new(format!("button:{}", self.label)));
+                        // Emit the typed message if set
+                        if let Some(msg) = &self.message {
+                            return Some(Box::new(msg.clone()));
+                        }
                     }
                 }
             }
@@ -328,16 +355,28 @@ impl RenderObject for ButtonRenderObject {
 mod tests {
     use super::*;
 
+    #[derive(Clone, Debug, PartialEq)]
+    enum TestMessage {
+        Clicked,
+        Other,
+    }
+
     #[test]
     fn test_button_widget_creation() {
-        let widget = Button::new("Click Me");
+        let widget: Button<TestMessage> = Button::new("Click Me");
         assert_eq!(widget.label(), "Click Me");
     }
 
     #[test]
     fn test_button_widget_with_key() {
-        let widget = Button::new("Click Me").with_key("my-button");
+        let widget: Button<TestMessage> = Button::new("Click Me").with_key("my-button");
         assert_eq!(widget.key(), Some(Key::new("my-button")));
+    }
+
+    #[test]
+    fn test_button_widget_with_message() {
+        let widget: Button<TestMessage> = Button::new("Click Me").with_message(TestMessage::Clicked);
+        assert_eq!(widget.message, Some(TestMessage::Clicked));
     }
 
     #[test]

@@ -76,7 +76,7 @@ pub use dirty::DirtyTracking;
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 
-pub use widgets::{Widget, Text, Column, Row, Background, Border, CornerRadius};
+pub use widgets::{Widget, Text, Button, Column, Row, Background, Border, CornerRadius, GestureDetector};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;

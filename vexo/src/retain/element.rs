@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use super::id::{ElementId, RenderObjectId};
 use super::key::Key;
 use super::element_context::ElementContext;
-use super::widgets::Widget;
 
 /// Persistent element with state and lifecycle.
 ///
@@ -25,7 +24,9 @@ pub trait Element {
     /// Called when widget configuration changes.
     ///
     /// The `new_widget` parameter contains the updated widget configuration.
-    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext);
+    /// Note: The widget is type-erased as `Box<dyn Any>` to allow the Element trait
+    /// to be object-safe while still supporting generic `Widget<M>` implementations.
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext);
 
     /// Called when element is removed from the tree.
     fn unmount(&mut self, context: &mut ElementContext);
@@ -197,7 +198,7 @@ impl ElementRegistry {
     /// Update an element with a new widget.
     ///
     /// Returns true if the element was found and updated, false otherwise.
-    pub fn update_element(&mut self, id: ElementId, widget: Box<dyn Widget>, context: &mut ElementContext) -> bool {
+    pub fn update_element(&mut self, id: ElementId, widget: Box<dyn Any>, context: &mut ElementContext) -> bool {
         if let Some(element) = self.elements.get_mut(&id) {
             element.update(widget, context);
             return true;
@@ -205,21 +206,20 @@ impl ElementRegistry {
         false
     }
 
-    /// Mount a new element from a widget with full lifecycle.
+    /// Mount a new element from an element box with full lifecycle.
     ///
     /// This is the canonical way to mount an element. It encapsulates the entire
     /// mount pattern:
     /// 1. Generate a new ElementId (single source of truth)
-    /// 2. Create the element from the widget
-    /// 3. Create the ElementContext with the generated ID
-    /// 4. Call mount() on the element
-    /// 5. Register the element in the registry
+    /// 2. Create the ElementContext with the generated ID
+    /// 3. Call mount() on the element
+    /// 4. Register the element in the registry
     ///
     /// This ensures the mount pattern is always followed correctly.
     ///
     /// # Arguments
     ///
-    /// * `widget` - The widget to create an element from
+    /// * `element` - The element to mount (already created from a widget)
     /// * `parent` - The parent element ID (None for root)
     /// * `state` - State storage for elements
     /// * `dirty` - Dirty tracking for layout/paint
@@ -228,9 +228,9 @@ impl ElementRegistry {
     /// # Returns
     ///
     /// The ID of the newly mounted element.
-    pub fn mount_widget(
+    pub fn mount_element(
         &mut self,
-        widget: Box<dyn Widget>,
+        mut element: Box<dyn Element>,
         parent: Option<ElementId>,
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
@@ -239,10 +239,7 @@ impl ElementRegistry {
         // 1. Generate element ID - single source of truth
         let element_id = ElementId::new();
 
-        // 2. Create element from widget
-        let mut element = widget.create_element();
-
-        // 3. Create context with the element ID
+        // 2. Create context with the element ID
         let mut ctx = ElementContext::full(
             element_id,
             parent,
@@ -252,10 +249,10 @@ impl ElementRegistry {
             self,
         );
 
-        // 4. Call mount lifecycle
+        // 3. Call mount lifecycle
         element.mount(&mut ctx);
 
-        // 5. Register element with the same ID
+        // 4. Register element with the same ID
         self.mount_with_id(element, parent, element_id);
 
         element_id

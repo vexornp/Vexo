@@ -57,7 +57,7 @@ pub trait Application: Sized + 'static {
     ///
     /// Default implementation returns `None`, allowing existing applications
     /// to continue using immediate-mode rendering without changes.
-    fn retain_view(state: &Self::State) -> Option<Box<dyn retain::Widget>> {
+    fn retain_view(state: &Self::State) -> Option<Box<dyn retain::Widget<Self::Message>>> {
         let _ = state;
         None
     }

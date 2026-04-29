@@ -32,7 +32,7 @@ impl Text {
     }
 }
 
-impl Widget for Text {
+impl Widget<()> for Text {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -47,7 +47,7 @@ impl Widget for Text {
         Box::new(TextRenderObject::new(&self.content))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<()>> {
         Box::new(self.clone())
     }
 

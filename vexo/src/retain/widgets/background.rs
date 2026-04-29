@@ -13,13 +13,13 @@ use crate::retain::{
 /// Background modifier - draws a colored rectangle behind a child widget.
 pub struct Background {
     key: Option<Key>,
-    child: Box<dyn Widget>,
+    child: Box<dyn Widget<()>>,
     color: Color,
 }
 
 impl Background {
     /// Create a new background modifier.
-    pub fn new(child: Box<dyn Widget>, color: Color) -> Self {
+    pub fn new(child: Box<dyn Widget<()>>, color: Color) -> Self {
         Self {
             key: None,
             child,
@@ -34,7 +34,7 @@ impl Background {
     }
 
     /// Get the child widget.
-    pub fn child(&self) -> &dyn Widget {
+    pub fn child(&self) -> &dyn Widget<()> {
         self.child.as_ref()
     }
 
@@ -44,7 +44,7 @@ impl Background {
     }
 }
 
-impl Widget for Background {
+impl Widget<()> for Background {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -59,7 +59,7 @@ impl Widget for Background {
         Box::new(BackgroundRenderObject::new(self.color))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<()>> {
         Box::new(Self {
             key: self.key.clone(),
             child: self.child.clone_box(),
@@ -71,7 +71,7 @@ impl Widget for Background {
         self
     }
 
-    fn child(&self) -> Option<&dyn Widget> {
+    fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
 }

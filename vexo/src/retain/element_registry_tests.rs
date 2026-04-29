@@ -7,7 +7,7 @@ struct MockElement;
 
 impl Element for MockElement {
     fn mount(&mut self, _context: &mut ElementContext) {}
-    fn update(&mut self, _new_widget: Box<dyn Widget>, _context: &mut ElementContext) {}
+    fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut ElementContext) {}
     fn unmount(&mut self, _context: &mut ElementContext) {}
     fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
     fn render_object(&self) -> Option<RenderObjectId> { None }

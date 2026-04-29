@@ -13,14 +13,14 @@ use crate::retain::{
 /// Border modifier - draws a colored border around a child widget.
 pub struct Border {
     key: Option<Key>,
-    child: Box<dyn Widget>,
+    child: Box<dyn Widget<()>>,
     color: Color,
     width: f32,
 }
 
 impl Border {
     /// Create a new border modifier.
-    pub fn new(child: Box<dyn Widget>, color: Color, width: f32) -> Self {
+    pub fn new(child: Box<dyn Widget<()>>, color: Color, width: f32) -> Self {
         Self {
             key: None,
             child,
@@ -36,7 +36,7 @@ impl Border {
     }
 
     /// Get the child widget.
-    pub fn child(&self) -> &dyn Widget {
+    pub fn child(&self) -> &dyn Widget<()> {
         self.child.as_ref()
     }
 
@@ -51,7 +51,7 @@ impl Border {
     }
 }
 
-impl Widget for Border {
+impl Widget<()> for Border {
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -66,7 +66,7 @@ impl Widget for Border {
         Box::new(BorderRenderObject::new(self.color, self.width))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget> {
+    fn clone_box(&self) -> Box<dyn Widget<()>> {
         Box::new(Self {
             key: self.key.clone(),
             child: self.child.clone_box(),
@@ -79,7 +79,7 @@ impl Widget for Border {
         self
     }
 
-    fn child(&self) -> Option<&dyn Widget> {
+    fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
 }

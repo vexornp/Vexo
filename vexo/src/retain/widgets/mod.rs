@@ -5,8 +5,10 @@
 
 mod background;
 mod border;
+mod button;
 mod container;
 mod corner_radius;
+mod gesture_detector;
 mod text;
 
 use std::any::Any;
@@ -17,8 +19,10 @@ use super::RenderObject;
 
 pub use background::Background;
 pub use border::Border;
+pub use button::Button;
 pub use container::{Column, Row};
 pub use corner_radius::CornerRadius;
+pub use gesture_detector::GestureDetector;
 pub use text::Text;
 
 /// Immutable widget configuration - rebuilt each frame.
@@ -31,12 +35,18 @@ pub use text::Text;
 /// The widget tree is the first tree in the three-tree architecture:
 /// Widget (configuration) -> Element (state) -> RenderObject (layout/paint)
 ///
+/// # Type Parameter
+///
+/// The `M` type parameter is the message type emitted by interactive widgets.
+/// Non-interactive widgets (Text, Container, etc.) use `M = ()`.
+/// Interactive widgets (Button) are generic over the application's message type.
+///
 /// # Implementing Clone
 ///
 /// All widgets should implement `Clone`. This is not enforced at the trait level
-/// to allow the trait to be dyn-compatible (usable as `&dyn Widget`).
+/// to allow the trait to be dyn-compatible (usable as `&dyn Widget<M>`).
 /// Use the `clone_box` method to clone a boxed widget trait object.
-pub trait Widget: Any {
+pub trait Widget<M: Clone + Send + 'static>: Any {
     /// Optional key for identity across frames.
     ///
     /// Widgets with matching keys and types can update each other in place,
@@ -60,7 +70,7 @@ pub trait Widget: Any {
     ///
     /// Required for storing widgets in elements. Implementations should
     /// delegate to their `Clone` implementation.
-    fn clone_box(&self) -> Box<dyn Widget>;
+    fn clone_box(&self) -> Box<dyn Widget<M>>;
 
     /// Check if this widget can update an existing element.
     ///
@@ -68,7 +78,7 @@ pub trait Widget: Any {
     /// Two widgets can update each other if:
     /// 1. They have the same type (TypeId)
     /// 2. They have matching keys (both None or both Some with equal values)
-    fn can_update(&self, other: &dyn Widget) -> bool {
+    fn can_update(&self, other: &dyn Widget<M>) -> bool {
         Any::type_id(self) == Any::type_id(other) && self.key() == other.key()
     }
 
@@ -81,8 +91,16 @@ pub trait Widget: Any {
     ///
     /// Returns None for leaf widgets and multi-child containers.
     /// Returns Some(child) for single-child modifier widgets like Background, Padding, Border.
-    fn child(&self) -> Option<&dyn Widget> {
+    fn child(&self) -> Option<&dyn Widget<M>> {
         None
+    }
+
+    /// Get the children widgets for container widgets.
+    ///
+    /// Returns an empty slice for leaf widgets and single-child modifiers.
+    /// Returns the children for multi-child containers like Column, Row.
+    fn children(&self) -> &[Box<dyn Widget<M>>] {
+        &[]
     }
 }
 
@@ -122,7 +140,7 @@ mod tests {
         }
     }
 
-    impl Widget for TestWidget {
+    impl Widget<()> for TestWidget {
         fn key(&self) -> Option<Key> {
             self.key.clone()
         }
@@ -135,7 +153,7 @@ mod tests {
             Box::new(TestRenderObject { layout_node: None })
         }
 
-        fn clone_box(&self) -> Box<dyn Widget> {
+        fn clone_box(&self) -> Box<dyn Widget<()>> {
             Box::new(self.clone())
         }
 
@@ -148,7 +166,7 @@ mod tests {
 
     impl Element for TestElement {
         fn mount(&mut self, _context: &mut crate::retain::ElementContext) {}
-        fn update(&mut self, _new_widget: Box<dyn Widget>, _context: &mut crate::retain::ElementContext) {}
+        fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut crate::retain::ElementContext) {}
         fn unmount(&mut self, _context: &mut crate::retain::ElementContext) {}
         fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<crate::retain::RenderObjectId> {

@@ -8,15 +8,18 @@ use std::any::Any;
 use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
 /// Element for container widgets (multiple children).
-pub struct ContainerElement {
+///
+/// Generic over the message type `M` to support ELM-style typed messages.
+/// For non-interactive widgets, `M = ()`.
+pub struct ContainerElement<M: Clone + Send + 'static = ()> {
     id: Option<ElementId>,
     key: Option<Key>,
     children: Vec<ElementId>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget>>,
+    widget: Option<Box<dyn Widget<M>>>,
 }
 
-impl ContainerElement {
+impl<M: Clone + Send + 'static> ContainerElement<M> {
     /// Create a new container element.
     pub fn new() -> Self {
         Self {
@@ -42,7 +45,7 @@ impl ContainerElement {
     /// Set the widget for this element.
     ///
     /// Must be called before mount to create the render object.
-    pub fn set_widget(&mut self, widget: &dyn Widget) {
+    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
         self.widget = Some(widget.clone_box());
         self.key = widget.key();
     }
@@ -58,13 +61,13 @@ impl ContainerElement {
     }
 }
 
-impl Default for ContainerElement {
+impl<M: Clone + Send + 'static> Default for ContainerElement<M> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Element for ContainerElement {
+impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
     fn mount(&mut self, context: &mut ElementContext) {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
@@ -83,9 +86,12 @@ impl Element for ContainerElement {
         }
     }
 
-    fn update(&mut self, new_widget: Box<dyn Widget>, context: &mut ElementContext) {
-        // Store the new widget configuration
-        self.widget = Some(new_widget);
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // The widget is passed as Box<dyn Widget<M>> but type-erased to Box<dyn Any>
+        // We need to downcast it back
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+        }
 
         if let Some(ro) = self.render_object {
             context.mark_needs_layout(ro);
@@ -147,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_container_element_mount() {
-        let mut element = ContainerElement::new();
+        let mut element: ContainerElement<()> = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -166,7 +172,7 @@ mod tests {
     fn test_container_element_children() {
         use crate::retain::element::ElementRegistry;
 
-        let mut element = ContainerElement::new();
+        let mut element: ContainerElement<()> = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -189,7 +195,7 @@ mod tests {
     fn test_container_element_mount_creates_render_object() {
         // This test verifies that mounting a container element with a widget
         // creates a render object in the registry.
-        let mut element = ContainerElement::new();
+        let mut element: ContainerElement<()> = ContainerElement::new();
         let widget = Column::new().push(Text::new("Hello"));
         element.set_widget(&widget);
 
@@ -218,7 +224,7 @@ mod tests {
     fn test_container_element_unmount_removes_render_object() {
         // This test verifies that unmounting a container element removes
         // the render object from the registry.
-        let mut element = ContainerElement::new();
+        let mut element: ContainerElement<()> = ContainerElement::new();
         let widget = Column::new().push(Text::new("Hello"));
         element.set_widget(&widget);
 

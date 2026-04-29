@@ -143,48 +143,6 @@ impl<'a> ElementContext<'a> {
         self.element_registry.as_mut().map(|registry| registry.mount(element, Some(parent)))
     }
 
-    /// Mount a child widget with full lifecycle.
-    ///
-    /// This is the canonical way to mount a child element. It uses the
-    /// `ElementRegistry::mount_widget` method which handles:
-    /// 1. Generating a new ElementId for the child
-    /// 2. Creating the element from the widget
-    /// 3. Creating a context with the child's ID
-    /// 4. Calling mount() on the child element
-    /// 5. Registering the child element
-    ///
-    /// Returns the ID of the mounted child element, or None if no registry is available.
-    pub fn mount_child_widget(&mut self, widget: Box<dyn super::Widget>, parent: ElementId) -> Option<ElementId> {
-        self.element_registry.as_mut().map(|registry| {
-            registry.mount_widget(
-                widget,
-                Some(parent),
-                self.state,
-                self.dirty,
-                self.render_objects.as_mut().unwrap(),
-            )
-        })
-    }
-
-    /// Update a child element with a new widget.
-    ///
-    /// Returns true if the update was performed, false if no registry or element found.
-    pub fn update_child_element(&mut self, child_id: ElementId, new_widget: Box<dyn super::Widget>) -> bool {
-        // Take the element_registry out temporarily to avoid self-borrow
-        let registry = self.element_registry.take();
-
-        let result = if let Some(registry) = registry {
-            let found = registry.update_element(child_id, new_widget, self);
-            // Put it back
-            self.element_registry = Some(registry);
-            found
-        } else {
-            false
-        };
-
-        result
-    }
-
     /// Unmount a child element from the registry.
     ///
     /// Returns true if the element was unmounted, false if no registry or element found.

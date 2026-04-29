@@ -46,7 +46,7 @@ pub struct WindowState<A: Application + 'static> {
     render_pipeline: RenderPipeline,
 
     // Three-tree pipeline (new retain-mode system)
-    retain_pipeline: Option<ThreeTreePipeline>,
+    retain_pipeline: Option<ThreeTreePipeline<A::Message>>,
 
     // Flag to enable retain mode (false = use immediate mode for compatibility)
     #[allow(dead_code)]
@@ -357,24 +357,8 @@ impl<A: Application + 'static> WindowState<A> {
         let message = pipeline.handle_event(position, &input_event, modifiers);
 
         if let Some(msg) = message {
-            // Try to downcast to A::Message first
-            if let Some(typed_msg) = msg.downcast_ref::<A::Message>() {
-                self.update(typed_msg.clone());
-            } else if let Some(str_msg) = msg.downcast_ref::<String>() {
-                // Handle string messages from retain mode widgets
-                if let Some(button_label) = str_msg.strip_prefix("button:") {
-                    // This is a button click message
-                    if let Some(app_msg) = A::retain_button_clicked(button_label) {
-                        self.update(app_msg);
-                    }
-                }
-            } else {
-                // Type mismatch - log warning
-                eprintln!(
-                    "Warning: Element returned message of wrong type. Expected {}",
-                    std::any::type_name::<A::Message>()
-                );
-            }
+            // The message is already typed as A::Message
+            self.update(msg);
         }
     }
 
@@ -447,7 +431,7 @@ impl<A: Application + 'static> WindowState<A> {
     ///
     /// Returns the widget tree from `Application::retain_view()`,
     /// or None if the application doesn't implement retain-mode.
-    fn view_retain(&self) -> Option<Box<dyn RetainWidget>> {
+    fn view_retain(&self) -> Option<Box<dyn RetainWidget<A::Message>>> {
         A::retain_view(&self.user_app_state)
     }
 
