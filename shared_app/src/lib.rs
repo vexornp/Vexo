@@ -177,17 +177,14 @@ impl Application for State {
         .boxed()
     }
 
-    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
-        // Simple retain mode demo: just a button.
-        Some(Box::new(retain::Button::new("Click Me!")))
-    }
-
-    fn retain_button_clicked(button_label: &str) -> Option<Self::Message> {
-        // Handle button clicks from retain mode
-        match button_label {
-            "Click Me!" => Some(Message::RetainButtonClicked),
-            _ => None,
-        }
+    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget<Self::Message>>> {
+        // Retain mode demo: a column with multiple buttons.
+        Some(Box::new(
+            retain::Column::new()
+                .push(retain::Button::new("Button A").with_message(Message::RetainButtonClicked))
+                .push(retain::Button::new("Button B").with_message(Message::RetainButtonClicked))
+                .push(retain::Button::new("Button C").with_message(Message::Clicked)),
+        ))
     }
 }
 
