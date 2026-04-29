@@ -209,34 +209,14 @@ impl ThreeTreePipeline {
     /// This method creates an element and calls its mount() lifecycle.
     /// The element's mount() method creates render objects and links children.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
-        // Generate element ID - single source of truth
-        let element_id = ElementId::new();
-
-        // Create element
-        let mut element = widget.create_element();
-
-        // Create context with the element ID (single source of truth)
-        let mut ctx = ElementContext::full(
-            element_id,
+        // Use the canonical mount method - handles ID generation, context creation, and registration
+        let element_id = self.element_registry.mount_widget(
+            widget.clone_box(),
             parent,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
-            &mut self.element_registry,
         );
-
-        // Call mount lifecycle - element creates render objects and links children
-        element.mount(&mut ctx);
-
-        // Note: After element.mount(), ctx.render_object is the LAST render object created
-        // (which could be a child's). We need to get the element's own render object.
-        // We retrieve it from the registry after mounting.
-
-        // Drop context to release borrows
-        drop(ctx);
-
-        // Mount the element in the registry with the same ID
-        self.element_registry.mount_with_id(element, parent, element_id);
 
         // Get the render object from the element after it's in the registry
         let render_object_id = self.element_registry.get(element_id)

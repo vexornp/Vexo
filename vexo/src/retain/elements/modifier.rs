@@ -92,22 +92,19 @@ impl Element for ModifierElement {
 
         // Create and mount child element if widget has a child
         if let Some(child_widget) = self.get_child_widget() {
-            let mut child_element = child_widget.create_element();
-            child_element.mount(context);
-
-            // Get the child's render object BEFORE moving child_element into the registry
-            // This is important: context.render_object may have been overwritten by nested mounts,
-            // so we must get it from the child element directly.
-            let child_render_object = child_element.render_object();
-
-            // Store the child element in the registry if available
-            if let Some(child_id) = context.mount_child_element(child_element, context.element_id) {
+            // Use the canonical mount method - generates proper ID for child
+            if let Some(child_id) = context.mount_child_widget(child_widget.clone_box(), context.element_id) {
                 self.child_element = Some(child_id);
-            }
 
-            // Link child render object to parent render object for tree traversal
-            if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
-                context.set_render_object_child(parent_ro, child_ro);
+                // Get the child's render object from the registry
+                let child_render_object = context.element_registry.as_ref()
+                    .and_then(|registry| registry.get(child_id))
+                    .and_then(|el| el.render_object());
+
+                // Link child render object to parent render object for tree traversal
+                if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
+                    context.set_render_object_child(parent_ro, child_ro);
+                }
             }
         }
     }
@@ -127,20 +124,21 @@ impl Element for ModifierElement {
             // No change - both None
             (None, None, _) => {}
 
-            // Child added - create and mount
+            // Child added - create and mount using canonical method
             (None, Some(new), None) => {
-                let mut child_element = new.create_element();
-                child_element.mount(context);
-
-                // Get child's render object before moving child_element
-                let child_render_object = child_element.render_object();
-
                 if let Some(parent_id) = self.id {
-                    self.child_element = context.mount_child_element(child_element, parent_id);
+                    if let Some(child_id) = context.mount_child_widget(new, parent_id) {
+                        self.child_element = Some(child_id);
 
-                    // Link render objects
-                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
-                        context.set_render_object_child(parent_ro, child_ro);
+                        // Get child's render object from registry
+                        let child_render_object = context.element_registry.as_ref()
+                            .and_then(|registry| registry.get(child_id))
+                            .and_then(|el| el.render_object());
+
+                        // Link render objects
+                        if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
+                            context.set_render_object_child(parent_ro, child_ro);
+                        }
                     }
                 }
             }
@@ -166,18 +164,19 @@ impl Element for ModifierElement {
                 // Old child but no element - should not happen, nothing to do
             }
             (Some(_), Some(new), None) => {
-                // Both have children but no element - mount new
-                let mut child_element = new.create_element();
-                child_element.mount(context);
-
-                // Get child's render object before moving child_element
-                let child_render_object = child_element.render_object();
-
+                // Both have children but no element - mount new using canonical method
                 if let Some(parent_id) = self.id {
-                    self.child_element = context.mount_child_element(child_element, parent_id);
+                    if let Some(child_id) = context.mount_child_widget(new, parent_id) {
+                        self.child_element = Some(child_id);
 
-                    if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
-                        context.set_render_object_child(parent_ro, child_ro);
+                        // Get child's render object from registry
+                        let child_render_object = context.element_registry.as_ref()
+                            .and_then(|registry| registry.get(child_id))
+                            .and_then(|el| el.render_object());
+
+                        if let (Some(parent_ro), Some(child_ro)) = (self.render_object, child_render_object) {
+                            context.set_render_object_child(parent_ro, child_ro);
+                        }
                     }
                 }
             }

@@ -204,6 +204,62 @@ impl ElementRegistry {
         }
         false
     }
+
+    /// Mount a new element from a widget with full lifecycle.
+    ///
+    /// This is the canonical way to mount an element. It encapsulates the entire
+    /// mount pattern:
+    /// 1. Generate a new ElementId (single source of truth)
+    /// 2. Create the element from the widget
+    /// 3. Create the ElementContext with the generated ID
+    /// 4. Call mount() on the element
+    /// 5. Register the element in the registry
+    ///
+    /// This ensures the mount pattern is always followed correctly.
+    ///
+    /// # Arguments
+    ///
+    /// * `widget` - The widget to create an element from
+    /// * `parent` - The parent element ID (None for root)
+    /// * `state` - State storage for elements
+    /// * `dirty` - Dirty tracking for layout/paint
+    /// * `render_objects` - Render object registry
+    ///
+    /// # Returns
+    ///
+    /// The ID of the newly mounted element.
+    pub fn mount_widget(
+        &mut self,
+        widget: Box<dyn Widget>,
+        parent: Option<ElementId>,
+        state: &mut super::state::StateStorage,
+        dirty: &mut super::dirty::DirtyTracking,
+        render_objects: &mut super::render_object::RenderObjectRegistry,
+    ) -> ElementId {
+        // 1. Generate element ID - single source of truth
+        let element_id = ElementId::new();
+
+        // 2. Create element from widget
+        let mut element = widget.create_element();
+
+        // 3. Create context with the element ID
+        let mut ctx = ElementContext::full(
+            element_id,
+            parent,
+            state,
+            dirty,
+            render_objects,
+            self,
+        );
+
+        // 4. Call mount lifecycle
+        element.mount(&mut ctx);
+
+        // 5. Register element with the same ID
+        self.mount_with_id(element, parent, element_id);
+
+        element_id
+    }
 }
 
 impl Default for ElementRegistry {
