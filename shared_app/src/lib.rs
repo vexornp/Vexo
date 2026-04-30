@@ -211,7 +211,7 @@ impl Application for State {
                 // Counter display
                 .push(retain::Text::new(counter_text))
                 // Container demo: Row with two Columns
-                .push(retain::Text::new("─── Container Layout ───"))
+                .push(retain::Text::new("--- Container Layout ---"))
                 .push(
                     retain::Row::new()
                         .push(

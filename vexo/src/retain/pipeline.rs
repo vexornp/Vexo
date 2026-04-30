@@ -495,6 +495,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         };
 
         // Get this object's position (relative to parent)
+        // For containers, this is their position in the parent's layout
+        // For leafs, this is their position relative to their parent container
         let local_position = obj.computed_bounds()
             .map(|b| b.position())
             .unwrap_or(Point::zero());
@@ -516,7 +518,11 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             ctx.push_command(cmd);
         }
 
-        // Paint children with this object's absolute position as their parent offset
+        // Paint children
+        // For containers, children's positions are relative to the container's origin (0, 0),
+        // not relative to the container's position in its parent.
+        // So we pass the container's absolute position as the parent offset.
+        // This means children positions will be added to the container's absolute position.
         for child_id in obj.children() {
             self.paint_recursive(*child_id, ctx, absolute_position);
         }
