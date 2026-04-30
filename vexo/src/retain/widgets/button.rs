@@ -264,17 +264,22 @@ impl ButtonRenderObject {
 
 impl RenderObject for ButtonRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
-        // Create a leaf node with button-like sizing
+        // Calculate button width based on label length
+        // Approximate: each character is ~8px wide at 16px font size, plus padding
+        let text_width = self.label.len() as f32 * 8.0;
+        let button_width = (text_width + 24.0).max(80.0); // Minimum 80px, with 12px padding on each side
+        let button_height = 40.0;
+
         let layout = Layout {
-            width: Some(crate::layout::Dimension::Length(100.0)),
-            height: Some(crate::layout::Dimension::Length(40.0)),
+            width: Some(crate::layout::Dimension::Length(button_width)),
+            height: Some(crate::layout::Dimension::Length(button_height)),
             ..Layout::default()
         };
         let node = ctx.engine().create_leaf(&layout);
         self.layout_node = Some(node);
         LayoutResult {
             node,
-            size: crate::core::Size::new(100.0, 40.0),
+            size: crate::core::Size::new(button_width, button_height),
         }
     }
 
@@ -322,8 +327,10 @@ impl RenderObject for ButtonRenderObject {
         ));
 
         // Draw button label (centered)
-        let text_x = absolute_bounds.left + absolute_bounds.width() / 2.0 - (self.label.len() as f32 * 4.0);
-        let text_y = absolute_bounds.top + 10.0;
+        // Approximate text width: ~8px per character at 16px font
+        let text_width = self.label.len() as f32 * 8.0;
+        let text_x = absolute_bounds.left + (absolute_bounds.width() - text_width) / 2.0;
+        let text_y = absolute_bounds.top + (absolute_bounds.height() - 16.0) / 2.0;
         commands.push(RenderCommand::text(
             self.label.clone(),
             Point::new(text_x, text_y),
