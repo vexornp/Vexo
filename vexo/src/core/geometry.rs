@@ -1,18 +1,42 @@
 //! Geometry types for the Vexo UI framework.
 //!
 //! This module provides type-safe 2D geometry types that distinguish between
-//! logical (DPI-independent) and physical (screen pixel) coordinates.
+//! different coordinate systems:
 //!
-//! # Coordinate System
+//! # Coordinate Spaces
 //!
-//! - **Logical coordinates** are DPI-independent and used for layout
-//! - **Physical coordinates** are actual screen pixels
-//! - Conversion between them requires a scale factor (DPI)
+//! - **Logical vs Physical**: DPI-independent vs screen pixels
+//! - **Absolute vs Relative**: Window coordinates vs parent-relative coordinates
+//!
+//! # Type Safety
+//!
+//! The type system prevents mixing coordinates from different spaces:
+//!
+//! ```ignore
+//! use vexo::core::{Position, Logical, Absolute, Relative};
+//!
+//! // This would be a compile error:
+//! let absolute: Position<Logical, Absolute> = Position::new(10.0, 20.0);
+//! let relative: Position<Logical, Relative> = absolute; // Error: type mismatch!
+//! ```
+//!
+//! # Conversion
+//!
+//! Convert between coordinate spaces explicitly:
+//!
+//! ```ignore
+//! use vexo::core::{Position, Logical, Absolute, Relative};
+//!
+//! let relative = Position::<Logical, Relative>::new(10.0, 20.0);
+//! let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+//! let absolute = relative.to_absolute(parent_absolute);
+//! // absolute = (110.0, 70.0)
+//! ```
 
 use std::marker::PhantomData;
 
 // ============================================================================
-// MARKER TYPES
+// MARKER TYPES: Logical vs Physical
 // ============================================================================
 
 /// Marker type for logical (DPI-independent) coordinates.
@@ -24,10 +48,41 @@ pub struct Logical;
 pub struct Physical;
 
 // ============================================================================
+// MARKER TYPES: Absolute vs Relative
+// ============================================================================
+
+/// Marker type for absolute coordinates (relative to window origin).
+///
+/// Absolute coordinates specify a position in the window's coordinate system,
+/// where (0, 0) is the top-left corner of the window.
+///
+/// Use `Point<Absolute>` when:
+/// - Painting to the screen
+/// - Hit testing with window mouse positions
+/// - Storing final render positions
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Absolute;
+
+/// Marker type for relative coordinates (relative to parent container).
+///
+/// Relative coordinates specify a position within a parent container,
+/// where (0, 0) is the top-left corner of the parent.
+///
+/// Use `Point<Relative>` when:
+/// - Storing layout positions from Taffy
+/// - Describing child positions within containers
+/// - Intermediate layout calculations
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Relative;
+
+// ============================================================================
 // POINT
 // ============================================================================
 
 /// A 2D point in either logical or physical coordinates.
+///
+/// For positions that also need to track absolute vs relative coordinate space,
+/// use `Position` instead.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point<T> {
     pub x: f32,
@@ -81,6 +136,145 @@ impl Point<Physical> {
     /// Convert physical point to logical coordinates.
     pub fn to_logical(self, scale: Scale) -> Point<Logical> {
         Point::new(self.x / scale.factor(), self.y / scale.factor())
+    }
+}
+
+// ============================================================================
+// POSITION (combines coordinate space + reference frame)
+// ============================================================================
+
+/// A 2D position with explicit coordinate space and reference frame.
+///
+/// This type combines two orthogonal concepts:
+/// - **Coordinate space**: `Logical` (DPI-independent) or `Physical` (screen pixels)
+/// - **Reference frame**: `Absolute` (window origin) or `Relative` (parent origin)
+///
+/// # Type Parameters
+///
+/// - `C`: Coordinate space (`Logical` or `Physical`)
+/// - `R`: Reference frame (`Absolute` or `Relative`)
+///
+/// # Examples
+///
+/// ```
+/// use vexo::core::{Position, Logical, Absolute, Relative};
+///
+/// // A position relative to parent (e.g., from layout)
+/// let relative_pos = Position::<Logical, Relative>::new(10.0, 20.0);
+///
+/// // Convert to absolute by providing parent's absolute position
+/// let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+/// let absolute_pos = relative_pos.to_absolute(parent_absolute);
+/// // absolute_pos = (110.0, 70.0)
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Position<C, R> {
+    pub x: f32,
+    pub y: f32,
+    _marker: PhantomData<(C, R)>,
+}
+
+impl<C, R> Position<C, R> {
+    /// Create a new position.
+    pub fn new(x: f32, y: f32) -> Self {
+        Self {
+            x,
+            y,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Convert to array for GPU buffers.
+    pub fn to_array(self) -> [f32; 2] {
+        [self.x, self.y]
+    }
+
+    /// Get the zero position.
+    pub const fn zero() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Get the underlying point (discards reference frame information).
+    pub fn to_point(self) -> Point<C> {
+        Point::new(self.x, self.y)
+    }
+}
+
+// Conversions between reference frames
+impl<C> Position<C, Relative> {
+    /// Convert a relative position to absolute by adding parent's absolute position.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use vexo::core::{Position, Logical, Absolute, Relative};
+    ///
+    /// let child_relative = Position::<Logical, Relative>::new(10.0, 20.0);
+    /// let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+    /// let child_absolute = child_relative.to_absolute(parent_absolute);
+    /// // child_absolute = (110.0, 70.0)
+    /// ```
+    pub fn to_absolute(self, parent_absolute: Position<C, Absolute>) -> Position<C, Absolute> {
+        Position::new(self.x + parent_absolute.x, self.y + parent_absolute.y)
+    }
+}
+
+impl<C> Position<C, Absolute> {
+    /// Convert an absolute position to relative by subtracting parent's absolute position.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use vexo::core::{Position, Logical, Absolute, Relative};
+    ///
+    /// let child_absolute = Position::<Logical, Absolute>::new(110.0, 70.0);
+    /// let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+    /// let child_relative = child_absolute.to_relative(parent_absolute);
+    /// // child_relative = (10.0, 20.0)
+    /// ```
+    pub fn to_relative(self, parent_absolute: Position<C, Absolute>) -> Position<C, Relative> {
+        Position::new(self.x - parent_absolute.x, self.y - parent_absolute.y)
+    }
+}
+
+// Conversions between coordinate spaces
+impl Position<Logical, Absolute> {
+    /// Convert logical absolute position to physical pixels.
+    pub fn to_physical(self, scale: Scale) -> Position<Physical, Absolute> {
+        Position::new(self.x * scale.factor(), self.y * scale.factor())
+    }
+}
+
+impl Position<Logical, Relative> {
+    /// Convert logical relative position to physical pixels.
+    pub fn to_physical(self, scale: Scale) -> Position<Physical, Relative> {
+        Position::new(self.x * scale.factor(), self.y * scale.factor())
+    }
+}
+
+impl Position<Physical, Absolute> {
+    /// Convert physical absolute position to logical coordinates.
+    pub fn to_logical(self, scale: Scale) -> Position<Logical, Absolute> {
+        Position::new(self.x / scale.factor(), self.y / scale.factor())
+    }
+}
+
+impl Position<Physical, Relative> {
+    /// Convert physical relative position to logical coordinates.
+    pub fn to_logical(self, scale: Scale) -> Position<Logical, Relative> {
+        Position::new(self.x / scale.factor(), self.y / scale.factor())
+    }
+}
+
+// Convenience type aliases
+impl Position<Logical, Absolute> {
+    /// Create from Taffy layout location (which is always relative to parent).
+    pub fn from_taffy_relative(location: taffy::Point<f32>) -> Position<Logical, Relative> {
+        Position::new(location.x, location.y)
     }
 }
 
@@ -409,6 +603,36 @@ impl<T> std::ops::SubAssign for Point<T> {
     }
 }
 
+impl<C, R> std::ops::Add for Position<C, R> {
+    type Output = Position<C, R>;
+
+    fn add(self, other: Position<C, R>) -> Position<C, R> {
+        Position::new(self.x + other.x, self.y + other.y)
+    }
+}
+
+impl<C, R> std::ops::AddAssign for Position<C, R> {
+    fn add_assign(&mut self, other: Position<C, R>) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
+
+impl<C, R> std::ops::Sub for Position<C, R> {
+    type Output = Position<C, R>;
+
+    fn sub(self, other: Position<C, R>) -> Position<C, R> {
+        Position::new(self.x - other.x, self.y - other.y)
+    }
+}
+
+impl<C, R> std::ops::SubAssign for Position<C, R> {
+    fn sub_assign(&mut self, other: Position<C, R>) {
+        self.x -= other.x;
+        self.y -= other.y;
+    }
+}
+
 // ============================================================================
 // TESTS
 // ============================================================================
@@ -494,5 +718,111 @@ mod tests {
         assert!(!Scale::new(1.5).is_hidpi());
         assert!(Scale::new(2.0).is_hidpi());
         assert!(Scale::new(3.0).is_hidpi());
+    }
+
+    // ========================================================================
+    // Position Tests
+    // ========================================================================
+
+    #[test]
+    fn test_position_relative_to_absolute() {
+        let relative = Position::<Logical, Relative>::new(10.0, 20.0);
+        let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+        let absolute = relative.to_absolute(parent_absolute);
+
+        assert_eq!(absolute.x, 110.0);
+        assert_eq!(absolute.y, 70.0);
+    }
+
+    #[test]
+    fn test_position_absolute_to_relative() {
+        let absolute = Position::<Logical, Absolute>::new(110.0, 70.0);
+        let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+        let relative = absolute.to_relative(parent_absolute);
+
+        assert_eq!(relative.x, 10.0);
+        assert_eq!(relative.y, 20.0);
+    }
+
+    #[test]
+    fn test_position_logical_to_physical() {
+        let logical_abs = Position::<Logical, Absolute>::new(100.0, 200.0);
+        let physical_abs = logical_abs.to_physical(Scale::new(2.0));
+
+        assert_eq!(physical_abs.x, 200.0);
+        assert_eq!(physical_abs.y, 400.0);
+
+        let logical_rel = Position::<Logical, Relative>::new(50.0, 100.0);
+        let physical_rel = logical_rel.to_physical(Scale::new(2.0));
+
+        assert_eq!(physical_rel.x, 100.0);
+        assert_eq!(physical_rel.y, 200.0);
+    }
+
+    #[test]
+    fn test_position_physical_to_logical() {
+        let physical_abs = Position::<Physical, Absolute>::new(200.0, 400.0);
+        let logical_abs = physical_abs.to_logical(Scale::new(2.0));
+
+        assert_eq!(logical_abs.x, 100.0);
+        assert_eq!(logical_abs.y, 200.0);
+
+        let physical_rel = Position::<Physical, Relative>::new(100.0, 200.0);
+        let logical_rel = physical_rel.to_logical(Scale::new(2.0));
+
+        assert_eq!(logical_rel.x, 50.0);
+        assert_eq!(logical_rel.y, 100.0);
+    }
+
+    #[test]
+    fn test_position_to_point() {
+        let position = Position::<Logical, Absolute>::new(10.0, 20.0);
+        let point = position.to_point();
+
+        assert_eq!(point.x, 10.0);
+        assert_eq!(point.y, 20.0);
+    }
+
+    #[test]
+    fn test_position_add() {
+        let p1 = Position::<Logical, Relative>::new(10.0, 20.0);
+        let p2 = Position::<Logical, Relative>::new(5.0, 10.0);
+        let sum = p1 + p2;
+
+        assert_eq!(sum.x, 15.0);
+        assert_eq!(sum.y, 30.0);
+    }
+
+    #[test]
+    fn test_position_sub() {
+        let p1 = Position::<Logical, Absolute>::new(110.0, 70.0);
+        let p2 = Position::<Logical, Absolute>::new(100.0, 50.0);
+        let diff = p1 - p2;
+
+        assert_eq!(diff.x, 10.0);
+        assert_eq!(diff.y, 20.0);
+    }
+
+    #[test]
+    fn test_position_zero() {
+        let zero = Position::<Logical, Absolute>::zero();
+        assert_eq!(zero.x, 0.0);
+        assert_eq!(zero.y, 0.0);
+    }
+
+    #[test]
+    fn test_position_chain_conversions() {
+        // Start with relative position from layout
+        let child_relative = Position::<Logical, Relative>::new(10.0, 20.0);
+        let parent_absolute = Position::<Logical, Absolute>::new(100.0, 50.0);
+
+        // Convert to absolute
+        let child_absolute = child_relative.to_absolute(parent_absolute);
+
+        // Convert to physical for rendering
+        let child_physical = child_absolute.to_physical(Scale::new(2.0));
+
+        assert_eq!(child_physical.x, 220.0);
+        assert_eq!(child_physical.y, 140.0);
     }
 }

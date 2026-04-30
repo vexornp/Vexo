@@ -4,7 +4,7 @@
 
 use std::any::Any;
 
-use crate::core::{Bounds, Color, Logical, Point};
+use crate::core::{Absolute, Bounds, Color, Logical, Point, Position};
 use crate::input::{ButtonState, InputEvent};
 use crate::render::RenderCommand;
 
@@ -298,15 +298,17 @@ impl RenderObject for ButtonRenderObject {
             None => return Vec::new(),
         };
 
-        // Get the absolute offset from context
-        let offset = ctx.offset();
+        // Get the absolute position where this button should be painted.
+        // The context already calculated the absolute position from the
+        // parent chain, so we just use it directly.
+        let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
-        // Adjust bounds by offset to get absolute position
+        // Create absolute bounds at the correct position with our size
         let absolute_bounds = Bounds::new(
-            bounds.left + offset.x,
-            bounds.top + offset.y,
-            bounds.right + offset.x,
-            bounds.bottom + offset.y,
+            pos.x,
+            pos.y,
+            pos.x + bounds.width(),
+            pos.y + bounds.height(),
         );
 
         let mut commands = Vec::new();

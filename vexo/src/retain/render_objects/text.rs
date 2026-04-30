@@ -1,6 +1,6 @@
 //! TextRenderObject implementation.
 
-use crate::core::{Bounds, Logical, Point, Size};
+use crate::core::{Absolute, Bounds, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeId, MeasureContext, TextMeasureContext};
 use crate::render::RenderCommand;
 use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -94,18 +94,14 @@ impl RenderObject for TextRenderObject {
         // Emit text render command for glyphon processing
         match &self.computed_bounds {
             Some(bounds) => {
-                // Get the absolute offset from context
-                let offset = ctx.offset();
-
-                // Adjust position by offset to get absolute position
-                let absolute_position = Point::new(
-                    bounds.left + offset.x,
-                    bounds.top + offset.y,
-                );
+                // Get the absolute position where this text should be painted.
+                // The context already calculated the absolute position from the
+                // parent chain, so we just use it directly.
+                let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
                 vec![RenderCommand::Text {
                     content: self.content.clone(),
-                    position: absolute_position,
+                    position: pos.to_point(),
                     font_size: self.font_size,
                     color: crate::core::Color::BLACK,
                     max_width: Some(bounds.width()),

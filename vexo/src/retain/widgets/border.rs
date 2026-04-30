@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use crate::core::{Bounds, Color, Logical, Point, Size};
+use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
@@ -153,14 +153,29 @@ impl RenderObject for BorderRenderObject {
         }
     }
 
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
         match &self.computed_bounds {
-            Some(bounds) => vec![RenderCommand::rect_with_border(
-                *bounds,
-                Color::TRANSPARENT,
-                self.color,
-                self.width,
-            )],
+            Some(bounds) => {
+                // Get the absolute position where this border should be painted.
+                // The context already calculated the absolute position from the
+                // parent chain, so we just use it directly.
+                let pos: Position<Logical, Absolute> = ctx.absolute_position();
+
+                // Create absolute bounds at the correct position with our size
+                let absolute_bounds = Bounds::new(
+                    pos.x,
+                    pos.y,
+                    pos.x + bounds.width(),
+                    pos.y + bounds.height(),
+                );
+
+                vec![RenderCommand::rect_with_border(
+                    absolute_bounds,
+                    Color::TRANSPARENT,
+                    self.color,
+                    self.width,
+                )]
+            }
             None => vec![],
         }
     }

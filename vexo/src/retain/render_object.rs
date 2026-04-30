@@ -77,17 +77,57 @@ impl<'a> LayoutContext<'a> {
 
 /// Context passed to RenderObject.paint().
 ///
-/// Provides access to the render command list and current offset.
+/// Provides access to the render command list and the absolute position
+/// where this render object should paint.
+///
+/// # Coordinate System
+///
+/// The paint context uses **absolute coordinates** (relative to the window origin).
+/// Render objects should paint at the position returned by `absolute_position()`.
+///
+/// # How Position is Calculated
+///
+/// 1. The pipeline's `paint_recursive` traverses the render object tree
+/// 2. For each render object, it calculates the absolute position by:
+///    - Starting from the parent's absolute position
+///    - Adding this object's position within its parent (from computed_bounds)
+/// 3. This absolute position is passed to the render object via `set_absolute_position`
+///
+/// # Render Object Responsibility
+///
+/// Render objects should:
+/// - Use `absolute_position()` to get where they should paint
+/// - Use `computed_bounds()` only for size information (width, height)
+/// - NOT add bounds.left/top to the position - that's already included
+///
+/// # Example
+///
+/// ```ignore
+/// fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+///     let bounds = self.computed_bounds?;
+///     let pos = ctx.absolute_position(); // Already includes bounds.position()
+///
+///     // Create absolute bounds at the correct position
+///     let absolute_bounds = Bounds::new(
+///         pos.x, pos.y,
+///         pos.x + bounds.width(), pos.y + bounds.height(),
+///     );
+///
+///     vec![RenderCommand::rect(absolute_bounds, self.color)]
+/// }
+/// ```
 pub struct PaintContext<'a> {
-    offset: Point<crate::core::Logical>,
+    /// The absolute position where this render object should paint.
+    /// This is the top-left corner in window coordinates.
+    absolute_position: crate::core::Position<crate::core::Logical, crate::core::Absolute>,
     commands: &'a mut Vec<RenderCommand>,
 }
 
 impl<'a> PaintContext<'a> {
-    /// Create a new paint context.
+    /// Create a new paint context starting at the origin.
     pub fn new(commands: &'a mut Vec<RenderCommand>) -> Self {
         Self {
-            offset: Point::zero(),
+            absolute_position: crate::core::Position::zero(),
             commands,
         }
     }
@@ -97,14 +137,29 @@ impl<'a> PaintContext<'a> {
         self.commands.push(command);
     }
 
-    /// Get the current offset.
-    pub fn offset(&self) -> Point<crate::core::Logical> {
-        self.offset
+    /// Get the absolute position where this render object should paint.
+    ///
+    /// This is the top-left corner of this render object in window coordinates.
+    /// The position already includes the render object's position within its parent.
+    pub fn absolute_position(&self) -> crate::core::Position<crate::core::Logical, crate::core::Absolute> {
+        self.absolute_position
     }
 
-    /// Set the offset.
-    pub fn set_offset(&mut self, offset: Point<crate::core::Logical>) {
-        self.offset = offset;
+    /// Set the absolute position (used by pipeline during traversal).
+    pub fn set_absolute_position(&mut self, position: crate::core::Position<crate::core::Logical, crate::core::Absolute>) {
+        self.absolute_position = position;
+    }
+
+    // Legacy alias for backwards compatibility during migration
+    #[deprecated(note = "Use absolute_position() instead for clarity")]
+    pub fn offset(&self) -> crate::core::Point<crate::core::Logical> {
+        self.absolute_position.to_point()
+    }
+
+    // Legacy alias for backwards compatibility during migration
+    #[deprecated(note = "Use set_absolute_position() instead for clarity")]
+    pub fn set_offset(&mut self, offset: crate::core::Point<crate::core::Logical>) {
+        self.absolute_position = crate::core::Position::new(offset.x, offset.y);
     }
 }
 

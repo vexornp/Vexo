@@ -38,7 +38,7 @@
 
 use std::marker::PhantomData;
 
-use crate::core::{Bounds, Logical, Point, Size};
+use crate::core::{Absolute, Bounds, Logical, Point, Position, Relative, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
@@ -481,34 +481,32 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         let mut ctx = PaintContext::new(&mut commands);
 
         // Paint root recursively (root starts at origin)
-        self.paint_recursive(root_id, &mut ctx, Point::zero());
+        self.paint_recursive(root_id, &mut ctx, Position::zero());
 
         commands
     }
 
     /// Recursively paint a render object and its children.
-    fn paint_recursive(&self, id: RenderObjectId, ctx: &mut PaintContext, parent_offset: Point<Logical>) {
+    fn paint_recursive(&self, id: RenderObjectId, ctx: &mut PaintContext, parent_absolute_position: Position<Logical, Absolute>) {
         // Get the render object
         let obj = match self.render_objects.get(id) {
             Some(o) => o,
             None => return,
         };
 
-        // Get this object's position (relative to parent)
-        // For containers, this is their position in the parent's layout
+        // Get this object's position relative to its parent (from Taffy layout)
+        // For containers, this is their position within the parent container
         // For leafs, this is their position relative to their parent container
-        let local_position = obj.computed_bounds()
-            .map(|b| b.position())
-            .unwrap_or(Point::zero());
+        let position_in_parent: Position<Logical, Relative> = obj.computed_bounds()
+            .map(|b| Position::new(b.left, b.top))
+            .unwrap_or(Position::zero());
 
-        // Calculate absolute position for this object
-        let absolute_position = Point::new(
-            parent_offset.x + local_position.x,
-            parent_offset.y + local_position.y,
-        );
+        // Calculate absolute position for this object:
+        // parent's absolute position + this object's position within parent
+        let absolute_position = position_in_parent.to_absolute(parent_absolute_position);
 
-        // Store the absolute position in context for paint to use
-        ctx.set_offset(absolute_position);
+        // Tell the render object where to paint (in absolute coordinates)
+        ctx.set_absolute_position(absolute_position);
 
         // Paint this object
         let local_commands = obj.paint(ctx);
@@ -521,8 +519,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         // Paint children
         // For containers, children's positions are relative to the container's origin (0, 0),
         // not relative to the container's position in its parent.
-        // So we pass the container's absolute position as the parent offset.
-        // This means children positions will be added to the container's absolute position.
+        // So we pass the container's absolute position as the parent position for children.
+        // This means: child_absolute = container_absolute + child_position_in_container
         for child_id in obj.children() {
             self.paint_recursive(*child_id, ctx, absolute_position);
         }
