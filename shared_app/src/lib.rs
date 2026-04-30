@@ -191,13 +191,42 @@ impl Application for State {
         .boxed()
     }
 
-    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget<Self::Message>>> {
-        // Retain mode demo: a column with multiple buttons.
+    fn retain_view(state: &Self::State) -> Option<Box<dyn retain::Widget<Self::Message>>> {
+        let counter_text = format!("Count: {}", state.retain_counter);
+
         Some(Box::new(
             retain::Column::new()
-                .push(retain::Button::new("Button A").with_message(Message::RetainButtonClicked))
-                .push(retain::Button::new("Button B").with_message(Message::RetainButtonClicked))
-                .push(retain::Button::new("Button C").with_message(Message::Clicked)),
+                // Header
+                .push(retain::Text::new("Retain Mode Widget Demo"))
+                // Button controls in a Row
+                .push(
+                    retain::Row::new()
+                        .push(retain::Button::new("Increment (+)")
+                            .with_message(Message::RetainIncrement))
+                        .push(retain::Button::new("Decrement (-)")
+                            .with_message(Message::RetainDecrement))
+                        .push(retain::Button::new("Reset")
+                            .with_message(Message::RetainReset))
+                )
+                // Counter display
+                .push(retain::Text::new(counter_text))
+                // Container demo: Row with two Columns
+                .push(retain::Text::new("─── Container Layout ───"))
+                .push(
+                    retain::Row::new()
+                        .push(
+                            retain::Column::new()
+                                .push(retain::Text::new("Left Column"))
+                                .push(retain::Button::new("Button L")
+                                    .with_message(Message::RetainIncrement))
+                        )
+                        .push(
+                            retain::Column::new()
+                                .push(retain::Text::new("Right Column"))
+                                .push(retain::Button::new("Button R")
+                                    .with_message(Message::RetainDecrement))
+                        )
+                )
         ))
     }
 }
