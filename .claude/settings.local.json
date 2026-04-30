@@ -79,7 +79,12 @@
       "Read(//Users/peiyan_wang/.local/share/uv/tools/tavily-cli/bin/**)",
       "Read(//usr/local/bin/**)",
       "Bash(/Users/peiyan_wang/.local/bin/tvly:*)",
-      "Bash(cargo fix:*)"
+      "Bash(cargo fix:*)",
+      "Bash(timeout 5 head -100)",
+      "Bash(timeout 8 head -200)",
+      "Bash(timeout 5 head -50)",
+      "Bash(timeout 5 head -30)",
+      "WebFetch(domain:docs.rs)"
     ]
   }
 }

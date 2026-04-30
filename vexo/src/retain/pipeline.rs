@@ -502,9 +502,28 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             ctx.push_command(cmd);
         }
 
+        // Get children
+        let children: Vec<RenderObjectId> = obj.children().to_vec();
+
+        // If we have children, push an offset based on our position
+        // This ensures children are positioned relative to this container
+        if !children.is_empty() {
+            if let Some(bounds) = obj.computed_bounds() {
+                let offset = bounds.position();
+                ctx.push_command(RenderCommand::PushOffset { offset });
+            }
+        }
+
         // Paint children
-        for child_id in obj.children() {
-            self.paint_recursive(*child_id, ctx);
+        for child_id in children {
+            self.paint_recursive(child_id, ctx);
+        }
+
+        // Pop the offset if we pushed one
+        if !obj.children().is_empty() {
+            if obj.computed_bounds().is_some() {
+                ctx.push_command(RenderCommand::PopOffset);
+            }
         }
     }
 
