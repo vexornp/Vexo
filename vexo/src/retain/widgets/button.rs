@@ -287,32 +287,43 @@ impl RenderObject for ButtonRenderObject {
         }
     }
 
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
         let bounds = match &self.computed_bounds {
             Some(b) => b,
             None => return Vec::new(),
         };
 
+        // Get the absolute offset from context
+        let offset = ctx.offset();
+
+        // Adjust bounds by offset to get absolute position
+        let absolute_bounds = Bounds::new(
+            bounds.left + offset.x,
+            bounds.top + offset.y,
+            bounds.right + offset.x,
+            bounds.bottom + offset.y,
+        );
+
         let mut commands = Vec::new();
 
         // Draw button background (light gray with rounded corners)
         commands.push(RenderCommand::rounded_rect(
-            *bounds,
+            absolute_bounds,
             Color::rgb(0.9, 0.9, 0.9),
             4.0,
         ));
 
         // Draw button border (darker gray)
         commands.push(RenderCommand::rect_with_border(
-            *bounds,
+            absolute_bounds,
             Color::TRANSPARENT,
             Color::rgb(0.6, 0.6, 0.6),
             1.0,
         ));
 
         // Draw button label (centered)
-        let text_x = bounds.left + bounds.width() / 2.0 - (self.label.len() as f32 * 4.0);
-        let text_y = bounds.top + 10.0;
+        let text_x = absolute_bounds.left + absolute_bounds.width() / 2.0 - (self.label.len() as f32 * 4.0);
+        let text_y = absolute_bounds.top + 10.0;
         commands.push(RenderCommand::text(
             self.label.clone(),
             Point::new(text_x, text_y),

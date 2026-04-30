@@ -90,13 +90,22 @@ impl RenderObject for TextRenderObject {
         }
     }
 
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
         // Emit text render command for glyphon processing
         match &self.computed_bounds {
             Some(bounds) => {
+                // Get the absolute offset from context
+                let offset = ctx.offset();
+
+                // Adjust position by offset to get absolute position
+                let absolute_position = Point::new(
+                    bounds.left + offset.x,
+                    bounds.top + offset.y,
+                );
+
                 vec![RenderCommand::Text {
                     content: self.content.clone(),
-                    position: bounds.position(),
+                    position: absolute_position,
                     font_size: self.font_size,
                     color: crate::core::Color::BLACK,
                     max_width: Some(bounds.width()),

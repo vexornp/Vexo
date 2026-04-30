@@ -47,7 +47,6 @@ pub struct UiBatcher {
     screen_size: Size<Logical>, // Logical size: pixel_size * scale_factor
     corner_radius_stack: Vec<f32>, // Stack for nested radius contexts
     clip_stack: Vec<Bounds>, // Stack for clipping regions
-    offset_stack: Vec<Point<Logical>>, // Stack for offset transforms
 }
 
 impl Default for UiBatcher {
@@ -67,7 +66,6 @@ impl UiBatcher {
             screen_size: Size::new(1.0, 1.0),
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
-            offset_stack: Vec::new(),
         }
     }
 
@@ -79,7 +77,6 @@ impl UiBatcher {
         self.quad_instances.clear();
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
-        self.offset_stack.clear();
     }
 
     /// Set logical screen size.
@@ -127,23 +124,6 @@ impl UiBatcher {
         self.clip_stack.last().copied()
     }
 
-    /// Push an offset onto the stack.
-    /// All subsequent commands will have this offset applied.
-    pub fn push_offset(&mut self, offset: Point<Logical>) {
-        self.offset_stack.push(offset);
-    }
-
-    /// Pop the most recent offset from the stack.
-    pub fn pop_offset(&mut self) {
-        self.offset_stack.pop();
-    }
-
-    /// Get the current cumulative offset from the stack.
-    /// Returns the sum of all offsets in the stack.
-    pub fn current_offset(&self) -> Point<Logical> {
-        self.offset_stack.iter().fold(Point::zero(), |acc, &p| Point::new(acc.x + p.x, acc.y + p.y))
-    }
-
     pub fn add_rect(
         &mut self,
         bounds: Bounds,
@@ -169,11 +149,8 @@ impl UiBatcher {
             None => [-1.0, -1.0, -1.0, -1.0], // No clipping
         };
 
-        // Apply current offset
-        let offset = self.current_offset();
-
         self.quad_instances.push(quad_instance::QuadInstance {
-            position: [bounds.left + offset.x, bounds.top + offset.y],
+            position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
             color: fill.to_array(),
             border_color: border_color.to_array(),
@@ -196,12 +173,9 @@ impl UiBatcher {
         // Get current clip bounds, or None to indicate no clipping
         let clip_bounds = self.current_clip();
 
-        // Apply current offset
-        let offset = self.current_offset();
-
         self.text_requests.push(TextRequest {
             content,
-            position: Point::new(position.x + offset.x, position.y + offset.y),
+            position,
             size,
             color,
             clip_bounds,
@@ -209,17 +183,9 @@ impl UiBatcher {
     }
 
     pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: Bounds) {
-        // Apply current offset
-        let offset = self.current_offset();
-
         self.editor_requests.push(EditorRequest {
             id: id.into(),
-            bounds: Bounds::new(
-                bounds.left + offset.x,
-                bounds.top + offset.y,
-                bounds.right + offset.x,
-                bounds.bottom + offset.y,
-            ),
+            bounds,
             color: Color::WHITE,
         });
     }

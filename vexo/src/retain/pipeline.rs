@@ -480,19 +480,33 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         // Create paint context
         let mut ctx = PaintContext::new(&mut commands);
 
-        // Paint root recursively
-        self.paint_recursive(root_id, &mut ctx);
+        // Paint root recursively (root starts at origin)
+        self.paint_recursive(root_id, &mut ctx, Point::zero());
 
         commands
     }
 
     /// Recursively paint a render object and its children.
-    fn paint_recursive(&self, id: RenderObjectId, ctx: &mut PaintContext) {
+    fn paint_recursive(&self, id: RenderObjectId, ctx: &mut PaintContext, parent_offset: Point<Logical>) {
         // Get the render object
         let obj = match self.render_objects.get(id) {
             Some(o) => o,
             None => return,
         };
+
+        // Get this object's position (relative to parent)
+        let local_position = obj.computed_bounds()
+            .map(|b| b.position())
+            .unwrap_or(Point::zero());
+
+        // Calculate absolute position for this object
+        let absolute_position = Point::new(
+            parent_offset.x + local_position.x,
+            parent_offset.y + local_position.y,
+        );
+
+        // Store the absolute position in context for paint to use
+        ctx.set_offset(absolute_position);
 
         // Paint this object
         let local_commands = obj.paint(ctx);
@@ -502,28 +516,9 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             ctx.push_command(cmd);
         }
 
-        // Get children
-        let children: Vec<RenderObjectId> = obj.children().to_vec();
-
-        // If we have children, push an offset based on our position
-        // This ensures children are positioned relative to this container
-        if !children.is_empty() {
-            if let Some(bounds) = obj.computed_bounds() {
-                let offset = bounds.position();
-                ctx.push_command(RenderCommand::PushOffset { offset });
-            }
-        }
-
-        // Paint children
-        for child_id in children {
-            self.paint_recursive(child_id, ctx);
-        }
-
-        // Pop the offset if we pushed one
-        if !obj.children().is_empty() {
-            if obj.computed_bounds().is_some() {
-                ctx.push_command(RenderCommand::PopOffset);
-            }
+        // Paint children with this object's absolute position as their parent offset
+        for child_id in obj.children() {
+            self.paint_recursive(*child_id, ctx, absolute_position);
         }
     }
 

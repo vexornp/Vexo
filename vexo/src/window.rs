@@ -530,10 +530,11 @@ impl<A: Application + 'static> WindowState<A> {
                     });
                 }
                 crate::render::RenderCommand::PushOffset { offset } => {
-                    self.batcher.push_offset(offset);
+                    // TODO: Implement offset stack in batcher
+                    let _ = offset;
                 }
                 crate::render::RenderCommand::PopOffset => {
-                    self.batcher.pop_offset();
+                    // TODO: Implement offset stack in batcher
                 }
             }
         }
