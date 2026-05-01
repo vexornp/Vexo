@@ -472,8 +472,8 @@ impl<A: Application + 'static> WindowState<A> {
         // 5. Clear batcher
         self.batcher.clear();
 
-        // 6. Reconcile widget tree with element tree
-        pipeline.reconcile(widget_tree);
+        // 6. Update widget tree (targeted rebuild or full reconcile)
+        pipeline.update(widget_tree);
 
         // 7. Compute logical size
         let scale = self.widget_context.scale;
