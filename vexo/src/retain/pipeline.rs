@@ -217,15 +217,17 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     }
 
     /// Rebuild the root element with a new widget.
+    ///
+    /// This follows the same pattern as reconcile_element():
+    /// 1. Update the element with the new widget
+    /// 2. Reconcile children separately (to avoid borrow issues)
     fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget<M>>) {
         let render_object_id = self.element_registry.get(root_id)
             .and_then(|el| el.render_object());
         let parent = self.element_registry.parent(root_id);
 
-        // Create context and rebuild
+        // Step 1: Update the element with the new widget
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
-
-        // Use with_registry (without element_registry) to avoid double borrow
         if let Some(element) = self.element_registry.get_mut(root_id) {
             let mut ctx = ElementContext::with_registry(
                 root_id,
@@ -235,14 +237,106 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
                 &mut self.render_objects,
             );
 
-            element.rebuild(widget_as_any, &mut ctx);
+            element.update(widget_as_any, &mut ctx);
         }
+
+        // Step 2: Reconcile children (same pattern as reconcile_element)
+        let existing_children = self.element_registry.children(root_id).to_vec();
+        let new_child_widgets: Vec<Box<dyn Widget<M>>> = widget.children().iter()
+            .map(|c| c.clone_box())
+            .collect();
+
+        // Rebuild children recursively
+        self.rebuild_children_internal(root_id, existing_children, new_child_widgets);
 
         // Mark render object dirty
         if let Some(render_id) = render_object_id {
             self.dirty.mark_needs_layout(render_id);
             self.dirty.mark_needs_paint(render_id);
         }
+    }
+
+    /// Rebuild children of an element.
+    ///
+    /// Similar to reconcile_children_internal but uses rebuild semantics.
+    fn rebuild_children_internal(
+        &mut self,
+        parent_id: ElementId,
+        existing_children: Vec<ElementId>,
+        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+    ) {
+        let mut new_children = Vec::new();
+        let mut matched = std::collections::HashSet::new();
+
+        // Build key map for existing children
+        let key_map: std::collections::HashMap<super::key::Key, ElementId> = existing_children
+            .iter()
+            .filter_map(|&id| {
+                self.element_registry.get(id)
+                    .and_then(|el| el.widget_key().map(|k| (k, id)))
+            })
+            .collect();
+
+        // Match new widgets to existing elements
+        for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
+            let element_id = if let Some(key) = child_widget.key() {
+                // Keyed: look up in map
+                if let Some(&id) = key_map.get(&key) {
+                    if !matched.contains(&id) {
+                        matched.insert(id);
+                        Some(id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                // Non-keyed: match by position
+                if let Some(&id) = existing_children.get(index) {
+                    if !matched.contains(&id) {
+                        matched.insert(id);
+                        Some(id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            if let Some(child_id) = element_id {
+                // Check if can update
+                let can_update = self.element_registry.get(child_id)
+                    .map(|el| el.can_update(child_widget.as_any()))
+                    .unwrap_or(false);
+
+                if can_update {
+                    matched.insert(child_id);
+                    // Recursively rebuild this child
+                    self.rebuild_root(child_id, child_widget);
+                    new_children.push(child_id);
+                } else {
+                    // Can't update - mount new
+                    let child_id = self.mount_element_tree(Some(parent_id), child_widget);
+                    new_children.push(child_id);
+                }
+            } else {
+                // No matching child - mount new element
+                let child_id = self.mount_element_tree(Some(parent_id), child_widget);
+                new_children.push(child_id);
+            }
+        }
+
+        // Unmount children that weren't matched
+        for child_id in existing_children {
+            if !matched.contains(&child_id) {
+                self.unmount_element_tree(child_id);
+            }
+        }
+
+        // Update parent's children list
+        self.element_registry.set_children(parent_id, new_children);
     }
 
     /// Perform targeted rebuilds for dirty elements.
