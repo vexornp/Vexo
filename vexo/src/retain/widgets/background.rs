@@ -74,6 +74,13 @@ impl Widget<()> for Background {
     fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        // Downcast to BackgroundRenderObject and update properties
+        if let Some(bg_ro) = render_object.as_any_mut().downcast_mut::<BackgroundRenderObject>() {
+            bg_ro.set_color(self.color);
+        }
+    }
 }
 
 /// RenderObject for Background - draws a colored rect.
@@ -105,6 +112,11 @@ impl BackgroundRenderObject {
     /// Get the computed bounds.
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    /// Set the background color.
+    pub fn set_color(&mut self, color: Color) {
+        self.color = color;
     }
 }
 

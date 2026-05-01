@@ -82,6 +82,14 @@ impl Widget<()> for Border {
     fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        // Downcast to BorderRenderObject and update properties
+        if let Some(border_ro) = render_object.as_any_mut().downcast_mut::<BorderRenderObject>() {
+            border_ro.set_color(self.color);
+            border_ro.set_width(self.width);
+        }
+    }
 }
 
 /// RenderObject for Border - draws a colored border.
@@ -115,6 +123,16 @@ impl BorderRenderObject {
     /// Get the computed bounds.
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    /// Set the border color.
+    pub fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    /// Set the border width.
+    pub fn set_width(&mut self, width: f32) {
+        self.width = width;
     }
 }
 

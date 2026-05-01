@@ -91,6 +91,13 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
         // We need to downcast it back
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
             self.widget = Some(*widget);
+
+            // Update the render object with new properties from the widget
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
         }
 
         if let Some(ro) = self.render_object {

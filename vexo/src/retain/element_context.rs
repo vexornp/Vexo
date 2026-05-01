@@ -164,4 +164,12 @@ impl<'a> ElementContext<'a> {
             registry.set_child(parent, child);
         }
     }
+
+    /// Get a mutable reference to a render object by ID.
+    ///
+    /// Returns None if the ID is not valid or no registry is available.
+    /// Used during Element::update() to update render object properties.
+    pub fn get_render_object_mut(&mut self, id: RenderObjectId) -> Option<&mut Box<dyn RenderObject>> {
+        self.render_objects.as_mut().and_then(|registry| registry.get_mut(id))
+    }
 }

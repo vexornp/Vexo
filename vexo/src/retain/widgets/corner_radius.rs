@@ -74,6 +74,13 @@ impl Widget<()> for CornerRadius {
     fn child(&self) -> Option<&dyn Widget<()>> {
         Some(self.child.as_ref())
     }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        // Downcast to CornerRadiusRenderObject and update properties
+        if let Some(cr_ro) = render_object.as_any_mut().downcast_mut::<CornerRadiusRenderObject>() {
+            cr_ro.set_radius(self.radius);
+        }
+    }
 }
 
 /// RenderObject for CornerRadius - applies rounded corners.
@@ -100,6 +107,11 @@ impl CornerRadiusRenderObject {
     /// Get the computed bounds.
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    /// Set the corner radius.
+    pub fn set_radius(&mut self, radius: f32) {
+        self.radius = radius;
     }
 }
 

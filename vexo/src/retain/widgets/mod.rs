@@ -102,6 +102,28 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     fn children(&self) -> &[Box<dyn Widget<M>>] {
         &[]
     }
+
+    /// Update an existing render object with new properties from this widget.
+    ///
+    /// Called during Element::update() when a widget is updated in place.
+    /// The widget should update the render object's mutable properties
+    /// (e.g., text content, colors, sizes) to reflect the new configuration.
+    ///
+    /// Default implementation does nothing (for widgets with no updatable properties
+    /// like GestureDetector, or containers that don't have visual properties).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+    ///     if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
+    ///         text_ro.set_content(&self.content);
+    ///     }
+    /// }
+    /// ```
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) {
+        // Default: no-op for widgets without updatable properties
+    }
 }
 
 #[cfg(test)]

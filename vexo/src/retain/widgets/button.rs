@@ -104,6 +104,13 @@ impl<M: Clone + Send + 'static> Widget<M> for Button<M> {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        // Downcast to ButtonRenderObject and update properties
+        if let Some(button_ro) = render_object.as_any_mut().downcast_mut::<ButtonRenderObject>() {
+            button_ro.set_label(&self.label);
+        }
+    }
 }
 
 // ============================================================================
@@ -175,6 +182,13 @@ impl<M: Clone + Send + 'static> Element for ButtonElement<M> {
         // Note: This is safe because we know the pipeline only passes widgets of the correct type
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
             self.widget = Some(*widget);
+
+            // Update the render object with new properties from the widget
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
         }
 
         if let Some(ro) = self.render_object {
@@ -259,6 +273,11 @@ impl ButtonRenderObject {
     #[allow(dead_code)]
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    /// Set the button label.
+    pub fn set_label(&mut self, label: &str) {
+        self.label = label.to_string();
     }
 }
 

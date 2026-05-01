@@ -70,6 +70,13 @@ impl<M: Clone + Send + 'static> Widget<M> for Text<M> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        // Downcast to TextRenderObject and update properties
+        if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
+            text_ro.set_content(&self.content);
+        }
+    }
 }
 
 #[cfg(test)]

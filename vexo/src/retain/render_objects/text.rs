@@ -56,6 +56,16 @@ impl TextRenderObject {
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
     }
+
+    /// Set the text content.
+    pub fn set_content(&mut self, content: &str) {
+        self.content = content.to_string();
+    }
+
+    /// Set the font size.
+    pub fn set_font_size(&mut self, size: f32) {
+        self.font_size = size;
+    }
 }
 
 impl RenderObject for TextRenderObject {

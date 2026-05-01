@@ -160,32 +160,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
                 .unwrap_or(false);
 
             if can_update {
-                // Get render object ID before mutable borrow
-                let render_object_id = self.element_registry.get(root_id)
-                    .and_then(|el| el.render_object());
-
-                // Update existing element
-                // We need to pass the widget as Box<dyn Any> for the Element trait
-                // The element will downcast it back to Box<dyn Widget<M>>
-                let widget_as_any: Box<dyn std::any::Any> = Box::new(root_widget);
-                if let Some(existing_element) = self.element_registry.get_mut(root_id) {
-                    let mut ctx = ElementContext::with_registry(
-                        root_id,
-                        None,
-                        &mut self.state,
-                        &mut self.dirty,
-                        &mut self.render_objects,
-                    );
-
-                    existing_element.update(widget_as_any, &mut ctx);
-                }
-
-                // Mark the entire render object tree as needing layout and paint
-                // (not just the root, since children may need repainting too)
-                if let Some(render_id) = render_object_id {
-                    self.mark_subtree_dirty(render_id);
-                }
-
+                // Recursively reconcile the element tree
+                self.reconcile_element(root_id, root_widget);
                 return;
             }
 
@@ -195,6 +171,98 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Mount new root element
         self.mount_element_tree(None, root_widget);
+    }
+
+    /// Recursively reconcile an element and its children with a new widget tree.
+    ///
+    /// This method:
+    /// 1. Updates the element with the new widget
+    /// 2. Reconciles children by matching new child widgets to existing child elements
+    fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget<M>>) {
+        // Get render object ID and parent before mutable borrow
+        let render_object_id = self.element_registry.get(element_id)
+            .and_then(|el| el.render_object());
+        let parent = self.element_registry.parent(element_id);
+
+        // Update the element with the new widget
+        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
+        if let Some(existing_element) = self.element_registry.get_mut(element_id) {
+            let mut ctx = ElementContext::with_registry(
+                element_id,
+                parent,
+                &mut self.state,
+                &mut self.dirty,
+                &mut self.render_objects,
+            );
+
+            existing_element.update(widget_as_any, &mut ctx);
+        }
+
+        // Mark render object as dirty
+        if let Some(render_id) = render_object_id {
+            self.dirty.mark_needs_layout(render_id);
+            self.dirty.mark_needs_paint(render_id);
+        }
+
+        // Get existing children
+        let existing_children = self.element_registry.children(element_id).to_vec();
+
+        // Get new child widgets
+        let new_child_widgets: Vec<Box<dyn Widget<M>>> = widget.children().iter()
+            .map(|c| c.clone_box())
+            .collect();
+
+        // Reconcile children
+        self.reconcile_children_internal(element_id, existing_children, new_child_widgets);
+    }
+
+    /// Reconcile children of an element.
+    ///
+    /// This implements a simple diffing algorithm:
+    /// 1. Match children by position (for now, we don't support keys)
+    /// 2. Update matching children, mount new ones, unmount extra ones
+    fn reconcile_children_internal(
+        &mut self,
+        parent_id: ElementId,
+        existing_children: Vec<ElementId>,
+        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+    ) {
+        let mut new_children = Vec::new();
+        let mut matched = std::collections::HashSet::new();
+
+        // Match by position
+        for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
+            let existing_child = existing_children.get(index).copied();
+
+            if let Some(child_id) = existing_child {
+                // Check if this element can be updated by the new widget
+                let can_update = self.element_registry.get(child_id)
+                    .map(|el| el.can_update(child_widget.as_any()))
+                    .unwrap_or(false);
+
+                if can_update && !matched.contains(&child_id) {
+                    matched.insert(child_id);
+                    // Recursively reconcile this child
+                    self.reconcile_element(child_id, child_widget);
+                    new_children.push(child_id);
+                    continue;
+                }
+            }
+
+            // No matching child - mount new element
+            let child_id = self.mount_element_tree(Some(parent_id), child_widget);
+            new_children.push(child_id);
+        }
+
+        // Unmount children that weren't matched
+        for child_id in existing_children {
+            if !matched.contains(&child_id) {
+                self.unmount_element_tree(child_id);
+            }
+        }
+
+        // Update parent's children list in the registry
+        self.element_registry.set_children(parent_id, new_children);
     }
 
     /// Mark a render object and all its descendants as dirty.
