@@ -43,6 +43,7 @@ use crate::input::{ButtonState, InputEvent, Modifiers};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 
+use super::build_owner::BuildOwner;
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::element_context::ElementContext;
@@ -106,6 +107,14 @@ pub struct ThreeTreePipeline<M: Clone + Send + 'static> {
     /// Currently focused element (for keyboard events).
     focused_element: Option<ElementId>,
 
+    /// Build owner for targeted rebuilds.
+    build_owner: BuildOwner,
+
+    /// Flag indicating if full reconcile is needed.
+    ///
+    /// True after initial mount or when root element type changes.
+    needs_full_reconcile: bool,
+
     /// Phantom data for the message type.
     _phantom: PhantomData<M>,
 }
@@ -119,6 +128,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             state: StateStorage::new(),
             dirty: DirtyTracking::new(),
             focused_element: None,
+            build_owner: BuildOwner::new(),
+            needs_full_reconcile: true,
             _phantom: PhantomData,
         }
     }
@@ -171,6 +182,119 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Mount new root element
         self.mount_element_tree(None, root_widget);
+    }
+
+    /// Reconcile or rebuild based on current state.
+    ///
+    /// This is the main entry point for frame updates.
+    /// - If `needs_full_reconcile` is true, performs full reconcile
+    /// - Otherwise, performs targeted rebuilds only
+    ///
+    /// After initial mount, prefer calling `mark_needs_build()` for updates.
+    pub fn update(&mut self, root_widget: Box<dyn Widget<M>>) {
+        if self.needs_full_reconcile || self.element_registry.root().is_none() {
+            // Full reconcile needed (initial mount or root type changed)
+            self.reconcile(root_widget);
+            self.needs_full_reconcile = false;
+        } else {
+            // Check if root can be updated
+            if let Some(root_id) = self.element_registry.root() {
+                let can_update = self.element_registry.get(root_id)
+                    .map(|el| el.can_update(root_widget.as_any()))
+                    .unwrap_or(false);
+
+                if can_update {
+                    // Targeted rebuild of root
+                    self.rebuild_root(root_id, root_widget);
+                } else {
+                    // Root type changed, full reconcile
+                    self.reconcile(root_widget);
+                }
+            } else {
+                self.reconcile(root_widget);
+            }
+        }
+    }
+
+    /// Rebuild the root element with a new widget.
+    fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget<M>>) {
+        let render_object_id = self.element_registry.get(root_id)
+            .and_then(|el| el.render_object());
+        let parent = self.element_registry.parent(root_id);
+
+        // Create context and rebuild
+        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
+
+        // Use with_registry (without element_registry) to avoid double borrow
+        if let Some(element) = self.element_registry.get_mut(root_id) {
+            let mut ctx = ElementContext::with_registry(
+                root_id,
+                parent,
+                &mut self.state,
+                &mut self.dirty,
+                &mut self.render_objects,
+            );
+
+            element.rebuild(widget_as_any, &mut ctx);
+        }
+
+        // Mark render object dirty
+        if let Some(render_id) = render_object_id {
+            self.dirty.mark_needs_layout(render_id);
+            self.dirty.mark_needs_paint(render_id);
+        }
+    }
+
+    /// Perform targeted rebuilds for dirty elements.
+    ///
+    /// This is the Flutter-style rebuild: only dirty elements and their
+    /// subtrees are reconciled. Much more efficient than full-tree reconcile.
+    ///
+    /// Returns the number of elements rebuilt.
+    pub fn perform_rebuilds(&mut self) -> usize {
+        if !self.build_owner.has_pending_rebuilds() {
+            return 0;
+        }
+
+        let mut count = 0;
+
+        // Drain dirty elements and rebuild each
+        let dirty_ids: Vec<ElementId> = self.build_owner.drain_dirty().collect();
+
+        for element_id in dirty_ids {
+            // Skip if element no longer exists
+            if !self.element_registry.contains(element_id) {
+                continue;
+            }
+
+            // Enter build scope (detect cycles)
+            if !self.build_owner.enter_build_scope(element_id) {
+                // Cycle detected, skip
+                continue;
+            }
+
+            // The actual rebuild would need the new widget
+            // For now, this is a placeholder that will be filled in
+            // when we integrate with the Application's view() method
+
+            self.build_owner.exit_build_scope(element_id);
+            count += 1;
+        }
+
+        count
+    }
+
+    /// Mark an element as needing rebuild.
+    ///
+    /// This is the entry point for Flutter-style targeted rebuilds.
+    /// Elements call this when their state changes (e.g., setState equivalent).
+    pub fn mark_needs_build(&mut self, element_id: ElementId) {
+        self.build_owner.mark_needs_build(element_id);
+    }
+
+    /// Check if there are pending rebuilds.
+    pub fn has_pending_rebuilds(&self) -> bool {
+        self.build_owner.has_pending_rebuilds()
     }
 
     /// Recursively reconcile an element and its children with a new widget tree.
