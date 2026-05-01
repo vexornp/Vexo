@@ -44,6 +44,7 @@ mod element_context;
 mod event_context;
 mod render_object;
 mod dirty;
+mod build_owner;
 mod reconcile;
 mod render_objects;
 mod hit_test;
@@ -73,6 +74,7 @@ pub use element_context::ElementContext;
 pub use event_context::EventContext;
 pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 pub use dirty::DirtyTracking;
+pub use build_owner::{BuildOwner, RebuildResult};
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 
