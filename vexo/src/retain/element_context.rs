@@ -29,6 +29,9 @@ pub struct ElementContext<'a> {
 
     /// Element registry for mounting child elements.
     pub element_registry: Option<&'a mut ElementRegistry>,
+
+    /// Build owner for marking elements dirty.
+    pub build_owner: Option<&'a mut super::build_owner::BuildOwner>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -50,6 +53,7 @@ impl<'a> ElementContext<'a> {
             dirty,
             render_objects: None,
             element_registry: None,
+            build_owner: None,
         }
     }
 
@@ -69,6 +73,7 @@ impl<'a> ElementContext<'a> {
             dirty,
             render_objects: Some(render_objects),
             element_registry: None,
+            build_owner: None,
         }
     }
 
@@ -89,6 +94,7 @@ impl<'a> ElementContext<'a> {
             dirty,
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
+            build_owner: None,
         }
     }
 
@@ -171,5 +177,12 @@ impl<'a> ElementContext<'a> {
     /// Used during Element::update() to update render object properties.
     pub fn get_render_object_mut(&mut self, id: RenderObjectId) -> Option<&mut Box<dyn RenderObject>> {
         self.render_objects.as_mut().and_then(|registry| registry.get_mut(id))
+    }
+
+    /// Mark an element as needing rebuild.
+    pub fn mark_needs_build(&mut self, element_id: ElementId) {
+        if let Some(build_owner) = &mut self.build_owner {
+            build_owner.mark_needs_build(element_id);
+        }
     }
 }

@@ -67,6 +67,32 @@ pub trait Element {
     fn add_child(&mut self, _child_id: ElementId) {
         // Default: no-op for leaf elements
     }
+
+    /// Rebuild this element with a new widget.
+    ///
+    /// Called by BuildOwner during perform_rebuilds(). The element should:
+    /// 1. Update its widget configuration
+    /// 2. Reconcile its children (if any)
+    /// 3. Mark render objects dirty
+    ///
+    /// This is the per-element equivalent of the pipeline's reconcile.
+    /// Container and modifier elements override this to reconcile children.
+    /// Leaf elements use the default (no children to reconcile).
+    fn rebuild(
+        &mut self,
+        new_widget: Box<dyn Any>,
+        context: &mut ElementContext,
+    ) {
+        // Default: just update, no children to reconcile
+        self.update(new_widget, context);
+    }
+
+    /// Check if this element has children that need reconciliation.
+    ///
+    /// Returns true for containers and modifiers, false for leaves.
+    fn has_children(&self) -> bool {
+        false
+    }
 }
 
 /// Central registry for all live elements.
