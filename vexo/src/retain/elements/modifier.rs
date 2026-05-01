@@ -162,6 +162,50 @@ impl<M: Clone + Send + 'static> Element for ModifierElement<M> {
     fn add_child(&mut self, child_id: ElementId) {
         self.child_element = Some(child_id);
     }
+
+    fn rebuild(
+        &mut self,
+        new_widget: Box<dyn Any>,
+        context: &mut ElementContext,
+    ) {
+        // Downcast and store the new widget
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+
+            // Update the render object with new properties
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
+
+            // Reconcile single child if present
+            if let Some(child_widget) = self.get_child_widget() {
+                if let Some(child_id) = self.child_element {
+                    // Take the element_registry to avoid double borrow
+                    let element_registry = context.element_registry.take();
+                    if let Some(registry) = element_registry {
+                        if let Some(child_element) = registry.get_mut(child_id) {
+                            let widget_any = Box::new(child_widget.clone_box());
+                            child_element.rebuild(widget_any, context);
+                        }
+                        // Restore the registry
+                        context.element_registry = Some(registry);
+                    }
+                }
+            }
+        }
+
+        // Mark render objects dirty
+        if let Some(ro) = self.render_object {
+            context.mark_needs_layout(ro);
+            context.mark_needs_paint(ro);
+        }
+    }
+
+    fn has_children(&self) -> bool {
+        self.child_element.is_some()
+    }
 }
 
 #[cfg(test)]
