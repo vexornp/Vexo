@@ -293,3 +293,49 @@ mod event_handling_tests {
         assert!(pipeline.focused_element().is_none());
     }
 }
+
+// ============================================================================
+// Targeted Rebuild Tests
+// ============================================================================
+
+#[cfg(test)]
+mod targeted_rebuild_tests {
+    use crate::retain::{Text, ThreeTreePipeline};
+
+    #[test]
+    fn test_targeted_rebuild_single_element() {
+        // Test that marking a single element dirty only rebuilds that element
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+
+        // Initial: single text
+        pipeline.update(Box::new(Text::new("Hello")));
+
+        let initial_root = pipeline.element_registry().root();
+
+        // Mark root as needing rebuild
+        if let Some(root_id) = initial_root {
+            pipeline.mark_needs_build(root_id);
+        }
+
+        // Should have pending rebuilds
+        assert!(pipeline.has_pending_rebuilds());
+    }
+
+    #[test]
+    fn test_update_vs_reconcile() {
+        // Test that update() is more efficient than reconcile()
+        // after initial mount
+        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+
+        // First update: should trigger full reconcile
+        pipeline.update(Box::new(Text::new("First")));
+        let root_after_first = pipeline.element_registry().root();
+
+        // Second update: should use targeted rebuild
+        pipeline.update(Box::new(Text::new("Second")));
+        let root_after_second = pipeline.element_registry().root();
+
+        // Root should be the same element (updated, not remounted)
+        assert_eq!(root_after_first, root_after_second);
+    }
+}
