@@ -4,6 +4,7 @@
 //! Used by container widgets like Column, Row, etc.
 
 use std::any::Any;
+use std::collections::{HashMap, HashSet};
 
 use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
 
@@ -58,6 +59,80 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
     /// Get the children.
     pub fn children(&self) -> &[ElementId] {
         &self.children
+    }
+
+    /// Reconcile children with new widgets.
+    ///
+    /// This is the Flutter-style per-element reconciliation.
+    fn reconcile_children_internal(
+        &mut self,
+        registry: &mut ElementRegistry,
+        context: &mut ElementContext,
+        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+    ) {
+        let existing_children = self.children.clone();
+        let mut new_children = Vec::new();
+        let mut matched = HashSet::new();
+
+        // Build key map for existing children
+        let key_map: HashMap<Key, ElementId> = existing_children
+            .iter()
+            .filter_map(|&id| {
+                registry.get(id)
+                    .and_then(|el| el.widget_key().map(|k| (k, id)))
+            })
+            .collect();
+
+        // Match new widgets to existing elements
+        for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
+            let element_id = if let Some(key) = child_widget.key() {
+                // Keyed: look up in map
+                if let Some(&id) = key_map.get(&key) {
+                    if !matched.contains(&id) {
+                        matched.insert(id);
+                        Some(id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                // Non-keyed: match by position
+                if let Some(&id) = existing_children.get(index) {
+                    if !matched.contains(&id) {
+                        matched.insert(id);
+                        Some(id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            if let Some(child_id) = element_id {
+                // Update existing child
+                let widget_any = Box::new(child_widget.clone_box());
+                if let Some(child_element) = registry.get_mut(child_id) {
+                    child_element.rebuild(widget_any, context);
+                }
+                new_children.push(child_id);
+            } else {
+                // Mount new child - need to use the pipeline's mount logic
+                // For now, we'll skip this and let the full reconcile handle it
+                // This is a limitation that will be addressed in Task 5
+            }
+        }
+
+        // Unmount unmatched children
+        for child_id in existing_children {
+            if !matched.contains(&child_id) {
+                registry.unmount(child_id);
+            }
+        }
+
+        self.children = new_children;
     }
 }
 
@@ -150,6 +225,52 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
 
     fn add_child(&mut self, child_id: ElementId) {
         self.children.push(child_id);
+    }
+
+    fn rebuild(
+        &mut self,
+        new_widget: Box<dyn Any>,
+        context: &mut ElementContext,
+    ) {
+        // Downcast and store the new widget
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+
+            // Update the render object with new properties
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
+
+            // Get new child widgets
+            let new_child_widgets: Vec<Box<dyn Widget<M>>> = self.widget.as_ref()
+                .map(|w| w.children().iter().map(|c| c.clone_box()).collect())
+                .unwrap_or_default();
+
+            // Reconcile children - extract the registry to avoid double borrow
+            // We need to temporarily take the element_registry to avoid borrowing conflicts
+            let element_registry = context.element_registry.take();
+            if let Some(mut registry) = element_registry {
+                self.reconcile_children_internal(
+                    &mut registry,
+                    context,
+                    new_child_widgets,
+                );
+                // Restore the registry
+                context.element_registry = Some(registry);
+            }
+        }
+
+        // Mark render objects dirty
+        if let Some(ro) = self.render_object {
+            context.mark_needs_layout(ro);
+            context.mark_needs_paint(ro);
+        }
+    }
+
+    fn has_children(&self) -> bool {
+        true
     }
 }
 
