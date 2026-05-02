@@ -502,23 +502,6 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         self.element_registry.set_children(parent_id, new_children);
     }
 
-    /// Mark a render object and all its descendants as dirty.
-    fn mark_subtree_dirty(&mut self, root_id: RenderObjectId) {
-        // Mark the root
-        self.dirty.mark_needs_layout(root_id);
-        self.dirty.mark_needs_paint(root_id);
-
-        // Get children to mark (clone to avoid borrow issues)
-        let children: Vec<_> = self.render_objects.get(root_id)
-            .map(|obj| obj.children().to_vec())
-            .unwrap_or_default();
-
-        // Recursively mark children
-        for child_id in children {
-            self.mark_subtree_dirty(child_id);
-        }
-    }
-
     /// Mount an element tree from a widget.
     ///
     /// This method creates an element and calls its mount() lifecycle.
