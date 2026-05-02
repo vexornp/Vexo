@@ -6,7 +6,8 @@
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::key::{Key, WidgetKey};
 
 /// Element for container widgets (multiple children).
 ///
@@ -14,7 +15,7 @@ use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, Re
 /// For non-interactive widgets, `M = ()`.
 pub struct ContainerElement<M: Clone + Send + 'static = ()> {
     id: Option<ElementId>,
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     children: Vec<ElementId>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget<M>>>,
@@ -33,7 +34,7 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
     }
 
     /// Create with a key.
-    pub fn with_key(key: Option<Key>) -> Self {
+    pub fn with_key(key: Option<WidgetKey>) -> Self {
         Self {
             id: None,
             key,
@@ -74,40 +75,60 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
         let mut new_children = Vec::new();
         let mut matched = HashSet::new();
 
-        // Build key map for existing children
+        // Build key map for existing children (local keys only)
         let key_map: HashMap<Key, ElementId> = existing_children
             .iter()
             .filter_map(|&id| {
                 registry.get(id)
-                    .and_then(|el| el.widget_key().map(|k| (k, id)))
+                    .and_then(|el| match el.widget_key() {
+                        Some(WidgetKey::Local(k)) => Some((k, id)),
+                        _ => None,
+                    })
             })
             .collect();
 
         // Match new widgets to existing elements
         for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
-            let element_id = if let Some(key) = child_widget.key() {
-                // Keyed: look up in map
-                if let Some(&id) = key_map.get(&key) {
-                    if !matched.contains(&id) {
-                        matched.insert(id);
-                        Some(id)
+            let element_id = match child_widget.key() {
+                Some(WidgetKey::Local(key)) => {
+                    // Local key: look up in map
+                    if let Some(&id) = key_map.get(&key) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
                 }
-            } else {
-                // Non-keyed: match by position
-                if let Some(&id) = existing_children.get(index) {
-                    if !matched.contains(&id) {
-                        matched.insert(id);
-                        Some(id)
+                Some(WidgetKey::Global(_)) => {
+                    // Global keys are handled by the pipeline's global registry
+                    // For now, fall back to position-based matching
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
+                }
+                None => {
+                    // Non-keyed: match by position
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
             };
 
@@ -147,6 +168,11 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
 
+        // Register global key if present
+        if let Some(WidgetKey::Global(key)) = &self.key {
+            let _ = context.register_global_key(key.clone(), context.element_id);
+        }
+
         // Create render object if widget is set
         if let Some(widget) = &self.widget {
             let render_obj = widget.create_render_object();
@@ -182,6 +208,13 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Unregister global key if present
+        if let Some(WidgetKey::Global(_)) = &self.key {
+            if let Some(id) = self.id {
+                context.unregister_global_key(id);
+            }
+        }
+
         // Remove render object from registry
         if let Some(ro) = self.render_object {
             context.remove_render_object(ro);
@@ -205,7 +238,7 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
         self.render_object
     }
 
-    fn widget_key(&self) -> Option<Key> {
+    fn widget_key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 

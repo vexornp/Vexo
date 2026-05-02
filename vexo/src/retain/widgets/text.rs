@@ -2,7 +2,8 @@
 
 use std::marker::PhantomData;
 
-use super::{Element, Key, Widget};
+use super::{Element, Widget};
+use super::super::key::{GlobalKey, Key, WidgetKey};
 use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
 
@@ -11,7 +12,7 @@ use super::super::render_objects::TextRenderObject;
 /// Generic over the message type `M` to fit into widget trees with typed messages.
 /// For non-interactive usage, `M = ()` (the default).
 pub struct Text<M: Clone + Send + 'static = ()> {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     content: String,
     _marker: PhantomData<M>,
 }
@@ -27,7 +28,9 @@ impl<M: Clone + Send + 'static> Text<M> {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -49,7 +52,7 @@ impl<M: Clone + Send + 'static> Clone for Text<M> {
 }
 
 impl<M: Clone + Send + 'static> Widget<M> for Text<M> {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -92,7 +95,14 @@ mod tests {
     #[test]
     fn test_text_widget_with_key() {
         let widget: Text<()> = Text::new("Hello").with_key("greeting");
-        assert_eq!(widget.key(), Some(Key::new("greeting")));
+        assert_eq!(widget.key(), Some(WidgetKey::Local(Key::new("greeting"))));
+    }
+
+    #[test]
+    fn test_text_widget_with_global_key() {
+        let global_key = GlobalKey::new();
+        let widget: Text<()> = Text::new("Hello").with_key(global_key.clone());
+        assert_eq!(widget.key(), Some(WidgetKey::Global(global_key)));
     }
 
     #[test]

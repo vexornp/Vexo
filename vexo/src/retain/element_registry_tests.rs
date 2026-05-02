@@ -11,7 +11,7 @@ impl Element for MockElement {
     fn unmount(&mut self, _context: &mut ElementContext) {}
     fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
     fn render_object(&self) -> Option<RenderObjectId> { None }
-    fn widget_key(&self) -> Option<Key> { None }
+    fn widget_key(&self) -> Option<WidgetKey> { None }
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
 }
 

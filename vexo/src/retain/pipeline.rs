@@ -236,6 +236,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
                 &mut self.dirty,
                 &mut self.render_objects,
             );
+            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
             element.update(widget_as_any, &mut ctx);
         }
@@ -268,8 +269,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
 
-        // Build key map for existing children
-        let key_map: std::collections::HashMap<super::key::Key, ElementId> = existing_children
+        // Build key map for existing children (local keys only)
+        let key_map: std::collections::HashMap<super::key::WidgetKey, ElementId> = existing_children
             .iter()
             .filter_map(|&id| {
                 self.element_registry.get(id)
@@ -279,29 +280,46 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Match new widgets to existing elements
         for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
-            let element_id = if let Some(key) = child_widget.key() {
-                // Keyed: look up in map
-                if let Some(&id) = key_map.get(&key) {
-                    if !matched.contains(&id) {
-                        matched.insert(id);
-                        Some(id)
+            let element_id = match child_widget.key() {
+                Some(super::key::WidgetKey::Local(key)) => {
+                    // Local key: look up in map
+                    if let Some(&id) = key_map.get(&super::key::WidgetKey::Local(key)) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
                 }
-            } else {
-                // Non-keyed: match by position
-                if let Some(&id) = existing_children.get(index) {
-                    if !matched.contains(&id) {
-                        matched.insert(id);
-                        Some(id)
+                Some(super::key::WidgetKey::Global(_)) => {
+                    // Global keys are handled by the pipeline's global registry
+                    // For now, fall back to position-based matching
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
+                }
+                None => {
+                    // Non-keyed: match by position
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
             };
 
@@ -412,6 +430,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
                 &mut self.dirty,
                 &mut self.render_objects,
             );
+            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
             existing_element.update(widget_as_any, &mut ctx);
         }
@@ -508,14 +527,18 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         // Create element from widget
         let element = widget.create_element();
 
-        // Mount the element using the registry
-        let element_id = self.element_registry.mount_element(
-            element,
-            parent,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.render_objects,
-        );
+        // Mount the element using the registry with global key support
+        let element_id = {
+            let global_keys = self.build_owner.global_keys_mut();
+            self.element_registry.mount_element_with_global_keys(
+                element,
+                parent,
+                &mut self.state,
+                &mut self.dirty,
+                &mut self.render_objects,
+                Some(global_keys),
+            )
+        };
 
         // Get the render object from the element after it's in the registry
         let render_object_id = self.element_registry.get(element_id)
@@ -608,6 +631,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
                 &mut self.dirty,
                 &mut self.render_objects,
             );
+            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
             // Remove render object
             if let Some(render_id) = render_object_id {
@@ -965,6 +989,11 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// Get the render object registry.
     pub fn render_objects(&self) -> &RenderObjectRegistry {
         &self.render_objects
+    }
+
+    /// Get the build owner.
+    pub fn build_owner(&self) -> &BuildOwner {
+        &self.build_owner
     }
 
     /// Check if any render objects need layout.

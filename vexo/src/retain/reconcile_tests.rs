@@ -1,19 +1,19 @@
 //! Tests for reconciliation algorithm.
 
 use super::*;
-use super::key::Key;
+use super::key::{Key, WidgetKey};
 use super::id::ElementId;
 use super::reconcile::Reconcilable;
 use std::cell::Cell;
 
 /// Mock widget for testing reconciliation
 struct MockWidget {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     id: Cell<usize>,
 }
 
 impl MockWidget {
-    fn new(key: Option<Key>) -> Self {
+    fn new(key: Option<WidgetKey>) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
         Self {
             key,
@@ -23,7 +23,7 @@ impl MockWidget {
 }
 
 impl Reconcilable for MockWidget {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -41,7 +41,7 @@ impl Reconcilable for MockWidget {
 
 /// Mock element for testing reconciliation
 struct MockElement {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
 }
 
@@ -51,7 +51,7 @@ impl Element for MockElement {
     fn unmount(&mut self, _context: &mut ElementContext) {}
     fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
     fn render_object(&self) -> Option<RenderObjectId> { self.render_object }
-    fn widget_key(&self) -> Option<Key> { self.key.clone() }
+    fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
 }
 
@@ -90,7 +90,7 @@ fn test_reconcile_updates_matching_key() {
 
     // Initial widget with key
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -98,7 +98,7 @@ fn test_reconcile_updates_matching_key() {
 
     // Update with same key
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -118,8 +118,8 @@ fn test_reconcile_removes_unmatched() {
 
     // Initial: two widgets
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
-        Box::new(MockWidget::new(Some(Key::new("key2")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -127,7 +127,7 @@ fn test_reconcile_removes_unmatched() {
 
     // Update: only one widget
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -146,8 +146,8 @@ fn test_reconcile_reorders_with_keys() {
 
     // Initial: key1, key2
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
-        Box::new(MockWidget::new(Some(Key::new("key2")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -156,8 +156,8 @@ fn test_reconcile_reorders_with_keys() {
 
     // Reorder: key2, key1
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key2")))),
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -178,7 +178,7 @@ fn test_reconcile_preserves_state_on_update() {
 
     // Initial widget with key
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -186,7 +186,7 @@ fn test_reconcile_preserves_state_on_update() {
 
     // Update with same key - should reuse element
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -206,8 +206,8 @@ fn test_reconcile_handles_insertion_in_middle() {
 
     // Initial: key1, key3
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
-        Box::new(MockWidget::new(Some(Key::new("key3")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key3"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -216,9 +216,9 @@ fn test_reconcile_handles_insertion_in_middle() {
 
     // Insert key2 in the middle: key1, key2, key3
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
-        Box::new(MockWidget::new(Some(Key::new("key2")))),
-        Box::new(MockWidget::new(Some(Key::new("key3")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key3"))))),
     ];
     registry.reconcile_children(parent, widgets);
 
@@ -274,8 +274,8 @@ fn test_reconcile_clears_all_children() {
 
     // Initial: two widgets
     let widgets: Vec<Box<dyn Reconcilable>> = vec![
-        Box::new(MockWidget::new(Some(Key::new("key1")))),
-        Box::new(MockWidget::new(Some(Key::new("key2")))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+        Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
     ];
     registry.reconcile_children(parent, widgets);
 

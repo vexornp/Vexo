@@ -9,9 +9,10 @@ use crate::core::{Bounds, Logical, Point};
 use crate::input::{ButtonState, InputEvent};
 use crate::retain::{
     Element, ElementContext, ElementId, ElementRegistry, EventContext,
-    HitTestContext, Key, LayoutContext, LayoutResult, PaintContext,
+    HitTestContext, LayoutContext, LayoutResult, PaintContext,
     RenderObject, RenderObjectId, Widget,
 };
+use crate::retain::key::{GlobalKey, Key, WidgetKey};
 use crate::layout::LayoutNodeId;
 
 /// Gesture detector - emits messages on pointer press/release.
@@ -19,7 +20,7 @@ use crate::layout::LayoutNodeId;
 /// A modifier widget that wraps a child and detects pointer events.
 /// Invisible (no visual rendering).
 pub struct GestureDetector<M: Clone + Send + 'static> {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     child: Box<dyn Widget<M>>,
     on_press: Option<M>,
     on_release: Option<M>,
@@ -37,7 +38,9 @@ impl<M: Clone + Send + 'static> GestureDetector<M> {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -72,7 +75,7 @@ impl<M: Clone + Send + 'static> Clone for GestureDetector<M> {
 }
 
 impl<M: Clone + Send + 'static> Widget<M> for GestureDetector<M> {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -102,7 +105,7 @@ impl<M: Clone + Send + 'static> Widget<M> for GestureDetector<M> {
 /// Element for GestureDetector - handles press/release events.
 pub struct GestureDetectorElement<M: Clone + Send + 'static> {
     id: Option<ElementId>,
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget<M>>>,
     on_press: Option<M>,
@@ -182,7 +185,7 @@ impl<M: Clone + Send + 'static> Element for GestureDetectorElement<M> {
         self.render_object
     }
 
-    fn widget_key(&self) -> Option<Key> {
+    fn widget_key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -333,7 +336,7 @@ mod tests {
         let child = Box::new(Text::new("Hello"));
         let detector: GestureDetector<()> = GestureDetector::new(child)
             .with_key("my-detector");
-        assert_eq!(detector.key(), Some(Key::new("my-detector")));
+        assert_eq!(detector.key(), Some(WidgetKey::Local(Key::new("my-detector"))));
     }
 
     #[test]

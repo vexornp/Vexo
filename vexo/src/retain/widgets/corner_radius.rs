@@ -6,13 +6,14 @@ use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, HitTestContext, Key, LayoutContext, LayoutResult,
+    Element, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectId, Widget,
 };
+use crate::retain::key::{Key, WidgetKey};
 
 /// CornerRadius modifier - applies rounded corners to a child widget.
 pub struct CornerRadius {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     child: Box<dyn Widget<()>>,
     radius: f32,
 }
@@ -28,7 +29,9 @@ impl CornerRadius {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -45,7 +48,7 @@ impl CornerRadius {
 }
 
 impl Widget<()> for CornerRadius {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -212,7 +215,7 @@ mod tests {
         let cr = CornerRadius::new(child, 10.0)
             .with_key("my-corners");
 
-        assert_eq!(cr.key(), Some(Key::new("my-corners")));
+        assert_eq!(cr.key(), Some(WidgetKey::Local(Key::new("my-corners"))));
     }
 
     #[test]

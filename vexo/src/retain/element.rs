@@ -7,7 +7,7 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::id::{ElementId, RenderObjectId};
-use super::key::Key;
+use super::key::WidgetKey;
 use super::element_context::ElementContext;
 
 /// Persistent element with state and lifecycle.
@@ -39,8 +39,8 @@ pub trait Element {
     /// Get associated render object (if any).
     fn render_object(&self) -> Option<RenderObjectId>;
 
-    /// Get the widget key.
-    fn widget_key(&self) -> Option<Key>;
+    /// Get the widget key (local or global).
+    fn widget_key(&self) -> Option<WidgetKey>;
 
     /// Check if this element can be updated with the given widget.
     fn can_update(&self, widget: &dyn Any) -> bool;
@@ -256,11 +256,53 @@ impl ElementRegistry {
     /// The ID of the newly mounted element.
     pub fn mount_element(
         &mut self,
+        element: Box<dyn Element>,
+        parent: Option<ElementId>,
+        state: &mut super::state::StateStorage,
+        dirty: &mut super::dirty::DirtyTracking,
+        render_objects: &mut super::render_object::RenderObjectRegistry,
+    ) -> ElementId {
+        self.mount_element_with_global_keys(
+            element,
+            parent,
+            state,
+            dirty,
+            render_objects,
+            None,
+        )
+    }
+
+    /// Mount a new element from an element box with full lifecycle and global keys.
+    ///
+    /// This is the canonical way to mount an element. It encapsulates the entire
+    /// mount pattern:
+    /// 1. Generate a new ElementId (single source of truth)
+    /// 2. Create the ElementContext with the generated ID
+    /// 3. Call mount() on the element
+    /// 4. Register the element in the registry
+    ///
+    /// This ensures the mount pattern is always followed correctly.
+    ///
+    /// # Arguments
+    ///
+    /// * `element` - The element to mount (already created from a widget)
+    /// * `parent` - The parent element ID (None for root)
+    /// * `state` - State storage for elements
+    /// * `dirty` - Dirty tracking for layout/paint
+    /// * `render_objects` - Render object registry
+    /// * `global_keys` - Optional global key registry for GlobalKey registration
+    ///
+    /// # Returns
+    ///
+    /// The ID of the newly mounted element.
+    pub fn mount_element_with_global_keys(
+        &mut self,
         mut element: Box<dyn Element>,
         parent: Option<ElementId>,
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
+        global_keys: Option<&mut super::global_key_registry::GlobalKeyRegistry>,
     ) -> ElementId {
         // 1. Generate element ID - single source of truth
         let element_id = ElementId::new();
@@ -274,6 +316,7 @@ impl ElementRegistry {
             render_objects,
             self,
         );
+        ctx.global_key_registry = global_keys;
 
         // 3. Call mount lifecycle
         element.mount(&mut ctx);

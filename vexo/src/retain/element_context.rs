@@ -5,6 +5,7 @@ use super::state::StateStorage;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObjectRegistry, RenderObject};
 use super::element::ElementRegistry;
+use super::global_key_registry::GlobalKeyRegistry;
 
 /// Context provided to element lifecycle methods.
 pub struct ElementContext<'a> {
@@ -32,6 +33,9 @@ pub struct ElementContext<'a> {
 
     /// Build owner for marking elements dirty.
     pub build_owner: Option<&'a mut super::build_owner::BuildOwner>,
+
+    /// Global key registry for cross-parent element identity.
+    pub global_key_registry: Option<&'a mut GlobalKeyRegistry>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -54,6 +58,7 @@ impl<'a> ElementContext<'a> {
             render_objects: None,
             element_registry: None,
             build_owner: None,
+            global_key_registry: None,
         }
     }
 
@@ -74,6 +79,7 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: None,
             build_owner: None,
+            global_key_registry: None,
         }
     }
 
@@ -95,6 +101,7 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
             build_owner: None,
+            global_key_registry: None,
         }
     }
 
@@ -183,6 +190,27 @@ impl<'a> ElementContext<'a> {
     pub fn mark_needs_build(&mut self, element_id: ElementId) {
         if let Some(build_owner) = &mut self.build_owner {
             build_owner.mark_needs_build(element_id);
+        }
+    }
+
+    /// Register a global key for this element.
+    ///
+    /// Called during mount() for elements with GlobalKey.
+    /// Returns an error if the key is already registered to another element.
+    pub fn register_global_key(&mut self, key: super::key::GlobalKey, element_id: ElementId) -> Result<(), super::global_key_registry::GlobalKeyError> {
+        if let Some(registry) = &mut self.global_key_registry {
+            registry.register(key, element_id)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Unregister a global key for this element.
+    ///
+    /// Called during unmount() for elements with GlobalKey.
+    pub fn unregister_global_key(&mut self, element_id: ElementId) {
+        if let Some(registry) = &mut self.global_key_registry {
+            registry.unregister_element(element_id);
         }
     }
 }

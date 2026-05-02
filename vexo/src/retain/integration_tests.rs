@@ -339,3 +339,64 @@ mod targeted_rebuild_tests {
         assert_eq!(root_after_first, root_after_second);
     }
 }
+
+// ============================================================================
+// GlobalKey Tests
+// ============================================================================
+
+#[cfg(test)]
+mod global_key_tests {
+    use crate::retain::{Text, Widget};
+    use crate::retain::key::{GlobalKey, WidgetKey};
+
+    #[test]
+    fn test_global_key_widget_creation() {
+        // Test that widgets can be created with GlobalKey
+        let global_key = GlobalKey::new();
+        let widget: Text<()> = Text::new("Hello").with_key(global_key.clone());
+
+        // The widget should have a Global WidgetKey
+        match widget.key() {
+            Some(WidgetKey::Global(key)) => assert_eq!(key, global_key),
+            _ => panic!("Expected GlobalKey"),
+        }
+    }
+
+    #[test]
+    fn test_global_key_registry_in_build_owner() {
+        // Test that BuildOwner has GlobalKeyRegistry
+        use crate::retain::build_owner::BuildOwner;
+        use crate::retain::ElementId;
+
+        let mut build_owner = BuildOwner::new();
+        let key = GlobalKey::new();
+        let element_id = ElementId::new();
+
+        // Register a key
+        build_owner.global_keys_mut().register(key.clone(), element_id).unwrap();
+
+        // Look it up
+        assert_eq!(build_owner.global_keys().get_element(&key), Some(element_id));
+    }
+
+    #[test]
+    fn test_global_key_vs_local_key() {
+        // Test that GlobalKey and LocalKey are distinct
+        let global_key = GlobalKey::new();
+        let local_key = super::Key::new("local");
+
+        let widget_global: Text<()> = Text::new("Global").with_key(global_key.clone());
+        let widget_local: Text<()> = Text::new("Local").with_key(local_key.clone());
+
+        // Verify key types
+        match widget_global.key() {
+            Some(WidgetKey::Global(_)) => {}
+            _ => panic!("Expected GlobalKey"),
+        }
+
+        match widget_local.key() {
+            Some(WidgetKey::Local(_)) => {}
+            _ => panic!("Expected LocalKey"),
+        }
+    }
+}

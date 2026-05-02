@@ -8,7 +8,8 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position};
 use crate::input::{ButtonState, InputEvent};
 use crate::render::RenderCommand;
 
-use super::{Element, Key, Widget};
+use super::{Element, Widget};
+use super::super::key::{GlobalKey, Key, WidgetKey};
 use super::super::{EventContext, RenderObject, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 use crate::layout::{Layout, LayoutNodeId};
 
@@ -38,7 +39,7 @@ use crate::layout::{Layout, LayoutNodeId};
 /// let button = Button::new("Click Me").with_message(Message::Increment);
 /// ```
 pub struct Button<M: Clone + Send + 'static> {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     label: String,
     /// The typed message to emit when clicked.
     message: Option<M>,
@@ -55,7 +56,9 @@ impl<M: Clone + Send + 'static> Button<M> {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -83,7 +86,7 @@ impl<M: Clone + Send + 'static> Clone for Button<M> {
 }
 
 impl<M: Clone + Send + 'static> Widget<M> for Button<M> {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -124,7 +127,7 @@ use crate::retain::{ElementContext, ElementId, ElementRegistry, RenderObjectId};
 /// Generic over the message type `M` to emit typed messages on click.
 pub struct ButtonElement<M: Clone + Send + 'static> {
     id: Option<ElementId>,
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget<M>>>,
     label: String,
@@ -216,7 +219,7 @@ impl<M: Clone + Send + 'static> Element for ButtonElement<M> {
         self.render_object
     }
 
-    fn widget_key(&self) -> Option<Key> {
+    fn widget_key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -409,7 +412,14 @@ mod tests {
     #[test]
     fn test_button_widget_with_key() {
         let widget: Button<TestMessage> = Button::new("Click Me").with_key("my-button");
-        assert_eq!(widget.key(), Some(Key::new("my-button")));
+        assert_eq!(widget.key(), Some(WidgetKey::Local(Key::new("my-button"))));
+    }
+
+    #[test]
+    fn test_button_widget_with_global_key() {
+        let global_key = GlobalKey::new();
+        let widget: Button<TestMessage> = Button::new("Click Me").with_key(global_key.clone());
+        assert_eq!(widget.key(), Some(WidgetKey::Global(global_key)));
     }
 
     #[test]

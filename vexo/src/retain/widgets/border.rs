@@ -6,13 +6,14 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, HitTestContext, Key, LayoutContext, LayoutResult,
+    Element, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectId, Widget,
 };
+use crate::retain::key::{Key, WidgetKey};
 
 /// Border modifier - draws a colored border around a child widget.
 pub struct Border {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     child: Box<dyn Widget<()>>,
     color: Color,
     width: f32,
@@ -30,7 +31,9 @@ impl Border {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -52,7 +55,7 @@ impl Border {
 }
 
 impl Widget<()> for Border {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -252,7 +255,7 @@ mod tests {
         let border = Border::new(child, Color::BLACK, 2.0)
             .with_key("my-border");
 
-        assert_eq!(border.key(), Some(Key::new("my-border")));
+        assert_eq!(border.key(), Some(WidgetKey::Local(Key::new("my-border"))));
     }
 
     #[test]

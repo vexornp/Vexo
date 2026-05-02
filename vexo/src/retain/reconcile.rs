@@ -4,13 +4,13 @@ use std::collections::{HashMap, HashSet};
 
 use super::element::ElementRegistry;
 use super::id::ElementId;
-use super::key::Key;
+use super::key::{Key, WidgetKey};
 
 /// Trait for widgets that can be reconciled.
 /// This is a minimal trait for the reconciliation algorithm.
 pub trait Reconcilable {
     /// Get the key for this widget
-    fn key(&self) -> Option<Key>;
+    fn key(&self) -> Option<WidgetKey>;
 
     /// Check if this widget can update an existing element
     fn can_update(&self, other: &dyn Reconcilable) -> bool;
@@ -29,9 +29,9 @@ impl ElementRegistry {
     /// 4. Unmount unmatched elements
     /// 5. Mount new widgets
     pub fn reconcile_children(&mut self, parent: ElementId, new_widgets: Vec<Box<dyn Reconcilable>>) {
-        // 1. Build key map for existing children
+        // 1. Build key map for existing children (local keys only)
         let existing_children = self.children(parent).to_vec();
-        let key_map: HashMap<Key, ElementId> = existing_children
+        let key_map: HashMap<WidgetKey, ElementId> = existing_children
             .iter()
             .filter_map(|&id| {
                 self.get(id)
@@ -44,25 +44,42 @@ impl ElementRegistry {
         let mut matched = HashSet::new();
 
         for (index, widget) in new_widgets.iter().enumerate() {
-            let element_id = if let Some(key) = widget.key() {
-                // Keyed: look up in map
-                if let Some(&id) = key_map.get(&key) {
-                    matched.insert(id);
-                    Some(id)
-                } else {
-                    None
-                }
-            } else {
-                // Non-keyed: match by position
-                if let Some(&id) = existing_children.get(index) {
-                    if !matched.contains(&id) {
+            let element_id = match widget.key() {
+                Some(WidgetKey::Local(key)) => {
+                    // Local key: look up in map
+                    if let Some(&id) = key_map.get(&WidgetKey::Local(key)) {
                         matched.insert(id);
                         Some(id)
                     } else {
                         None
                     }
-                } else {
-                    None
+                }
+                Some(WidgetKey::Global(_)) => {
+                    // Global keys are handled by the pipeline's global registry
+                    // For now, fall back to position-based matching
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                None => {
+                    // Non-keyed: match by position
+                    if let Some(&id) = existing_children.get(index) {
+                        if !matched.contains(&id) {
+                            matched.insert(id);
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
             };
 
@@ -92,16 +109,16 @@ impl ElementRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{Element, ElementContext, RenderObjectId, Widget};
+    use super::super::{Element, ElementContext, RenderObjectId};
     use std::cell::Cell;
 
     struct MockWidget {
-        key: Option<Key>,
+        key: Option<WidgetKey>,
         id: Cell<usize>,
     }
 
     impl MockWidget {
-        fn new(key: Option<Key>) -> Self {
+        fn new(key: Option<WidgetKey>) -> Self {
             static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
             Self {
                 key,
@@ -111,7 +128,7 @@ mod tests {
     }
 
     impl Reconcilable for MockWidget {
-        fn key(&self) -> Option<Key> {
+        fn key(&self) -> Option<WidgetKey> {
             self.key.clone()
         }
 
@@ -128,7 +145,7 @@ mod tests {
     }
 
     struct MockElement {
-        key: Option<Key>,
+        key: Option<WidgetKey>,
         render_object: Option<RenderObjectId>,
     }
 
@@ -138,7 +155,7 @@ mod tests {
         fn unmount(&mut self, _context: &mut ElementContext) {}
         fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<RenderObjectId> { self.render_object }
-        fn widget_key(&self) -> Option<Key> { self.key.clone() }
+        fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
     }
 
@@ -173,7 +190,7 @@ mod tests {
 
         // Initial widget with key
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
         ];
         registry.reconcile_children(parent, widgets);
 
@@ -181,7 +198,7 @@ mod tests {
 
         // Update with same key
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
         ];
         registry.reconcile_children(parent, widgets);
 
@@ -201,8 +218,8 @@ mod tests {
 
         // Initial: two widgets
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
-            Box::new(MockWidget::new(Some(Key::new("key2")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
         ];
         registry.reconcile_children(parent, widgets);
 
@@ -210,7 +227,7 @@ mod tests {
 
         // Update: only one widget
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
         ];
         registry.reconcile_children(parent, widgets);
 
@@ -229,8 +246,8 @@ mod tests {
 
         // Initial: key1, key2
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
-            Box::new(MockWidget::new(Some(Key::new("key2")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
         ];
         registry.reconcile_children(parent, widgets);
 
@@ -239,8 +256,8 @@ mod tests {
 
         // Reorder: key2, key1
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
-            Box::new(MockWidget::new(Some(Key::new("key2")))),
-            Box::new(MockWidget::new(Some(Key::new("key1")))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key2"))))),
+            Box::new(MockWidget::new(Some(WidgetKey::Local(Key::new("key1"))))),
         ];
         registry.reconcile_children(parent, widgets);
 

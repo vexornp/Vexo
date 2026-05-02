@@ -6,13 +6,14 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, HitTestContext, Key, LayoutContext, LayoutResult,
+    Element, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectId, Widget,
 };
+use crate::retain::key::{GlobalKey, Key, WidgetKey};
 
 /// Background modifier - draws a colored rectangle behind a child widget.
 pub struct Background {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     child: Box<dyn Widget<()>>,
     color: Color,
 }
@@ -28,7 +29,9 @@ impl Background {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -45,7 +48,7 @@ impl Background {
 }
 
 impl Widget<()> for Background {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -231,7 +234,17 @@ mod tests {
         let bg = Background::new(child, Color::RED)
             .with_key("my-bg");
 
-        assert_eq!(bg.key(), Some(Key::new("my-bg")));
+        assert_eq!(bg.key(), Some(WidgetKey::Local(Key::new("my-bg"))));
+    }
+
+    #[test]
+    fn test_background_widget_with_global_key() {
+        let global_key = GlobalKey::new();
+        let child = Box::new(Text::new("Hello"));
+        let bg = Background::new(child, Color::RED)
+            .with_key(global_key.clone());
+
+        assert_eq!(bg.key(), Some(WidgetKey::Global(global_key)));
     }
 
     #[test]

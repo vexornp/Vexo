@@ -49,6 +49,7 @@ mod reconcile;
 mod render_objects;
 mod hit_test;
 mod pipeline;
+mod global_key_registry;
 
 pub mod widgets;
 pub mod elements;
@@ -68,7 +69,7 @@ mod window_integration_test;
 #[cfg(test)]
 mod build_owner_tests;
 
-pub use key::Key;
+pub use key::{Key, GlobalKey, WidgetKey};
 pub use id::{ElementId, RenderObjectId};
 pub use state::StateStorage;
 pub use element::{Element, ElementRegistry};
@@ -79,6 +80,7 @@ pub use dirty::DirtyTracking;
 pub use build_owner::{BuildOwner, RebuildResult};
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
+pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 
 pub use widgets::{Widget, Text, Button, Column, Row, Background, Border, CornerRadius, GestureDetector};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};

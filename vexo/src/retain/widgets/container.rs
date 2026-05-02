@@ -2,13 +2,14 @@
 //!
 //! Column arranges children vertically, Row arranges them horizontally.
 
-use super::{Element, Key, Widget};
+use super::{Element, Widget};
+use super::super::key::{GlobalKey, Key, WidgetKey};
 use super::super::RenderObject;
 use super::super::render_objects::ContainerRenderObject;
 
 /// Column widget - arranges children vertically.
 pub struct Column<M: Clone + Send + 'static = ()> {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget<M>>>,
 }
 
@@ -22,7 +23,9 @@ impl<M: Clone + Send + 'static> Column<M> {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -55,7 +58,7 @@ impl<M: Clone + Send + 'static> Clone for Column<M> {
 }
 
 impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -84,7 +87,7 @@ impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
 
 /// Row widget - arranges children horizontally.
 pub struct Row<M: Clone + Send + 'static = ()> {
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget<M>>>,
 }
 
@@ -98,7 +101,9 @@ impl<M: Clone + Send + 'static> Row<M> {
     }
 
     /// Set the key for this widget.
-    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -131,7 +136,7 @@ impl<M: Clone + Send + 'static> Clone for Row<M> {
 }
 
 impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
-    fn key(&self) -> Option<Key> {
+    fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -178,7 +183,17 @@ mod tests {
             .with_key("my-column")
             .push(Text::new("Hello"));
 
-        assert_eq!(column.key(), Some(Key::new("my-column")));
+        assert_eq!(column.key(), Some(WidgetKey::Local(Key::new("my-column"))));
+    }
+
+    #[test]
+    fn test_column_with_global_key() {
+        let global_key = GlobalKey::new();
+        let column: Column<()> = Column::new()
+            .with_key(global_key.clone())
+            .push(Text::new("Hello"));
+
+        assert_eq!(column.key(), Some(WidgetKey::Global(global_key)));
     }
 
     #[test]

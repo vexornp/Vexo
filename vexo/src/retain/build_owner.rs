@@ -5,6 +5,7 @@
 
 use std::collections::HashSet;
 
+use super::global_key_registry::GlobalKeyRegistry;
 use super::id::ElementId;
 
 /// Tracks dirty elements and drives targeted rebuilds.
@@ -33,6 +34,9 @@ pub struct BuildOwner {
     /// During a rebuild, we track which elements are being built
     /// to detect cycles.
     building: HashSet<ElementId>,
+
+    /// Global key registry for cross-parent element identity.
+    global_keys: GlobalKeyRegistry,
 }
 
 impl BuildOwner {
@@ -41,6 +45,7 @@ impl BuildOwner {
         Self {
             dirty_elements: HashSet::new(),
             building: HashSet::new(),
+            global_keys: GlobalKeyRegistry::new(),
         }
     }
 
@@ -100,6 +105,16 @@ impl BuildOwner {
     /// Check if currently building an element.
     pub fn is_building(&self, element_id: ElementId) -> bool {
         self.building.contains(&element_id)
+    }
+
+    /// Get a reference to the global key registry.
+    pub fn global_keys(&self) -> &GlobalKeyRegistry {
+        &self.global_keys
+    }
+
+    /// Get a mutable reference to the global key registry.
+    pub fn global_keys_mut(&mut self) -> &mut GlobalKeyRegistry {
+        &mut self.global_keys
     }
 }
 

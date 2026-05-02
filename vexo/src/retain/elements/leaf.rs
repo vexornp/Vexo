@@ -5,7 +5,8 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::key::WidgetKey;
 
 /// Element for leaf widgets (no children).
 ///
@@ -13,7 +14,7 @@ use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, Re
 /// For non-interactive widgets, `M = ()`.
 pub struct LeafElement<M: Clone + Send + 'static = ()> {
     id: Option<ElementId>,
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget<M>>>,
 }
@@ -30,7 +31,7 @@ impl<M: Clone + Send + 'static> LeafElement<M> {
     }
 
     /// Create with a key.
-    pub fn with_key(key: Option<Key>) -> Self {
+    pub fn with_key(key: Option<WidgetKey>) -> Self {
         Self {
             id: None,
             key,
@@ -63,6 +64,11 @@ impl<M: Clone + Send + 'static> Element for LeafElement<M> {
     fn mount(&mut self, context: &mut ElementContext) {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
+
+        // Register global key if present
+        if let Some(WidgetKey::Global(key)) = &self.key {
+            let _ = context.register_global_key(key.clone(), context.element_id);
+        }
 
         // Create render object if widget is set
         if let Some(widget) = &self.widget {
@@ -99,6 +105,13 @@ impl<M: Clone + Send + 'static> Element for LeafElement<M> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Unregister global key if present
+        if let Some(WidgetKey::Global(_)) = &self.key {
+            if let Some(id) = self.id {
+                context.unregister_global_key(id);
+            }
+        }
+
         // Remove render object from registry
         if let Some(ro) = self.render_object {
             context.remove_render_object(ro);
@@ -117,7 +130,7 @@ impl<M: Clone + Send + 'static> Element for LeafElement<M> {
         self.render_object
     }
 
-    fn widget_key(&self) -> Option<Key> {
+    fn widget_key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
@@ -138,7 +151,7 @@ impl<M: Clone + Send + 'static> Element for LeafElement<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text};
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key};
 
     #[test]
     fn test_leaf_element_mount() {
@@ -236,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_with_key() {
-        let key = Key::new("test-key");
+        let key = WidgetKey::Local(Key::new("test-key"));
         let element: LeafElement<()> = LeafElement::with_key(Some(key.clone()));
 
         assert_eq!(element.widget_key(), Some(key));

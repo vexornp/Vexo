@@ -14,7 +14,7 @@ mod text;
 use std::any::Any;
 
 use super::element::Element;
-use super::key::Key;
+use super::key::WidgetKey;
 use super::RenderObject;
 
 pub use background::Background;
@@ -51,7 +51,10 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     ///
     /// Widgets with matching keys and types can update each other in place,
     /// preserving associated element state.
-    fn key(&self) -> Option<Key> {
+    ///
+    /// Returns `WidgetKey::Local(Key)` for local keys (match within parent's children)
+    /// or `WidgetKey::Global(GlobalKey)` for global keys (match anywhere in tree).
+    fn key(&self) -> Option<WidgetKey> {
         None
     }
 
@@ -130,9 +133,9 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
 mod tests {
     use super::*;
     use crate::retain::element::{Element, ElementRegistry};
-    use crate::retain::key::Key;
+    use crate::retain::key::{Key, WidgetKey};
     use crate::retain::{LayoutContext, RenderObject};
-    use crate::layout::{Layout, TaffyLayoutEngine};
+    use crate::layout::TaffyLayoutEngine;
     use crate::core::Logical;
     use std::sync::Arc;
 
@@ -143,13 +146,13 @@ mod tests {
     }
 
     struct TestWidget {
-        key: Option<Key>,
+        key: Option<WidgetKey>,
     }
 
     impl TestWidget {
         fn new(key: Option<&str>) -> Self {
             Self {
-                key: key.map(|s| Key::new(s)),
+                key: key.map(|s| WidgetKey::Local(Key::new(s))),
             }
         }
     }
@@ -163,7 +166,7 @@ mod tests {
     }
 
     impl Widget<()> for TestWidget {
-        fn key(&self) -> Option<Key> {
+        fn key(&self) -> Option<WidgetKey> {
             self.key.clone()
         }
 
@@ -194,7 +197,7 @@ mod tests {
         fn render_object(&self) -> Option<crate::retain::RenderObjectId> {
             None
         }
-        fn widget_key(&self) -> Option<Key> {
+        fn widget_key(&self) -> Option<WidgetKey> {
             None
         }
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool {
@@ -240,7 +243,7 @@ mod tests {
     #[test]
     fn test_widget_key() {
         let widget = TestWidget::new(Some("test"));
-        assert_eq!(widget.key(), Some(Key::new("test")));
+        assert_eq!(widget.key(), Some(WidgetKey::Local(Key::new("test"))));
     }
 
     #[test]

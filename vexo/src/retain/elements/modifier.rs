@@ -5,7 +5,8 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::key::WidgetKey;
 
 /// Element for modifier widgets (wraps single child).
 ///
@@ -13,7 +14,7 @@ use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, Key, Re
 /// For non-interactive widgets, `M = ()`.
 pub struct ModifierElement<M: Clone + Send + 'static = ()> {
     id: Option<ElementId>,
-    key: Option<Key>,
+    key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget<M>>>,
     child_element: Option<ElementId>,
@@ -32,7 +33,7 @@ impl<M: Clone + Send + 'static> ModifierElement<M> {
     }
 
     /// Create with a key.
-    pub fn with_key(key: Option<Key>) -> Self {
+    pub fn with_key(key: Option<WidgetKey>) -> Self {
         Self {
             id: None,
             key,
@@ -80,6 +81,11 @@ impl<M: Clone + Send + 'static> Element for ModifierElement<M> {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
 
+        // Register global key if present
+        if let Some(WidgetKey::Global(key)) = &self.key {
+            let _ = context.register_global_key(key.clone(), context.element_id);
+        }
+
         // Create render object if widget is set
         if let Some(widget) = &self.widget {
             let render_obj = widget.create_render_object();
@@ -119,6 +125,13 @@ impl<M: Clone + Send + 'static> Element for ModifierElement<M> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Unregister global key if present
+        if let Some(WidgetKey::Global(_)) = &self.key {
+            if let Some(id) = self.id {
+                context.unregister_global_key(id);
+            }
+        }
+
         // Remove render object from registry
         if let Some(ro) = self.render_object {
             context.remove_render_object(ro);
@@ -141,7 +154,7 @@ impl<M: Clone + Send + 'static> Element for ModifierElement<M> {
         self.render_object
     }
 
-    fn widget_key(&self) -> Option<Key> {
+    fn widget_key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
