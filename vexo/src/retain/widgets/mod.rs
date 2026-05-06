@@ -23,6 +23,7 @@ pub use border::Border;
 pub use button::Button;
 pub use container::{Column, Row};
 pub use corner_radius::CornerRadius;
+pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
 pub use text::Text;
 
