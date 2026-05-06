@@ -362,3 +362,114 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
         self.child_element.is_some()
     }
 }
+
+// ============================================================================
+// DecoratedContainer Widget
+// ============================================================================
+
+/// A widget that decorates a child with visual styling.
+///
+/// Creates a single element and render object regardless of how many
+/// decorations are applied. This is more efficient than chaining
+/// multiple modifier widgets (Background, Border, CornerRadius).
+///
+/// # Performance
+///
+/// | Approach | Elements | Render Objects |
+/// |----------|----------|----------------|
+/// | Chained modifiers | N | N |
+/// | DecoratedContainer | 1 | 1 |
+///
+/// # Example
+///
+/// ```ignore
+/// DecoratedContainer::new(Text::new("Hello").boxed())
+///     .style(Style::new()
+///         .background(Color::RED)
+///         .border(Color::BLACK, 2.0)
+///         .corner_radius(8.0))
+/// ```
+pub struct DecoratedContainer<M: Clone + Send + 'static = ()> {
+    key: Option<WidgetKey>,
+    child: Box<dyn Widget<M>>,
+    style: Style,
+}
+
+impl<M: Clone + Send + 'static> DecoratedContainer<M> {
+    /// Create a new decorated container with a child.
+    pub fn new(child: Box<dyn Widget<M>>) -> Self {
+        Self {
+            key: None,
+            child,
+            style: Style::default(),
+        }
+    }
+
+    /// Set the style for this container.
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Set the key for this container.
+    ///
+    /// Accepts both local keys (strings) and global keys.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Get the child widget.
+    pub fn child(&self) -> &dyn Widget<M> {
+        self.child.as_ref()
+    }
+
+    /// Get the style.
+    pub fn style_ref(&self) -> &Style {
+        &self.style
+    }
+}
+
+impl<M: Clone + Send + 'static> Clone for DecoratedContainer<M> {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            child: self.child.clone_box(),
+            style: self.style.clone(),
+        }
+    }
+}
+
+impl<M: Clone + Send + 'static> Widget<M> for DecoratedContainer<M> {
+    fn key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn create_element(&self) -> Box<dyn Element> {
+        let mut elem = DecoratedContainerElement::new();
+        elem.set_widget(self);
+        Box::new(elem)
+    }
+
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(DecoratedContainerRenderObject::new(self.style.clone()))
+    }
+
+    fn clone_box(&self) -> Box<dyn Widget<M>> {
+        Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn child(&self) -> Option<&dyn Widget<M>> {
+        Some(self.child.as_ref())
+    }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+        if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<DecoratedContainerRenderObject>() {
+            container_ro.set_style(self.style.clone());
+        }
+    }
+}
