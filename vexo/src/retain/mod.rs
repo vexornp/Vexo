@@ -50,6 +50,7 @@ mod render_objects;
 mod hit_test;
 mod pipeline;
 mod global_key_registry;
+mod style;
 
 pub mod widgets;
 pub mod elements;
@@ -81,6 +82,7 @@ pub use build_owner::{BuildOwner, RebuildResult};
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
+pub use style::Style;
 
 pub use widgets::{Widget, Text, Button, Column, Row, Background, Border, CornerRadius, GestureDetector};
 pub use elements::{LeafElement, ContainerElement, ModifierElement};
