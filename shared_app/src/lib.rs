@@ -227,6 +227,35 @@ impl Application for State {
                                     .with_message(Message::RetainDecrement))
                         )
                 )
+                // DecoratedContainer demo - single element for multiple decorations
+                .push(retain::Text::new("--- DecoratedContainer Demo ---"))
+                .push(
+                    // This creates 1 element + 1 render object instead of 3 + 3
+                    retain::DecoratedContainer::new(
+                        Box::new(retain::Text::new("Styled with DecoratedContainer!"))
+                    )
+                    .style(
+                        retain::Style::new()
+                            .background(vexo::Color::rgb(0.2, 0.6, 0.9))
+                            .border(vexo::Color::rgb(0.1, 0.3, 0.5), 2.0)
+                            .corner_radius(12.0)
+                    )
+                )
+                .push(
+                    // Another example with different styling
+                    retain::DecoratedContainer::new(
+                        Box::new(retain::Column::new()
+                            .push(retain::Text::new("Multi-line"))
+                            .push(retain::Text::new("decorated content"))
+                        )
+                    )
+                    .style(
+                        retain::Style::new()
+                            .background(vexo::Color::rgb(0.95, 0.95, 0.95))
+                            .border(vexo::Color::rgb(0.7, 0.7, 0.7), 1.0)
+                            .corner_radius(6.0)
+                    )
+                )
         ))
     }
 }
