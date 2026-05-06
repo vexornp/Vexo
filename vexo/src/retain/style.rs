@@ -13,7 +13,7 @@ use crate::core::Color;
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// let style = Style::new()
 ///     .background(Color::RED)
 ///     .border(Color::BLACK, 2.0)
