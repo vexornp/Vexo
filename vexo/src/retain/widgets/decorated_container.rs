@@ -263,6 +263,7 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
 
         // Mark render objects dirty
         if let Some(ro) = self.render_object {
+            context.mark_needs_layout(ro);
             context.mark_needs_paint(ro);
         }
     }
