@@ -7,11 +7,13 @@
 use std::any::Any;
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
+use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
+    Element, ElementContext, ElementId, ElementRegistry, EventContext,
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
-    RenderObject, RenderObjectId,
+    RenderObject, RenderObjectId, Widget, WidgetKey,
 };
 use crate::retain::style::Style;
 
@@ -166,5 +168,196 @@ impl RenderObject for DecoratedContainerRenderObject {
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+}
+
+// ============================================================================
+// DecoratedContainerElement
+// ============================================================================
+
+/// Element for DecoratedContainer widget.
+///
+/// Manages a single child element and updates the render object
+/// when style changes.
+pub struct DecoratedContainerElement<M: Clone + Send + 'static = ()> {
+    id: Option<ElementId>,
+    key: Option<WidgetKey>,
+    render_object: Option<RenderObjectId>,
+    widget: Option<Box<dyn Widget<M>>>,
+    child_element: Option<ElementId>,
+}
+
+impl<M: Clone + Send + 'static> DecoratedContainerElement<M> {
+    /// Create a new decorated container element.
+    pub fn new() -> Self {
+        Self {
+            id: None,
+            key: None,
+            render_object: None,
+            widget: None,
+            child_element: None,
+        }
+    }
+
+    /// Set the widget for this element.
+    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
+        self.widget = Some(widget.clone_box());
+        self.key = widget.key();
+    }
+
+    /// Get the element ID.
+    pub fn id(&self) -> Option<ElementId> {
+        self.id
+    }
+
+    /// Get the child element ID.
+    pub fn child_element(&self) -> Option<ElementId> {
+        self.child_element
+    }
+
+    /// Get the child widget from the stored widget.
+    fn get_child_widget(&self) -> Option<&dyn Widget<M>> {
+        self.widget.as_ref()?.child()
+    }
+}
+
+impl<M: Clone + Send + 'static> Default for DecoratedContainerElement<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
+    fn mount(&mut self, context: &mut ElementContext) {
+        self.id = Some(context.element_id);
+
+        // Register global key if present
+        if let Some(WidgetKey::Global(key)) = &self.key {
+            let _ = context.register_global_key(key.clone(), context.element_id);
+        }
+
+        // Create render object if widget is set
+        if let Some(widget) = &self.widget {
+            let render_obj = widget.create_render_object();
+            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
+                self.render_object = Some(ro_id);
+                context.render_object = Some(ro_id);
+
+                context.mark_needs_layout(ro_id);
+                context.mark_needs_paint(ro_id);
+            }
+        }
+    }
+
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+
+            // Update the render object with new properties from the widget
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
+        }
+
+        // Mark render objects dirty
+        if let Some(ro) = self.render_object {
+            context.mark_needs_paint(ro);
+        }
+    }
+
+    fn unmount(&mut self, context: &mut ElementContext) {
+        // Unregister global key if present
+        if let Some(WidgetKey::Global(_)) = &self.key {
+            if let Some(id) = self.id {
+                context.unregister_global_key(id);
+            }
+        }
+
+        // Remove render object from registry
+        if let Some(ro) = self.render_object {
+            context.remove_render_object(ro);
+        }
+        if let Some(id) = self.id {
+            context.remove_state(id);
+        }
+    }
+
+    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
+        if let Some(child_id) = self.child_element {
+            if let Some(child) = registry.get(child_id) {
+                visitor(child);
+            }
+        }
+    }
+
+    fn render_object(&self) -> Option<RenderObjectId> {
+        self.render_object
+    }
+
+    fn widget_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn can_update(&self, _widget: &dyn Any) -> bool {
+        true
+    }
+
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _context: &mut EventContext,
+    ) -> Option<Box<dyn Any>> {
+        // DecoratedContainer doesn't handle events itself
+        None
+    }
+
+    fn add_child(&mut self, child_id: ElementId) {
+        self.child_element = Some(child_id);
+    }
+
+    fn rebuild(
+        &mut self,
+        new_widget: Box<dyn Any>,
+        context: &mut ElementContext,
+    ) {
+        // Downcast and store the new widget
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+            self.widget = Some(*widget);
+
+            // Update the render object with new properties
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                }
+            }
+
+            // Reconcile single child if present
+            if let Some(child_widget) = self.get_child_widget() {
+                if let Some(child_id) = self.child_element {
+                    // Take the element_registry to avoid double borrow
+                    let element_registry = context.element_registry.take();
+                    if let Some(registry) = element_registry {
+                        if let Some(child_element) = registry.get_mut(child_id) {
+                            let widget_any = Box::new(child_widget.clone_box());
+                            child_element.rebuild(widget_any, context);
+                        }
+                        // Restore the registry
+                        context.element_registry = Some(registry);
+                    }
+                }
+            }
+        }
+
+        // Mark render objects dirty
+        if let Some(ro) = self.render_object {
+            context.mark_needs_layout(ro);
+            context.mark_needs_paint(ro);
+        }
+    }
+
+    fn has_children(&self) -> bool {
+        self.child_element.is_some()
     }
 }
