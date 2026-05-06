@@ -243,9 +243,15 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Step 2: Reconcile children (same pattern as reconcile_element)
         let existing_children = self.element_registry.children(root_id).to_vec();
-        let new_child_widgets: Vec<Box<dyn Widget<M>>> = widget.children().iter()
-            .map(|c| c.clone_box())
-            .collect();
+
+        // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
+        let new_child_widgets: Vec<Box<dyn Widget<M>>> = if let Some(child) = widget.child() {
+            vec![child.clone_box()]
+        } else {
+            widget.children().iter()
+                .map(|c| c.clone_box())
+                .collect()
+        };
 
         // Rebuild children recursively
         self.rebuild_children_internal(root_id, existing_children, new_child_widgets);
@@ -445,9 +451,14 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         let existing_children = self.element_registry.children(element_id).to_vec();
 
         // Get new child widgets
-        let new_child_widgets: Vec<Box<dyn Widget<M>>> = widget.children().iter()
-            .map(|c| c.clone_box())
-            .collect();
+        // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
+        let new_child_widgets: Vec<Box<dyn Widget<M>>> = if let Some(child) = widget.child() {
+            vec![child.clone_box()]
+        } else {
+            widget.children().iter()
+                .map(|c| c.clone_box())
+                .collect()
+        };
 
         // Reconcile children
         self.reconcile_children_internal(element_id, existing_children, new_child_widgets);

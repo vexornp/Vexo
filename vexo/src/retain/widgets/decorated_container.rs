@@ -63,24 +63,18 @@ impl DecoratedContainerRenderObject {
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
-        // DecoratedContainer is a pass-through for layout - uses child's bounds
-        match child_nodes.first() {
-            Some(child_node) => {
-                self.layout_node = Some(*child_node);
-                LayoutResult {
-                    node: *child_node,
-                    size: Size::zero(),
-                }
-            }
-            None => {
-                // No child, create empty leaf
-                let node = ctx.engine().create_leaf(&Layout::default());
-                self.layout_node = Some(node);
-                LayoutResult {
-                    node,
-                    size: Size::zero(),
-                }
-            }
+        // DecoratedContainer needs its own layout node to have a position in the parent container.
+        // It wraps the child in a container-like node so the parent can position this container,
+        // and the child is positioned relative to this container.
+        let layout = Layout::default();
+
+        // Create a container node that holds the child
+        let node = ctx.engine().create_container(&layout, child_nodes);
+        self.layout_node = Some(node);
+
+        LayoutResult {
+            node,
+            size: Size::zero(),
         }
     }
 
