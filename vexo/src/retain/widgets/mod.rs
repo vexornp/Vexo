@@ -8,6 +8,7 @@ mod border;
 mod button;
 mod container;
 mod corner_radius;
+mod decorated_container;
 mod gesture_detector;
 mod text;
 
