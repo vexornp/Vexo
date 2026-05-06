@@ -2,8 +2,6 @@
 
 mod leaf;
 mod container;
-mod modifier;
 
 pub use leaf::LeafElement;
 pub use container::ContainerElement;
-pub use modifier::ModifierElement;

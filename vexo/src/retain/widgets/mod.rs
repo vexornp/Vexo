@@ -3,11 +3,8 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
-mod background;
-mod border;
 mod button;
 mod container;
-mod corner_radius;
 mod decorated_container;
 mod gesture_detector;
 mod text;
@@ -18,11 +15,8 @@ use super::element::Element;
 use super::key::WidgetKey;
 use super::RenderObject;
 
-pub use background::Background;
-pub use border::Border;
 pub use button::Button;
 pub use container::{Column, Row};
-pub use corner_radius::CornerRadius;
 pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
 pub use text::Text;

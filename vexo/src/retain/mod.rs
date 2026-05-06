@@ -84,7 +84,7 @@ pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 
-pub use widgets::{Widget, Text, Button, Column, Row, Background, Border, CornerRadius, GestureDetector, DecoratedContainer};
-pub use elements::{LeafElement, ContainerElement, ModifierElement};
+pub use widgets::{Widget, Text, Button, Column, Row, GestureDetector, DecoratedContainer};
+pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;

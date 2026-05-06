@@ -1,6 +1,6 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::retain::{Background, Border, Column, CornerRadius, Text, ThreeTreePipeline};
+use crate::retain::{Column, Text, ThreeTreePipeline, DecoratedContainer};
 use crate::core::{Color, Position, Size};
 use crate::layout::TaffyLayoutEngine;
 use std::sync::Arc;
@@ -102,24 +102,28 @@ fn test_retain_pipeline_update_flow() {
     assert!(pipeline.needs_layout() || pipeline.needs_paint());
 }
 
-/// Test Background widget in the pipeline.
+/// Test DecoratedContainer widget in the pipeline.
 ///
-/// This test verifies that the Background modifier widget correctly:
+/// This test verifies that the DecoratedContainer widget correctly:
 /// 1. Reconciles with the element tree
 /// 2. Creates render objects with proper tree structure
 /// 3. Performs layout
 /// 4. Paints and produces render commands
 #[test]
-fn test_background_widget_in_pipeline() {
+fn test_decorated_container_widget_in_pipeline() {
     use crate::render::RenderCommand;
 
-    // Create a widget tree with Background wrapping a Text
+    // Create a widget tree with DecoratedContainer wrapping a Text
     let child: Box<dyn crate::retain::Widget<()>> = Box::new(Text::<()>::new("Hello"));
-    let bg = Background::new(child, Color::RED);
+    let container = DecoratedContainer::new(child)
+        .style(crate::retain::Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0));
 
     // Create pipeline and reconcile
     let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
-    pipeline.reconcile(Box::new(bg));
+    pipeline.reconcile(Box::new(container));
 
     // Should have created elements and render objects
     assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
@@ -129,9 +133,9 @@ fn test_background_widget_in_pipeline() {
     let root_ro = pipeline.render_objects().root().expect("should have root render object");
     let root_obj = pipeline.render_objects().get(root_ro).expect("root render object should exist");
 
-    // Background render object should have the Text render object as a child
+    // DecoratedContainer render object should have the Text render object as a child
     let children = root_obj.children();
-    assert_eq!(children.len(), 1, "Background render object should have exactly one child");
+    assert_eq!(children.len(), 1, "DecoratedContainer render object should have exactly one child");
 
     // The child render object should exist
     let child_ro_id = children[0];
@@ -148,92 +152,10 @@ fn test_background_widget_in_pipeline() {
     // === Paint ===
     let commands = pipeline.paint();
 
-    // Background should produce a rect command
-    assert!(commands.len() >= 1, "Background should produce at least one command");
+    // DecoratedContainer should produce rect commands for background and border
+    assert!(commands.len() >= 2, "DecoratedContainer should produce at least two commands");
 
     // Verify the render commands include a rect command (the background fill)
     let has_rect = commands.iter().any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
     assert!(has_rect, "Commands should include a Rect command for background fill");
-}
-
-/// Test Border widget in the pipeline.
-///
-/// This test verifies that the Border modifier widget correctly:
-/// 1. Reconciles with the element tree
-/// 2. Creates render objects with proper tree structure
-/// 3. Performs layout
-/// 4. Paints and produces render commands
-#[test]
-fn test_border_widget_in_pipeline() {
-    use crate::render::RenderCommand;
-
-    // Create a widget tree with Border wrapping a Text
-    let child: Box<dyn crate::retain::Widget<()>> = Box::new(Text::<()>::new("Hello"));
-    let border = Border::new(child, Color::BLACK, 2.0);
-
-    // Create pipeline and reconcile
-    let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
-    pipeline.reconcile(Box::new(border));
-
-    // Should have created elements and render objects
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
-
-    // === Layout ===
-    let mut engine = TaffyLayoutEngine::new();
-    let mut font_system = create_test_font_system();
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
-
-    // === Paint ===
-    let commands = pipeline.paint();
-
-    // Border should produce a rect_with_border command
-    assert!(commands.len() >= 1, "Border should produce at least one command");
-
-    // Verify the render commands include a Rect command with a stroke (border)
-    let has_stroke = commands.iter().any(|cmd| {
-        matches!(cmd, RenderCommand::Rect { stroke: Some(_), .. })
-    });
-    assert!(has_stroke, "Commands should include a Rect command with stroke for border");
-}
-
-/// Test CornerRadius widget in the pipeline.
-///
-/// This test verifies that the CornerRadius modifier widget correctly:
-/// 1. Reconciles with the element tree
-/// 2. Creates render objects with proper tree structure
-/// 3. Performs layout
-/// 4. Paints and produces push/pop corner radius commands
-#[test]
-fn test_corner_radius_widget_in_pipeline() {
-    use crate::render::RenderCommand;
-
-    // Create a widget tree with CornerRadius wrapping a Text
-    let child: Box<dyn crate::retain::Widget<()>> = Box::new(Text::<()>::new("Hello"));
-    let cr = CornerRadius::new(child, 10.0);
-
-    // Create pipeline and reconcile
-    let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
-    pipeline.reconcile(Box::new(cr));
-
-    // Should have created elements and render objects
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
-
-    // === Layout ===
-    let mut engine = TaffyLayoutEngine::new();
-    let mut font_system = create_test_font_system();
-    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
-
-    // === Paint ===
-    let commands = pipeline.paint();
-
-    // CornerRadius should produce push/pop commands
-    assert!(commands.len() >= 2, "CornerRadius should produce at least two commands");
-
-    // Verify the render commands include push and pop corner radius
-    let has_push = commands.iter().any(|cmd| matches!(cmd, RenderCommand::PushCornerRadius { .. }));
-    let has_pop = commands.iter().any(|cmd| matches!(cmd, RenderCommand::PopCornerRadius));
-    assert!(has_push, "Commands should include PushCornerRadius");
-    assert!(has_pop, "Commands should include PopCornerRadius");
 }
