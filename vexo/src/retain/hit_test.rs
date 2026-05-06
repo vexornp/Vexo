@@ -178,7 +178,7 @@ impl RenderObjectRegistry {
     /// # Arguments
     ///
     /// * `id` - The render object to test
-    /// * `position` - The pointer position in absolute window coordinates
+    /// * `pointer_position` - The pointer/mouse position in absolute window coordinates
     /// * `parent_absolute_position` - The accumulated absolute position of the parent
     /// * `path` - Output: path from root to hit target
     /// * `element_path` - Output: element IDs along the path
@@ -188,7 +188,7 @@ impl RenderObjectRegistry {
     fn hit_test_recursive(
         &self,
         id: RenderObjectId,
-        position: Position<Logical, Absolute>,
+        pointer_position: Position<Logical, Absolute>,
         parent_absolute_position: Position<Logical, Absolute>,
         path: &mut Vec<RenderObjectId>,
         element_path: &mut Vec<ElementId>,
@@ -204,12 +204,12 @@ impl RenderObjectRegistry {
             .map(|b| Position::new(b.left, b.top))
             .unwrap_or(Position::zero());
 
-        // Calculate absolute position for this object:
+        // Calculate this object's absolute position in window coordinates:
         // parent's absolute position + this object's position within parent
-        let absolute_position = position_in_parent.to_absolute(parent_absolute_position);
+        let object_absolute_position = position_in_parent.to_absolute(parent_absolute_position);
 
         // Convert pointer position to local coordinates relative to this object
-        let local_position = position.to_relative(absolute_position);
+        let local_position = pointer_position.to_relative(object_absolute_position);
 
         // Get the size of this object
         let size = obj.computed_bounds()
@@ -232,8 +232,8 @@ impl RenderObjectRegistry {
 
             // Compute absolute bounds for this object
             *absolute_bounds = Some(Bounds::from_xywh(
-                absolute_position.x,
-                absolute_position.y,
+                object_absolute_position.x,
+                object_absolute_position.y,
                 size.width,
                 size.height,
             ));
@@ -243,8 +243,8 @@ impl RenderObjectRegistry {
             for child in obj.children().iter().rev() {
                 if self.hit_test_recursive(
                     *child,
-                    position,
-                    absolute_position,
+                    pointer_position,
+                    object_absolute_position,
                     path,
                     element_path,
                     absolute_bounds,
