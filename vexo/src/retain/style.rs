@@ -71,3 +71,74 @@ impl Style {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_style_new() {
+        let style = Style::new();
+
+        assert!(style.background.is_none());
+        assert!(style.border.is_none());
+        assert!(style.corner_radius.is_none());
+    }
+
+    #[test]
+    fn test_style_default() {
+        let style = Style::default();
+
+        assert!(style.background.is_none());
+        assert!(style.border.is_none());
+        assert!(style.corner_radius.is_none());
+    }
+
+    #[test]
+    fn test_style_builder_background() {
+        let style = Style::new().background(Color::RED);
+
+        assert_eq!(style.background, Some(Color::RED));
+    }
+
+    #[test]
+    fn test_style_builder_border() {
+        let style = Style::new().border(Color::BLACK, 2.0);
+
+        let border = style.border.unwrap();
+        assert_eq!(border.color, Color::BLACK);
+        assert_eq!(border.width, 2.0);
+    }
+
+    #[test]
+    fn test_style_builder_corner_radius() {
+        let style = Style::new().corner_radius(8.0);
+
+        let cr = style.corner_radius.unwrap();
+        assert_eq!(cr.radius, 8.0);
+    }
+
+    #[test]
+    fn test_style_builder_all_properties() {
+        let style = Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0);
+
+        assert_eq!(style.background, Some(Color::RED));
+        assert_eq!(style.border.unwrap().color, Color::BLACK);
+        assert_eq!(style.corner_radius.unwrap().radius, 8.0);
+    }
+
+    #[test]
+    fn test_style_clone() {
+        let style = Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0);
+
+        let cloned = style.clone();
+
+        assert_eq!(cloned.background, Some(Color::RED));
+        assert_eq!(cloned.border.unwrap().color, Color::BLACK);
+    }
+}
