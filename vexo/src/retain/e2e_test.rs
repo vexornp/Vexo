@@ -1,7 +1,7 @@
 //! End-to-end test for the retain-mode pipeline.
 
 use crate::retain::{Background, Border, Column, CornerRadius, Text, ThreeTreePipeline};
-use crate::core::{Color, Point, Size};
+use crate::core::{Color, Position, Size};
 use crate::layout::TaffyLayoutEngine;
 use std::sync::Arc;
 
@@ -61,11 +61,11 @@ fn test_retain_pipeline_e2e() {
 
     // === Step 5: Hit test ===
     // Hit inside bounds (position depends on layout)
-    let _hit = pipeline.hit_test(Point::new(10.0, 10.0));
+    let _hit = pipeline.hit_test(Position::new(10.0, 10.0));
     // Result depends on computed layout - verify no panic
 
     // Miss outside bounds
-    let miss = pipeline.hit_test(Point::new(1000.0, 1000.0));
+    let miss = pipeline.hit_test(Position::new(1000.0, 1000.0));
     assert!(!miss.is_hit(), "Should miss outside bounds");
 }
 

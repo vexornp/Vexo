@@ -69,7 +69,7 @@ fn test_key_preserves_identity() {
 
 #[cfg(test)]
 mod full_pipeline_tests {
-    use crate::core::{Point, Size};
+    use crate::core::{Position, Size};
     use crate::layout::TaffyLayoutEngine;
     use crate::retain::{Row, Text, ThreeTreePipeline};
     use std::sync::Arc;
@@ -122,14 +122,14 @@ mod full_pipeline_tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test at a point inside the text bounds (text starts at origin)
-        let result = pipeline.hit_test(Point::new(5.0, 5.0));
+        let result = pipeline.hit_test(Position::new(5.0, 5.0));
 
         // Should hit the text render object
         assert!(result.is_hit());
         assert!(result.target().is_some());
 
         // Hit test outside the text bounds
-        let result_outside = pipeline.hit_test(Point::new(500.0, 500.0));
+        let result_outside = pipeline.hit_test(Position::new(500.0, 500.0));
 
         // Should miss
         assert!(!result_outside.is_hit());

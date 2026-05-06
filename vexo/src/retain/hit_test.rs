@@ -27,8 +27,8 @@
 //! }
 //! ```
 
-use crate::core::{Logical, Point};
-use crate::retain::{ElementId, RenderObjectId};
+use crate::core::{Absolute, Bounds, Logical, Position, Relative};
+use crate::retain::{ElementId, RenderObjectId, RenderObjectRegistry};
 
 // ============================================================================
 // HIT TEST RESULT
@@ -44,6 +44,8 @@ pub struct HitTestResult {
     path: Vec<RenderObjectId>,
     /// The element IDs along the path.
     element_path: Vec<ElementId>,
+    /// Absolute bounds of the hit target (in window coordinates).
+    absolute_bounds: Option<Bounds<Logical>>,
 }
 
 impl HitTestResult {
@@ -52,12 +54,26 @@ impl HitTestResult {
         Self {
             path: Vec::new(),
             element_path: Vec::new(),
+            absolute_bounds: None,
         }
     }
 
     /// Create a hit result with the given path.
     pub fn hit(path: Vec<RenderObjectId>, element_path: Vec<ElementId>) -> Self {
-        Self { path, element_path }
+        Self { path, element_path, absolute_bounds: None }
+    }
+
+    /// Create a hit result with absolute bounds.
+    pub fn hit_with_bounds(
+        path: Vec<RenderObjectId>,
+        element_path: Vec<ElementId>,
+        absolute_bounds: Bounds<Logical>,
+    ) -> Self {
+        Self {
+            path,
+            element_path,
+            absolute_bounds: Some(absolute_bounds),
+        }
     }
 
     /// Check if anything was hit.
@@ -92,6 +108,13 @@ impl HitTestResult {
     pub fn element_path(&self) -> &[ElementId] {
         &self.element_path
     }
+
+    /// Get the absolute bounds of the hit target.
+    ///
+    /// Returns None if nothing was hit or bounds are not available.
+    pub fn absolute_bounds(&self) -> Option<Bounds<Logical>> {
+        self.absolute_bounds
+    }
 }
 
 impl Default for HitTestResult {
@@ -104,52 +127,102 @@ impl Default for HitTestResult {
 // HIT TEST IMPLEMENTATION FOR RENDER OBJECT REGISTRY
 // ============================================================================
 
-use crate::retain::{HitTestContext, RenderObjectRegistry};
-
 impl RenderObjectRegistry {
     /// Hit test from root at the given position.
     ///
     /// Returns a `HitTestResult` containing the path from root to the hit target.
     /// If nothing is hit, returns a miss result.
     ///
+    /// # Arguments
+    ///
+    /// * `position` - The position to test in absolute window coordinates
+    ///
     /// # Example
     ///
     /// ```ignore
-    /// let result = registry.hit_test(Point::new(100.0, 100.0));
+    /// let result = registry.hit_test(Position::new(100.0, 100.0));
     /// if let Some(target) = result.target() {
     ///     // Handle hit on target
     /// }
     /// ```
-    pub fn hit_test(&self, position: Point<Logical>) -> HitTestResult {
+    pub fn hit_test(&self, position: Position<Logical, Absolute>) -> HitTestResult {
         let mut path = Vec::new();
         let mut element_path = Vec::new();
+        let mut absolute_bounds: Option<Bounds<Logical>> = None;
 
         if let Some(root) = self.root() {
-            self.hit_test_recursive(root, position, &mut path, &mut element_path);
+            // Root is at origin, so parent absolute position is zero
+            let root_absolute_position = Position::<Logical, Absolute>::zero();
+            self.hit_test_recursive(
+                root,
+                position,
+                root_absolute_position,
+                &mut path,
+                &mut element_path,
+                &mut absolute_bounds,
+            );
         }
 
-        HitTestResult { path, element_path }
+        HitTestResult {
+            path,
+            element_path,
+            absolute_bounds,
+        }
     }
 
     /// Recursive hit test implementation.
+    ///
+    /// Tracks the accumulated absolute position of each render object during traversal,
+    /// similar to how `paint_recursive` accumulates positions for rendering.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The render object to test
+    /// * `position` - The pointer position in absolute window coordinates
+    /// * `parent_absolute_position` - The accumulated absolute position of the parent
+    /// * `path` - Output: path from root to hit target
+    /// * `element_path` - Output: element IDs along the path
+    /// * `absolute_bounds` - Output: absolute bounds of the hit target
     ///
     /// Returns true if this node or any descendant was hit.
     fn hit_test_recursive(
         &self,
         id: RenderObjectId,
-        position: Point<Logical>,
+        position: Position<Logical, Absolute>,
+        parent_absolute_position: Position<Logical, Absolute>,
         path: &mut Vec<RenderObjectId>,
         element_path: &mut Vec<ElementId>,
+        absolute_bounds: &mut Option<Bounds<Logical>>,
     ) -> bool {
         let obj = match self.get(id) {
             Some(o) => o,
             None => return false,
         };
 
-        let ctx = HitTestContext::mock();
+        // Get this object's position relative to its parent (from Taffy layout)
+        let position_in_parent: Position<Logical, Relative> = obj.computed_bounds()
+            .map(|b| Position::new(b.left, b.top))
+            .unwrap_or(Position::zero());
 
-        // Check if this object is hit
-        if obj.hit_test(position, &ctx) {
+        // Calculate absolute position for this object:
+        // parent's absolute position + this object's position within parent
+        let absolute_position = position_in_parent.to_absolute(parent_absolute_position);
+
+        // Convert pointer position to local coordinates relative to this object
+        let local_position = position.to_relative(absolute_position);
+
+        // Get the size of this object
+        let size = obj.computed_bounds()
+            .map(|b| crate::core::Size::<Logical>::new(b.width(), b.height()))
+            .unwrap_or(crate::core::Size::zero());
+
+        // Check if the local position is within this object's bounds (0,0 to width,height)
+        let is_inside = local_position.x >= 0.0
+            && local_position.x <= size.width
+            && local_position.y >= 0.0
+            && local_position.y <= size.height;
+
+        if is_inside {
             // Add this node to the path
             path.push(id);
             let element_id = self.element_for(id);
@@ -157,10 +230,25 @@ impl RenderObjectRegistry {
                 element_path.push(element_id);
             }
 
+            // Compute absolute bounds for this object
+            *absolute_bounds = Some(Bounds::from_xywh(
+                absolute_position.x,
+                absolute_position.y,
+                size.width,
+                size.height,
+            ));
+
             // Test children in reverse order (top-most first)
             // The last child is drawn on top, so it should be tested first
             for child in obj.children().iter().rev() {
-                if self.hit_test_recursive(*child, position, path, element_path) {
+                if self.hit_test_recursive(
+                    *child,
+                    position,
+                    absolute_position,
+                    path,
+                    element_path,
+                    absolute_bounds,
+                ) {
                     return true;
                 }
             }
@@ -266,7 +354,7 @@ mod tests {
         registry.set_root(id);
 
         // Hit test at a point inside (depends on computed layout)
-        let result = registry.hit_test(Point::new(5.0, 5.0));
+        let result = registry.hit_test(Position::new(5.0, 5.0));
 
         // Result depends on actual computed bounds
         // The key thing is it doesn't panic
@@ -289,7 +377,7 @@ mod tests {
         registry.set_root(id);
 
         // Hit test at a point outside
-        let result = registry.hit_test(Point::new(200.0, 200.0));
+        let result = registry.hit_test(Position::new(200.0, 200.0));
 
         assert!(!result.is_hit());
         assert!(result.target().is_none());
@@ -300,7 +388,7 @@ mod tests {
         let registry = RenderObjectRegistry::new();
 
         // Hit test with no root set
-        let result = registry.hit_test(Point::new(5.0, 5.0));
+        let result = registry.hit_test(Position::new(5.0, 5.0));
 
         assert!(!result.is_hit());
     }
@@ -337,7 +425,7 @@ mod tests {
         }
 
         // Hit test - the result depends on computed layout
-        let result = registry.hit_test(Point::new(5.0, 5.0));
+        let result = registry.hit_test(Position::new(5.0, 5.0));
 
         // Result depends on actual computed bounds
         // The key thing is it doesn't panic

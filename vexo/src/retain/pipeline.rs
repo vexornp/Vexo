@@ -826,7 +826,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     ///
     /// # Arguments
     ///
-    /// * `position` - The position to test in logical coordinates
+    /// * `position` - The position to test in absolute window coordinates
     ///
     /// # Returns
     ///
@@ -835,12 +835,12 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// # Example
     ///
     /// ```ignore
-    /// let result = pipeline.hit_test(Point::new(100.0, 100.0));
+    /// let result = pipeline.hit_test(Position::new(100.0, 100.0));
     /// if let Some(target) = result.target() {
     ///     // Handle input on target render object
     /// }
     /// ```
-    pub fn hit_test(&self, position: Point<Logical>) -> HitTestResult {
+    pub fn hit_test(&self, position: Position<Logical, Absolute>) -> HitTestResult {
         self.render_objects.hit_test(position)
     }
 
@@ -877,19 +877,19 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         event: &InputEvent,
         modifiers: Modifiers,
     ) -> Option<M> {
+        // Convert Point to Position (absolute window coordinates)
+        let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
+
         // 1. Hit test to find target
-        let hit_result = self.render_objects.hit_test(position);
+        let hit_result = self.render_objects.hit_test(absolute_position);
 
         // 2. Get target element
         let target_element = hit_result.target_element();
 
         let target_element = target_element?;
 
-        // 3. Get render object bounds for context
-        let target_render = hit_result.target()?;
-        let bounds = self.render_objects.get(target_render)
-            .and_then(|obj| obj.computed_bounds())
-            .unwrap_or_default();
+        // 3. Get absolute bounds for context (from hit test result)
+        let bounds = hit_result.absolute_bounds().unwrap_or_default();
 
         // 4. Create event context
         let mut ctx = EventContext::new(
@@ -1135,7 +1135,7 @@ mod tests {
         let pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
 
         // Hit test with no content
-        let result = pipeline.hit_test(Point::new(100.0, 100.0));
+        let result = pipeline.hit_test(Position::new(100.0, 100.0));
 
         assert!(!result.is_hit());
         assert!(result.target().is_none());
@@ -1153,7 +1153,7 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test inside the text bounds
-        let result = pipeline.hit_test(Point::new(5.0, 5.0));
+        let result = pipeline.hit_test(Position::new(5.0, 5.0));
 
         // Should hit the text render object
         assert!(result.is_hit());
@@ -1172,7 +1172,7 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
         // Hit test outside the text bounds
-        let result = pipeline.hit_test(Point::new(500.0, 500.0));
+        let result = pipeline.hit_test(Position::new(500.0, 500.0));
 
         // Should miss
         assert!(!result.is_hit());
