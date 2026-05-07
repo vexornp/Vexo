@@ -14,3 +14,4 @@ glyphon = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 uniffi = { workspace = true }
+bitflags = { workspace = true }

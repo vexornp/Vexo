@@ -13,7 +13,7 @@ use crate::render::RenderCommand;
 use crate::retain::{
     Element, ElementContext, ElementId, ElementRegistry, EventContext,
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
-    RenderObject, RenderObjectId, Widget, WidgetKey,
+    RenderObject, RenderObjectId, Widget, WidgetKey, UpdateResult,
 };
 use crate::retain::style::Style;
 
@@ -51,8 +51,15 @@ impl DecoratedContainerRenderObject {
     }
 
     /// Set the style configuration.
-    pub fn set_style(&mut self, style: Style) {
-        self.style = style;
+    ///
+    /// Returns true if the style changed.
+    pub fn set_style(&mut self, style: Style) -> bool {
+        if self.style != style {
+            self.style = style;
+            true
+        } else {
+            false
+        }
     }
 
     /// Get the current style.
@@ -250,15 +257,17 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
             // Update the render object with new properties from the widget
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+
+                    // Only mark dirty based on what actually changed
+                    if result.contains(UpdateResult::LAYOUT) {
+                        context.mark_needs_layout(ro_id);
+                    }
+                    if result.contains(UpdateResult::PAINT) {
+                        context.mark_needs_paint(ro_id);
+                    }
                 }
             }
-        }
-
-        // Mark render objects dirty
-        if let Some(ro) = self.render_object {
-            context.mark_needs_layout(ro);
-            context.mark_needs_paint(ro);
         }
     }
 
@@ -324,7 +333,15 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
             // Update the render object with new properties
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+
+                    // Only mark dirty based on what actually changed
+                    if result.contains(UpdateResult::LAYOUT) {
+                        context.mark_needs_layout(ro_id);
+                    }
+                    if result.contains(UpdateResult::PAINT) {
+                        context.mark_needs_paint(ro_id);
+                    }
                 }
             }
 
@@ -343,12 +360,6 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
                     }
                 }
             }
-        }
-
-        // Mark render objects dirty
-        if let Some(ro) = self.render_object {
-            context.mark_needs_layout(ro);
-            context.mark_needs_paint(ro);
         }
     }
 
@@ -461,9 +472,17 @@ impl<M: Clone + Send + 'static> Widget<M> for DecoratedContainer<M> {
         Some(self.child.as_ref())
     }
 
-    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<DecoratedContainerRenderObject>() {
-            container_ro.set_style(self.style.clone());
+            if container_ro.set_style(self.style.clone()) {
+                // Style changes (background, border, corner_radius) are visual-only
+                // They don't affect layout, only paint
+                UpdateResult::PAINT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
         }
     }
 }

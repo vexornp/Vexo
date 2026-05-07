@@ -6,6 +6,7 @@ use super::{Element, Widget};
 use super::super::key::{GlobalKey, Key, WidgetKey};
 use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
+use super::super::UpdateResult;
 
 /// Text widget - displays a string.
 ///
@@ -74,10 +75,17 @@ impl<M: Clone + Send + 'static> Widget<M> for Text<M> {
         self
     }
 
-    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         // Downcast to TextRenderObject and update properties
         if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
-            text_ro.set_content(&self.content);
+            if text_ro.set_content(&self.content) {
+                // Text content affects both layout (size) and paint (glyphs)
+                UpdateResult::LAYOUT | UpdateResult::PAINT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
         }
     }
 }

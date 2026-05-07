@@ -19,7 +19,7 @@ use crate::core::Color;
 ///     .border(Color::BLACK, 2.0)
 ///     .corner_radius(8.0);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Style {
     /// Background color (drawn behind child).
     pub background: Option<Color>,
@@ -32,7 +32,7 @@ pub struct Style {
 }
 
 /// Border decoration properties.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Border {
     /// Border color.
     pub color: Color,
@@ -41,7 +41,7 @@ pub struct Border {
 }
 
 /// Corner radius for rounded rectangles.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CornerRadius {
     /// Radius for all corners (uniform).
     pub radius: f32,

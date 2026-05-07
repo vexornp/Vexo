@@ -51,6 +51,7 @@ mod hit_test;
 mod pipeline;
 mod global_key_registry;
 mod style;
+mod update_result;
 
 pub mod widgets;
 pub mod elements;
@@ -83,6 +84,7 @@ pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
+pub use update_result::UpdateResult;
 
 pub use widgets::{Widget, Text, Button, Column, Row, GestureDetector, DecoratedContainer};
 pub use elements::{LeafElement, ContainerElement};

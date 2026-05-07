@@ -58,13 +58,27 @@ impl TextRenderObject {
     }
 
     /// Set the text content.
-    pub fn set_content(&mut self, content: &str) {
-        self.content = content.to_string();
+    ///
+    /// Returns true if the content changed.
+    pub fn set_content(&mut self, content: &str) -> bool {
+        if self.content != content {
+            self.content = content.to_string();
+            true
+        } else {
+            false
+        }
     }
 
     /// Set the font size.
-    pub fn set_font_size(&mut self, size: f32) {
-        self.font_size = size;
+    ///
+    /// Returns true if the font size changed.
+    pub fn set_font_size(&mut self, size: f32) -> bool {
+        if (self.font_size - size).abs() > f32::EPSILON {
+            self.font_size = size;
+            true
+        } else {
+            false
+        }
     }
 }
 

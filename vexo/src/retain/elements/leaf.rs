@@ -5,7 +5,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget, UpdateResult};
 use crate::retain::key::WidgetKey;
 
 /// Element for leaf widgets (no children).
@@ -93,14 +93,17 @@ impl<M: Clone + Send + 'static> Element for LeafElement<M> {
             // Update the render object with new properties from the widget
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+
+                    // Only mark dirty based on what actually changed
+                    if result.contains(UpdateResult::LAYOUT) {
+                        context.mark_needs_layout(ro_id);
+                    }
+                    if result.contains(UpdateResult::PAINT) {
+                        context.mark_needs_paint(ro_id);
+                    }
                 }
             }
-        }
-
-        if let Some(ro) = self.render_object {
-            context.mark_needs_layout(ro);
-            context.mark_needs_paint(ro);
         }
     }
 

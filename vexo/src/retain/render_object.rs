@@ -274,6 +274,14 @@ pub trait RenderObject {
         // Default: no-op (leaf nodes and single-child modifiers don't use this)
     }
 
+    /// Clear all children.
+    ///
+    /// Only relevant for container render objects (e.g., Column, Row).
+    /// Default implementation does nothing.
+    fn clear_children(&mut self) {
+        // Default: no-op (leaf nodes and single-child modifiers don't use this)
+    }
+
     /// Get the layout node ID (for pipeline to use).
     ///
     /// Returns the Taffy node ID that was created during layout().

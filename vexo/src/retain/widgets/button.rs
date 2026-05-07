@@ -10,7 +10,7 @@ use crate::render::RenderCommand;
 
 use super::{Element, Widget};
 use super::super::key::{GlobalKey, Key, WidgetKey};
-use super::super::{EventContext, RenderObject, LayoutContext, LayoutResult, PaintContext, HitTestContext};
+use super::super::{EventContext, RenderObject, LayoutContext, LayoutResult, PaintContext, HitTestContext, UpdateResult};
 use crate::layout::{Layout, LayoutNodeId};
 
 // ============================================================================
@@ -108,10 +108,17 @@ impl<M: Clone + Send + 'static> Widget<M> for Button<M> {
         self
     }
 
-    fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         // Downcast to ButtonRenderObject and update properties
         if let Some(button_ro) = render_object.as_any_mut().downcast_mut::<ButtonRenderObject>() {
-            button_ro.set_label(&self.label);
+            if button_ro.set_label(&self.label) {
+                // Label affects both layout (button size) and paint
+                UpdateResult::LAYOUT | UpdateResult::PAINT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
         }
     }
 }
@@ -189,14 +196,17 @@ impl<M: Clone + Send + 'static> Element for ButtonElement<M> {
             // Update the render object with new properties from the widget
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+
+                    // Only mark dirty based on what actually changed
+                    if result.contains(UpdateResult::LAYOUT) {
+                        context.mark_needs_layout(ro_id);
+                    }
+                    if result.contains(UpdateResult::PAINT) {
+                        context.mark_needs_paint(ro_id);
+                    }
                 }
             }
-        }
-
-        if let Some(ro) = self.render_object {
-            context.mark_needs_layout(ro);
-            context.mark_needs_paint(ro);
         }
     }
 
@@ -279,8 +289,15 @@ impl ButtonRenderObject {
     }
 
     /// Set the button label.
-    pub fn set_label(&mut self, label: &str) {
-        self.label = label.to_string();
+    ///
+    /// Returns true if the label changed.
+    pub fn set_label(&mut self, label: &str) -> bool {
+        if self.label != label {
+            self.label = label.to_string();
+            true
+        } else {
+            false
+        }
     }
 }
 

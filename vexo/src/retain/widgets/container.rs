@@ -4,8 +4,8 @@
 
 use super::{Element, Widget};
 use super::super::key::{GlobalKey, Key, WidgetKey};
-use super::super::RenderObject;
 use super::super::render_objects::ContainerRenderObject;
+use super::super::RenderObject;
 
 /// Column widget - arranges children vertically.
 pub struct Column<M: Clone + Send + 'static = ()> {

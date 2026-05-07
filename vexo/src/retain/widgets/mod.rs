@@ -14,6 +14,7 @@ use std::any::Any;
 use super::element::Element;
 use super::key::WidgetKey;
 use super::RenderObject;
+use super::UpdateResult;
 
 pub use button::Button;
 pub use container::{Column, Row};
@@ -108,20 +109,36 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     /// The widget should update the render object's mutable properties
     /// (e.g., text content, colors, sizes) to reflect the new configuration.
     ///
-    /// Default implementation does nothing (for widgets with no updatable properties
-    /// like GestureDetector, or containers that don't have visual properties).
+    /// # Returns
+    ///
+    /// An `UpdateResult` indicating what changed:
+    /// - `UpdateResult::NONE` if nothing changed (no dirty marking)
+    /// - `UpdateResult::LAYOUT` if only layout-affecting properties changed
+    /// - `UpdateResult::PAINT` if only visual properties changed
+    /// - `UpdateResult::ALL` if both types changed
+    ///
+    /// The default implementation returns `UpdateResult::ALL` for backward
+    /// compatibility. Widgets that want to optimize should override this
+    /// method and implement property comparison.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// fn update_render_object(&self, render_object: &mut dyn RenderObject) {
+    /// fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
     ///     if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
-    ///         text_ro.set_content(&self.content);
+    ///         if text_ro.set_content(&self.content) {
+    ///             UpdateResult::LAYOUT | UpdateResult::PAINT
+    ///         } else {
+    ///             UpdateResult::NONE
+    ///         }
+    ///     } else {
+    ///         UpdateResult::ALL
     ///     }
     /// }
     /// ```
-    fn update_render_object(&self, _render_object: &mut dyn RenderObject) {
-        // Default: no-op for widgets without updatable properties
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
+        // Default: assume everything changed for backward compatibility
+        UpdateResult::ALL
     }
 }
 
