@@ -72,6 +72,16 @@ impl DirtyTracking {
         self.needs_layout.clear();
         self.needs_paint.clear();
     }
+
+    /// Get the count of objects needing layout.
+    pub fn layout_count(&self) -> usize {
+        self.needs_layout.len()
+    }
+
+    /// Get the count of objects needing paint.
+    pub fn paint_count(&self) -> usize {
+        self.needs_paint.len()
+    }
 }
 
 impl Default for DirtyTracking {

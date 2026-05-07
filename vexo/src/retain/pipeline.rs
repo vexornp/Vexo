@@ -192,8 +192,16 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     ///
     /// After initial mount, prefer calling `mark_needs_build()` for updates.
     pub fn update(&mut self, root_widget: Box<dyn Widget<M>>) {
+        log::debug!(
+            "[RetainMode] update() - elements: {}, render_objects: {}, needs_full_reconcile: {}",
+            self.element_registry.len(),
+            self.render_objects.len(),
+            self.needs_full_reconcile
+        );
+
         if self.needs_full_reconcile || self.element_registry.root().is_none() {
             // Full reconcile needed (initial mount or root type changed)
+            log::debug!("[RetainMode] Performing FULL reconcile");
             self.reconcile(root_widget);
             self.needs_full_reconcile = false;
         } else {
@@ -205,15 +213,23 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
                 if can_update {
                     // Targeted rebuild of root
+                    log::debug!("[RetainMode] Performing TARGETED rebuild (root can update)");
                     self.rebuild_root(root_id, root_widget);
                 } else {
                     // Root type changed, full reconcile
+                    log::debug!("[RetainMode] Performing FULL reconcile (root type changed)");
                     self.reconcile(root_widget);
                 }
             } else {
                 self.reconcile(root_widget);
             }
         }
+
+        log::debug!(
+            "[RetainMode] After update - dirty layout: {}, dirty paint: {}",
+            self.dirty.layout_count(),
+            self.dirty.paint_count()
+        );
     }
 
     /// Rebuild the root element with a new widget.
@@ -225,6 +241,12 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         let render_object_id = self.element_registry.get(root_id)
             .and_then(|el| el.render_object());
         let parent = self.element_registry.parent(root_id);
+
+        log::debug!(
+            "[RetainMode] rebuild_root() - element_id: {:?}, has_render_object: {}",
+            root_id,
+            render_object_id.is_some()
+        );
 
         // Step 1: Update the element with the new widget
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
@@ -256,11 +278,9 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         // Rebuild children recursively
         self.rebuild_children_internal(root_id, existing_children, new_child_widgets);
 
-        // Mark render object dirty
-        if let Some(render_id) = render_object_id {
-            self.dirty.mark_needs_layout(render_id);
-            self.dirty.mark_needs_paint(render_id);
-        }
+        // Note: We only mark dirty if the element's render object actually changed
+        // The element's update() method should handle this via ElementContext
+        // We don't automatically mark dirty here to allow for smarter updates
     }
 
     /// Rebuild children of an element.
@@ -421,10 +441,13 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// 1. Updates the element with the new widget
     /// 2. Reconciles children by matching new child widgets to existing child elements
     fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget<M>>) {
-        // Get render object ID and parent before mutable borrow
-        let render_object_id = self.element_registry.get(element_id)
-            .and_then(|el| el.render_object());
+        // Get parent before mutable borrow
         let parent = self.element_registry.parent(element_id);
+
+        log::debug!(
+            "[RetainMode] reconcile_element() - element_id: {:?}",
+            element_id
+        );
 
         // Update the element with the new widget
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
@@ -441,11 +464,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             existing_element.update(widget_as_any, &mut ctx);
         }
 
-        // Mark render object as dirty
-        if let Some(render_id) = render_object_id {
-            self.dirty.mark_needs_layout(render_id);
-            self.dirty.mark_needs_paint(render_id);
-        }
+        // Note: Dirty marking is handled by the element's update() method via ElementContext
 
         // Get existing children
         let existing_children = self.element_registry.children(element_id).to_vec();
@@ -477,6 +496,9 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     ) {
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
+        let mut reused_count = 0;
+        let mut mounted_count = 0;
+        let mut unmounted_count = 0;
 
         // Match by position
         for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
@@ -490,27 +512,37 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
                 if can_update && !matched.contains(&child_id) {
                     matched.insert(child_id);
-                    // Recursively reconcile this child
+                    // Recursively reconcile this child (REUSED)
+                    reused_count += 1;
                     self.reconcile_element(child_id, child_widget);
                     new_children.push(child_id);
                     continue;
                 }
             }
 
-            // No matching child - mount new element
+            // No matching child - mount new element (NEW)
+            mounted_count += 1;
             let child_id = self.mount_element_tree(Some(parent_id), child_widget);
             new_children.push(child_id);
         }
 
-        // Unmount children that weren't matched
+        // Unmount children that weren't matched (REMOVED)
         for child_id in existing_children {
             if !matched.contains(&child_id) {
+                unmounted_count += 1;
                 self.unmount_element_tree(child_id);
             }
         }
 
         // Update parent's children list in the registry
         self.element_registry.set_children(parent_id, new_children);
+
+        log::debug!(
+            "[RetainMode] reconcile_children - reused: {}, mounted: {}, unmounted: {}",
+            reused_count,
+            mounted_count,
+            unmounted_count
+        );
     }
 
     /// Mount an element tree from a widget.
@@ -667,6 +699,15 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         engine: &mut dyn crate::layout::LayoutEngine,
         font_system: &mut glyphon::FontSystem,
     ) {
+        let dirty_layout_count = self.dirty.layout_count();
+        let total_objects = self.render_objects.len();
+
+        log::debug!(
+            "[RetainMode] layout() - Processing {} dirty objects out of {} total",
+            dirty_layout_count,
+            total_objects
+        );
+
         // Get the root render object
         let root_id = match self.render_objects.root() {
             Some(id) => id,
@@ -694,6 +735,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Clear dirty flags
         self.dirty.drain_layout().for_each(drop);
+
+        log::debug!("[RetainMode] layout() complete - dirty flags cleared");
     }
 
     /// Recursively build Taffy tree (bottom-up: children first).
@@ -765,12 +808,25 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// }
     /// ```
     pub fn paint(&mut self) -> Vec<RenderCommand> {
+        let dirty_paint_count = self.dirty.paint_count();
+        let total_objects = self.render_objects.len();
+
         let mut commands = Vec::new();
 
         // If no objects need paint, return empty
         if self.dirty.is_paint_empty() {
+            log::debug!(
+                "[RetainMode] paint() - SKIPPING (no dirty objects, total: {})",
+                total_objects
+            );
             return commands;
         }
+
+        log::debug!(
+            "[RetainMode] paint() - Processing {} dirty objects out of {} total",
+            dirty_paint_count,
+            total_objects
+        );
 
         // If no root, nothing to paint
         let root_id = match self.render_objects.root() {
@@ -786,6 +842,11 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Paint root recursively (root starts at origin)
         self.paint_recursive(root_id, &mut ctx, Position::zero());
+
+        log::debug!(
+            "[RetainMode] paint() complete - generated {} render commands",
+            commands.len()
+        );
 
         commands
     }

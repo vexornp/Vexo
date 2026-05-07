@@ -472,6 +472,12 @@ impl<A: Application + 'static> WindowState<A> {
         // 5. Clear batcher
         self.batcher.clear();
 
+        log::debug!("\n========================================");
+        log::debug!("[RetainMode] === FRAME START ===");
+        log::debug!("[RetainMode] Comparing with immediate mode:");
+        log::debug!("[RetainMode]   Immediate: Rebuilds entire widget tree every frame");
+        log::debug!("[RetainMode]   Retain:    Only updates changed parts");
+
         // 6. Update widget tree (targeted rebuild or full reconcile)
         pipeline.update(widget_tree);
 
@@ -492,6 +498,17 @@ impl<A: Application + 'static> WindowState<A> {
 
         // 9. Paint dirty render objects
         let commands = pipeline.paint();
+
+        log::debug!("[RetainMode] === FRAME END ===");
+        log::debug!(
+            "[RetainMode] Summary: {} elements retained (no mount/unmount)",
+            pipeline.element_registry().len()
+        );
+        log::debug!(
+            "[RetainMode] Compare to immediate mode: would rebuild all {} widgets from scratch",
+            pipeline.element_registry().len()
+        );
+        log::debug!("========================================\n");
 
         // 10. Process RenderCommands through batcher
         for cmd in commands {

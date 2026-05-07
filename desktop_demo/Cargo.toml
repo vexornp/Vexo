@@ -7,3 +7,4 @@ edition = "2021"
 vexo = { path = "../vexo" }
 shared_app = { path = "../shared_app" } # Import the user's logic
 anyhow = { workspace = true }
+env_logger = "0.11"

@@ -64,7 +64,10 @@ pub trait Application: Sized + 'static {
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    // Initialize logger with debug level for retain mode by default
+    // Override with RUST_LOG environment variable if needed
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+        .init();
 
     let event_loop = EventLoop::new()?;
     let (sender, receiver) = mpsc::channel();
