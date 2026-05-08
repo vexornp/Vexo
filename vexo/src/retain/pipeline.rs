@@ -36,7 +36,7 @@
 //! - `layout()` only processes objects marked as dirty
 //! - `paint()` recursively collects commands from the root
 
-use std::marker::PhantomData;
+use std::any::Any;
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, Relative, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers};
@@ -60,23 +60,16 @@ use super::widgets::Widget;
 
 /// Orchestrates the three trees for retain-mode rendering.
 ///
-/// The pipeline is generic over the message type `M` to support ELM-style
-/// typed message dispatch.
-///
-/// # Type Parameter
-///
-/// `M` - The message type emitted by interactive widgets. Must be `Clone + Send + 'static`.
+/// The pipeline manages the widget tree, element tree, and render object tree
+/// for efficient UI rendering with incremental updates.
 ///
 /// # Example
 ///
 /// ```ignore
-/// #[derive(Clone)]
-/// enum Message { Clicked, }
-///
-/// let mut pipeline: ThreeTreePipeline<Message> = ThreeTreePipeline::new();
+/// let mut pipeline = ThreeTreePipeline::new();
 ///
 /// // Build and reconcile widget tree
-/// let widget = Button::new("Click Me").with_message(Message::Clicked);
+/// let widget = Button::new("Click Me");
 /// pipeline.reconcile(Box::new(widget));
 ///
 /// // Layout with constraints
@@ -88,10 +81,10 @@ use super::widgets::Widget;
 ///
 /// // Handle events
 /// if let Some(msg) = pipeline.handle_event(position, event, modifiers) {
-///     // msg is Message, not Box<dyn Any>
+///     // msg is Box<dyn Any>, downcast to specific message type
 /// }
 /// ```
-pub struct ThreeTreePipeline<M: Clone + Send + 'static> {
+pub struct ThreeTreePipeline {
     /// Registry of live elements (middle tree).
     element_registry: ElementRegistry,
 
@@ -114,12 +107,9 @@ pub struct ThreeTreePipeline<M: Clone + Send + 'static> {
     ///
     /// True after initial mount or when root element type changes.
     needs_full_reconcile: bool,
-
-    /// Phantom data for the message type.
-    _phantom: PhantomData<M>,
 }
 
-impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
+impl ThreeTreePipeline {
     /// Create a new empty pipeline.
     pub fn new() -> Self {
         Self {
@@ -130,7 +120,6 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             focused_element: None,
             build_owner: BuildOwner::new(),
             needs_full_reconcile: true,
-            _phantom: PhantomData,
         }
     }
 
@@ -162,7 +151,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// // Updated widget tree (reconciliation preserves state for matching elements)
     /// pipeline.reconcile(Box::new(Text::new("Hello World")));
     /// ```
-    pub fn reconcile(&mut self, root_widget: Box<dyn Widget<M>>) {
+    pub fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
         // Check if we have an existing root element
         if let Some(root_id) = self.element_registry.root() {
             // Check if the widget can update the existing element
@@ -191,7 +180,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// - Otherwise, performs targeted rebuilds only
     ///
     /// After initial mount, prefer calling `mark_needs_build()` for updates.
-    pub fn update(&mut self, root_widget: Box<dyn Widget<M>>) {
+    pub fn update(&mut self, root_widget: Box<dyn Widget>) {
         log::debug!(
             "[RetainMode] update() - elements: {}, render_objects: {}, needs_full_reconcile: {}",
             self.element_registry.len(),
@@ -237,7 +226,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// This follows the same pattern as reconcile_element():
     /// 1. Update the element with the new widget
     /// 2. Reconcile children separately (to avoid borrow issues)
-    fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget<M>>) {
+    fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget>) {
         let render_object_id = self.element_registry.get(root_id)
             .and_then(|el| el.render_object());
         let parent = self.element_registry.parent(root_id);
@@ -249,7 +238,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         );
 
         // Step 1: Update the element with the new widget
-        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
+        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
         if let Some(element) = self.element_registry.get_mut(root_id) {
             let mut ctx = ElementContext::with_registry(
                 root_id,
@@ -267,11 +256,11 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         let existing_children = self.element_registry.children(root_id).to_vec();
 
         // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
-        let new_child_widgets: Vec<Box<dyn Widget<M>>> = if let Some(child) = widget.child() {
-            vec![child.clone_box()]
+        let new_child_widgets: Vec<Box<dyn Widget>> = if let Some(child) = widget.child() {
+            vec![child.clone_boxed()]
         } else {
             widget.children().iter()
-                .map(|c| c.clone_box())
+                .map(|c| c.clone_boxed())
                 .collect()
         };
 
@@ -290,7 +279,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         &mut self,
         parent_id: ElementId,
         existing_children: Vec<ElementId>,
-        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+        new_child_widgets: Vec<Box<dyn Widget>>,
     ) {
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
@@ -440,7 +429,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// This method:
     /// 1. Updates the element with the new widget
     /// 2. Reconciles children by matching new child widgets to existing child elements
-    fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget<M>>) {
+    fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget>) {
         // Get parent before mutable borrow
         let parent = self.element_registry.parent(element_id);
 
@@ -450,7 +439,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         );
 
         // Update the element with the new widget
-        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_box());
+        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
         if let Some(existing_element) = self.element_registry.get_mut(element_id) {
             let mut ctx = ElementContext::with_registry(
                 element_id,
@@ -471,11 +460,11 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         // Get new child widgets
         // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
-        let new_child_widgets: Vec<Box<dyn Widget<M>>> = if let Some(child) = widget.child() {
-            vec![child.clone_box()]
+        let new_child_widgets: Vec<Box<dyn Widget>> = if let Some(child) = widget.child() {
+            vec![child.clone_boxed()]
         } else {
             widget.children().iter()
-                .map(|c| c.clone_box())
+                .map(|c| c.clone_boxed())
                 .collect()
         };
 
@@ -492,7 +481,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         &mut self,
         parent_id: ElementId,
         existing_children: Vec<ElementId>,
-        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+        new_child_widgets: Vec<Box<dyn Widget>>,
     ) {
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
@@ -549,7 +538,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     ///
     /// This method creates an element and calls its mount() lifecycle.
     /// The element's mount() method creates render objects and links children.
-    fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget<M>>) -> ElementId {
+    fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
         // Create element from widget
         let element = widget.create_element();
 
@@ -580,7 +569,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         // Mount children recursively
         // First check for single-child modifiers (Background, Border, etc.)
         if let Some(child_widget) = widget.child() {
-            let child_id = self.mount_element_tree(Some(element_id), child_widget.clone_box());
+            let child_id = self.mount_element_tree(Some(element_id), child_widget.clone_boxed());
 
             // Link child render object to parent
             if let (Some(parent_ro), Some(child_ro)) = (
@@ -599,7 +588,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         }
 
         // Then check for multi-child containers (Column, Row)
-        let children: Vec<Box<dyn Widget<M>>> = widget.children().iter().map(|c| c.clone_box()).collect();
+        let children: Vec<Box<dyn Widget>> = widget.children().iter().map(|c| c.clone_boxed()).collect();
         if !children.is_empty() {
             let mut child_render_objects = Vec::new();
             let mut child_element_ids = Vec::new();
@@ -922,13 +911,15 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     /// For pointer events, performs hit testing to find the target element.
     /// For keyboard events, dispatches to the focused element.
     ///
-    /// Returns `Some(message)` if the event was handled and produced a typed message.
+    /// Returns `Some(message)` if the event was handled and produced a message.
+    /// The message is returned as `Box<dyn Any>` and should be downcast to the
+    /// specific message type by the caller.
     pub fn handle_event(
         &mut self,
         _position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-    ) -> Option<M> {
+    ) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::PointerMoved { position } => {
                 self.handle_pointer_event(*position, event, modifiers)
@@ -949,7 +940,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-    ) -> Option<M> {
+    ) -> Option<Box<dyn Any>> {
         // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
 
@@ -989,8 +980,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             }
         }
 
-        // Downcast the message to M
-        any_message.and_then(|m| m.downcast::<M>().ok().map(|b| *b))
+        // Return the message directly (already Box<dyn Any>)
+        any_message
     }
 
     /// Handle a keyboard event.
@@ -998,7 +989,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
         &mut self,
         event: &InputEvent,
         modifiers: Modifiers,
-    ) -> Option<M> {
+    ) -> Option<Box<dyn Any>> {
         // Get focused element
         let focused = self.focused_element?;
 
@@ -1023,8 +1014,8 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
             self.focused_element = None;
         }
 
-        // Downcast the message to M
-        any_message.and_then(|m| m.downcast::<M>().ok().map(|b| *b))
+        // Return the message directly (already Box<dyn Any>)
+        any_message
     }
 
     /// Get the currently focused element.
@@ -1079,7 +1070,7 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
     }
 }
 
-impl<M: Clone + Send + 'static> Default for ThreeTreePipeline<M> {
+impl Default for ThreeTreePipeline {
     fn default() -> Self {
         Self::new()
     }
@@ -1104,7 +1095,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_new() {
-        let pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let pipeline = ThreeTreePipeline::new();
 
         assert!(pipeline.element_registry().is_empty());
         assert!(pipeline.render_objects().is_empty());
@@ -1114,7 +1105,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_default() {
-        let pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::default();
+        let pipeline = ThreeTreePipeline::default();
 
         assert!(pipeline.element_registry().is_empty());
         assert!(pipeline.render_objects().is_empty());
@@ -1122,7 +1113,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_single_widget() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Reconcile with a text widget
         let widget = Text::new("Hello");
@@ -1142,7 +1133,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_updates_matching() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Initial widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -1161,7 +1152,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_layout() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Reconcile first
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -1177,7 +1168,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_paint_empty() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Paint with no render objects
         let commands = pipeline.paint();
@@ -1187,7 +1178,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_paint_with_content() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -1205,7 +1196,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_miss() {
-        let pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let pipeline = ThreeTreePipeline::new();
 
         // Hit test with no content
         let result = pipeline.hit_test(Position::new(100.0, 100.0));
@@ -1216,7 +1207,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_with_content() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -1235,7 +1226,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_outside() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -1254,7 +1245,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
@@ -1270,7 +1261,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_mark_all_needs_layout() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         pipeline.reconcile(Box::new(Text::new("Hello")));
         pipeline.clear_dirty();
@@ -1283,7 +1274,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_replaces_different_type() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new();
 
         // Initial widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
