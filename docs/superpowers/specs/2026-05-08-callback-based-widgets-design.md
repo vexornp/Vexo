@@ -127,19 +127,20 @@ impl Column {
 }
 ```
 
-### 6. Modifier Widgets
+### 6. DecoratedContainer Widget
 
 ```rust
-// vexo/src/retain/widgets/modifiers.rs
+// vexo/src/retain/widgets/decorated_container.rs
 
-pub struct Padding {
+pub struct DecoratedContainer {
     pub child: Box<dyn Widget>,
-    pub padding: EdgeInsets,
+    pub style: Style,
     pub key: Option<WidgetKey>,
 }
 
-impl Padding {
-    pub fn new(padding: EdgeInsets, child: impl Widget + 'static) -> Self { /* ... */ }
+impl DecoratedContainer {
+    pub fn new(child: Box<dyn Widget>) -> Self { /* ... */ }
+    pub fn style(mut self, style: Style) -> Self { /* ... */ }
 }
 ```
 
@@ -187,7 +188,7 @@ impl CounterApp {
 | `vexo/src/retain/widgets/button.rs` | Replace `message: M` with `on_press: Box<dyn FnMut()>` |
 | `vexo/src/retain/widgets/text.rs` | Remove `M` parameter |
 | `vexo/src/retain/widgets/container.rs` | Remove `M` from `Column`, `Row` |
-| `vexo/src/retain/widgets/modifiers.rs` | Remove `PhantomData<M>` from all modifiers |
+| `vexo/src/retain/widgets/decorated_container.rs` | Remove `M` from `DecoratedContainer` |
 | `vexo/src/retain/element.rs` | Update `on_event` signature |
 | `shared_app/src/lib.rs` | Update sample app to use callbacks |
 
@@ -223,7 +224,7 @@ cargo run -p desktop_demo
 ### Manual Testing
 - Button `on_press` callback triggers correctly
 - Container widgets render children correctly
-- Modifier widgets apply styles correctly
+- DecoratedContainer applies styles correctly
 - Signal updates with `mark_dirty()` trigger UI rebuild
 
 ---
@@ -235,7 +236,7 @@ cargo run -p desktop_demo
 3. Update `Button` widget
 4. Update `Text` widget
 5. Update container widgets (`Column`, `Row`)
-6. Update modifier widgets
+6. Update `DecoratedContainer` widget
 7. Update sample app in `shared_app/src/lib.rs`
 8. Run tests and fix compilation errors
 9. Manual testing
