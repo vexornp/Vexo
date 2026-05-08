@@ -23,12 +23,12 @@ fn create_test_font_system() -> glyphon::FontSystem {
 #[test]
 fn test_retain_pipeline_e2e() {
     // === Step 1: Create widget tree ===
-    let widget: Column<()> = Column::new()
+    let widget: Column = Column::new()
         .push(Text::new("Hello"))
         .push(Text::new("World"));
 
     // === Step 2: Create pipeline and reconcile ===
-    let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
     pipeline.reconcile(Box::new(widget));
 
     // Verify element creation
@@ -75,12 +75,12 @@ fn test_retain_pipeline_e2e() {
 /// reconciling multiple times without paint in between.
 #[test]
 fn test_retain_pipeline_update_flow() {
-    let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = create_test_font_system();
 
     // First frame: reconcile a text widget
-    let widget: Text<()> = Text::new("First");
+    let widget: Text = Text::new("First");
     pipeline.reconcile(Box::new(widget));
 
     // Should have one element and one render object
@@ -94,7 +94,7 @@ fn test_retain_pipeline_update_flow() {
 
     // Second frame: update with new text
     // Note: This works because we haven't called paint() yet
-    let widget: Text<()> = Text::new("First Updated");
+    let widget: Text = Text::new("First Updated");
     pipeline.reconcile(Box::new(widget));
 
     // Element should be updated, not recreated (same root)
@@ -114,7 +114,7 @@ fn test_decorated_container_widget_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree with DecoratedContainer wrapping a Text
-    let child: Box<dyn crate::retain::Widget<()>> = Box::new(Text::<()>::new("Hello"));
+    let child: Box<dyn crate::retain::Widget> = Box::new(Text::new("Hello"));
     let container = DecoratedContainer::new(child)
         .style(crate::retain::Style::new()
             .background(Color::RED)
@@ -122,7 +122,7 @@ fn test_decorated_container_widget_in_pipeline() {
             .corner_radius(8.0));
 
     // Create pipeline and reconcile
-    let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
     pipeline.reconcile(Box::new(container));
 
     // Should have created elements and render objects

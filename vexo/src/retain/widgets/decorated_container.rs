@@ -202,7 +202,7 @@ impl DecoratedContainerElement {
 
     /// Set the widget for this element.
     pub fn set_widget(&mut self, widget: &dyn Widget) {
-        self.widget = Some(Box::new(widget.clone()));
+        self.widget = Some(widget.clone_boxed());
         self.key = widget.key();
     }
 
@@ -352,7 +352,8 @@ impl Element for DecoratedContainerElement {
                     let element_registry = context.element_registry.take();
                     if let Some(registry) = element_registry {
                         if let Some(child_element) = registry.get_mut(child_id) {
-                            let widget_any = Box::new(Box::new(child_widget.clone()));
+                            // Clone the child widget using clone_boxed
+                            let widget_any = Box::new(child_widget.clone_boxed());
                             child_element.rebuild(widget_any, context);
                         }
                         // Restore the registry
@@ -439,7 +440,7 @@ impl Clone for DecoratedContainer {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            child: self.child.clone(),
+            child: self.child.clone_boxed(),
             style: self.style.clone(),
         }
     }
@@ -480,6 +481,10 @@ impl Widget for DecoratedContainer {
         } else {
             UpdateResult::ALL
         }
+    }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
     }
 }
 

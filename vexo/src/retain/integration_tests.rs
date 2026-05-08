@@ -11,7 +11,7 @@ fn test_full_reconciliation_flow() {
     let dirty = DirtyTracking::new();
 
     // 2. Mount initial widget tree
-    let root_widget: Column<()> = Column::new()
+    let root_widget: Column = Column::new()
         .push(Text::new("First"))
         .push(Text::new("Second"));
 
@@ -23,7 +23,7 @@ fn test_full_reconciliation_flow() {
     assert_eq!(element_registry.len(), 1);
 
     // 3. Reconcile with updated tree
-    let _new_widget: Column<()> = Column::new()
+    let _new_widget: Column = Column::new()
         .push(Text::new("First Updated"))
         .push(Text::new("Second"));
 
@@ -44,11 +44,11 @@ fn test_key_preserves_identity() {
     let mut element_registry = ElementRegistry::new();
 
     // Create widget with key
-    let widget1: Text<()> = Text::new("Hello").with_key("greeting");
+    let widget1: Text = Text::new("Hello").with_key("greeting");
     let element1 = element_registry.mount(widget1.create_element(), None);
 
     // Create widget with same key
-    let widget2: Text<()> = Text::new("Hello World").with_key("greeting");
+    let widget2: Text = Text::new("Hello World").with_key("greeting");
 
     // In a full implementation, reconciliation would update the existing element
     // rather than creating a new one
@@ -82,7 +82,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_full_frame_flow() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -110,7 +110,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_hit_test_through_pipeline() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -138,7 +138,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_keyed_reconciliation() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // First frame with a keyed widget
         let widget = Text::new("A").with_key("first");
@@ -162,7 +162,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_paint_cycle() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -180,7 +180,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_different_widget_types_cause_remount() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // First frame with Text
         pipeline.reconcile(Box::new(Text::new("Text content")));
@@ -201,7 +201,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // Reconcile creates dirty elements
         pipeline.reconcile(Box::new(Text::new("Test")));
@@ -238,7 +238,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_no_root() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         let event = InputEvent::PointerButton {
             position: Point::new(10.0, 10.0),
@@ -252,7 +252,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_with_text_widget() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // Reconcile a text widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -278,7 +278,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_focus_management() {
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // Initially no focus
         assert!(pipeline.focused_element().is_none());
@@ -305,7 +305,7 @@ mod targeted_rebuild_tests {
     #[test]
     fn test_targeted_rebuild_single_element() {
         // Test that marking a single element dirty only rebuilds that element
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // Initial: single text
         pipeline.update(Box::new(Text::new("Hello")));
@@ -325,7 +325,7 @@ mod targeted_rebuild_tests {
     fn test_update_vs_reconcile() {
         // Test that update() is more efficient than reconcile()
         // after initial mount
-        let mut pipeline: ThreeTreePipeline<()> = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
 
         // First update: should trigger full reconcile
         pipeline.update(Box::new(Text::new("First")));
@@ -353,7 +353,7 @@ mod global_key_tests {
     fn test_global_key_widget_creation() {
         // Test that widgets can be created with GlobalKey
         let global_key = GlobalKey::new();
-        let widget: Text<()> = Text::new("Hello").with_key(global_key.clone());
+        let widget: Text = Text::new("Hello").with_key(global_key.clone());
 
         // The widget should have a Global WidgetKey
         match widget.key() {
@@ -385,8 +385,8 @@ mod global_key_tests {
         let global_key = GlobalKey::new();
         let local_key = super::Key::new("local");
 
-        let widget_global: Text<()> = Text::new("Global").with_key(global_key.clone());
-        let widget_local: Text<()> = Text::new("Local").with_key(local_key.clone());
+        let widget_global: Text = Text::new("Global").with_key(global_key.clone());
+        let widget_local: Text = Text::new("Local").with_key(local_key.clone());
 
         // Verify key types
         match widget_global.key() {

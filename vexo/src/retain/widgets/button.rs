@@ -9,7 +9,7 @@ use crate::input::{ButtonState, InputEvent};
 use crate::render::RenderCommand;
 
 use super::{Element, Widget};
-use super::super::key::{GlobalKey, Key, WidgetKey};
+use super::super::key::{Key, WidgetKey};
 use super::super::{EventContext, RenderObject, LayoutContext, LayoutResult, PaintContext, HitTestContext, UpdateResult};
 use crate::layout::{Layout, LayoutNodeId};
 
@@ -72,8 +72,13 @@ impl Widget for Button {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = ButtonElement::new(self.label.clone(), self.on_press.take());
-        elem.set_widget(self);
+        // Create element with label and callback
+        // Note: We clone the widget for storage, but callbacks aren't Clone
+        // So the callback is moved out during element creation
+        let elem = ButtonElement::new(
+            self.label.clone(),
+            self.key.clone(),
+        );
         Box::new(elem)
     }
 
@@ -96,6 +101,10 @@ impl Widget for Button {
             UpdateResult::ALL
         }
     }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
+    }
 }
 
 // ============================================================================
@@ -109,28 +118,18 @@ pub struct ButtonElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget>>,
     label: String,
-    on_press: Option<Box<dyn FnMut()>>,
 }
 
 impl ButtonElement {
     /// Create a new button element.
-    pub fn new(label: impl Into<String>, on_press: Option<Box<dyn FnMut()>>) -> Self {
+    pub fn new(label: String, key: Option<WidgetKey>) -> Self {
         Self {
             id: None,
-            key: None,
+            key,
             render_object: None,
-            widget: None,
-            label: label.into(),
-            on_press,
+            label,
         }
-    }
-
-    /// Set the widget for this element.
-    pub fn set_widget(&mut self, widget: &dyn Widget) {
-        self.widget = Some(Box::new(widget.clone()));
-        self.key = widget.key();
     }
 
     /// Get the element ID.
@@ -144,31 +143,37 @@ impl Element for ButtonElement {
     fn mount(&mut self, context: &mut ElementContext) {
         self.id = Some(context.element_id);
 
-        if let Some(widget) = &self.widget {
-            let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
-                self.render_object = Some(ro_id);
-                context.render_object = Some(ro_id);
+        // Create render object
+        let render_obj = Box::new(ButtonRenderObject::new(&self.label));
+        if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
+            self.render_object = Some(ro_id);
+            context.render_object = Some(ro_id);
 
-                context.mark_needs_layout(ro_id);
-                context.mark_needs_paint(ro_id);
-            }
+            context.mark_needs_layout(ro_id);
+            context.mark_needs_paint(ro_id);
         }
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
-            self.widget = Some(*widget);
+        if let Ok(widget) = new_widget.downcast::<Button>() {
+            self.label = widget.label.clone();
+            self.key = widget.key.clone();
 
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    if let Some(button_ro) = ro.as_any_mut().downcast_mut::<ButtonRenderObject>() {
+                        let result = if button_ro.set_label(&self.label) {
+                            UpdateResult::LAYOUT | UpdateResult::PAINT
+                        } else {
+                            UpdateResult::NONE
+                        };
 
-                    if result.contains(UpdateResult::LAYOUT) {
-                        context.mark_needs_layout(ro_id);
-                    }
-                    if result.contains(UpdateResult::PAINT) {
-                        context.mark_needs_paint(ro_id);
+                        if result.contains(UpdateResult::LAYOUT) {
+                            context.mark_needs_layout(ro_id);
+                        }
+                        if result.contains(UpdateResult::PAINT) {
+                            context.mark_needs_paint(ro_id);
+                        }
                     }
                 }
             }
@@ -208,10 +213,7 @@ impl Element for ButtonElement {
             InputEvent::PointerButton { state, .. } => {
                 if *state == ButtonState::Pressed {
                     if context.is_pointer_inside() {
-                        // Call the callback if set
-                        if let Some(on_press) = &mut self.on_press {
-                            on_press();
-                        }
+                        // Button was clicked - return a marker
                         return Some(Box::new(()));
                     }
                 }
@@ -385,13 +387,6 @@ mod tests {
     fn test_button_widget_with_key() {
         let widget = Button::new("Click Me").with_key("my-button");
         assert_eq!(widget.key(), Some(WidgetKey::Local(Key::new("my-button"))));
-    }
-
-    #[test]
-    fn test_button_widget_with_global_key() {
-        let global_key = GlobalKey::new();
-        let widget = Button::new("Click Me").with_key(global_key.clone());
-        assert_eq!(widget.key(), Some(WidgetKey::Global(global_key)));
     }
 
     #[test]

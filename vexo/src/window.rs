@@ -46,7 +46,7 @@ pub struct WindowState<A: Application + 'static> {
     render_pipeline: RenderPipeline,
 
     // Three-tree pipeline (new retain-mode system)
-    retain_pipeline: Option<ThreeTreePipeline<A::Message>>,
+    retain_pipeline: Option<ThreeTreePipeline>,
 
     // Flag to enable retain mode (false = use immediate mode for compatibility)
     #[allow(dead_code)]
@@ -357,8 +357,11 @@ impl<A: Application + 'static> WindowState<A> {
         let message = pipeline.handle_event(position, &input_event, modifiers);
 
         if let Some(msg) = message {
-            // The message is already typed as A::Message
-            self.update(msg);
+            // Retain mode widgets return Box<dyn Any> as their message type.
+            // For now, we don't have a way to convert this to A::Message.
+            // The application can handle events through the immediate mode path.
+            // In the future, we could add a downcast or a separate callback mechanism.
+            let _ = msg;
         }
     }
 
@@ -431,7 +434,7 @@ impl<A: Application + 'static> WindowState<A> {
     ///
     /// Returns the widget tree from `Application::retain_view()`,
     /// or None if the application doesn't implement retain-mode.
-    fn view_retain(&self) -> Option<Box<dyn RetainWidget<A::Message>>> {
+    fn view_retain(&self) -> Option<Box<dyn RetainWidget>> {
         A::retain_view(&self.user_app_state)
     }
 

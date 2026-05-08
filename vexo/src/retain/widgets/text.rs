@@ -72,6 +72,10 @@ impl Widget for Text {
             UpdateResult::ALL
         }
     }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
+    }
 }
 
 #[cfg(test)]
