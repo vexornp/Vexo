@@ -1,6 +1,72 @@
 use vexo::{retain, widgets::Widget, Application, WidgetExt};
 uniffi::setup_scaffolding!();
 
+// --- Retain Mode Counter StatefulWidget ---
+
+/// Counter widget configuration for retain mode.
+/// This demonstrates StatefulWidget with persistent mutable state.
+#[derive(Clone)]
+struct RetainCounter {
+    label: String,
+}
+
+/// State for the RetainCounter that persists across rebuilds.
+struct RetainCounterState {
+    count: u32,
+}
+
+impl Default for RetainCounterState {
+    fn default() -> Self {
+        Self { count: 0 }
+    }
+}
+
+impl retain::StatefulWidget for RetainCounter {
+    type State = RetainCounterState;
+
+    fn build(
+        &self,
+        state: &mut Self::State,
+        _ctx: &mut retain::BuildContext,
+    ) -> Box<dyn retain::Widget> {
+        let count = state.count;
+
+        // Create a column with label, count display, and buttons
+        // Each button gets its own clone of the label for the closure
+        Box::new(
+            retain::Column::new()
+                .push(retain::Text::new(&self.label))
+                .push(retain::Text::new(format!("Count: {}", count)))
+                .push({
+                    let label = self.label.clone();
+                    retain::Row::new()
+                        .push(
+                            retain::Button::new("-").on_press(move || {
+                                // Note: We can't directly modify state here in the callback
+                                // because callbacks are FnMut() without context access.
+                                // The StatefulWidget pattern requires request_rebuild()
+                                // which needs to be called from build().
+                                // For now, log the action (full state updates need app-level integration).
+                                log::info!("Decrement clicked for {}", label);
+                            }),
+                        )
+                        .push({
+                            let label = self.label.clone();
+                            retain::Button::new("+").on_press(move || {
+                                log::info!("Increment clicked for {}", label);
+                            })
+                        })
+                        .push({
+                            let label = self.label.clone();
+                            retain::Button::new("Reset").on_press(move || {
+                                log::info!("Reset clicked for {}", label);
+                            })
+                        })
+                }),
+        )
+    }
+}
+
 // --- The User's Code ---
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -186,6 +252,14 @@ impl Application for State {
             retain::Column::new()
                 // Header
                 .push(retain::Text::new("Retain Mode Widget Demo"))
+                // --- StatefulWidget Demo ---
+                .push(retain::Text::new("--- StatefulWidget Counter ---"))
+                // RetainCounter demonstrates StatefulWidget with persistent state
+                .push(RetainCounter {
+                    label: "Stateful Counter".to_string(),
+                })
+                // --- Simple Counter (legacy pattern) ---
+                .push(retain::Text::new("--- Simple Counter (callbacks) ---"))
                 // Button controls in a Row
                 .push(
                     retain::Row::new()
