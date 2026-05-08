@@ -8,10 +8,6 @@ pub enum Message {
     Clicked,
     CounterOutput(CounterOutput),
     ToggleRetainMode,
-    RetainButtonClicked,
-    RetainIncrement,
-    RetainDecrement,
-    RetainReset,
 }
 
 // --- Counter Component ---
@@ -90,7 +86,6 @@ impl vexo::component::Component for CounterComponent {
 pub struct State {
     click_count: u32,
     milestones: u32,
-    retain_counter: u32,
 }
 
 impl Application for State {
@@ -101,7 +96,6 @@ impl Application for State {
         Self {
             click_count: 0,
             milestones: 0,
-            retain_counter: 0,
         }
     }
 
@@ -109,18 +103,6 @@ impl Application for State {
         match message {
             Message::Clicked => {
                 state.click_count += 1;
-            }
-            Message::RetainButtonClicked => {
-                state.click_count += 1;
-            }
-            Message::RetainIncrement => {
-                state.retain_counter += 1;
-            }
-            Message::RetainDecrement => {
-                state.retain_counter = state.retain_counter.saturating_sub(1);
-            }
-            Message::RetainReset => {
-                state.retain_counter = 0;
             }
             Message::CounterOutput(CounterOutput::CountReached(_n)) => {
                 state.milestones += 1;
@@ -191,8 +173,14 @@ impl Application for State {
         .boxed()
     }
 
-    fn retain_view(state: &Self::State) -> Option<Box<dyn retain::Widget<Self::Message>>> {
-        let counter_text = format!("Count: {}", state.retain_counter);
+    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
+        // Retain mode widgets use callbacks for event handling.
+        // The callbacks are set via .on_press() and will be invoked
+        // when the button is clicked.
+        //
+        // Note: Callbacks currently don't trigger state updates because
+        // retain_view receives an immutable state reference. Future work
+        // will integrate Mutable<T> for reactive state.
 
         Some(Box::new(
             retain::Column::new()
@@ -202,14 +190,20 @@ impl Application for State {
                 .push(
                     retain::Row::new()
                         .push(retain::Button::new("Increment (+)")
-                            .with_message(Message::RetainIncrement))
+                            .on_press(|| {
+                                println!("Increment button clicked");
+                            }))
                         .push(retain::Button::new("Decrement (-)")
-                            .with_message(Message::RetainDecrement))
+                            .on_press(|| {
+                                println!("Decrement button clicked");
+                            }))
                         .push(retain::Button::new("Reset")
-                            .with_message(Message::RetainReset))
+                            .on_press(|| {
+                                println!("Reset button clicked");
+                            }))
                 )
-                // Counter display
-                .push(retain::Text::new(counter_text))
+                // Counter display (placeholder text)
+                .push(retain::Text::new("Count: 0"))
                 // Container demo: Row with two Columns
                 .push(retain::Text::new("--- Container Layout ---"))
                 .push(
@@ -218,13 +212,17 @@ impl Application for State {
                             retain::Column::new()
                                 .push(retain::Text::new("Left Column"))
                                 .push(retain::Button::new("Button L")
-                                    .with_message(Message::RetainIncrement))
+                                    .on_press(|| {
+                                        println!("Left button clicked");
+                                    }))
                         )
                         .push(
                             retain::Column::new()
                                 .push(retain::Text::new("Right Column"))
                                 .push(retain::Button::new("Button R")
-                                    .with_message(Message::RetainDecrement))
+                                    .on_press(|| {
+                                        println!("Right button clicked");
+                                    }))
                         )
                 )
                 // DecoratedContainer demo - single element for multiple decorations
