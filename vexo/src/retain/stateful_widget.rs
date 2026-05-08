@@ -394,3 +394,194 @@ impl<W: StatefulWidget + Clone + 'static> Widget for W {
         Box::new(self.clone())
     }
 }
+
+// ============================================================================
+// UNIT TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner};
+
+    #[derive(Clone)]
+    struct TestCounter {
+        label: String,
+    }
+
+    struct TestCounterState {
+        count: u32,
+    }
+
+    impl Default for TestCounterState {
+        fn default() -> Self {
+            Self { count: 0 }
+        }
+    }
+
+    impl StatefulWidget for TestCounter {
+        type State = TestCounterState;
+
+        fn build(&self, state: &mut TestCounterState, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+            // Return a simple text widget showing the count
+            Box::new(Text::new(format!("{}: {}", self.label, state.count)))
+        }
+    }
+
+    fn create_test_context() -> (
+        ElementId,
+        StateStorage,
+        DirtyTracking,
+        RenderObjectRegistry,
+        ElementRegistry,
+        BuildOwner,
+    ) {
+        (
+            ElementId::new(),
+            StateStorage::new(),
+            DirtyTracking::new(),
+            RenderObjectRegistry::new(),
+            ElementRegistry::new(),
+            BuildOwner::new(),
+        )
+    }
+
+    #[test]
+    fn test_stateful_element_mount_creates_state() {
+        let widget = TestCounter { label: "Count".to_string() };
+        let element = StatefulElement::new(widget);
+
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+
+        // Mount the element
+        let mut ctx = ElementContext::full(
+            element_id,
+            None,
+            &mut state,
+            &mut dirty,
+            &mut render_objects,
+            &mut element_registry,
+        );
+        ctx.build_owner = Some(&mut build_owner);
+
+        let mut element = element;
+        Element::mount(&mut element, &mut ctx);
+
+        // State should be created with default value
+        assert!(state.get::<TestCounterState>(element_id).is_some());
+        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count, 0);
+    }
+
+    #[test]
+    fn test_stateful_element_update_preserves_state() {
+        let widget = TestCounter { label: "Count".to_string() };
+        let mut element = StatefulElement::new(widget);
+
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+
+        // Mount
+        {
+            let mut ctx = ElementContext::full(
+                element_id,
+                None,
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &mut element_registry,
+            );
+            ctx.build_owner = Some(&mut build_owner);
+            Element::mount(&mut element, &mut ctx);
+        }
+
+        // Modify state
+        state.get_mut::<TestCounterState>(element_id).unwrap().count = 5;
+
+        // Update with new widget
+        let new_widget = TestCounter { label: "Updated".to_string() };
+        {
+            let mut ctx = ElementContext::full(
+                element_id,
+                None,
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &mut element_registry,
+            );
+            ctx.build_owner = Some(&mut build_owner);
+            Element::update(&mut element, Box::new(new_widget), &mut ctx);
+        }
+
+        // State should be preserved
+        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count, 5);
+    }
+
+    #[test]
+    fn test_stateful_element_unmount_removes_state() {
+        let widget = TestCounter { label: "Count".to_string() };
+        let mut element = StatefulElement::new(widget);
+
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+
+        // Mount
+        {
+            let mut ctx = ElementContext::full(
+                element_id,
+                None,
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &mut element_registry,
+            );
+            ctx.build_owner = Some(&mut build_owner);
+            Element::mount(&mut element, &mut ctx);
+        }
+
+        // Verify state exists
+        assert!(state.get::<TestCounterState>(element_id).is_some());
+
+        // Unmount
+        {
+            let mut ctx = ElementContext::full(
+                element_id,
+                None,
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &mut element_registry,
+            );
+            ctx.build_owner = Some(&mut build_owner);
+            Element::unmount(&mut element, &mut ctx);
+        }
+
+        // State should be removed
+        assert!(state.get::<TestCounterState>(element_id).is_none());
+    }
+
+    #[test]
+    fn test_stateful_element_can_update_same_type() {
+        let widget = TestCounter { label: "Count".to_string() };
+        let element = StatefulElement::new(widget);
+
+        let new_widget = TestCounter { label: "Updated".to_string() };
+        // Create a reference to the widget for can_update
+        let widget_ref: &dyn Any = &new_widget;
+
+        assert!(element.can_update(widget_ref));
+    }
+
+    #[test]
+    fn test_build_context_request_rebuild() {
+        let (element_id, _state, mut dirty, mut render_objects, _, mut build_owner) = create_test_context();
+
+        let mut ctx = BuildContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &mut build_owner,
+        };
+
+        ctx.request_rebuild();
+
+        assert!(build_owner.is_dirty(element_id));
+    }
+}
