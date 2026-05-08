@@ -110,26 +110,7 @@ impl Widget for Button {
 }
 ```
 
-### 5. TextField Widget with Typed Callback
-
-```rust
-// vexo/src/retain/widgets/text_edit.rs
-
-pub struct TextEdit {
-    pub on_changed: Option<Box<dyn FnMut(&str)>>,
-    pub on_submit: Option<Box<dyn FnMut(&str)>>,
-    pub key: Option<WidgetKey>,
-    pub layout: Layout,
-}
-
-impl TextEdit {
-    pub fn new() -> Self { /* ... */ }
-    pub fn on_changed(mut self, callback: impl FnMut(&str) + 'static) -> Self { /* ... */ }
-    pub fn on_submit(mut self, callback: impl FnMut(&str) + 'static) -> Self { /* ... */ }
-}
-```
-
-### 6. Container Widgets (Column, Row)
+### 5. Container Widgets (Column, Row)
 
 ```rust
 // vexo/src/retain/widgets/container.rs
@@ -146,7 +127,7 @@ impl Column {
 }
 ```
 
-### 7. Modifier Widgets
+### 6. Modifier Widgets
 
 ```rust
 // vexo/src/retain/widgets/modifiers.rs
@@ -162,7 +143,7 @@ impl Padding {
 }
 ```
 
-### 8. Application Structure
+### 7. Application Structure
 
 No `Application` trait. Applications create a struct with signals:
 
@@ -241,7 +222,6 @@ cargo run -p desktop_demo
 
 ### Manual Testing
 - Button `on_press` callback triggers correctly
-- TextField `on_changed` callback receives text changes
 - Container widgets render children correctly
 - Modifier widgets apply styles correctly
 - Signal updates with `mark_dirty()` trigger UI rebuild
