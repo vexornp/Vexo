@@ -52,6 +52,7 @@ mod pipeline;
 mod global_key_registry;
 mod style;
 mod update_result;
+mod stateful_widget;
 
 pub mod widgets;
 pub mod elements;
@@ -85,6 +86,7 @@ pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
+pub use stateful_widget::{StatefulWidget, BuildContext};
 
 pub use widgets::{Widget, Text, Button, Column, Row, DecoratedContainer};
 pub use elements::{LeafElement, ContainerElement};
