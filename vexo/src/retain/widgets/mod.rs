@@ -6,7 +6,6 @@
 mod button;
 mod container;
 mod decorated_container;
-mod gesture_detector;
 mod text;
 
 use std::any::Any;
@@ -19,7 +18,6 @@ use super::UpdateResult;
 pub use button::Button;
 pub use container::{Column, Row};
 pub use decorated_container::DecoratedContainer;
-pub use gesture_detector::GestureDetector;
 pub use text::Text;
 
 /// Immutable widget configuration - rebuilt each frame.

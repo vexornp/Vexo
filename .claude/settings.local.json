@@ -84,7 +84,9 @@
       "Bash(timeout 8 head -200)",
       "Bash(timeout 5 head -50)",
       "Bash(timeout 5 head -30)",
-      "WebFetch(domain:docs.rs)"
+      "WebFetch(domain:docs.rs)",
+      "Bash(pkill -f \"target/debug/desktop_demo\")",
+      "Bash(tee /tmp/demo_output.log)"
     ]
   }
 }

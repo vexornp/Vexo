@@ -86,7 +86,7 @@ pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
 
-pub use widgets::{Widget, Text, Button, Column, Row, GestureDetector, DecoratedContainer};
+pub use widgets::{Widget, Text, Button, Column, Row, DecoratedContainer};
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;
