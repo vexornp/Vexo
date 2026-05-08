@@ -86,7 +86,7 @@ pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
-pub use stateful_widget::{StatefulWidget, BuildContext};
+pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, EmptyRenderObject};
 
 pub use widgets::{Widget, Text, Button, Column, Row, DecoratedContainer};
 pub use elements::{LeafElement, ContainerElement};
