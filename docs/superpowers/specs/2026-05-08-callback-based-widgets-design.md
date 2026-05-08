@@ -1,3 +1,4 @@
+
 # Convert Vexo Retain Mode Widgets to Callback-Based System
 
 **Date:** 2026-05-08
@@ -190,7 +191,21 @@ impl CounterApp {
 | `vexo/src/retain/widgets/container.rs` | Remove `M` from `Column`, `Row` |
 | `vexo/src/retain/widgets/decorated_container.rs` | Remove `M` from `DecoratedContainer` |
 | `vexo/src/retain/element.rs` | Update `on_event` signature |
+| `vexo/src/retain/elements/leaf.rs` | Update Element implementations |
+| `vexo/src/retain/elements/container.rs` | Update Element implementations |
+| `vexo/src/retain/pipeline.rs` | Update widget usage |
 | `shared_app/src/lib.rs` | Update sample app to use callbacks |
+
+## Test Files to Update
+
+| File | Change |
+|------|--------|
+| `vexo/src/retain/integration_tests.rs` | Remove `()` type parameter from widgets |
+| `vexo/src/retain/e2e_test.rs` | Remove `()` type parameter from widgets |
+| `vexo/src/retain/widgets/mod.rs` (tests) | Update test widget implementations |
+| `vexo/src/retain/widgets/text.rs` (tests) | Remove `()` type parameter |
+| `vexo/src/retain/widgets/container.rs` (tests) | Remove `()` type parameter |
+| `vexo/src/retain/widgets/decorated_container.rs` (tests) | Remove `()` type parameter |
 
 ## Files to Keep Unchanged
 
@@ -237,6 +252,9 @@ cargo run -p desktop_demo
 4. Update `Text` widget
 5. Update container widgets (`Column`, `Row`)
 6. Update `DecoratedContainer` widget
-7. Update sample app in `shared_app/src/lib.rs`
-8. Run tests and fix compilation errors
-9. Manual testing
+7. Update Element implementations (`leaf.rs`, `container.rs`)
+8. Update `pipeline.rs`
+9. Update all test files
+10. Update sample app in `shared_app/src/lib.rs`
+11. Run tests and fix compilation errors
+12. Manual testing
