@@ -1,7 +1,7 @@
 //! Text widget - displays a string.
 
 use super::{Element, Widget};
-use super::super::key::{GlobalKey, Key, WidgetKey};
+use super::super::key::WidgetKey;
 use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
 use super::super::UpdateResult;
@@ -81,6 +81,7 @@ impl Widget for Text {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::{Key, GlobalKey};
 
     #[test]
     fn test_text_widget_creation() {

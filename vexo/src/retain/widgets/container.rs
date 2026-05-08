@@ -3,7 +3,7 @@
 //! Column arranges children vertically, Row arranges them horizontally.
 
 use super::{Element, Widget};
-use super::super::key::{GlobalKey, Key, WidgetKey};
+use super::super::key::WidgetKey;
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
 
@@ -182,6 +182,7 @@ impl Widget for Row {
 mod tests {
     use super::*;
     use super::super::Text;
+    use super::super::{Key, GlobalKey};
 
     #[test]
     fn test_column_creation() {

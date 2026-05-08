@@ -9,7 +9,7 @@ use crate::input::{ButtonState, InputEvent};
 use crate::render::RenderCommand;
 
 use super::{Element, Widget};
-use super::super::key::{Key, WidgetKey};
+use super::super::key::WidgetKey;
 use super::super::{EventContext, RenderObject, LayoutContext, LayoutResult, PaintContext, HitTestContext, UpdateResult};
 use crate::layout::{Layout, LayoutNodeId};
 
@@ -376,6 +376,7 @@ impl RenderObject for ButtonRenderObject {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::{Key, GlobalKey};
 
     #[test]
     fn test_button_widget_creation() {

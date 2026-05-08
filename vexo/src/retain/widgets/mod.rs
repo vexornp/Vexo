@@ -19,6 +19,7 @@ pub use button::Button;
 pub use container::{Column, Row};
 pub use decorated_container::DecoratedContainer;
 pub use text::Text;
+pub use super::{Key, GlobalKey};
 
 /// Immutable widget configuration - rebuilt each frame.
 ///

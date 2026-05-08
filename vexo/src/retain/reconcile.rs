@@ -4,7 +4,11 @@ use std::collections::{HashMap, HashSet};
 
 use super::element::ElementRegistry;
 use super::id::ElementId;
-use super::key::{Key, WidgetKey};
+use super::key::WidgetKey;
+
+// Import Key for tests
+#[cfg(test)]
+use super::Key;
 
 /// Trait for widgets that can be reconciled.
 /// This is a minimal trait for the reconciliation algorithm.
@@ -109,6 +113,7 @@ impl ElementRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::Key;
     use super::super::{Element, ElementContext, RenderObjectId};
     use std::cell::Cell;
 
