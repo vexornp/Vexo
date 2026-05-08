@@ -189,18 +189,15 @@ impl Application for State {
                 // Button controls in a Row
                 .push(
                     retain::Row::new()
-                        .push(retain::Button::new("Increment (+)")
-                            .on_press(|| {
-                                println!("Increment button clicked");
-                            }))
-                        .push(retain::Button::new("Decrement (-)")
-                            .on_press(|| {
-                                println!("Decrement button clicked");
-                            }))
-                        .push(retain::Button::new("Reset")
-                            .on_press(|| {
-                                println!("Reset button clicked");
-                            }))
+                        .push(retain::Button::new("Increment (+)").on_press(|| {
+                            log::info!("Increment button clicked");
+                        }))
+                        .push(retain::Button::new("Decrement (-)").on_press(|| {
+                            log::info!("Decrement button clicked");
+                        }))
+                        .push(retain::Button::new("Reset").on_press(|| {
+                            log::info!("Reset button clicked");
+                        })),
                 )
                 // Counter display (placeholder text)
                 .push(retain::Text::new("Count: 0"))
@@ -211,49 +208,46 @@ impl Application for State {
                         .push(
                             retain::Column::new()
                                 .push(retain::Text::new("Left Column"))
-                                .push(retain::Button::new("Button L")
-                                    .on_press(|| {
-                                        println!("Left button clicked");
-                                    }))
+                                .push(retain::Button::new("Button L").on_press(|| {
+                                    log::info!("Left button clicked");
+                                })),
                         )
                         .push(
                             retain::Column::new()
                                 .push(retain::Text::new("Right Column"))
-                                .push(retain::Button::new("Button R")
-                                    .on_press(|| {
-                                        println!("Right button clicked");
-                                    }))
-                        )
+                                .push(retain::Button::new("Button R").on_press(|| {
+                                    log::info!("Right button clicked");
+                                })),
+                        ),
                 )
                 // DecoratedContainer demo - single element for multiple decorations
                 .push(retain::Text::new("--- DecoratedContainer Demo ---"))
                 .push(
                     // This creates 1 element + 1 render object instead of 3 + 3
-                    retain::DecoratedContainer::new(
-                        Box::new(retain::Text::new("Styled with DecoratedContainer!"))
-                    )
+                    retain::DecoratedContainer::new(Box::new(retain::Text::new(
+                        "Styled with DecoratedContainer!",
+                    )))
                     .style(
                         retain::Style::new()
                             .background(vexo::Color::rgb(0.2, 0.6, 0.9))
                             .border(vexo::Color::rgb(0.1, 0.3, 0.5), 2.0)
-                            .corner_radius(12.0)
-                    )
+                            .corner_radius(12.0),
+                    ),
                 )
                 .push(
                     // Another example with different styling
-                    retain::DecoratedContainer::new(
-                        Box::new(retain::Column::new()
+                    retain::DecoratedContainer::new(Box::new(
+                        retain::Column::new()
                             .push(retain::Text::new("Multi-line"))
-                            .push(retain::Text::new("decorated content"))
-                        )
-                    )
+                            .push(retain::Text::new("decorated content")),
+                    ))
                     .style(
                         retain::Style::new()
                             .background(vexo::Color::rgb(0.95, 0.95, 0.95))
                             .border(vexo::Color::rgb(0.7, 0.7, 0.7), 1.0)
-                            .corner_radius(6.0)
-                    )
-                )
+                            .corner_radius(6.0),
+                    ),
+                ),
         ))
     }
 }

@@ -3,6 +3,8 @@
 //! This widget demonstrates event handling in retain mode with callbacks.
 
 use std::any::Any;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position};
 use crate::input::{ButtonState, InputEvent};
@@ -24,7 +26,8 @@ pub struct Button {
     key: Option<WidgetKey>,
     label: String,
     /// Callback invoked when button is pressed.
-    on_press: Option<Box<dyn FnMut()>>,
+    /// Uses Rc<RefCell> for Clone support.
+    on_press: Option<Rc<RefCell<dyn FnMut()>>>,
 }
 
 impl Button {
@@ -45,7 +48,7 @@ impl Button {
 
     /// Set the callback for press events.
     pub fn on_press(mut self, callback: impl FnMut() + 'static) -> Self {
-        self.on_press = Some(Box::new(callback));
+        self.on_press = Some(Rc::new(RefCell::new(callback)));
         self
     }
 
@@ -60,8 +63,8 @@ impl Clone for Button {
         Self {
             key: self.key.clone(),
             label: self.label.clone(),
-            // Note: callbacks are not cloned - they are moved to the element
-            on_press: None,
+            // Rc<RefCell> is Clone, so callbacks survive widget rebuilds
+            on_press: self.on_press.clone(),
         }
     }
 }
@@ -73,11 +76,10 @@ impl Widget for Button {
 
     fn create_element(&self) -> Box<dyn Element> {
         // Create element with label and callback
-        // Note: We clone the widget for storage, but callbacks aren't Clone
-        // So the callback is moved out during element creation
         let elem = ButtonElement::new(
             self.label.clone(),
             self.key.clone(),
+            self.on_press.clone(),
         );
         Box::new(elem)
     }
@@ -119,16 +121,18 @@ pub struct ButtonElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     label: String,
+    on_press: Option<Rc<RefCell<dyn FnMut()>>>,
 }
 
 impl ButtonElement {
     /// Create a new button element.
-    pub fn new(label: String, key: Option<WidgetKey>) -> Self {
+    pub fn new(label: String, key: Option<WidgetKey>, on_press: Option<Rc<RefCell<dyn FnMut()>>>) -> Self {
         Self {
             id: None,
             key,
             render_object: None,
             label,
+            on_press,
         }
     }
 
@@ -158,6 +162,7 @@ impl Element for ButtonElement {
         if let Ok(widget) = new_widget.downcast::<Button>() {
             self.label = widget.label.clone();
             self.key = widget.key.clone();
+            self.on_press = widget.on_press.clone();
 
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
@@ -213,6 +218,10 @@ impl Element for ButtonElement {
             InputEvent::PointerButton { state, .. } => {
                 if *state == ButtonState::Pressed {
                     if context.is_pointer_inside() {
+                        // Invoke callback if set
+                        if let Some(callback) = &self.on_press {
+                            (callback.borrow_mut())();
+                        }
                         // Button was clicked - return a marker
                         return Some(Box::new(()));
                     }
