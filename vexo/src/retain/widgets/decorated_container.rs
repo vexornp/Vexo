@@ -180,15 +180,15 @@ impl RenderObject for DecoratedContainerRenderObject {
 ///
 /// Manages a single child element and updates the render object
 /// when style changes.
-pub struct DecoratedContainerElement<M: Clone + Send + 'static = ()> {
+pub struct DecoratedContainerElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget<M>>>,
+    widget: Option<Box<dyn Widget>>,
     child_element: Option<ElementId>,
 }
 
-impl<M: Clone + Send + 'static> DecoratedContainerElement<M> {
+impl DecoratedContainerElement {
     /// Create a new decorated container element.
     pub fn new() -> Self {
         Self {
@@ -201,8 +201,8 @@ impl<M: Clone + Send + 'static> DecoratedContainerElement<M> {
     }
 
     /// Set the widget for this element.
-    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
-        self.widget = Some(widget.clone_box());
+    pub fn set_widget(&mut self, widget: &dyn Widget) {
+        self.widget = Some(Box::new(widget.clone()));
         self.key = widget.key();
     }
 
@@ -217,18 +217,18 @@ impl<M: Clone + Send + 'static> DecoratedContainerElement<M> {
     }
 
     /// Get the child widget from the stored widget.
-    fn get_child_widget(&self) -> Option<&dyn Widget<M>> {
+    fn get_child_widget(&self) -> Option<&dyn Widget> {
         self.widget.as_ref()?.child()
     }
 }
 
-impl<M: Clone + Send + 'static> Default for DecoratedContainerElement<M> {
+impl Default for DecoratedContainerElement {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
+impl Element for DecoratedContainerElement {
     fn mount(&mut self, context: &mut ElementContext) {
         self.id = Some(context.element_id);
 
@@ -251,7 +251,7 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
 
             // Update the render object with new properties from the widget
@@ -327,7 +327,7 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
         context: &mut ElementContext,
     ) {
         // Downcast and store the new widget
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
 
             // Update the render object with new properties
@@ -352,7 +352,7 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
                     let element_registry = context.element_registry.take();
                     if let Some(registry) = element_registry {
                         if let Some(child_element) = registry.get_mut(child_id) {
-                            let widget_any = Box::new(child_widget.clone_box());
+                            let widget_any = Box::new(Box::new(child_widget.clone()));
                             child_element.rebuild(widget_any, context);
                         }
                         // Restore the registry
@@ -394,15 +394,15 @@ impl<M: Clone + Send + 'static> Element for DecoratedContainerElement<M> {
 ///         .border(Color::BLACK, 2.0)
 ///         .corner_radius(8.0))
 /// ```
-pub struct DecoratedContainer<M: Clone + Send + 'static = ()> {
+pub struct DecoratedContainer {
     key: Option<WidgetKey>,
-    child: Box<dyn Widget<M>>,
+    child: Box<dyn Widget>,
     style: Style,
 }
 
-impl<M: Clone + Send + 'static> DecoratedContainer<M> {
+impl DecoratedContainer {
     /// Create a new decorated container with a child.
-    pub fn new(child: Box<dyn Widget<M>>) -> Self {
+    pub fn new(child: Box<dyn Widget>) -> Self {
         Self {
             key: None,
             child,
@@ -425,7 +425,7 @@ impl<M: Clone + Send + 'static> DecoratedContainer<M> {
     }
 
     /// Get the child widget.
-    pub fn child(&self) -> &dyn Widget<M> {
+    pub fn child(&self) -> &dyn Widget {
         self.child.as_ref()
     }
 
@@ -435,17 +435,17 @@ impl<M: Clone + Send + 'static> DecoratedContainer<M> {
     }
 }
 
-impl<M: Clone + Send + 'static> Clone for DecoratedContainer<M> {
+impl Clone for DecoratedContainer {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            child: self.child.clone_box(),
+            child: self.child.clone(),
             style: self.style.clone(),
         }
     }
 }
 
-impl<M: Clone + Send + 'static> Widget<M> for DecoratedContainer<M> {
+impl Widget for DecoratedContainer {
     fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
@@ -460,15 +460,11 @@ impl<M: Clone + Send + 'static> Widget<M> for DecoratedContainer<M> {
         Box::new(DecoratedContainerRenderObject::new(self.style.clone()))
     }
 
-    fn clone_box(&self) -> Box<dyn Widget<M>> {
-        Box::new(self.clone())
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn child(&self) -> Option<&dyn Widget<M>> {
+    fn child(&self) -> Option<&dyn Widget> {
         Some(self.child.as_ref())
     }
 
@@ -494,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_decorated_container_creation() {
-        let container: DecoratedContainer<()> = DecoratedContainer::new(
+        let container = DecoratedContainer::new(
             Box::new(Text::new("Hello"))
         );
 
@@ -503,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_decorated_container_with_key() {
-        let container: DecoratedContainer<()> = DecoratedContainer::new(
+        let container = DecoratedContainer::new(
             Box::new(Text::new("Hello"))
         ).with_key("my-container");
 
@@ -513,7 +509,7 @@ mod tests {
     #[test]
     fn test_decorated_container_with_global_key() {
         let global_key = GlobalKey::new();
-        let container: DecoratedContainer<()> = DecoratedContainer::new(
+        let container = DecoratedContainer::new(
             Box::new(Text::new("Hello"))
         ).with_key(global_key.clone());
 
@@ -526,7 +522,7 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container: DecoratedContainer<()> = DecoratedContainer::new(
+        let container = DecoratedContainer::new(
             Box::new(Text::new("Hello"))
         ).style(style);
 
@@ -539,7 +535,7 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container: DecoratedContainer<()> = DecoratedContainer::new(
+        let container = DecoratedContainer::new(
             Box::new(Text::new("Hello"))
         ).style(style);
 
@@ -613,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_decorated_container_element_default() {
-        let element: DecoratedContainerElement<()> = DecoratedContainerElement::default();
+        let element = DecoratedContainerElement::default();
 
         assert!(element.id().is_none());
         assert!(element.child_element().is_none());
