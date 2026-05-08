@@ -5,12 +5,14 @@ use std::any::Any;
 use super::id::ElementId;
 use super::id::RenderObjectId;
 use super::dirty::DirtyTracking;
-use super::render_object::RenderObjectRegistry;
+use super::render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 use super::build_owner::BuildOwner;
 use super::element::{Element, ElementRegistry};
 use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
+use crate::core::Logical;
+use crate::render::RenderCommand;
 
 /// Context provided to StatefulWidget::build().
 pub struct BuildContext<'a> {
@@ -322,5 +324,73 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
     fn has_children(&self) -> bool {
         self.child_element_id.is_some()
+    }
+}
+
+// ============================================================================
+// EMPTY RENDER OBJECT
+// ============================================================================
+
+/// Empty render object for StatefulElement.
+///
+/// StatefulElement doesn't render itself - it delegates to its child.
+/// This render object exists only to satisfy the Widget trait.
+pub struct EmptyRenderObject;
+
+impl RenderObject for EmptyRenderObject {
+    fn layout(&mut self, ctx: &mut LayoutContext, _children: &[crate::layout::LayoutNodeId]) -> LayoutResult {
+        let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
+        LayoutResult {
+            node,
+            size: crate::core::Size::new(0.0, 0.0),
+        }
+    }
+
+    fn apply_layout(&mut self, _ctx: &LayoutContext) {}
+
+    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        Vec::new()
+    }
+
+    fn hit_test(&self, _position: crate::core::Point<Logical>, _ctx: &HitTestContext) -> bool {
+        false
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+// ============================================================================
+// WIDGET TRAIT IMPLEMENTATION FOR STATEFULWIDGET
+// ============================================================================
+
+/// Blanket Widget implementation for StatefulWidget types.
+///
+/// This allows StatefulWidget implementations to be used anywhere
+/// a Widget is expected.
+impl<W: StatefulWidget + Clone + 'static> Widget for W {
+    fn key(&self) -> Option<WidgetKey> {
+        None // StatefulWidget widgets can override this if needed
+    }
+
+    fn create_element(&self) -> Box<dyn Element> {
+        Box::new(StatefulElement::new(self.clone()))
+    }
+
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(EmptyRenderObject)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
     }
 }
