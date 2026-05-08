@@ -28,7 +28,11 @@ pub use text::Text;
 ///
 /// The widget tree is the first tree in the three-tree architecture:
 /// Widget (configuration) -> Element (state) -> RenderObject (layout/paint)
-pub trait Widget: Any + Clone {
+///
+/// Note: Widget does not require `Clone` as a supertrait because that would make
+/// the trait not object-safe. Instead, the `clone_boxed()` method provides a way
+/// to clone widgets through trait objects.
+pub trait Widget: Any {
     /// Optional key for identity across frames.
     ///
     /// Widgets with matching keys and types can update each other in place,
@@ -119,6 +123,13 @@ pub trait Widget: Any + Clone {
         // Default: assume everything changed for backward compatibility
         UpdateResult::ALL
     }
+
+    /// Clone this widget into a boxed trait object.
+    ///
+    /// This method is necessary because `Box<dyn Widget>` cannot be cloned directly
+    /// even when `Widget: Clone`. Each widget implementation must provide this method
+    /// to enable cloning of widget trees stored as trait objects.
+    fn clone_boxed(&self) -> Box<dyn Widget>;
 }
 
 #[cfg(test)]
@@ -172,6 +183,10 @@ mod tests {
 
         fn as_any(&self) -> &dyn std::any::Any {
             self
+        }
+
+        fn clone_boxed(&self) -> Box<dyn Widget> {
+            Box::new(self.clone())
         }
     }
 

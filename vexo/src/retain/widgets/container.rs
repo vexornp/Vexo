@@ -8,12 +8,12 @@ use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
 
 /// Column widget - arranges children vertically.
-pub struct Column<M: Clone + Send + 'static = ()> {
+pub struct Column {
     key: Option<WidgetKey>,
-    children: Vec<Box<dyn Widget<M>>>,
+    children: Vec<Box<dyn Widget>>,
 }
 
-impl<M: Clone + Send + 'static> Column<M> {
+impl Column {
     /// Create a new empty column.
     pub fn new() -> Self {
         Self {
@@ -31,39 +31,40 @@ impl<M: Clone + Send + 'static> Column<M> {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget<M> + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[Box<dyn Widget<M>>] {
+    pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
 }
 
-impl<M: Clone + Send + 'static> Default for Column<M> {
+impl Default for Column {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M: Clone + Send + 'static> Clone for Column<M> {
+impl Clone for Column {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            // Clone each child widget using clone_boxed() method
+            children: self.children.iter().map(|c| c.clone_boxed()).collect(),
         }
     }
 }
 
-impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
+impl Widget for Column {
     fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = crate::retain::elements::ContainerElement::<M>::new();
+        let mut elem = crate::retain::elements::ContainerElement::new();
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -72,15 +73,11 @@ impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
         Box::new(ContainerRenderObject::new_column())
     }
 
-    fn clone_box(&self) -> Box<dyn Widget<M>> {
-        Box::new(self.clone())
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn children(&self) -> &[Box<dyn Widget<M>>] {
+    fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
 
@@ -90,15 +87,19 @@ impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
         // Return NONE to avoid unnecessary dirty marking.
         UpdateResult::NONE
     }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
+    }
 }
 
 /// Row widget - arranges children horizontally.
-pub struct Row<M: Clone + Send + 'static = ()> {
+pub struct Row {
     key: Option<WidgetKey>,
-    children: Vec<Box<dyn Widget<M>>>,
+    children: Vec<Box<dyn Widget>>,
 }
 
-impl<M: Clone + Send + 'static> Row<M> {
+impl Row {
     /// Create a new empty row.
     pub fn new() -> Self {
         Self {
@@ -116,39 +117,39 @@ impl<M: Clone + Send + 'static> Row<M> {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget<M> + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[Box<dyn Widget<M>>] {
+    pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
 }
 
-impl<M: Clone + Send + 'static> Default for Row<M> {
+impl Default for Row {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M: Clone + Send + 'static> Clone for Row<M> {
+impl Clone for Row {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            children: self.children.iter().map(|c| c.clone_box()).collect(),
+            children: self.children.iter().map(|c| c.clone_boxed()).collect(),
         }
     }
 }
 
-impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
+impl Widget for Row {
     fn key(&self) -> Option<WidgetKey> {
         self.key.clone()
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        let mut elem = crate::retain::elements::ContainerElement::<M>::new();
+        let mut elem = crate::retain::elements::ContainerElement::new();
         elem.set_widget(self);
         Box::new(elem)
     }
@@ -157,15 +158,11 @@ impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
         Box::new(ContainerRenderObject::new_row())
     }
 
-    fn clone_box(&self) -> Box<dyn Widget<M>> {
-        Box::new(self.clone())
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn children(&self) -> &[Box<dyn Widget<M>>] {
+    fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
 
@@ -174,6 +171,10 @@ impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
         // which are handled by reconciliation, not by property updates.
         // Return NONE to avoid unnecessary dirty marking.
         UpdateResult::NONE
+    }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
     }
 }
 
@@ -184,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_column_creation() {
-        let column: Column<()> = Column::new()
+        let column = Column::new()
             .push(Text::new("First"))
             .push(Text::new("Second"));
 
@@ -193,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_column_with_key() {
-        let column: Column<()> = Column::new()
+        let column = Column::new()
             .with_key("my-column")
             .push(Text::new("Hello"));
 
@@ -203,7 +204,7 @@ mod tests {
     #[test]
     fn test_column_with_global_key() {
         let global_key = GlobalKey::new();
-        let column: Column<()> = Column::new()
+        let column = Column::new()
             .with_key(global_key.clone())
             .push(Text::new("Hello"));
 
@@ -212,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_row_creation() {
-        let row: Row<()> = Row::new()
+        let row = Row::new()
             .push(Text::new("Left"))
             .push(Text::new("Right"));
 
