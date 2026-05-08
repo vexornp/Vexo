@@ -25,23 +25,10 @@ pub use text::Text;
 /// Widgets describe "what should exist" in the UI. They are:
 /// - Cheap to create (no expensive operations in constructors)
 /// - Immutable (no internal state that changes)
-/// - Clonable (implement `Clone` for easy duplication)
 ///
 /// The widget tree is the first tree in the three-tree architecture:
 /// Widget (configuration) -> Element (state) -> RenderObject (layout/paint)
-///
-/// # Type Parameter
-///
-/// The `M` type parameter is the message type emitted by interactive widgets.
-/// Non-interactive widgets (Text, Container, etc.) use `M = ()`.
-/// Interactive widgets (Button) are generic over the application's message type.
-///
-/// # Implementing Clone
-///
-/// All widgets should implement `Clone`. This is not enforced at the trait level
-/// to allow the trait to be dyn-compatible (usable as `&dyn Widget<M>`).
-/// Use the `clone_box` method to clone a boxed widget trait object.
-pub trait Widget<M: Clone + Send + 'static>: Any {
+pub trait Widget: Any {
     /// Optional key for identity across frames.
     ///
     /// Widgets with matching keys and types can update each other in place,
@@ -64,19 +51,13 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     /// and are only updated when marked dirty.
     fn create_render_object(&self) -> Box<dyn RenderObject>;
 
-    /// Clone this widget into a boxed trait object.
-    ///
-    /// Required for storing widgets in elements. Implementations should
-    /// delegate to their `Clone` implementation.
-    fn clone_box(&self) -> Box<dyn Widget<M>>;
-
     /// Check if this widget can update an existing element.
     ///
     /// Default implementation checks type and key match.
     /// Two widgets can update each other if:
     /// 1. They have the same type (TypeId)
     /// 2. They have matching keys (both None or both Some with equal values)
-    fn can_update(&self, other: &dyn Widget<M>) -> bool {
+    fn can_update(&self, other: &dyn Widget) -> bool {
         Any::type_id(self) == Any::type_id(other) && self.key() == other.key()
     }
 
@@ -89,7 +70,7 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     ///
     /// Returns None for leaf widgets and multi-child containers.
     /// Returns Some(child) for single-child modifier widgets like Background, Padding, Border.
-    fn child(&self) -> Option<&dyn Widget<M>> {
+    fn child(&self) -> Option<&dyn Widget> {
         None
     }
 
@@ -97,7 +78,7 @@ pub trait Widget<M: Clone + Send + 'static>: Any {
     ///
     /// Returns an empty slice for leaf widgets and single-child modifiers.
     /// Returns the children for multi-child containers like Column, Row.
-    fn children(&self) -> &[Box<dyn Widget<M>>] {
+    fn children(&self) -> &[Box<dyn Widget>] {
         &[]
     }
 
@@ -176,7 +157,7 @@ mod tests {
         }
     }
 
-    impl Widget<()> for TestWidget {
+    impl Widget for TestWidget {
         fn key(&self) -> Option<WidgetKey> {
             self.key.clone()
         }
@@ -187,10 +168,6 @@ mod tests {
 
         fn create_render_object(&self) -> Box<dyn RenderObject> {
             Box::new(TestRenderObject { layout_node: None })
-        }
-
-        fn clone_box(&self) -> Box<dyn Widget<()>> {
-            Box::new(self.clone())
         }
 
         fn as_any(&self) -> &dyn std::any::Any {
@@ -275,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_widget_creates_render_object() {
-        let widget: Text<()> = Text::new("Hello");
+        let widget = Text::new("Hello");
         let mut render_object = widget.create_render_object();
 
         // Should be able to layout the render object
