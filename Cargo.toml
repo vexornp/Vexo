@@ -40,3 +40,6 @@ glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
 
 # Foreign Function Interface (for mobile exports)
 uniffi = {version = "0.30.0", features = ["cli"] }
+
+# Reactive State
+futures-signals = "0.3"
