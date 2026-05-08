@@ -10,18 +10,15 @@ use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderO
 use crate::retain::key::{Key, WidgetKey};
 
 /// Element for container widgets (multiple children).
-///
-/// Generic over the message type `M` to support ELM-style typed messages.
-/// For non-interactive widgets, `M = ()`.
-pub struct ContainerElement<M: Clone + Send + 'static = ()> {
+pub struct ContainerElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     children: Vec<ElementId>,
     render_object: Option<RenderObjectId>,
-    widget: Option<Box<dyn Widget<M>>>,
+    widget: Option<Box<dyn Widget>>,
 }
 
-impl<M: Clone + Send + 'static> ContainerElement<M> {
+impl ContainerElement {
     /// Create a new container element.
     pub fn new() -> Self {
         Self {
@@ -47,8 +44,8 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
     /// Set the widget for this element.
     ///
     /// Must be called before mount to create the render object.
-    pub fn set_widget(&mut self, widget: &dyn Widget<M>) {
-        self.widget = Some(widget.clone_box());
+    pub fn set_widget(&mut self, widget: &dyn Widget) {
+        self.widget = Some(widget.clone_boxed());
         self.key = widget.key();
     }
 
@@ -69,7 +66,7 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
         &mut self,
         registry: &mut ElementRegistry,
         context: &mut ElementContext,
-        new_child_widgets: Vec<Box<dyn Widget<M>>>,
+        new_child_widgets: Vec<Box<dyn Widget>>,
     ) {
         let existing_children = self.children.clone();
         let mut new_children = Vec::new();
@@ -134,7 +131,7 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
 
             if let Some(child_id) = element_id {
                 // Update existing child
-                let widget_any = Box::new(child_widget.clone_box());
+                let widget_any = Box::new(child_widget.clone_boxed());
                 if let Some(child_element) = registry.get_mut(child_id) {
                     child_element.rebuild(widget_any, context);
                 }
@@ -157,13 +154,13 @@ impl<M: Clone + Send + 'static> ContainerElement<M> {
     }
 }
 
-impl<M: Clone + Send + 'static> Default for ContainerElement<M> {
+impl Default for ContainerElement {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
+impl Element for ContainerElement {
     fn mount(&mut self, context: &mut ElementContext) {
         // Use the element ID from context - single source of truth
         self.id = Some(context.element_id);
@@ -188,9 +185,9 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        // The widget is passed as Box<dyn Widget<M>> but type-erased to Box<dyn Any>
+        // The widget is passed as Box<dyn Widget> but type-erased to Box<dyn Any>
         // We need to downcast it back
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
 
             // Update the render object with new properties from the widget
@@ -269,7 +266,7 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
         context: &mut ElementContext,
     ) {
         // Downcast and store the new widget
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget<M>>>() {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
 
             // Update the render object with new properties
@@ -288,8 +285,8 @@ impl<M: Clone + Send + 'static> Element for ContainerElement<M> {
             }
 
             // Get new child widgets
-            let new_child_widgets: Vec<Box<dyn Widget<M>>> = self.widget.as_ref()
-                .map(|w| w.children().iter().map(|c| c.clone_box()).collect())
+            let new_child_widgets: Vec<Box<dyn Widget>> = self.widget.as_ref()
+                .map(|w| w.children().iter().map(|c| c.clone_boxed()).collect())
                 .unwrap_or_default();
 
             // Reconcile children - extract the registry to avoid double borrow
@@ -319,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_container_element_mount() {
-        let mut element: ContainerElement<()> = ContainerElement::new();
+        let mut element = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -338,7 +335,7 @@ mod tests {
     fn test_container_element_children() {
         use crate::retain::element::ElementRegistry;
 
-        let mut element: ContainerElement<()> = ContainerElement::new();
+        let mut element = ContainerElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -361,7 +358,7 @@ mod tests {
     fn test_container_element_mount_creates_render_object() {
         // This test verifies that mounting a container element with a widget
         // creates a render object in the registry.
-        let mut element: ContainerElement<()> = ContainerElement::new();
+        let mut element = ContainerElement::new();
         let widget = Column::new().push(Text::new("Hello"));
         element.set_widget(&widget);
 
@@ -390,7 +387,7 @@ mod tests {
     fn test_container_element_unmount_removes_render_object() {
         // This test verifies that unmounting a container element removes
         // the render object from the registry.
-        let mut element: ContainerElement<()> = ContainerElement::new();
+        let mut element = ContainerElement::new();
         let widget = Column::new().push(Text::new("Hello"));
         element.set_widget(&widget);
 
