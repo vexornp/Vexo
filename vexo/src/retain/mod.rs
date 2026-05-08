@@ -71,6 +71,8 @@ mod e2e_test;
 mod window_integration_test;
 #[cfg(test)]
 mod build_owner_tests;
+#[cfg(test)]
+mod stateful_integration_test;
 
 pub use key::{Key, GlobalKey, WidgetKey};
 pub use id::{ElementId, RenderObjectId};
