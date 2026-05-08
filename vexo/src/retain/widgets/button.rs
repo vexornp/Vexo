@@ -214,20 +214,15 @@ impl Element for ButtonElement {
         event: &InputEvent,
         context: &mut EventContext,
     ) -> Option<Box<dyn Any>> {
-        match event {
-            InputEvent::PointerButton { state, .. } => {
-                if *state == ButtonState::Pressed {
-                    if context.is_pointer_inside() {
-                        // Invoke callback if set
-                        if let Some(callback) = &self.on_press {
-                            (callback.borrow_mut())();
-                        }
-                        // Button was clicked - return a marker
-                        return Some(Box::new(()));
-                    }
+        if let InputEvent::PointerButton { state, .. } = event {
+            if *state == ButtonState::Pressed && context.is_pointer_inside() {
+                // Invoke callback if set
+                if let Some(callback) = &self.on_press {
+                    (callback.borrow_mut())();
                 }
+                // Button was clicked - return a marker
+                return Some(Box::new(()));
             }
-            _ => {}
         }
         None
     }
@@ -385,7 +380,7 @@ impl RenderObject for ButtonRenderObject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{Key, GlobalKey};
+    use super::super::Key;
 
     #[test]
     fn test_button_widget_creation() {

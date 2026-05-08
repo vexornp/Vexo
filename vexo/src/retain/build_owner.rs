@@ -125,20 +125,11 @@ impl Default for BuildOwner {
 }
 
 /// Result of a rebuild operation.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RebuildResult {
     /// Number of elements rebuilt.
     pub elements_rebuilt: usize,
 
     /// Whether any cycles were detected.
     pub cycles_detected: bool,
-}
-
-impl Default for RebuildResult {
-    fn default() -> Self {
-        Self {
-            elements_rebuilt: 0,
-            cycles_detected: false,
-        }
-    }
 }

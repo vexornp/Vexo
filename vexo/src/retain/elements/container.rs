@@ -292,9 +292,9 @@ impl Element for ContainerElement {
             // Reconcile children - extract the registry to avoid double borrow
             // We need to temporarily take the element_registry to avoid borrowing conflicts
             let element_registry = context.element_registry.take();
-            if let Some(mut registry) = element_registry {
+            if let Some(registry) = element_registry {
                 self.reconcile_children_internal(
-                    &mut registry,
+                    registry,
                     context,
                     new_child_widgets,
                 );

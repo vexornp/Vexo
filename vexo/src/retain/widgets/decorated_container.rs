@@ -63,6 +63,7 @@ impl DecoratedContainerRenderObject {
     }
 
     /// Get the current style.
+    #[allow(dead_code)]
     pub fn style(&self) -> &Style {
         &self.style
     }
@@ -207,11 +208,13 @@ impl DecoratedContainerElement {
     }
 
     /// Get the element ID.
+    #[allow(dead_code)]
     pub fn id(&self) -> Option<ElementId> {
         self.id
     }
 
     /// Get the child element ID.
+    #[allow(dead_code)]
     pub fn child_element(&self) -> Option<ElementId> {
         self.child_element
     }
