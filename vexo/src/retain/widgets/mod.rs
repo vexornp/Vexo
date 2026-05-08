@@ -28,7 +28,7 @@ pub use text::Text;
 ///
 /// The widget tree is the first tree in the three-tree architecture:
 /// Widget (configuration) -> Element (state) -> RenderObject (layout/paint)
-pub trait Widget: Any {
+pub trait Widget: Any + Clone {
     /// Optional key for identity across frames.
     ///
     /// Widgets with matching keys and types can update each other in place,
