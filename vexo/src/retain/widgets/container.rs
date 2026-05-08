@@ -5,7 +5,7 @@
 use super::{Element, Widget};
 use super::super::key::{GlobalKey, Key, WidgetKey};
 use super::super::render_objects::ContainerRenderObject;
-use super::super::RenderObject;
+use super::super::{RenderObject, UpdateResult};
 
 /// Column widget - arranges children vertically.
 pub struct Column<M: Clone + Send + 'static = ()> {
@@ -82,6 +82,13 @@ impl<M: Clone + Send + 'static> Widget<M> for Column<M> {
 
     fn children(&self) -> &[Box<dyn Widget<M>>] {
         &self.children
+    }
+
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
+        // Column has no mutable properties - its structure is determined by children,
+        // which are handled by reconciliation, not by property updates.
+        // Return NONE to avoid unnecessary dirty marking.
+        UpdateResult::NONE
     }
 }
 
@@ -160,6 +167,13 @@ impl<M: Clone + Send + 'static> Widget<M> for Row<M> {
 
     fn children(&self) -> &[Box<dyn Widget<M>>] {
         &self.children
+    }
+
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
+        // Row has no mutable properties - its structure is determined by children,
+        // which are handled by reconciliation, not by property updates.
+        // Return NONE to avoid unnecessary dirty marking.
+        UpdateResult::NONE
     }
 }
 

@@ -100,6 +100,12 @@ impl<M: Clone + Send + 'static> Widget<M> for GestureDetector<M> {
     fn child(&self) -> Option<&dyn Widget<M>> {
         Some(self.child.as_ref())
     }
+
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
+        // GestureDetector is invisible - it has no visual properties to update.
+        // Return NONE to avoid unnecessary dirty marking.
+        UpdateResult::NONE
+    }
 }
 
 /// Element for GestureDetector - handles press/release events.

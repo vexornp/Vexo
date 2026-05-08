@@ -813,26 +813,27 @@ impl<M: Clone + Send + 'static> ThreeTreePipeline<M> {
 
         let mut commands = Vec::new();
 
-        // If no objects need paint, return empty
-        if self.dirty.is_paint_empty() {
-            log::debug!(
-                "[RetainMode] paint() - SKIPPING (no dirty objects, total: {})",
-                total_objects
-            );
-            return commands;
-        }
-
-        log::debug!(
-            "[RetainMode] paint() - Processing {} dirty objects out of {} total",
-            dirty_paint_count,
-            total_objects
-        );
-
         // If no root, nothing to paint
         let root_id = match self.render_objects.root() {
             Some(id) => id,
             None => return commands,
         };
+
+        // Check if we need to paint
+        // Note: We always need to generate render commands for the GPU,
+        // but we log whether this is a full paint or just reusing cached state.
+        if self.dirty.is_paint_empty() {
+            log::debug!(
+                "[RetainMode] paint() - No changes, regenerating commands for {} objects",
+                total_objects
+            );
+        } else {
+            log::debug!(
+                "[RetainMode] paint() - Processing {} dirty objects out of {} total",
+                dirty_paint_count,
+                total_objects
+            );
+        }
 
         // Drain the dirty paint flags (we're about to paint them)
         let _dirty_ids: Vec<_> = self.dirty.drain_paint().collect();
