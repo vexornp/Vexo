@@ -223,21 +223,17 @@ impl ThreeTreePipeline {
 
     /// Rebuild the root element with a new widget.
     ///
-    /// This follows the same pattern as reconcile_element():
-    /// 1. Update the element with the new widget
-    /// 2. Reconcile children separately (to avoid borrow issues)
+    /// This follows the Flutter-style pattern where each element's rebuild()
+    /// method handles both updating the widget and reconciling children.
     fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget>) {
-        let render_object_id = self.element_registry.get(root_id)
-            .and_then(|el| el.render_object());
         let parent = self.element_registry.parent(root_id);
 
         log::debug!(
-            "[RetainMode] rebuild_root() - element_id: {:?}, has_render_object: {}",
-            root_id,
-            render_object_id.is_some()
+            "[RetainMode] rebuild_root() - element_id: {:?}",
+            root_id
         );
 
-        // Step 1: Update the element with the new widget
+        // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
         if let Some(element) = self.element_registry.get_mut(root_id) {
             let mut ctx = ElementContext::with_registry(
@@ -249,142 +245,8 @@ impl ThreeTreePipeline {
             );
             ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
-            element.update(widget_as_any, &mut ctx);
+            element.rebuild(widget_as_any, &mut ctx);
         }
-
-        // Step 2: Reconcile children (same pattern as reconcile_element)
-        let existing_children = self.element_registry.children(root_id).to_vec();
-
-        // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
-        let new_child_widgets: Vec<Box<dyn Widget>> = if let Some(child) = widget.child() {
-            vec![child.clone_boxed()]
-        } else {
-            widget.children().iter()
-                .map(|c| c.clone_boxed())
-                .collect()
-        };
-
-        // Rebuild children recursively
-        self.rebuild_children_internal(root_id, existing_children, new_child_widgets);
-
-        // Note: We only mark dirty if the element's render object actually changed
-        // The element's update() method should handle this via ElementContext
-        // We don't automatically mark dirty here to allow for smarter updates
-    }
-
-    /// Rebuild children of an element.
-    ///
-    /// Similar to reconcile_children_internal but uses rebuild semantics.
-    /// Skips elements that manage their own children (like StatefulElement).
-    fn rebuild_children_internal(
-        &mut self,
-        parent_id: ElementId,
-        existing_children: Vec<ElementId>,
-        new_child_widgets: Vec<Box<dyn Widget>>,
-    ) {
-        // Check if the parent manages its own children
-        // If so, skip reconciliation - the element handles it internally
-        let manages_own = self.element_registry.get(parent_id)
-            .map(|el| el.manages_own_children())
-            .unwrap_or(false);
-
-        if manages_own {
-            log::debug!(
-                "[RetainMode] rebuild_children_internal - skipping, element {:?} manages own children",
-                parent_id
-            );
-            return;
-        }
-
-        let mut new_children = Vec::new();
-        let mut matched = std::collections::HashSet::new();
-
-        // Build key map for existing children (local keys only)
-        let key_map: std::collections::HashMap<super::key::WidgetKey, ElementId> = existing_children
-            .iter()
-            .filter_map(|&id| {
-                self.element_registry.get(id)
-                    .and_then(|el| el.widget_key().map(|k| (k, id)))
-            })
-            .collect();
-
-        // Match new widgets to existing elements
-        for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
-            let element_id = match child_widget.key() {
-                Some(super::key::WidgetKey::Local(key)) => {
-                    // Local key: look up in map
-                    if let Some(&id) = key_map.get(&super::key::WidgetKey::Local(key)) {
-                        if !matched.contains(&id) {
-                            matched.insert(id);
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                Some(super::key::WidgetKey::Global(_)) => {
-                    // Global keys are handled by the pipeline's global registry
-                    // For now, fall back to position-based matching
-                    if let Some(&id) = existing_children.get(index) {
-                        if !matched.contains(&id) {
-                            matched.insert(id);
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                None => {
-                    // Non-keyed: match by position
-                    if let Some(&id) = existing_children.get(index) {
-                        if !matched.contains(&id) {
-                            matched.insert(id);
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-            };
-
-            if let Some(child_id) = element_id {
-                // Check if can update
-                let can_update = self.element_registry.get(child_id)
-                    .map(|el| el.can_update(child_widget.as_any()))
-                    .unwrap_or(false);
-
-                if can_update {
-                    matched.insert(child_id);
-                    // Recursively rebuild this child
-                    self.rebuild_root(child_id, child_widget);
-                    new_children.push(child_id);
-                } else {
-                    // Can't update - mount new
-                    let child_id = self.mount_element_tree(Some(parent_id), child_widget);
-                    new_children.push(child_id);
-                }
-            } else {
-                // No matching child - mount new element
-                let child_id = self.mount_element_tree(Some(parent_id), child_widget);
-                new_children.push(child_id);
-            }
-        }
-
-        // Unmount children that weren't matched
-        for child_id in existing_children {
-            if !matched.contains(&child_id) {
-                self.unmount_element_tree(child_id);
-            }
-        }
-
-        // Update parent's children list
-        self.element_registry.set_children(parent_id, new_children);
     }
 
     /// Perform targeted rebuilds for dirty elements.
@@ -441,9 +303,8 @@ impl ThreeTreePipeline {
 
     /// Recursively reconcile an element and its children with a new widget tree.
     ///
-    /// This method:
-    /// 1. Updates the element with the new widget
-    /// 2. Reconciles children by matching new child widgets to existing child elements
+    /// This follows the Flutter-style pattern where each element's rebuild()
+    /// method handles both updating the widget and reconciling children.
     fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget>) {
         // Get parent before mutable borrow
         let parent = self.element_registry.parent(element_id);
@@ -453,7 +314,7 @@ impl ThreeTreePipeline {
             element_id
         );
 
-        // Update the element with the new widget
+        // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
         if let Some(existing_element) = self.element_registry.get_mut(element_id) {
             let mut ctx = ElementContext::with_registry(
@@ -465,103 +326,8 @@ impl ThreeTreePipeline {
             );
             ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
-            existing_element.update(widget_as_any, &mut ctx);
+            existing_element.rebuild(widget_as_any, &mut ctx);
         }
-
-        // Note: Dirty marking is handled by the element's update() method via ElementContext
-
-        // Get existing children
-        let existing_children = self.element_registry.children(element_id).to_vec();
-
-        // Get new child widgets
-        // First check for single-child widgets (DecoratedContainer, modifiers, etc.)
-        let new_child_widgets: Vec<Box<dyn Widget>> = if let Some(child) = widget.child() {
-            vec![child.clone_boxed()]
-        } else {
-            widget.children().iter()
-                .map(|c| c.clone_boxed())
-                .collect()
-        };
-
-        // Reconcile children
-        self.reconcile_children_internal(element_id, existing_children, new_child_widgets);
-    }
-
-    /// Reconcile children of an element.
-    ///
-    /// This implements a simple diffing algorithm:
-    /// 1. Match children by position (for now, we don't support keys)
-    /// 2. Update matching children, mount new ones, unmount extra ones
-    /// 3. Skip elements that manage their own children (like StatefulElement)
-    fn reconcile_children_internal(
-        &mut self,
-        parent_id: ElementId,
-        existing_children: Vec<ElementId>,
-        new_child_widgets: Vec<Box<dyn Widget>>,
-    ) {
-        // Check if the parent manages its own children
-        // If so, skip reconciliation - the element handles it internally
-        let manages_own = self.element_registry.get(parent_id)
-            .map(|el| el.manages_own_children())
-            .unwrap_or(false);
-
-        if manages_own {
-            log::debug!(
-                "[RetainMode] reconcile_children_internal - skipping, element {:?} manages own children",
-                parent_id
-            );
-            return;
-        }
-
-        let mut new_children = Vec::new();
-        let mut matched = std::collections::HashSet::new();
-        let mut reused_count = 0;
-        let mut mounted_count = 0;
-        let mut unmounted_count = 0;
-
-        // Match by position
-        for (index, child_widget) in new_child_widgets.into_iter().enumerate() {
-            let existing_child = existing_children.get(index).copied();
-
-            if let Some(child_id) = existing_child {
-                // Check if this element can be updated by the new widget
-                let can_update = self.element_registry.get(child_id)
-                    .map(|el| el.can_update(child_widget.as_any()))
-                    .unwrap_or(false);
-
-                if can_update && !matched.contains(&child_id) {
-                    matched.insert(child_id);
-                    // Recursively reconcile this child (REUSED)
-                    reused_count += 1;
-                    self.reconcile_element(child_id, child_widget);
-                    new_children.push(child_id);
-                    continue;
-                }
-            }
-
-            // No matching child - mount new element (NEW)
-            mounted_count += 1;
-            let child_id = self.mount_element_tree(Some(parent_id), child_widget);
-            new_children.push(child_id);
-        }
-
-        // Unmount children that weren't matched (REMOVED)
-        for child_id in existing_children {
-            if !matched.contains(&child_id) {
-                unmounted_count += 1;
-                self.unmount_element_tree(child_id);
-            }
-        }
-
-        // Update parent's children list in the registry
-        self.element_registry.set_children(parent_id, new_children);
-
-        log::debug!(
-            "[RetainMode] reconcile_children - reused: {}, mounted: {}, unmounted: {}",
-            reused_count,
-            mounted_count,
-            unmounted_count
-        );
     }
 
     /// Mount an element tree from a widget.

@@ -327,12 +327,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     fn has_children(&self) -> bool {
         self.child_element_id.is_some()
     }
-
-    /// StatefulElement manages its own children through build().
-    /// The pipeline should NOT reconcile children for this element.
-    fn manages_own_children(&self) -> bool {
-        true
-    }
 }
 
 // ============================================================================

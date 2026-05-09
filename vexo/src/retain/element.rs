@@ -96,16 +96,47 @@ pub trait Element {
         false
     }
 
-    /// Check if this element manages its own children internally.
+    /// Update the given child with a new widget configuration.
     ///
-    /// Returns true for elements like StatefulElement that handle their own
-    /// child reconciliation (e.g., through build()). The pipeline should
-    /// NOT reconcile children for such elements - they do it themselves.
+    /// This is the Flutter-style updateChild() equivalent.
+    /// - If child is None and new_widget is Some: inflate new element
+    /// - If child is Some and new_widget is None: unmount child
+    /// - If both are Some: update if can_update, else replace
+    /// - If both are None: do nothing
     ///
-    /// Returns false for elements whose children are managed by the pipeline
-    /// (ContainerElement, LeafElement, etc.).
-    fn manages_own_children(&self) -> bool {
-        false
+    /// Returns the new or updated child element ID, or None if removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `child` - The existing child element ID (None to always mount new)
+    /// * `new_widget` - The new widget for the child (None to remove)
+    /// * `slot` - Optional slot index for position-based matching
+    /// * `context` - The element context for registry access
+    fn update_child(
+        &mut self,
+        child: Option<ElementId>,
+        new_widget: Option<Box<dyn Widget>>,
+        _slot: Option<usize>,
+        context: &mut ElementContext,
+    ) -> Option<ElementId> {
+        match (child, new_widget) {
+            (None, None) => None,
+            (Some(child_id), None) => {
+                // Remove child
+                if let Some(registry) = context.element_registry.as_mut() {
+                    registry.unmount(child_id);
+                }
+                None
+            }
+            (None, Some(widget)) => {
+                // Create new child using ElementContext's inflate_widget
+                context.inflate_widget(widget)
+            }
+            (Some(child_id), Some(widget)) => {
+                // Update existing or replace using ElementContext's update_child
+                context.update_child(Some(child_id), widget)
+            }
+        }
     }
 }
 
@@ -396,89 +427,10 @@ impl ElementRegistry {
             }
         }
 
-        // 5. Check if this element manages its own children
-        // If so, skip the recursive child mounting - the element handles it internally
-        let manages_own = self.get(element_id)
-            .map(|el| el.manages_own_children())
-            .unwrap_or(false);
-
-        if manages_own {
-            log::debug!(
-                "[RetainMode] inflate_widget - element {:?} manages own children, skipping recursive mount",
-                element_id
-            );
-            return element_id;
-        }
-
-        // 6. Mount children recursively (single-child case - modifiers like Background, Border)
-        if let Some(child_widget) = widget.child() {
-            let child_id = self.inflate_widget(
-                child_widget.clone_boxed(),
-                Some(element_id),
-                state,
-                dirty,
-                render_objects,
-                None, // global_keys only needed for root
-            );
-
-            // Link child render object to parent
-            if let (Some(parent_ro), Some(child_ro)) = (
-                render_object_id,
-                self.get(child_id).and_then(|el| el.render_object()),
-            ) {
-                if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
-                    parent_obj.set_child_id(child_ro);
-                }
-            }
-
-            // Update element's children list
-            if let Some(elem) = self.get_mut(element_id) {
-                elem.add_child(child_id);
-            }
-        }
-
-        // 6. Mount children recursively (multi-child case - containers like Column, Row)
-        let children: Vec<Box<dyn Widget>> = widget.children()
-            .iter()
-            .map(|c| c.clone_boxed())
-            .collect();
-
-        if !children.is_empty() {
-            let mut child_render_objects = Vec::new();
-            let mut child_element_ids = Vec::new();
-
-            for child_widget in children {
-                let child_id = self.inflate_widget(
-                    child_widget,
-                    Some(element_id),
-                    state,
-                    dirty,
-                    render_objects,
-                    None,
-                );
-                child_element_ids.push(child_id);
-
-                if let Some(child_ro) = self.get(child_id).and_then(|el| el.render_object()) {
-                    child_render_objects.push(child_ro);
-                }
-            }
-
-            // Link child render objects to parent container
-            if let Some(parent_ro) = render_object_id {
-                if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
-                    for child_ro in &child_render_objects {
-                        parent_obj.add_child(*child_ro);
-                    }
-                }
-            }
-
-            // Update element's children list
-            if let Some(elem) = self.get_mut(element_id) {
-                for child_id in child_element_ids {
-                    elem.add_child(child_id);
-                }
-            }
-        }
+        // Note: Children are now mounted by each element's mount() method.
+        // This is the Flutter-style approach where each element manages its own children.
+        // ContainerElement, DecoratedContainerElement, and StatefulElement all mount
+        // their children during mount(). LeafElement has no children.
 
         element_id
     }

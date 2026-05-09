@@ -250,6 +250,24 @@ impl Element for DecoratedContainerElement {
                 context.mark_needs_layout(ro_id);
                 context.mark_needs_paint(ro_id);
             }
+
+            // Mount single child if present - this element manages its own child during mount
+            if let Some(child_widget) = widget.child() {
+                if let Some(child_id) = context.inflate_widget(child_widget.clone_boxed()) {
+                    self.child_element = Some(child_id);
+
+                    // Link child render object to this container's render object
+                    if let Some(parent_ro) = self.render_object {
+                        if let Some(registry) = &context.element_registry {
+                            if let Some(child_ro) = registry.get(child_id).and_then(|el| el.render_object()) {
+                                if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
+                                    parent_obj.set_child_id(child_ro);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -348,21 +366,19 @@ impl Element for DecoratedContainerElement {
                 }
             }
 
-            // Reconcile single child if present
+            // Reconcile single child using update_child from the Element trait
             if let Some(child_widget) = self.get_child_widget() {
-                if let Some(child_id) = self.child_element {
-                    // Take the element_registry to avoid double borrow
-                    let element_registry = context.element_registry.take();
-                    if let Some(registry) = element_registry {
-                        if let Some(child_element) = registry.get_mut(child_id) {
-                            // Clone the child widget using clone_boxed
-                            let widget_any = Box::new(child_widget.clone_boxed());
-                            child_element.rebuild(widget_any, context);
-                        }
-                        // Restore the registry
-                        context.element_registry = Some(registry);
-                    }
-                }
+                let new_child = self.update_child(
+                    self.child_element,
+                    Some(child_widget.clone_boxed()),
+                    None,
+                    context,
+                );
+                self.child_element = new_child;
+            } else if let Some(old_child) = self.child_element {
+                // No new child widget - remove the old child
+                self.update_child(Some(old_child), None, None, context);
+                self.child_element = None;
             }
         }
     }
