@@ -114,14 +114,23 @@ impl Widget for Button {
 // ============================================================================
 
 use crate::retain::{ElementContext, ElementId, ElementRegistry, RenderObjectId};
+use crate::retain::elements::RenderObjectElement;
 
 /// Element for Button widget - handles click events.
+///
+/// This element:
+/// - Owns a render object
+/// - Has no children (leaf-like)
+/// - Manages render object lifecycle via RenderObjectElement trait
+/// - Handles click events via on_event()
 pub struct ButtonElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     label: String,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
+    // Stored widget for RenderObjectElement trait
+    widget: Option<Box<dyn Widget>>,
 }
 
 impl ButtonElement {
@@ -133,6 +142,7 @@ impl ButtonElement {
             render_object: None,
             label,
             on_press,
+            widget: None,
         }
     }
 
@@ -143,27 +153,75 @@ impl ButtonElement {
     }
 }
 
+// Implement RenderObjectElement trait
+impl RenderObjectElement for ButtonElement {
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        // Also update label and callback from the widget
+        if let Some(button) = widget.as_any().downcast_ref::<Button>() {
+            self.label = button.label.clone();
+            self.key = button.key.clone();
+            self.on_press = button.on_press.clone();
+        }
+        self.widget = Some(widget);
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectId> {
+        self.render_object
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+        self.render_object = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementId> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementId>) {
+        self.id = id;
+    }
+}
+
 impl Element for ButtonElement {
     fn mount(&mut self, context: &mut ElementContext) {
+        // Store element ID from context
         self.id = Some(context.element_id);
 
-        // Create render object
+        // Register global key if present
+        if let Some(WidgetKey::Global(key)) = &self.key {
+            let _ = context.register_global_key(key.clone(), context.element_id);
+        }
+
+        // Create render object directly (ButtonElement has special handling)
         let render_obj = Box::new(ButtonRenderObject::new(&self.label));
         if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
             self.render_object = Some(ro_id);
             context.render_object = Some(ro_id);
-
             context.mark_needs_layout(ro_id);
             context.mark_needs_paint(ro_id);
         }
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // Downcast and update fields
         if let Ok(widget) = new_widget.downcast::<Button>() {
             self.label = widget.label.clone();
             self.key = widget.key.clone();
             self.on_press = widget.on_press.clone();
 
+            // Update the render object
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
                     if let Some(button_ro) = ro.as_any_mut().downcast_mut::<ButtonRenderObject>() {
@@ -186,10 +244,20 @@ impl Element for ButtonElement {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Unregister global key if present
+        if let Some(WidgetKey::Global(_)) = &self.key {
+            if let Some(id) = self.id {
+                context.unregister_global_key(id);
+            }
+        }
+
+        // Remove render object
         if let Some(ro) = self.render_object {
             context.remove_render_object(ro);
             context.dirty.mark_needs_paint(ro);
         }
+
+        // Remove element state
         if let Some(id) = self.id {
             context.remove_state(id);
         }

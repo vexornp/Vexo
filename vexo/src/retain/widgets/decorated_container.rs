@@ -15,6 +15,7 @@ use crate::retain::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
     RenderObject, RenderObjectId, Widget, WidgetKey, UpdateResult,
 };
+use crate::retain::elements::{RenderObjectElement, SingleChildRenderObjectElement};
 use crate::retain::style::Style;
 
 // ============================================================================
@@ -231,39 +232,68 @@ impl Default for DecoratedContainerElement {
     }
 }
 
+// Implement RenderObjectElement trait
+impl RenderObjectElement for DecoratedContainerElement {
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectId> {
+        self.render_object
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+        self.render_object = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementId> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementId>) {
+        self.id = id;
+    }
+}
+
+// Implement SingleChildRenderObjectElement trait
+impl SingleChildRenderObjectElement for DecoratedContainerElement {
+    fn child_element(&self) -> Option<ElementId> {
+        self.child_element
+    }
+
+    fn set_child_element(&mut self, child: Option<ElementId>) {
+        self.child_element = child;
+    }
+}
+
+// Implement Element trait using the new traits
 impl Element for DecoratedContainerElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        self.id = Some(context.element_id);
+        // Use RenderObjectElement's default mount for render object creation
+        self.mount_render_object(context);
 
-        // Register global key if present
-        if let Some(WidgetKey::Global(key)) = &self.key {
-            let _ = context.register_global_key(key.clone(), context.element_id);
-        }
-
-        // Create render object if widget is set
+        // Mount single child if present - this element manages its own child during mount
         if let Some(widget) = &self.widget {
-            let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
-                self.render_object = Some(ro_id);
-                context.render_object = Some(ro_id);
-
-                context.mark_needs_layout(ro_id);
-                context.mark_needs_paint(ro_id);
-            }
-
-            // Mount single child if present - this element manages its own child during mount
             if let Some(child_widget) = widget.child() {
                 if let Some(child_id) = context.inflate_widget(child_widget.clone_boxed()) {
                     self.child_element = Some(child_id);
 
-                    // Link child render object to this container's render object
-                    if let Some(parent_ro) = self.render_object {
-                        if let Some(registry) = &context.element_registry {
-                            if let Some(child_ro) = registry.get(child_id).and_then(|el| el.render_object()) {
-                                if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
-                                    parent_obj.set_child_id(child_ro);
-                                }
-                            }
+                    // Link child render object using SingleChildRenderObjectElement trait
+                    if let Some(registry) = &context.element_registry {
+                        if let Some(child_ro) = registry.get(child_id).and_then(|el| el.render_object()) {
+                            self.insert_child_render_object(child_ro, context);
                         }
                     }
                 }
@@ -272,41 +302,13 @@ impl Element for DecoratedContainerElement {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
-            self.widget = Some(*widget);
-
-            // Update the render object with new properties from the widget
-            if let Some(ro_id) = self.render_object {
-                if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
-
-                    // Only mark dirty based on what actually changed
-                    if result.contains(UpdateResult::LAYOUT) {
-                        context.mark_needs_layout(ro_id);
-                    }
-                    if result.contains(UpdateResult::PAINT) {
-                        context.mark_needs_paint(ro_id);
-                    }
-                }
-            }
-        }
+        // Use RenderObjectElement's default update for render object updates
+        self.update_render_object(new_widget, context);
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
-        // Unregister global key if present
-        if let Some(WidgetKey::Global(_)) = &self.key {
-            if let Some(id) = self.id {
-                context.unregister_global_key(id);
-            }
-        }
-
-        // Remove render object from registry
-        if let Some(ro) = self.render_object {
-            context.remove_render_object(ro);
-        }
-        if let Some(id) = self.id {
-            context.remove_state(id);
-        }
+        // Use RenderObjectElement's default unmount for render object removal
+        self.unmount_render_object(context);
     }
 
     fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {

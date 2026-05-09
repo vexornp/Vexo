@@ -1,22 +1,39 @@
-//! Leaf element implementation.
+//! LeafRenderObjectElement implementation.
 //!
-//! LeafElement is the simplest element with no children.
+//! LeafRenderObjectElement is the simplest element with no children.
 //! Used by leaf widgets like Text, Image, etc.
+//!
+//! This element owns a render object and manages its lifecycle through
+//! the RenderObjectElement trait.
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
 
 /// Element for leaf widgets (no children).
-pub struct LeafElement {
+///
+/// This element:
+/// - Owns a render object
+/// - Has no children
+/// - Manages render object lifecycle via RenderObjectElement trait
+///
+/// # Example
+///
+/// ```ignore
+/// let mut element = LeafRenderObjectElement::new();
+/// element.set_widget(&Text::new("Hello"));
+/// element.mount(&mut context);
+/// ```
+pub struct LeafRenderObjectElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectId>,
     widget: Option<Box<dyn Widget>>,
 }
 
-impl LeafElement {
+impl LeafRenderObjectElement {
     /// Create a new leaf element.
     pub fn new() -> Self {
         Self {
@@ -51,75 +68,62 @@ impl LeafElement {
     }
 }
 
-impl Default for LeafElement {
+impl Default for LeafRenderObjectElement {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Element for LeafElement {
+// Implement RenderObjectElement trait
+impl RenderObjectElement for LeafRenderObjectElement {
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectId> {
+        self.render_object
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+        self.render_object = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementId> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementId>) {
+        self.id = id;
+    }
+}
+
+// Implement Element trait using RenderObjectElement defaults
+impl Element for LeafRenderObjectElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        // Use the element ID from context - single source of truth
-        self.id = Some(context.element_id);
-
-        // Register global key if present
-        if let Some(WidgetKey::Global(key)) = &self.key {
-            let _ = context.register_global_key(key.clone(), context.element_id);
-        }
-
-        // Create render object if widget is set
-        if let Some(widget) = &self.widget {
-            let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
-                self.render_object = Some(ro_id);
-                context.render_object = Some(ro_id);
-
-                // Mark the new render object as needing layout and paint
-                context.mark_needs_layout(ro_id);
-                context.mark_needs_paint(ro_id);
-            }
-        }
+        // Use RenderObjectElement's default mount implementation
+        self.mount_render_object(context);
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        // The widget is passed as Box<dyn Widget> but type-erased to Box<dyn Any>
-        // We need to downcast it back
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
-            self.widget = Some(*widget);
-
-            // Update the render object with new properties from the widget
-            if let Some(ro_id) = self.render_object {
-                if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
-
-                    // Only mark dirty based on what actually changed
-                    if result.contains(UpdateResult::LAYOUT) {
-                        context.mark_needs_layout(ro_id);
-                    }
-                    if result.contains(UpdateResult::PAINT) {
-                        context.mark_needs_paint(ro_id);
-                    }
-                }
-            }
-        }
+        // Use RenderObjectElement's default update implementation
+        self.update_render_object(new_widget, context);
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
-        // Unregister global key if present
-        if let Some(WidgetKey::Global(_)) = &self.key {
-            if let Some(id) = self.id {
-                context.unregister_global_key(id);
-            }
-        }
-
-        // Remove render object from registry
-        if let Some(ro) = self.render_object {
-            context.remove_render_object(ro);
-            context.dirty.mark_needs_paint(ro);
-        }
-        if let Some(id) = self.id {
-            context.remove_state(id);
-        }
+        // Use RenderObjectElement's default unmount implementation
+        self.unmount_render_object(context);
     }
 
     fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {
@@ -148,6 +152,11 @@ impl Element for LeafElement {
     }
 }
 
+/// Type alias for backward compatibility.
+///
+/// New code should use `LeafRenderObjectElement` directly.
+pub type LeafElement = LeafRenderObjectElement;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_mount() {
-        let mut element = LeafElement::new();
+        let mut element = LeafRenderObjectElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -174,7 +183,7 @@ mod tests {
     fn test_leaf_element_mount_creates_render_object() {
         // This test verifies that mounting a leaf element with a widget
         // creates a render object in the registry.
-        let mut element = LeafElement::new();
+        let mut element = LeafRenderObjectElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
 
@@ -203,7 +212,7 @@ mod tests {
     fn test_leaf_element_unmount_removes_render_object() {
         // This test verifies that unmounting a leaf element removes
         // the render object from the registry.
-        let mut element = LeafElement::new();
+        let mut element = LeafRenderObjectElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
 
@@ -230,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_leaf_element_unmount() {
-        let mut element = LeafElement::new();
+        let mut element = LeafRenderObjectElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
@@ -250,14 +259,14 @@ mod tests {
     #[test]
     fn test_leaf_element_with_key() {
         let key = WidgetKey::Local(Key::new("test-key"));
-        let element = LeafElement::with_key(Some(key.clone()));
+        let element = LeafRenderObjectElement::with_key(Some(key.clone()));
 
         assert_eq!(element.widget_key(), Some(key));
     }
 
     #[test]
     fn test_leaf_element_default() {
-        let element = LeafElement::default();
+        let element = LeafRenderObjectElement::default();
 
         assert!(element.id().is_none());
         assert!(element.widget_key().is_none());
@@ -268,7 +277,7 @@ mod tests {
     fn test_leaf_element_no_children() {
         use crate::retain::element::ElementRegistry;
 
-        let element = LeafElement::new();
+        let element = LeafRenderObjectElement::new();
         let registry = ElementRegistry::new();
         let mut count = 0;
 
@@ -281,9 +290,16 @@ mod tests {
 
     #[test]
     fn test_leaf_element_can_update() {
-        let element = LeafElement::new();
+        let element = LeafRenderObjectElement::new();
 
         // can_update should return true for any widget
         assert!(element.can_update(&"any widget" as &dyn Any));
+    }
+
+    #[test]
+    fn test_backward_compatibility_alias() {
+        // Verify that LeafElement is still usable as an alias
+        let element: LeafElement = LeafRenderObjectElement::new();
+        assert!(element.id().is_none());
     }
 }

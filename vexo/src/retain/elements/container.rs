@@ -1,14 +1,24 @@
-//! Container element implementation.
+//! ContainerElement implementation for multi-child widgets.
 //!
-//! ContainerElement is an element with children.
+//! ContainerElement is an element with multiple children.
 //! Used by container widgets like Column, Row, etc.
+//!
+//! This element owns a render object and manages its lifecycle through
+//! the RenderObjectElement and MultiChildRenderObjectElement traits.
 
 use std::any::Any;
 
 use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget, UpdateResult};
+use crate::retain::elements::{RenderObjectElement, MultiChildRenderObjectElement};
 use crate::retain::key::WidgetKey;
 
 /// Element for container widgets (multiple children).
+///
+/// This element:
+/// - Owns a render object
+/// - Has multiple children
+/// - Manages render object lifecycle via RenderObjectElement trait
+/// - Manages children via MultiChildRenderObjectElement trait
 pub struct ContainerElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
@@ -65,29 +75,64 @@ impl Default for ContainerElement {
     }
 }
 
+// Implement RenderObjectElement trait
+impl RenderObjectElement for ContainerElement {
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectId> {
+        self.render_object
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+        self.render_object = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementId> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementId>) {
+        self.id = id;
+    }
+}
+
+// Implement MultiChildRenderObjectElement trait
+impl MultiChildRenderObjectElement for ContainerElement {
+    fn child_elements(&self) -> &[ElementId] {
+        &self.children
+    }
+
+    fn set_child_elements(&mut self, children: Vec<ElementId>) {
+        self.children = children;
+    }
+
+    fn add_child_element(&mut self, child: ElementId) {
+        self.children.push(child);
+    }
+}
+
+// Implement Element trait
 impl Element for ContainerElement {
     fn mount(&mut self, context: &mut ElementContext) {
-        // Use the element ID from context - single source of truth
-        self.id = Some(context.element_id);
+        // Use RenderObjectElement's default mount for render object creation
+        self.mount_render_object(context);
 
-        // Register global key if present
-        if let Some(WidgetKey::Global(key)) = &self.key {
-            let _ = context.register_global_key(key.clone(), context.element_id);
-        }
-
-        // Create render object if widget is set
+        // Mount children - this element manages its own children during mount
         if let Some(widget) = &self.widget {
-            let render_obj = widget.create_render_object();
-            if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
-                self.render_object = Some(ro_id);
-                context.render_object = Some(ro_id);
-
-                // Mark the new render object as needing layout and paint
-                context.mark_needs_layout(ro_id);
-                context.mark_needs_paint(ro_id);
-            }
-
-            // Mount children - this element manages its own children during mount
             // Get child widgets from the widget
             let child_widgets: Vec<Box<dyn Widget>> = widget.children()
                 .iter()
@@ -110,56 +155,21 @@ impl Element for ContainerElement {
             }
 
             // Link child render objects to this container's render object
-            if let Some(parent_ro) = self.render_object {
-                if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
-                    for child_ro in &child_render_objects {
-                        parent_obj.add_child(*child_ro);
-                    }
-                }
+            for child_ro in &child_render_objects {
+                self.insert_child_render_object(*child_ro, context);
             }
         }
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        // The widget is passed as Box<dyn Widget> but type-erased to Box<dyn Any>
-        // We need to downcast it back
-        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
-            self.widget = Some(*widget);
-
-            // Update the render object with new properties from the widget
-            if let Some(ro_id) = self.render_object {
-                if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
-
-                    // Only mark dirty based on what actually changed
-                    if result.contains(UpdateResult::LAYOUT) {
-                        context.mark_needs_layout(ro_id);
-                    }
-                    if result.contains(UpdateResult::PAINT) {
-                        context.mark_needs_paint(ro_id);
-                    }
-                }
-            }
-        }
+        // Use RenderObjectElement's default update for render object updates
+        self.update_render_object(new_widget, context);
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
-        // Unregister global key if present
-        if let Some(WidgetKey::Global(_)) = &self.key {
-            if let Some(id) = self.id {
-                context.unregister_global_key(id);
-            }
-        }
-
-        // Remove render object from registry
-        if let Some(ro) = self.render_object {
-            context.remove_render_object(ro);
-            context.dirty.mark_needs_paint(ro);
-        }
+        // Use RenderObjectElement's default unmount for render object removal
+        self.unmount_render_object(context);
         // Children are unmounted by the registry
-        if let Some(id) = self.id {
-            context.remove_state(id);
-        }
     }
 
     fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
