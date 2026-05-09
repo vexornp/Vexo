@@ -213,4 +213,57 @@ impl<'a> ElementContext<'a> {
             registry.unregister_element(element_id);
         }
     }
+
+    /// Inflate a widget into an element tree.
+    ///
+    /// Convenience method that delegates to ElementRegistry::inflate_widget().
+    /// This recursively mounts all children and links render objects.
+    ///
+    /// Returns the ID of the inflated element, or None if registries are not available.
+    pub fn inflate_widget(&mut self, widget: Box<dyn super::Widget>) -> Option<ElementId> {
+        let element_registry = self.element_registry.take()?;
+        let render_objects = self.render_objects.take()?;
+
+        let id = element_registry.inflate_widget(
+            widget,
+            Some(self.element_id),
+            self.state,
+            self.dirty,
+            render_objects,
+            self.global_key_registry.take(),
+        );
+
+        self.element_registry = Some(element_registry);
+        self.render_objects = Some(render_objects);
+        Some(id)
+    }
+
+    /// Update or mount a child element.
+    ///
+    /// Convenience method that delegates to ElementRegistry::update_child().
+    /// If the child exists and can update, it updates it; otherwise mounts a new tree.
+    ///
+    /// Returns the ID of the child element, or None if registries are not available.
+    pub fn update_child(
+        &mut self,
+        child_id: Option<ElementId>,
+        widget: Box<dyn super::Widget>,
+    ) -> Option<ElementId> {
+        let element_registry = self.element_registry.take()?;
+        let render_objects = self.render_objects.take()?;
+
+        let id = element_registry.update_child(
+            child_id,
+            widget,
+            self.element_id,
+            self.state,
+            self.dirty,
+            render_objects,
+            self.global_key_registry.take(),
+        );
+
+        self.element_registry = Some(element_registry);
+        self.render_objects = Some(render_objects);
+        Some(id)
+    }
 }

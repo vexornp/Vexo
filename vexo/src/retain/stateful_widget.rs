@@ -214,28 +214,16 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             }
         }
 
-        // Mount the child element with full lifecycle
-        // We need to use mount_element() to call the child's mount lifecycle
-        // which creates render objects, etc.
-        let element_registry = context.element_registry.take();
-        let render_objects = context.render_objects.take();
-        if let (Some(registry), Some(ro)) = (element_registry, render_objects) {
-            let child_id = registry.mount_element(
-                child_widget.create_element(),
-                Some(context.element_id),
-                context.state,
-                context.dirty,
-                ro,
-            );
-            context.render_objects = Some(ro);
-            self.child_element_id = Some(child_id);
+        // Mount the child element tree using inflate_widget
+        // This recursively mounts all children and links render objects
+        self.child_element_id = context.inflate_widget(child_widget);
 
-            // Get the child's render object
-            self.render_object_id = registry.get(child_id)
-                .and_then(|el| el.render_object());
-
-            // Restore the registry
-            context.element_registry = Some(registry);
+        // Get the child's render object for delegation
+        if let Some(child_id) = self.child_element_id {
+            if let Some(registry) = &context.element_registry {
+                self.render_object_id = registry.get(child_id)
+                    .and_then(|el| el.render_object());
+            }
         }
     }
 
@@ -281,48 +269,17 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             }
         }
 
-        // Reconcile child element - take the registries to avoid double borrow
-        let element_registry = context.element_registry.take();
-        let render_objects = context.render_objects.take();
-        if let (Some(registry), Some(ro)) = (element_registry, render_objects) {
-            if let Some(child_id) = self.child_element_id {
-                if registry.contains(child_id) {
-                    // Update existing child
-                    let widget_any: Box<dyn Any> = Box::new(child_widget.clone_boxed());
-                    registry.update_element(child_id, widget_any, context);
-                } else {
-                    // Mount new child with full lifecycle
-                    let new_child_id = registry.mount_element(
-                        child_widget.create_element(),
-                        Some(context.element_id),
-                        context.state,
-                        context.dirty,
-                        ro,
-                    );
-                    self.child_element_id = Some(new_child_id);
-                }
-            } else {
-                // No existing child, mount new with full lifecycle
-                let child_id = registry.mount_element(
-                    child_widget.create_element(),
-                    Some(context.element_id),
-                    context.state,
-                    context.dirty,
-                    ro,
-                );
-                self.child_element_id = Some(child_id);
-            }
+        // Update or mount the child element tree using update_child
+        // This handles both updating existing children and mounting new ones,
+        // recursively mounting all children and linking render objects
+        self.child_element_id = context.update_child(self.child_element_id, child_widget);
 
-            context.render_objects = Some(ro);
-
-            // Update render object reference
-            if let Some(child_id) = self.child_element_id {
+        // Update render object reference for delegation
+        if let Some(child_id) = self.child_element_id {
+            if let Some(registry) = &context.element_registry {
                 self.render_object_id = registry.get(child_id)
                     .and_then(|el| el.render_object());
             }
-
-            // Restore the registry
-            context.element_registry = Some(registry);
         }
     }
 
@@ -369,6 +326,12 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
     fn has_children(&self) -> bool {
         self.child_element_id.is_some()
+    }
+
+    /// StatefulElement manages its own children through build().
+    /// The pipeline should NOT reconcile children for this element.
+    fn manages_own_children(&self) -> bool {
+        true
     }
 }
 

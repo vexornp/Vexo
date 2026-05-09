@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use super::id::{ElementId, RenderObjectId};
 use super::key::WidgetKey;
 use super::element_context::ElementContext;
+use super::global_key_registry::GlobalKeyRegistry;
+use super::widgets::Widget;
 
 /// Persistent element with state and lifecycle.
 ///
@@ -91,6 +93,18 @@ pub trait Element {
     ///
     /// Returns true for containers and modifiers, false for leaves.
     fn has_children(&self) -> bool {
+        false
+    }
+
+    /// Check if this element manages its own children internally.
+    ///
+    /// Returns true for elements like StatefulElement that handle their own
+    /// child reconciliation (e.g., through build()). The pipeline should
+    /// NOT reconcile children for such elements - they do it themselves.
+    ///
+    /// Returns false for elements whose children are managed by the pipeline
+    /// (ContainerElement, LeafElement, etc.).
+    fn manages_own_children(&self) -> bool {
         false
     }
 }
@@ -325,6 +339,218 @@ impl ElementRegistry {
         self.mount_with_id(element, parent, element_id);
 
         element_id
+    }
+
+    /// Inflate a widget into an element tree.
+    ///
+    /// This is the Flutter-style inflateWidget() equivalent.
+    /// Creates an element from the widget, mounts it, and recursively
+    /// mounts all children, linking render objects.
+    ///
+    /// This is the canonical way to create a full element tree from a widget.
+    /// Use this instead of `mount_element()` when you need the entire tree
+    /// (including children) to be mounted.
+    ///
+    /// # Arguments
+    ///
+    /// * `widget` - The widget to inflate into an element tree
+    /// * `parent` - The parent element ID (None for root)
+    /// * `state` - State storage for elements
+    /// * `dirty` - Dirty tracking for layout/paint
+    /// * `render_objects` - Render object registry
+    /// * `global_keys` - Optional global key registry for GlobalKey registration
+    ///
+    /// # Returns
+    ///
+    /// The ID of the root element of the inflated tree.
+    pub fn inflate_widget(
+        &mut self,
+        widget: Box<dyn Widget>,
+        parent: Option<ElementId>,
+        state: &mut super::state::StateStorage,
+        dirty: &mut super::dirty::DirtyTracking,
+        render_objects: &mut super::render_object::RenderObjectRegistry,
+        global_keys: Option<&mut GlobalKeyRegistry>,
+    ) -> ElementId {
+        // 1. Create element from widget
+        let element = widget.create_element();
+
+        // 2. Mount the element (calls mount() lifecycle)
+        let element_id = self.mount_element_with_global_keys(
+            element,
+            parent,
+            state,
+            dirty,
+            render_objects,
+            global_keys,
+        );
+
+        // 3. Get the render object for linking
+        let render_object_id = self.get(element_id)
+            .and_then(|el| el.render_object());
+
+        // 4. Set as root if no parent
+        if parent.is_none() {
+            if let Some(ro_id) = render_object_id {
+                render_objects.set_root(ro_id);
+            }
+        }
+
+        // 5. Check if this element manages its own children
+        // If so, skip the recursive child mounting - the element handles it internally
+        let manages_own = self.get(element_id)
+            .map(|el| el.manages_own_children())
+            .unwrap_or(false);
+
+        if manages_own {
+            log::debug!(
+                "[RetainMode] inflate_widget - element {:?} manages own children, skipping recursive mount",
+                element_id
+            );
+            return element_id;
+        }
+
+        // 6. Mount children recursively (single-child case - modifiers like Background, Border)
+        if let Some(child_widget) = widget.child() {
+            let child_id = self.inflate_widget(
+                child_widget.clone_boxed(),
+                Some(element_id),
+                state,
+                dirty,
+                render_objects,
+                None, // global_keys only needed for root
+            );
+
+            // Link child render object to parent
+            if let (Some(parent_ro), Some(child_ro)) = (
+                render_object_id,
+                self.get(child_id).and_then(|el| el.render_object()),
+            ) {
+                if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
+                    parent_obj.set_child_id(child_ro);
+                }
+            }
+
+            // Update element's children list
+            if let Some(elem) = self.get_mut(element_id) {
+                elem.add_child(child_id);
+            }
+        }
+
+        // 6. Mount children recursively (multi-child case - containers like Column, Row)
+        let children: Vec<Box<dyn Widget>> = widget.children()
+            .iter()
+            .map(|c| c.clone_boxed())
+            .collect();
+
+        if !children.is_empty() {
+            let mut child_render_objects = Vec::new();
+            let mut child_element_ids = Vec::new();
+
+            for child_widget in children {
+                let child_id = self.inflate_widget(
+                    child_widget,
+                    Some(element_id),
+                    state,
+                    dirty,
+                    render_objects,
+                    None,
+                );
+                child_element_ids.push(child_id);
+
+                if let Some(child_ro) = self.get(child_id).and_then(|el| el.render_object()) {
+                    child_render_objects.push(child_ro);
+                }
+            }
+
+            // Link child render objects to parent container
+            if let Some(parent_ro) = render_object_id {
+                if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
+                    for child_ro in &child_render_objects {
+                        parent_obj.add_child(*child_ro);
+                    }
+                }
+            }
+
+            // Update element's children list
+            if let Some(elem) = self.get_mut(element_id) {
+                for child_id in child_element_ids {
+                    elem.add_child(child_id);
+                }
+            }
+        }
+
+        element_id
+    }
+
+    /// Update or mount a child element.
+    ///
+    /// This is the Flutter-style updateChild() equivalent.
+    /// If child_id exists and can update with the new widget, calls update().
+    /// Otherwise, inflates a new element tree.
+    ///
+    /// # Arguments
+    ///
+    /// * `child_id` - The existing child element ID (None to always mount new)
+    /// * `new_widget` - The new widget for the child
+    /// * `parent` - The parent element ID
+    /// * `state` - State storage for elements
+    /// * `dirty` - Dirty tracking for layout/paint
+    /// * `render_objects` - Render object registry
+    /// * `global_keys` - Optional global key registry
+    ///
+    /// # Returns
+    ///
+    /// The element ID of the updated or newly mounted child.
+    pub fn update_child(
+        &mut self,
+        child_id: Option<ElementId>,
+        new_widget: Box<dyn Widget>,
+        parent: ElementId,
+        state: &mut super::state::StateStorage,
+        dirty: &mut super::dirty::DirtyTracking,
+        render_objects: &mut super::render_object::RenderObjectRegistry,
+        global_keys: Option<&mut GlobalKeyRegistry>,
+    ) -> ElementId {
+        // Check if we can update an existing child
+        let can_update_existing = child_id
+            .filter(|&id| self.contains(id))
+            .map(|id| {
+                self.get(id)
+                    .map(|el| el.can_update(new_widget.as_any()))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+
+        if can_update_existing {
+            let id = child_id.unwrap();
+            // Update existing element - use the existing update_element pattern
+            // but we need to handle the context creation differently
+            let widget_any: Box<dyn Any> = Box::new(new_widget.clone_boxed());
+
+            // Create a minimal context for the update
+            // We need to temporarily move the element out, update it, and put it back
+            if let Some(mut element) = self.elements.remove(&id) {
+                let mut ctx = ElementContext::full(
+                    id,
+                    Some(parent),
+                    state,
+                    dirty,
+                    render_objects,
+                    self,
+                );
+                ctx.global_key_registry = global_keys;
+
+                element.update(widget_any, &mut ctx);
+
+                // Put the element back
+                self.elements.insert(id, element);
+            }
+            return id;
+        }
+
+        // Mount new element tree
+        self.inflate_widget(new_widget, Some(parent), state, dirty, render_objects, global_keys)
     }
 }
 

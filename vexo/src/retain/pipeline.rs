@@ -275,12 +275,27 @@ impl ThreeTreePipeline {
     /// Rebuild children of an element.
     ///
     /// Similar to reconcile_children_internal but uses rebuild semantics.
+    /// Skips elements that manage their own children (like StatefulElement).
     fn rebuild_children_internal(
         &mut self,
         parent_id: ElementId,
         existing_children: Vec<ElementId>,
         new_child_widgets: Vec<Box<dyn Widget>>,
     ) {
+        // Check if the parent manages its own children
+        // If so, skip reconciliation - the element handles it internally
+        let manages_own = self.element_registry.get(parent_id)
+            .map(|el| el.manages_own_children())
+            .unwrap_or(false);
+
+        if manages_own {
+            log::debug!(
+                "[RetainMode] rebuild_children_internal - skipping, element {:?} manages own children",
+                parent_id
+            );
+            return;
+        }
+
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
 
@@ -477,12 +492,27 @@ impl ThreeTreePipeline {
     /// This implements a simple diffing algorithm:
     /// 1. Match children by position (for now, we don't support keys)
     /// 2. Update matching children, mount new ones, unmount extra ones
+    /// 3. Skip elements that manage their own children (like StatefulElement)
     fn reconcile_children_internal(
         &mut self,
         parent_id: ElementId,
         existing_children: Vec<ElementId>,
         new_child_widgets: Vec<Box<dyn Widget>>,
     ) {
+        // Check if the parent manages its own children
+        // If so, skip reconciliation - the element handles it internally
+        let manages_own = self.element_registry.get(parent_id)
+            .map(|el| el.manages_own_children())
+            .unwrap_or(false);
+
+        if manages_own {
+            log::debug!(
+                "[RetainMode] reconcile_children_internal - skipping, element {:?} manages own children",
+                parent_id
+            );
+            return;
+        }
+
         let mut new_children = Vec::new();
         let mut matched = std::collections::HashSet::new();
         let mut reused_count = 0;
@@ -536,90 +566,19 @@ impl ThreeTreePipeline {
 
     /// Mount an element tree from a widget.
     ///
-    /// This method creates an element and calls its mount() lifecycle.
-    /// The element's mount() method creates render objects and links children.
+    /// This method delegates to ElementRegistry::inflate_widget() which
+    /// creates an element, mounts it, and recursively mounts all children,
+    /// linking render objects.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
-        // Create element from widget
-        let element = widget.create_element();
-
-        // Mount the element using the registry with global key support
-        let element_id = {
-            let global_keys = self.build_owner.global_keys_mut();
-            self.element_registry.mount_element_with_global_keys(
-                element,
-                parent,
-                &mut self.state,
-                &mut self.dirty,
-                &mut self.render_objects,
-                Some(global_keys),
-            )
-        };
-
-        // Get the render object from the element after it's in the registry
-        let render_object_id = self.element_registry.get(element_id)
-            .and_then(|el| el.render_object());
-
-        // Set the render object as root if this is the root element
-        if parent.is_none() {
-            if let Some(render_id) = render_object_id {
-                self.render_objects.set_root(render_id);
-            }
-        }
-
-        // Mount children recursively
-        // First check for single-child modifiers (Background, Border, etc.)
-        if let Some(child_widget) = widget.child() {
-            let child_id = self.mount_element_tree(Some(element_id), child_widget.clone_boxed());
-
-            // Link child render object to parent
-            if let (Some(parent_ro), Some(child_ro)) = (
-                render_object_id,
-                self.element_registry.get(child_id).and_then(|el| el.render_object()),
-            ) {
-                if let Some(parent_obj) = self.render_objects.get_mut(parent_ro) {
-                    parent_obj.set_child_id(child_ro);
-                }
-            }
-
-            // Update element's children list
-            if let Some(elem) = self.element_registry.get_mut(element_id) {
-                elem.add_child(child_id);
-            }
-        }
-
-        // Then check for multi-child containers (Column, Row)
-        let children: Vec<Box<dyn Widget>> = widget.children().iter().map(|c| c.clone_boxed()).collect();
-        if !children.is_empty() {
-            let mut child_render_objects = Vec::new();
-            let mut child_element_ids = Vec::new();
-
-            for child_widget in children {
-                let child_id = self.mount_element_tree(Some(element_id), child_widget);
-                child_element_ids.push(child_id);
-
-                if let Some(child_ro) = self.element_registry.get(child_id).and_then(|el| el.render_object()) {
-                    child_render_objects.push(child_ro);
-                }
-            }
-
-            // Link child render objects to parent container
-            if let Some(parent_ro) = render_object_id {
-                if let Some(parent_obj) = self.render_objects.get_mut(parent_ro) {
-                    for child_ro in &child_render_objects {
-                        parent_obj.add_child(*child_ro);
-                    }
-                }
-            }
-
-            // Update element's children list
-            if let Some(elem) = self.element_registry.get_mut(element_id) {
-                for child_id in child_element_ids {
-                    elem.add_child(child_id);
-                }
-            }
-        }
-
-        element_id
+        let global_keys = self.build_owner.global_keys_mut();
+        self.element_registry.inflate_widget(
+            widget,
+            parent,
+            &mut self.state,
+            &mut self.dirty,
+            &mut self.render_objects,
+            Some(global_keys),
+        )
     }
 
     /// Unmount an element and all its descendants.
