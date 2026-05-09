@@ -400,3 +400,54 @@ backend.render();
 - Sample application: `shared_app/src/lib.rs`
 - iOS wrapper: `shared_app/src/lib.rs`
 - Build script: `build_for_ios.sh`
+
+## Retain Mode Architecture
+
+Vexo implements Flutter's three-tree architecture for efficient UI updates. The key design principle is that **all elements manage their own children** through the `update_child()` method.
+
+### Element Child Management
+
+Each element is responsible for its own children:
+
+1. **During mount**: Each element's `mount()` method mounts its children
+2. **During rebuild**: Each element's `rebuild()` method uses `update_child()` to reconcile children
+
+This matches Flutter's design where `updateChild()` is a core method on `Element`.
+
+### The `update_child()` Method
+
+The `Element` trait provides a default `update_child()` implementation:
+
+```rust
+fn update_child(
+    &mut self,
+    child: Option<ElementId>,
+    new_widget: Option<Box<dyn Widget>>,
+    slot: Option<usize>,
+    context: &mut ElementContext,
+) -> Option<ElementId>
+```
+
+This method handles all four cases:
+- `(None, Some)` → Inflate new element
+- `(Some, None)` → Unmount child
+- `(Some, Some)` → Update if `can_update()`, else replace
+- `(None, None)` → Do nothing
+
+### Element Types
+
+| Element Type | Children | Child Management |
+|--------------|----------|------------------|
+| `LeafElement` | None | No children to manage |
+| `ContainerElement` | Multiple | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
+| `DecoratedContainerElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
+| `StatefulElement` | Single (from `build()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
+
+### Pipeline Simplification
+
+The `ThreeTreePipeline` no longer has separate child reconciliation methods. Instead:
+- `rebuild_root()` calls `element.rebuild()` - element handles its own children
+- `reconcile_element()` calls `element.rebuild()` - element handles its own children
+- `ElementRegistry::inflate_widget()` only mounts the element - element mounts its children in `mount()`
+
+This design eliminates the need for a `manages_own_children` flag and provides a uniform child management pattern across all element types.
