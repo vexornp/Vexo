@@ -660,6 +660,12 @@ impl ThreeTreePipeline {
     }
 
     /// Handle a pointer event (moved or button).
+    ///
+    /// Events are dispatched using Flutter-style bubbling: the event is sent
+    /// to each element in the hit test path from deepest (innermost) to
+    /// shallowest (root). The first element that handles the event stops
+    /// propagation. This allows modifier elements like GestureDetector to
+    /// intercept events before they reach the child element.
     fn handle_pointer_event(
         &mut self,
         position: Point<Logical>,
@@ -669,43 +675,58 @@ impl ThreeTreePipeline {
         // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
 
-        // 1. Hit test to find target
+        // 1. Hit test to find target and build element path
         let hit_result = self.render_objects.hit_test(absolute_position);
 
-        // 2. Get target element
-        let target_element = hit_result.target_element();
+        if !hit_result.is_hit() {
+            return None;
+        }
 
-        let target_element = target_element?;
-
-        // 3. Get absolute bounds for context (from hit test result)
+        // 2. Get absolute bounds for context (from hit test result)
         let bounds = hit_result.absolute_bounds().unwrap_or_default();
 
-        // 4. Create event context
-        let mut ctx = EventContext::new(
-            position,
-            self.focused_element,
-            bounds,
-            modifiers,
-            &mut self.state,
-        );
+        // 3. Bubble event up the element path (deepest to shallowest)
+        // This matches Flutter's event propagation: innermost element gets
+        // the event first, then it bubbles up to parent elements.
+        // Modifier elements like GestureDetector can intercept events
+        // before they reach the child.
+        let element_path = hit_result.element_path();
+        let mut any_message: Option<Box<dyn Any>> = None;
 
-        // 5. Dispatch to element
-        let any_message = self.element_registry.get_mut(target_element)?
-            .on_event(event, &mut ctx);
+        // Iterate from deepest (last) to shallowest (first)
+        for &element_id in element_path.iter().rev() {
+            if let Some(element) = self.element_registry.get_mut(element_id) {
+                let mut ctx = EventContext::new(
+                    position,
+                    self.focused_element,
+                    bounds,
+                    modifiers,
+                    &mut self.state,
+                );
 
-        // 6. Handle focus requests
-        if let Some(focus) = ctx.focus_request() {
-            self.focused_element = Some(focus);
-        } else if ctx.should_clear_focus() {
-            self.focused_element = None;
-        } else if any_message.is_none() {
-            // If event not handled and it's a press, clear focus
+                let message = element.on_event(event, &mut ctx);
+
+                // Handle focus requests from this element
+                if let Some(focus) = ctx.focus_request() {
+                    self.focused_element = Some(focus);
+                } else if ctx.should_clear_focus() {
+                    self.focused_element = None;
+                }
+
+                if message.is_some() {
+                    any_message = message;
+                    break; // Event handled - stop bubbling
+                }
+            }
+        }
+
+        // If no element handled the event and it's a press, clear focus
+        if any_message.is_none() {
             if let InputEvent::PointerButton { state: ButtonState::Pressed, .. } = event {
                 self.focused_element = None;
             }
         }
 
-        // Return the message directly (already Box<dyn Any>)
         any_message
     }
 

@@ -1,5 +1,5 @@
 # Commit Workflow
-1. Run `cargo build && cargo test` to verify changes
-2. Stage all changes with `git add -A`
-3. Create a descriptive commit message summarizing the changes
-4. Run `git commit` with the message
+
+Use a subagent to handle the commit:
+1. Spawn a general-purpose agent to stage changes and create a commit
+2. The agent should run `git add -A` and `git commit` with a descriptive message summarizing the changes

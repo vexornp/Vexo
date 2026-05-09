@@ -1,6 +1,22 @@
 use vexo::{retain, widgets::Widget, Application, WidgetExt};
 uniffi::setup_scaffolding!();
 
+/// Helper to create a tappable button-like widget using GestureDetector.
+/// This replaces the old Button widget with the Flutter-style composition:
+/// GestureDetector(DecoratedContainer(Text))
+fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> retain::GestureDetector {
+    retain::GestureDetector::new(Box::new(
+        retain::DecoratedContainer::new(Box::new(retain::Text::new(label)))
+            .style(
+                retain::Style::new()
+                    .background(vexo::Color::rgb(0.9, 0.9, 0.9))
+                    .border(vexo::Color::rgb(0.6, 0.6, 0.6), 1.0)
+                    .corner_radius(4.0),
+            ),
+    ))
+    .on_press(on_press)
+}
+
 // --- Retain Mode Counter StatefulWidget ---
 
 /// Counter widget configuration for retain mode.
@@ -40,25 +56,18 @@ impl retain::StatefulWidget for RetainCounter {
                 .push({
                     let label = self.label.clone();
                     retain::Row::new()
-                        .push(
-                            retain::Button::new("-").on_press(move || {
-                                // Note: We can't directly modify state here in the callback
-                                // because callbacks are FnMut() without context access.
-                                // The StatefulWidget pattern requires request_rebuild()
-                                // which needs to be called from build().
-                                // For now, log the action (full state updates need app-level integration).
-                                log::info!("Decrement clicked for {}", label);
-                            }),
-                        )
+                        .push(tap_button("-", move || {
+                            log::info!("Decrement clicked for {}", label);
+                        }))
                         .push({
                             let label = self.label.clone();
-                            retain::Button::new("+").on_press(move || {
+                            tap_button("+", move || {
                                 log::info!("Increment clicked for {}", label);
                             })
                         })
                         .push({
                             let label = self.label.clone();
-                            retain::Button::new("Reset").on_press(move || {
+                            tap_button("Reset", move || {
                                 log::info!("Reset clicked for {}", label);
                             })
                         })
@@ -258,18 +267,18 @@ impl Application for State {
                 .push(RetainCounter {
                     label: "Stateful Counter".to_string(),
                 })
-                // --- Simple Counter (legacy pattern) ---
+                // --- Simple Counter (callbacks) ---
                 .push(retain::Text::new("--- Simple Counter (callbacks) ---"))
-                // Button controls in a Row
+                // Button controls in a Row (using GestureDetector + DecoratedContainer)
                 .push(
                     retain::Row::new()
-                        .push(retain::Button::new("Increment (+)").on_press(|| {
+                        .push(tap_button("Increment (+)", || {
                             log::info!("Increment button clicked");
                         }))
-                        .push(retain::Button::new("Decrement (-)").on_press(|| {
+                        .push(tap_button("Decrement (-)", || {
                             log::info!("Decrement button clicked");
                         }))
-                        .push(retain::Button::new("Reset").on_press(|| {
+                        .push(tap_button("Reset", || {
                             log::info!("Reset button clicked");
                         })),
                 )
@@ -282,14 +291,14 @@ impl Application for State {
                         .push(
                             retain::Column::new()
                                 .push(retain::Text::new("Left Column"))
-                                .push(retain::Button::new("Button L").on_press(|| {
+                                .push(tap_button("Button L", || {
                                     log::info!("Left button clicked");
                                 })),
                         )
                         .push(
                             retain::Column::new()
                                 .push(retain::Text::new("Right Column"))
-                                .push(retain::Button::new("Button R").on_press(|| {
+                                .push(tap_button("Button R", || {
                                     log::info!("Right button clicked");
                                 })),
                         ),

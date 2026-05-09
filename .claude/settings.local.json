@@ -86,7 +86,12 @@
       "Bash(timeout 5 head -30)",
       "WebFetch(domain:docs.rs)",
       "Bash(pkill -f \"target/debug/desktop_demo\")",
-      "Bash(tee /tmp/demo_output.log)"
+      "Bash(tee /tmp/demo_output.log)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:leptos-rs.github.io)",
+      "Bash(ls ~/.cargo/registry/src/*/futures-signals-*/src/*.rs)",
+      "Bash(echo \"Desktop demo started in background. PID: $!\")",
+      "Skill(tavily-search)"
     ]
   }
 }

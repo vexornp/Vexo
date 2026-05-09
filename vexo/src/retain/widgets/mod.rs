@@ -3,9 +3,9 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
-mod button;
 mod container;
 mod decorated_container;
+mod gesture_detector;
 mod text;
 
 use std::any::Any;
@@ -15,9 +15,9 @@ use super::key::WidgetKey;
 use super::RenderObject;
 use super::UpdateResult;
 
-pub use button::Button;
 pub use container::{Column, Row};
 pub use decorated_container::DecoratedContainer;
+pub use gesture_detector::GestureDetector;
 pub use text::Text;
 pub use super::{Key, GlobalKey};
 

@@ -90,7 +90,7 @@ pub use style::Style;
 pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, EmptyRenderObject};
 
-pub use widgets::{Widget, Text, Button, Column, Row, DecoratedContainer};
+pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector};
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;
