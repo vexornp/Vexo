@@ -56,7 +56,7 @@ fn test_drain_dirty() {
     owner.mark_needs_build(id1);
     owner.mark_needs_build(id2);
 
-    let drained: Vec<_> = owner.drain_dirty().collect();
+    let drained = owner.drain_dirty();
 
     assert_eq!(drained.len(), 2);
     assert!(!owner.has_pending_rebuilds());

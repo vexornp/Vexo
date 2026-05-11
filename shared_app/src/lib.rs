@@ -1,4 +1,4 @@
-use vexo::{retain, widgets::Widget, Application, WidgetExt};
+use vexo::{reactive::StatefulMutable, retain, widgets::Widget, Application, WidgetExt};
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
@@ -11,7 +11,8 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> retain::GestureD
                 retain::Style::new()
                     .background(vexo::Color::rgb(0.9, 0.9, 0.9))
                     .border(vexo::Color::rgb(0.6, 0.6, 0.6), 1.0)
-                    .corner_radius(4.0),
+                    .corner_radius(4.0)
+                    .padding(12.0),
             ),
     ))
     .on_press(on_press)
@@ -27,13 +28,22 @@ struct RetainCounter {
 }
 
 /// State for the RetainCounter that persists across rebuilds.
+/// Uses StatefulMutable for reactive count that triggers rebuilds on change.
 struct RetainCounterState {
-    count: u32,
+    count: StatefulMutable<u32>,
+}
+
+impl retain::State for RetainCounterState {
+    fn set_dirty_callback(&mut self, cb: std::sync::Arc<dyn Fn() + Send + Sync>) {
+        self.count.set_dirty_callback(cb);
+    }
 }
 
 impl Default for RetainCounterState {
     fn default() -> Self {
-        Self { count: 0 }
+        Self {
+            count: StatefulMutable::new(0),
+        }
     }
 }
 
@@ -45,33 +55,34 @@ impl retain::StatefulWidget for RetainCounter {
         state: &mut Self::State,
         _ctx: &mut retain::BuildContext,
     ) -> Box<dyn retain::Widget> {
-        let count = state.count;
+        let count = state.count.get();
 
-        // Create a column with label, count display, and buttons
-        // Each button gets its own clone of the label for the closure
+        // Clone StatefulMutable for each callback so they can update the count
+        // and trigger a rebuild of this element.
+        let dec_count = state.count.clone();
+        let inc_count = state.count.clone();
+        let reset_count = state.count.clone();
+
         Box::new(
             retain::Column::new()
                 .push(retain::Text::new(&self.label))
                 .push(retain::Text::new(format!("Count: {}", count)))
-                .push({
-                    let label = self.label.clone();
+                .push(
                     retain::Row::new()
                         .push(tap_button("-", move || {
-                            log::info!("Decrement clicked for {}", label);
+                            let cur = dec_count.get();
+                            if cur > 0 {
+                                dec_count.set(cur - 1);
+                            }
                         }))
-                        .push({
-                            let label = self.label.clone();
-                            tap_button("+", move || {
-                                log::info!("Increment clicked for {}", label);
-                            })
-                        })
-                        .push({
-                            let label = self.label.clone();
-                            tap_button("Reset", move || {
-                                log::info!("Reset clicked for {}", label);
-                            })
-                        })
-                }),
+                        .push(tap_button("+", move || {
+                            let cur = inc_count.get();
+                            inc_count.set(cur + 1);
+                        }))
+                        .push(tap_button("Reset", move || {
+                            reset_count.set(0);
+                        })),
+                ),
         )
     }
 }
@@ -125,7 +136,7 @@ impl vexo::component::Component for CounterComponent {
 
     fn view(
         state: &Self::State,
-        ctx: &mut vexo::component::ComponentContext<'_, Self::Message>,
+        _ctx: &mut vexo::component::ComponentContext<'_, Self::Message>,
     ) -> Box<dyn vexo::widgets::Widget<Self::Message>> {
         let count_text = format!("Count: {}", state.count);
 
@@ -191,7 +202,7 @@ impl Application for State {
     }
 
     fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>> {
-        let text_content = format!("You clicked {} times!", state.click_count);
+        let _text_content = format!("You clicked {} times!", state.click_count);
         let milestone_text = format!("Milestones reached: {}", state.milestones);
 
         vexo::column![
@@ -249,88 +260,12 @@ impl Application for State {
     }
 
     fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
-        // Retain mode widgets use callbacks for event handling.
-        // The callbacks are set via .on_press() and will be invoked
-        // when the button is clicked.
-        //
-        // Note: Callbacks currently don't trigger state updates because
-        // retain_view receives an immutable state reference. Future work
-        // will integrate Mutable<T> for reactive state.
-
         Some(Box::new(
             retain::Column::new()
-                // Header
-                .push(retain::Text::new("Retain Mode Widget Demo"))
-                // --- StatefulWidget Demo ---
-                .push(retain::Text::new("--- StatefulWidget Counter ---"))
-                // RetainCounter demonstrates StatefulWidget with persistent state
+                .push(retain::Text::new("Retain Mode Demo"))
                 .push(RetainCounter {
                     label: "Stateful Counter".to_string(),
-                })
-                // --- Simple Counter (callbacks) ---
-                .push(retain::Text::new("--- Simple Counter (callbacks) ---"))
-                // Button controls in a Row (using GestureDetector + DecoratedContainer)
-                .push(
-                    retain::Row::new()
-                        .push(tap_button("Increment (+)", || {
-                            log::info!("Increment button clicked");
-                        }))
-                        .push(tap_button("Decrement (-)", || {
-                            log::info!("Decrement button clicked");
-                        }))
-                        .push(tap_button("Reset", || {
-                            log::info!("Reset button clicked");
-                        })),
-                )
-                // Counter display (placeholder text)
-                .push(retain::Text::new("Count: 0"))
-                // Container demo: Row with two Columns
-                .push(retain::Text::new("--- Container Layout ---"))
-                .push(
-                    retain::Row::new()
-                        .push(
-                            retain::Column::new()
-                                .push(retain::Text::new("Left Column"))
-                                .push(tap_button("Button L", || {
-                                    log::info!("Left button clicked");
-                                })),
-                        )
-                        .push(
-                            retain::Column::new()
-                                .push(retain::Text::new("Right Column"))
-                                .push(tap_button("Button R", || {
-                                    log::info!("Right button clicked");
-                                })),
-                        ),
-                )
-                // DecoratedContainer demo - single element for multiple decorations
-                .push(retain::Text::new("--- DecoratedContainer Demo ---"))
-                .push(
-                    // This creates 1 element + 1 render object instead of 3 + 3
-                    retain::DecoratedContainer::new(Box::new(retain::Text::new(
-                        "Styled with DecoratedContainer!",
-                    )))
-                    .style(
-                        retain::Style::new()
-                            .background(vexo::Color::rgb(0.2, 0.6, 0.9))
-                            .border(vexo::Color::rgb(0.1, 0.3, 0.5), 2.0)
-                            .corner_radius(12.0),
-                    ),
-                )
-                .push(
-                    // Another example with different styling
-                    retain::DecoratedContainer::new(Box::new(
-                        retain::Column::new()
-                            .push(retain::Text::new("Multi-line"))
-                            .push(retain::Text::new("decorated content")),
-                    ))
-                    .style(
-                        retain::Style::new()
-                            .background(vexo::Color::rgb(0.95, 0.95, 0.95))
-                            .border(vexo::Color::rgb(0.7, 0.7, 0.7), 1.0)
-                            .corner_radius(6.0),
-                    ),
-                ),
+                }),
         ))
     }
 }

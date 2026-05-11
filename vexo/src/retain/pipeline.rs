@@ -176,11 +176,14 @@ impl ThreeTreePipeline {
     /// Reconcile or rebuild based on current state.
     ///
     /// This is the main entry point for frame updates.
-    /// - If `needs_full_reconcile` is true, performs full reconcile
-    /// - Otherwise, performs targeted rebuilds only
+    /// - First, performs any pending state-driven rebuilds
+    /// - Then, reconciles the widget tree with the element tree
     ///
     /// After initial mount, prefer calling `mark_needs_build()` for updates.
     pub fn update(&mut self, root_widget: Box<dyn Widget>) {
+        // First, perform any pending state-driven rebuilds (from setState)
+        self.perform_rebuilds();
+
         log::debug!(
             "[RetainMode] update() - elements: {}, render_objects: {}, needs_full_reconcile: {}",
             self.element_registry.len(),
@@ -253,39 +256,71 @@ impl ThreeTreePipeline {
     ///
     /// This is the Flutter-style rebuild: only dirty elements and their
     /// subtrees are reconciled. Much more efficient than full-tree reconcile.
-    ///
-    /// Returns the number of elements rebuilt.
-    pub fn perform_rebuilds(&mut self) -> usize {
+    pub fn perform_rebuilds(&mut self) {
         if !self.build_owner.has_pending_rebuilds() {
-            return 0;
+            return;
         }
 
-        let mut count = 0;
+        // Sort by depth: parents must rebuild before children
+        let element_registry = &self.element_registry;
+        self.build_owner.sort_dirty_by_depth(|id| element_registry.depth(id));
 
-        // Drain dirty elements and rebuild each
-        let dirty_ids: Vec<ElementId> = self.build_owner.drain_dirty().collect();
+        // Drain dirty elements
+        let dirty_ids: Vec<ElementId> = self.build_owner.drain_dirty_sorted();
 
+        // Rebuild each dirty element
         for element_id in dirty_ids {
-            // Skip if element no longer exists
+            // Skip if element was removed during a previous rebuild
             if !self.element_registry.contains(element_id) {
                 continue;
             }
 
-            // Enter build scope (detect cycles)
+            // Enter build scope (cycle detection)
             if !self.build_owner.enter_build_scope(element_id) {
-                // Cycle detected, skip
                 continue;
             }
 
-            // The actual rebuild would need the new widget
-            // For now, this is a placeholder that will be filled in
-            // when we integrate with the Application's view() method
+            // Get parent for context
+            let parent = self.element_registry.parent(element_id);
 
+            // Take the element out temporarily to avoid borrow conflicts
+            // (we need &mut element_registry for the context while also
+            // calling methods on the element)
+            let mut element = match self.element_registry.remove(element_id) {
+                Some(e) => e,
+                None => {
+                    self.build_owner.exit_build_scope(element_id);
+                    continue;
+                }
+            };
+
+            // Create context with full registry access
+            let mut ctx = ElementContext::full(
+                element_id,
+                parent,
+                &mut self.state,
+                &mut self.dirty,
+                &mut self.render_objects,
+                &mut self.element_registry,
+            );
+            ctx.build_owner = Some(&mut self.build_owner);
+            // Note: global_key_registry not set here because rebuilds don't
+            // register new global keys (only mount does).
+
+            // Rebuild from current state
+            element.rebuild_from_state(&mut ctx);
+
+            // Put the element back
+            self.element_registry.insert(element_id, element);
+
+            // Exit build scope
             self.build_owner.exit_build_scope(element_id);
-            count += 1;
         }
+    }
 
-        count
+    /// Perform state-driven rebuilds only, without a new widget tree.
+    pub fn update_state_only(&mut self) {
+        self.perform_rebuilds();
     }
 
     /// Mark an element as needing rebuild.
@@ -696,12 +731,13 @@ impl ThreeTreePipeline {
         // Iterate from deepest (last) to shallowest (first)
         for &element_id in element_path.iter().rev() {
             if let Some(element) = self.element_registry.get_mut(element_id) {
-                let mut ctx = EventContext::new(
+                let mut ctx = EventContext::with_build_owner(
                     position,
                     self.focused_element,
                     bounds,
                     modifiers,
                     &mut self.state,
+                    &self.build_owner,
                 );
 
                 let message = element.on_event(event, &mut ctx);
@@ -742,12 +778,13 @@ impl ThreeTreePipeline {
         // Bounds not critical for keyboard events
         let bounds = Bounds::default();
 
-        let mut ctx = EventContext::new(
+        let mut ctx = EventContext::with_build_owner(
             Point::zero(),
             self.focused_element,
             bounds,
             modifiers,
             &mut self.state,
+            &self.build_owner,
         );
 
         let any_message = self.element_registry.get_mut(focused)?

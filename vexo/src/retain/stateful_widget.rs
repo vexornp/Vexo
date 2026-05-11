@@ -1,6 +1,7 @@
 //! StatefulWidget trait for widgets with persistent mutable state.
 
 use std::any::Any;
+use std::sync::Arc;
 
 use super::id::ElementId;
 use super::id::RenderObjectId;
@@ -13,6 +14,179 @@ use super::key::WidgetKey;
 use super::widgets::Widget;
 use crate::core::Logical;
 use crate::render::RenderCommand;
+
+// ============================================================================
+// STATE TRAIT
+// ============================================================================
+
+/// Trait for state objects that belong to StatefulElements.
+///
+/// This is the Vexo equivalent of Flutter's `State` class.
+/// Provides lifecycle hooks and a mechanism for wiring up reactive
+/// fields (like `StatefulMutable`) to automatically mark the element
+/// dirty when state changes.
+///
+/// # Implementing State
+///
+/// Every `StatefulWidget::State` type must implement both `State` and `Default`.
+/// For simple state types with no reactive fields, use the `SimpleState` wrapper
+/// or implement `State` with an empty body (all methods have default no-op impls).
+///
+/// For state types containing `StatefulMutable` fields, implement `set_dirty_callback()`
+/// to wire them up:
+///
+/// ```ignore
+/// struct MyState {
+///     count: StatefulMutable<u32>,
+/// }
+///
+/// impl State for MyState {
+///     fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+///         self.count.set_dirty_callback(callback);
+///     }
+/// }
+/// ```
+pub trait State: 'static {
+    /// Called once when the StatefulElement is first mounted.
+    ///
+    /// Equivalent to Flutter's `initState()`. Use this for one-time
+    /// initialization that requires access to the StateContext.
+    fn init(&mut self, _ctx: &mut StateContext) {}
+
+    /// Called when the StatefulElement is removed from the tree.
+    ///
+    /// Equivalent to Flutter's `dispose()`. Use this for cleanup
+    /// like canceling timers or releasing resources.
+    fn dispose(&mut self) {}
+
+    /// Wire up dirty callbacks for any `StatefulMutable` fields.
+    ///
+    /// Override this if your state contains `StatefulMutable` fields.
+    /// The callback marks the owning element dirty in the BuildOwner,
+    /// triggering a rebuild on the next frame.
+    ///
+    /// The default implementation does nothing (no reactive fields).
+    fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {}
+}
+
+/// Wrapper for simple state types that don't need reactive fields.
+///
+/// Use this when your `StatefulWidget::State` is a plain `Default` type
+/// with no `StatefulMutable` fields. It implements both `State` and `Default`
+/// with no-op lifecycle hooks.
+///
+/// # Example
+///
+/// ```ignore
+/// struct MyWidget;
+/// impl StatefulWidget for MyWidget {
+///     type State = SimpleState<MyPlainState>;
+///     // ...
+/// }
+/// ```
+pub struct SimpleState<T: Default + 'static>(pub T);
+
+impl<T: Default + 'static> Default for SimpleState<T> {
+    fn default() -> Self {
+        Self(T::default())
+    }
+}
+
+impl<T: Default + 'static> State for SimpleState<T> {}
+
+impl<T: Default + 'static> std::ops::Deref for SimpleState<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+// ============================================================================
+// STATE CONTEXT
+// ============================================================================
+
+/// Context provided to `State::init()` and available during state mutations.
+///
+/// This is the Vexo equivalent of Flutter's `State` class methods.
+/// The key method is `setState()`, which mutates state and marks the
+/// element dirty for rebuild.
+pub struct StateContext {
+    /// The element ID of the owning StatefulElement.
+    element_id: ElementId,
+
+    /// Raw pointer to the BuildOwner for dirty marking.
+    ///
+    /// # Safety
+    ///
+    /// The BuildOwner is owned by ThreeTreePipeline, which outlives all
+    /// State objects. This pointer is never stored beyond the duration
+    /// of a single setState call.
+    ///
+    /// Uses `*const` because `mark_needs_build()` takes `&self` via
+    /// RefCell interior mutability, so only a shared reference is needed.
+    build_owner: *const BuildOwner,
+}
+
+impl StateContext {
+    /// Create a new StateContext. Only called by StatefulElement.
+    fn new(element_id: ElementId, build_owner: *const BuildOwner) -> Self {
+        Self {
+            element_id,
+            build_owner,
+        }
+    }
+
+    /// Flutter-style setState: apply mutation, then mark dirty.
+    ///
+    /// The closure should contain all state mutations. After the closure
+    /// runs, the element is marked dirty and will rebuild on the next frame.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// ctx.setState(state, |s| {
+    ///     s.count += 1;
+    /// });
+    /// ```
+    #[allow(non_snake_case)]
+    pub fn setState<S, F>(&mut self, state: &mut S, callback: F)
+    where
+        F: FnOnce(&mut S),
+    {
+        callback(state); // Apply mutation immediately
+        // SAFETY: build_owner points to ThreeTreePipeline's BuildOwner,
+        // which is alive for the entire lifetime of the pipeline.
+        unsafe {
+            (*self.build_owner).mark_needs_build(self.element_id);
+        }
+    }
+
+    /// Mark this element as needing rebuild without mutating state.
+    ///
+    /// Useful when an external event requires a rebuild but no state
+    /// mutation is needed (e.g., a reactive signal changed).
+    pub fn request_rebuild(&self) {
+        // SAFETY: Same invariant as setState.
+        unsafe {
+            (*self.build_owner).mark_needs_build(self.element_id);
+        }
+    }
+
+    /// Get the element ID of the owning StatefulElement.
+    pub fn element_id(&self) -> ElementId {
+        self.element_id
+    }
+}
+
+// ============================================================================
+// BUILD CONTEXT
+// ============================================================================
 
 /// Context provided to StatefulWidget::build().
 pub struct BuildContext<'a> {
@@ -89,14 +263,15 @@ impl<'a> BuildContext<'a> {
 pub trait StatefulWidget: Sized + 'static {
     /// The mutable state type that persists across rebuilds.
     ///
-    /// Must implement Default for initialization.
-    type State: Default;
+    /// Must implement `State + Default` for initialization and lifecycle.
+    /// The blanket `impl<T: Default + 'static> State for T {}` ensures
+    /// backward compatibility with plain `Default` state types.
+    type State: State + Default;
 
     /// Build the widget tree using current state.
     ///
-    /// Called during mount and update. The state is passed mutably
-    /// so the widget can modify it. Call `ctx.request_rebuild()`
-    /// after modifying state to trigger a rebuild.
+    /// Called during mount, update, and state-driven rebuilds.
+    /// The state is passed mutably so the widget can modify it.
     fn build(&self, state: &mut Self::State, ctx: &mut BuildContext) -> Box<dyn Widget>;
 }
 
@@ -122,6 +297,22 @@ pub struct StatefulElement<W: StatefulWidget> {
 
     /// The render object ID (from child, if any).
     render_object_id: Option<RenderObjectId>,
+
+    /// Raw pointer to BuildOwner for creating StateContext and dirty callbacks.
+    ///
+    /// Set during mount when BuildOwner is available. Used by State lifecycle
+    /// methods (init, set_dirty_callback) and by rebuild_from_state().
+    ///
+    /// # Safety
+    ///
+    /// The BuildOwner is owned by ThreeTreePipeline, which outlives all
+    /// StatefulElement objects. The pointer is only dereferenced during
+    /// mount, unmount, and rebuild_from_state — all of which are called
+    /// by the pipeline while it holds a reference to BuildOwner.
+    ///
+    /// Uses `*const` because `mark_needs_build()` takes `&self` via
+    /// RefCell interior mutability.
+    build_owner_ptr: Option<*const BuildOwner>,
 }
 
 impl<W: StatefulWidget> StatefulElement<W> {
@@ -134,6 +325,7 @@ impl<W: StatefulWidget> StatefulElement<W> {
             key,
             child_element_id: None,
             render_object_id: None,
+            build_owner_ptr: None,
         }
     }
 }
@@ -169,17 +361,46 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             let _ = context.register_global_key(key.clone(), context.element_id);
         }
 
+        let element_id = context.element_id;
+
         // Initialize state with Default
-        let state = W::State::default();
-        context.insert_state(context.element_id, state);
+        let mut state = W::State::default();
+
+        // Wire up State lifecycle: set dirty callback and call init()
+        if let Some(build_owner) = context.build_owner.as_mut() {
+            let bo_ptr = &**build_owner as *const BuildOwner;
+            self.build_owner_ptr = Some(bo_ptr);
+
+            // Create dirty callback for StatefulMutable fields.
+            // We use a *const pointer (read-only) because mark_needs_build()
+            // now takes &self via interior mutability (RefCell).
+            // Cast to usize for Send+Sync safety — raw pointers are not Send/Sync,
+            // but usize is. The pointer is only dereferenced within the same
+            // thread where it was created (the main UI thread).
+            let bo_addr = bo_ptr as usize;
+            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                // SAFETY: BuildOwner outlives all State objects.
+                // This is guaranteed because BuildOwner is owned by ThreeTreePipeline.
+                // The pointer is only dereferenced on the main UI thread.
+                // mark_needs_build() takes &self via RefCell interior mutability,
+                // so this is safe even during event handling when the pipeline
+                // has a mutable borrow.
+                unsafe {
+                    let bo = bo_addr as *const BuildOwner;
+                    (*bo).mark_needs_build(element_id);
+                }
+            });
+            state.set_dirty_callback(dirty_callback);
+
+            // Call State::init() lifecycle hook
+            let mut state_ctx = StateContext::new(element_id, bo_ptr);
+            state.init(&mut state_ctx);
+        }
+
+        // Store state in StateStorage
+        context.insert_state(element_id, state);
 
         // Build the child widget tree
-        // We need to split borrows carefully:
-        // 1. First, extract render_objects and build_owner from context
-        // 2. Then, get state and dirty separately
-        // Note: build_owner may be None - that's OK for initial build
-
-        let element_id = context.element_id;
         let child_widget;
 
         {
@@ -188,15 +409,11 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             let mut build_owner = context.build_owner.take();
 
             // Now we can borrow state and dirty without conflict
-            // Use reborrow to get &mut from &'a mut
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let dirty = &mut *context.dirty;
 
             // Build with the extracted references
-            // Note: build_owner is optional - we can build without it
             if let Some(ro) = render_objects {
-                // Create a temporary BuildOwner if not provided
-                // This is needed for the initial build (request_rebuild won't work in this case)
                 let mut temp_build_owner = BuildOwner::new();
                 let bo = if let Some(bo) = build_owner.as_mut() {
                     bo
@@ -207,7 +424,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
                 // Restore the taken values
                 context.render_objects = Some(ro);
-                // Restore build_owner if it was Some
                 context.build_owner = build_owner;
             } else {
                 child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
@@ -215,7 +431,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         }
 
         // Mount the child element tree using inflate_widget
-        // This recursively mounts all children and links render objects
         self.child_element_id = context.inflate_widget(child_widget);
 
         // Get the child's render object for delegation
@@ -284,6 +499,13 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Call State::dispose() lifecycle hook before removing state
+        if let Some(id) = self.id {
+            if let Some(state) = context.state.get_mut::<W::State>(id) {
+                state.dispose();
+            }
+        }
+
         // Unregister global key if present
         if let Some(WidgetKey::Global(_)) = &self.key {
             if let Some(id) = self.id {
@@ -326,6 +548,52 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
     fn has_children(&self) -> bool {
         self.child_element_id.is_some()
+    }
+
+    fn rebuild_from_state(&mut self, context: &mut ElementContext) {
+        // Rebuild using the CURRENT widget + updated state.
+        // This is called by perform_rebuilds() when setState() or
+        // StatefulMutable::set() marked this element dirty.
+
+        let element_id = self.id.unwrap_or(context.element_id);
+        let child_widget;
+
+        {
+            // Extract render_objects and build_owner first (they're Options)
+            let render_objects = context.render_objects.take();
+            let mut build_owner = context.build_owner.take();
+
+            // Get state and dirty
+            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
+            let dirty = &mut *context.dirty;
+
+            if let Some(ro) = render_objects {
+                let mut temp_build_owner = BuildOwner::new();
+                let bo = if let Some(bo) = build_owner.as_mut() {
+                    bo
+                } else {
+                    &mut temp_build_owner
+                };
+                // Build with CURRENT widget, updated state
+                child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
+
+                context.render_objects = Some(ro);
+                context.build_owner = build_owner;
+            } else {
+                child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
+            }
+        }
+
+        // Reconcile child
+        self.child_element_id = context.update_child(self.child_element_id, child_widget);
+
+        // Update render object reference
+        if let Some(child_id) = self.child_element_id {
+            if let Some(registry) = &context.element_registry {
+                self.render_object_id = registry.get(child_id)
+                    .and_then(|el| el.render_object());
+            }
+        }
     }
 }
 
@@ -420,6 +688,8 @@ mod tests {
             Self { count: 0 }
         }
     }
+
+    impl State for TestCounterState {}
 
     impl StatefulWidget for TestCounter {
         type State = TestCounterState;

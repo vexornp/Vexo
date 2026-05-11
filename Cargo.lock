@@ -1997,6 +1997,7 @@ name = "shared_app"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
+ "futures-signals",
  "log",
  "parking_lot",
  "pollster",

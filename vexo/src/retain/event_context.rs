@@ -6,6 +6,7 @@ use crate::core::{Bounds, Logical, Point};
 use crate::input::Modifiers;
 
 use super::{ElementId, StateStorage};
+use super::build_owner::BuildOwner;
 
 // ============================================================================
 // EVENT CONTEXT
@@ -18,6 +19,7 @@ use super::{ElementId, StateStorage};
 /// - Focus state for keyboard event routing
 /// - Element bounds for position calculations
 /// - State storage for element-local state
+/// - Build owner for marking elements dirty from event handlers
 pub struct EventContext<'a> {
     /// Current pointer position in logical coordinates.
     pub pointer_position: Point<Logical>,
@@ -33,6 +35,22 @@ pub struct EventContext<'a> {
 
     /// State storage for element-local state.
     pub state: &'a mut StateStorage,
+
+    /// Build owner for marking elements dirty from event handlers.
+    ///
+    /// When an event handler calls `setState()` or `StatefulMutable::set()`,
+    /// the dirty callback needs access to the BuildOwner. This field
+    /// provides that access.
+    ///
+    /// Uses a shared reference (`&BuildOwner`) because `mark_needs_build()`
+    /// takes `&self` via RefCell interior mutability. This is critical for
+    /// event handling: the pipeline holds `&mut self` during event dispatch,
+    /// and the dirty callbacks fire from within that context. Using a shared
+    /// reference avoids aliasing UB that would occur with `&mut BuildOwner`.
+    ///
+    /// This is `Some` when the pipeline provides BuildOwner access
+    /// (which is the normal case), and `None` in test contexts.
+    pub build_owner: Option<&'a BuildOwner>,
 
     /// Focus request from the element (if any).
     /// Set by `request_focus()`.
@@ -57,6 +75,28 @@ impl<'a> EventContext<'a> {
             bounds,
             modifiers,
             state,
+            build_owner: None,
+            focus_request: None,
+            clear_focus_request: false,
+        }
+    }
+
+    /// Create a new event context with BuildOwner access.
+    pub fn with_build_owner(
+        pointer_position: Point<Logical>,
+        focused_element: Option<ElementId>,
+        bounds: Bounds<Logical>,
+        modifiers: Modifiers,
+        state: &'a mut StateStorage,
+        build_owner: &'a BuildOwner,
+    ) -> Self {
+        Self {
+            pointer_position,
+            focused_element,
+            bounds,
+            modifiers,
+            state,
+            build_owner: Some(build_owner),
             focus_request: None,
             clear_focus_request: false,
         }
@@ -114,6 +154,16 @@ impl<'a> EventContext<'a> {
     /// Check if the alt key is pressed.
     pub fn is_alt_pressed(&self) -> bool {
         self.modifiers.alt
+    }
+
+    /// Mark an element as needing rebuild.
+    ///
+    /// Convenience method for event handlers that need to trigger
+    /// a rebuild after modifying state.
+    pub fn mark_needs_build(&self, element_id: ElementId) {
+        if let Some(bo) = self.build_owner {
+            bo.mark_needs_build(element_id);
+        }
     }
 }
 

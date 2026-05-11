@@ -75,7 +75,12 @@ impl RenderObject for DecoratedContainerRenderObject {
         // DecoratedContainer needs its own layout node to have a position in the parent container.
         // It wraps the child in a container-like node so the parent can position this container,
         // and the child is positioned relative to this container.
-        let layout = Layout::default();
+        let mut layout = Layout::default();
+
+        // Apply padding from style if set
+        if let Some(padding) = self.style.padding {
+            layout = layout.padding(padding);
+        }
 
         // Create a container node that holds the child
         let node = ctx.engine().create_container(&layout, child_nodes);

@@ -61,12 +61,11 @@ impl TextRenderObject {
     ///
     /// Returns true if the content changed.
     pub fn set_content(&mut self, content: &str) -> bool {
-        if self.content != content {
+        let changed = self.content != content;
+        if changed {
             self.content = content.to_string();
-            true
-        } else {
-            false
         }
+        changed
     }
 
     /// Set the font size.

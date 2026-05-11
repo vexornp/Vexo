@@ -363,6 +363,17 @@ impl<A: Application + 'static> WindowState<A> {
             // In the future, we could add a downcast or a separate callback mechanism.
             let _ = msg;
         }
+
+        // If events triggered setState (pending rebuilds), request a redraw
+        // so the state-driven rebuilds are processed on the next frame.
+        if let Some(pipeline) = &self.retain_pipeline {
+            if pipeline.has_pending_rebuilds() {
+                log::info!("process_input_event_retain: pending rebuilds detected, requesting redraw");
+                if let Some(win) = &self.window {
+                    win.request_redraw();
+                }
+            }
+        }
     }
 
     /// Handle the response from widget event processing.
@@ -481,7 +492,10 @@ impl<A: Application + 'static> WindowState<A> {
         log::debug!("[RetainMode]   Immediate: Rebuilds entire widget tree every frame");
         log::debug!("[RetainMode]   Retain:    Only updates changed parts");
 
-        // 6. Update widget tree (targeted rebuild or full reconcile)
+        // 6. Perform state-driven rebuilds FIRST (before widget tree reconcile)
+        pipeline.perform_rebuilds();
+
+        // 7. Update widget tree (targeted rebuild or full reconcile)
         pipeline.update(widget_tree);
 
         // 7. Compute logical size

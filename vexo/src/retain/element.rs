@@ -138,6 +138,18 @@ pub trait Element {
             }
         }
     }
+
+    /// Rebuild this element from its current state (without a new widget).
+    ///
+    /// Called by `perform_rebuilds()` when a StatefulElement has been marked
+    /// dirty via `setState()` or `StatefulMutable::set()`. The element should
+    /// rebuild its child widget tree from the current state and reconcile.
+    ///
+    /// The default implementation does nothing (leaf/container elements have
+    /// no state to rebuild from). Only StatefulElement overrides this.
+    fn rebuild_from_state(&mut self, _context: &mut ElementContext) {
+        // Default: no-op. StatefulElement overrides this.
+    }
 }
 
 /// Central registry for all live elements.
@@ -264,6 +276,39 @@ impl ElementRegistry {
     /// Check if the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
+    }
+
+    /// Compute the depth of an element in the tree.
+    ///
+    /// Root has depth 0, its children have depth 1, etc.
+    /// Used by BuildOwner to sort dirty elements so parents
+    /// rebuild before children (Flutter invariant).
+    pub fn depth(&self, id: ElementId) -> usize {
+        let mut depth = 0;
+        let mut current = id;
+        while let Some(Some(parent)) = self.parent_map.get(&current) {
+            depth += 1;
+            current = *parent;
+        }
+        depth
+    }
+
+    /// Remove an element from the registry, returning it.
+    ///
+    /// Used by `perform_rebuilds()` to temporarily take an element out
+    /// of the registry to avoid borrow conflicts while creating an
+    /// `ElementContext` that needs `&mut ElementRegistry`.
+    ///
+    /// The caller must call `insert()` to put the element back.
+    pub fn remove(&mut self, id: ElementId) -> Option<Box<dyn Element>> {
+        self.elements.remove(&id)
+    }
+
+    /// Insert an element back into the registry.
+    ///
+    /// Used after `remove()` to restore the element.
+    pub fn insert(&mut self, id: ElementId, element: Box<dyn Element>) {
+        self.elements.insert(id, element);
     }
 
     /// Update an element with a new widget.
@@ -438,8 +483,9 @@ impl ElementRegistry {
     /// Update or mount a child element.
     ///
     /// This is the Flutter-style updateChild() equivalent.
-    /// If child_id exists and can update with the new widget, calls update().
-    /// Otherwise, inflates a new element tree.
+    /// If child_id exists and can update with the new widget, calls rebuild()
+    /// (which updates the widget AND reconciles children). Otherwise, inflates
+    /// a new element tree.
     ///
     /// # Arguments
     ///
@@ -476,12 +522,14 @@ impl ElementRegistry {
 
         if can_update_existing {
             let id = child_id.unwrap();
-            // Update existing element - use the existing update_element pattern
-            // but we need to handle the context creation differently
+            // Use rebuild() instead of update() so that container and modifier
+            // elements reconcile their children. In Flutter, updateChild() calls
+            // element.update() which handles everything including child reconciliation.
+            // Our rebuild() method does this; update() only updates the render object.
             let widget_any: Box<dyn Any> = Box::new(new_widget.clone_boxed());
 
-            // Create a minimal context for the update
-            // We need to temporarily move the element out, update it, and put it back
+            // Create a context for the rebuild
+            // We need to temporarily move the element out, rebuild it, and put it back
             if let Some(mut element) = self.elements.remove(&id) {
                 let mut ctx = ElementContext::full(
                     id,
@@ -493,7 +541,7 @@ impl ElementRegistry {
                 );
                 ctx.global_key_registry = global_keys;
 
-                element.update(widget_any, &mut ctx);
+                element.rebuild(widget_any, &mut ctx);
 
                 // Put the element back
                 self.elements.insert(id, element);

@@ -91,7 +91,16 @@
       "WebFetch(domain:leptos-rs.github.io)",
       "Bash(ls ~/.cargo/registry/src/*/futures-signals-*/src/*.rs)",
       "Bash(echo \"Desktop demo started in background. PID: $!\")",
-      "Skill(tavily-search)"
+      "Skill(tavily-search)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ls /Users/peiyan_wang/.cargo/registry/src/*/futures-signals-*/src/signal/)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(grep -rn \"pub fn set\\\\b\" /Users/peiyan_wang/.cargo/registry/src/aarch64-apple-darwin/release/build/futures-signals-*/out/)",
+      "Bash(grep -v \"^$\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(tee /tmp/test_output.txt)",
+      "Bash(echo \"===EXIT: $?===\")"
     ]
   }
 }
