@@ -238,17 +238,20 @@ impl ThreeTreePipeline {
 
         // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-        if let Some(element) = self.element_registry.get_mut(root_id) {
-            let mut ctx = ElementContext::with_registry(
+        if let Some(mut element) = self.element_registry.remove(root_id) {
+            let mut ctx = ElementContext::full(
                 root_id,
                 parent,
                 &mut self.state,
                 &mut self.dirty,
                 &mut self.render_objects,
+                &mut self.element_registry,
             );
             ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
             element.rebuild(widget_as_any, &mut ctx);
+
+            self.element_registry.insert(root_id, element);
         }
     }
 
@@ -349,19 +352,24 @@ impl ThreeTreePipeline {
             element_id
         );
 
-        // Call element.rebuild() which handles both update and child reconciliation
+        // Call element.rebuild() which handles both update and child reconciliation.
+        // We must take the element out temporarily to avoid borrow conflicts when
+        // creating an ElementContext that needs &mut ElementRegistry.
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-        if let Some(existing_element) = self.element_registry.get_mut(element_id) {
-            let mut ctx = ElementContext::with_registry(
+        if let Some(mut element) = self.element_registry.remove(element_id) {
+            let mut ctx = ElementContext::full(
                 element_id,
                 parent,
                 &mut self.state,
                 &mut self.dirty,
                 &mut self.render_objects,
+                &mut self.element_registry,
             );
             ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
 
-            existing_element.rebuild(widget_as_any, &mut ctx);
+            element.rebuild(widget_as_any, &mut ctx);
+
+            self.element_registry.insert(element_id, element);
         }
     }
 
