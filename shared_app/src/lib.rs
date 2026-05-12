@@ -11,8 +11,8 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> retain::GestureD
                 retain::Style::new()
                     .background(vexo::Color::rgb(0.9, 0.9, 0.9))
                     .border(vexo::Color::rgb(0.6, 0.6, 0.6), 1.0)
-                    .corner_radius(4.0)
-                    .padding(12.0),
+                    .corner_radius(8.0)
+                    .padding(24.0),
             ),
     ))
     .on_press(on_press)

@@ -10,6 +10,7 @@ use super::super::UpdateResult;
 pub struct Text {
     key: Option<WidgetKey>,
     content: String,
+    font_size: f32,
 }
 
 impl Text {
@@ -18,6 +19,7 @@ impl Text {
         Self {
             key: None,
             content: content.into(),
+            font_size: 24.0,
         }
     }
 
@@ -27,9 +29,20 @@ impl Text {
         self
     }
 
+    /// Set the font size.
+    pub fn with_font_size(mut self, size: f32) -> Self {
+        self.font_size = size;
+        self
+    }
+
     /// Get the text content.
     pub fn content(&self) -> &str {
         &self.content
+    }
+
+    /// Get the font size.
+    pub fn font_size(&self) -> f32 {
+        self.font_size
     }
 }
 
@@ -38,6 +51,7 @@ impl Clone for Text {
         Self {
             key: self.key.clone(),
             content: self.content.clone(),
+            font_size: self.font_size,
         }
     }
 }
@@ -54,7 +68,7 @@ impl Widget for Text {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(TextRenderObject::new(&self.content))
+        Box::new(TextRenderObject::new(&self.content).with_font_size(self.font_size))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -63,11 +77,14 @@ impl Widget for Text {
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
+            let mut result = UpdateResult::NONE;
             if text_ro.set_content(&self.content) {
-                UpdateResult::LAYOUT | UpdateResult::PAINT
-            } else {
-                UpdateResult::NONE
+                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
             }
+            if text_ro.set_font_size(self.font_size) {
+                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
+            }
+            result
         } else {
             UpdateResult::ALL
         }

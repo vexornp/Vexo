@@ -30,7 +30,7 @@ impl TextRenderObject {
     pub fn new(content: &str) -> Self {
         Self {
             content: content.to_string(),
-            font_size: 16.0,
+            font_size: 24.0,
             computed_bounds: None,
             layout_node: None,
         }
@@ -173,7 +173,7 @@ mod tests {
     fn test_text_render_object_new() {
         let obj = TextRenderObject::new("Hello");
         assert_eq!(obj.content(), "Hello");
-        assert_eq!(obj.font_size(), 16.0); // default
+        assert_eq!(obj.font_size(), 24.0); // default
         assert!(obj.computed_bounds().is_none());
     }
 

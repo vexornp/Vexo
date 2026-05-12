@@ -274,7 +274,7 @@ impl WgpuBackend {
             viewport,
             cache,
             current_config: Some(RenderConfig::new(physical_size, scale)),
-            clear_color: Color::BLUE.to_wgpu_color(),
+            clear_color: Color::WHITE.to_wgpu_color(),
         })
     }
 
