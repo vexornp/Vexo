@@ -268,7 +268,8 @@ impl Element for ContainerElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Column, Text};
+    use std::sync::mpsc;
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Column, Text, BuildOwner};
 
     #[test]
     fn test_container_element_mount() {
@@ -321,12 +322,18 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::with_registry(
+        let mut element_registry = ElementRegistry::new();
+        let build_owner = BuildOwner::new();
+        let (dirty_sender, _) = mpsc::channel();
+        let mut context = ElementContext::full(
             ElementId::new(),
             None,
             &mut state,
             &mut dirty,
             &mut render_objects,
+            &mut element_registry,
+            &build_owner,
+            &dirty_sender,
         );
 
         element.mount(&mut context);
@@ -350,12 +357,18 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut context = ElementContext::with_registry(
+        let mut element_registry = ElementRegistry::new();
+        let build_owner = BuildOwner::new();
+        let (dirty_sender, _) = mpsc::channel();
+        let mut context = ElementContext::full(
             ElementId::new(),
             None,
             &mut state,
             &mut dirty,
             &mut render_objects,
+            &mut element_registry,
+            &build_owner,
+            &dirty_sender,
         );
 
         element.mount(&mut context);

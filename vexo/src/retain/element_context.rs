@@ -71,27 +71,6 @@ impl<'a> ElementContext<'a> {
         }
     }
 
-    /// Create a new element context with render object registry.
-    pub fn with_registry(
-        element_id: ElementId,
-        parent: Option<ElementId>,
-        state: &'a mut StateStorage,
-        dirty: &'a mut DirtyTracking,
-        render_objects: &'a mut RenderObjectRegistry,
-    ) -> Self {
-        Self {
-            parent,
-            element_id,
-            render_object: None,
-            state,
-            dirty,
-            render_objects: Some(render_objects),
-            element_registry: None,
-            build_owner: None,
-            dirty_sender: None,
-        }
-    }
-
     /// Create a new element context with all registries.
     pub fn full(
         element_id: ElementId,
