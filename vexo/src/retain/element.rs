@@ -351,7 +351,7 @@ impl ElementRegistry {
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
-        build_owner: Option<&super::build_owner::BuildOwner>,
+        build_owner: &super::build_owner::BuildOwner,
     ) -> ElementId {
         // 1. Generate element ID - single source of truth
         let element_id = ElementId::new();
@@ -364,8 +364,8 @@ impl ElementRegistry {
             dirty,
             render_objects,
             self,
+            build_owner,
         );
-        ctx.build_owner = build_owner;
 
         // 3. Call mount lifecycle
         element.mount(&mut ctx);
@@ -423,7 +423,7 @@ impl ElementRegistry {
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
-        build_owner: Option<&super::build_owner::BuildOwner>,
+        build_owner: &super::build_owner::BuildOwner,
     ) -> ElementId {
         // 1. Create element from widget
         let element = widget.create_element();
@@ -485,7 +485,7 @@ impl ElementRegistry {
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
-        build_owner: Option<&super::build_owner::BuildOwner>,
+        build_owner: &super::build_owner::BuildOwner,
     ) -> ElementId {
         // Check if we can update an existing child
         let can_update_existing = child_id
@@ -515,8 +515,8 @@ impl ElementRegistry {
                     dirty,
                     render_objects,
                     self,
+                    build_owner,
                 );
-                ctx.build_owner = build_owner;
 
                 element.rebuild(widget_any, &mut ctx);
 

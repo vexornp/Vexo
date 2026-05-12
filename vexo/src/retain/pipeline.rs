@@ -246,8 +246,8 @@ impl ThreeTreePipeline {
                 &mut self.dirty,
                 &mut self.render_objects,
                 &mut self.element_registry,
+                &self.build_owner,
             );
-            ctx.build_owner = Some(&self.build_owner);
 
             element.rebuild(widget_as_any, &mut ctx);
 
@@ -305,10 +305,8 @@ impl ThreeTreePipeline {
                 &mut self.dirty,
                 &mut self.render_objects,
                 &mut self.element_registry,
+                &self.build_owner,
             );
-            ctx.build_owner = Some(&self.build_owner);
-            // Note: build_owner is set here, which provides access to
-            // global keys via interior mutability if needed during rebuild.
 
             // Rebuild from current state
             element.rebuild_from_state(&mut ctx);
@@ -364,8 +362,8 @@ impl ThreeTreePipeline {
                 &mut self.dirty,
                 &mut self.render_objects,
                 &mut self.element_registry,
+                &self.build_owner,
             );
-            ctx.build_owner = Some(&self.build_owner);
 
             element.rebuild(widget_as_any, &mut ctx);
 
@@ -385,7 +383,7 @@ impl ThreeTreePipeline {
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
-            Some(&self.build_owner),
+            &self.build_owner,
         )
     }
 
@@ -415,8 +413,8 @@ impl ThreeTreePipeline {
                 &mut self.dirty,
                 &mut self.render_objects,
                 &mut self.element_registry,
+                &self.build_owner,
             );
-            ctx.build_owner = Some(&self.build_owner);
 
             // Remove render object
             if let Some(render_id) = render_object_id {

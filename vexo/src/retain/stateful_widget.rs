@@ -726,8 +726,8 @@ mod tests {
             &mut dirty,
             &mut render_objects,
             &mut element_registry,
+            &build_owner,
         );
-        ctx.build_owner = Some(&build_owner);
 
         let mut element = element;
         Element::mount(&mut element, &mut ctx);
@@ -753,8 +753,8 @@ mod tests {
                 &mut dirty,
                 &mut render_objects,
                 &mut element_registry,
+                &build_owner,
             );
-            ctx.build_owner = Some(&build_owner);
             Element::mount(&mut element, &mut ctx);
         }
 
@@ -771,8 +771,8 @@ mod tests {
                 &mut dirty,
                 &mut render_objects,
                 &mut element_registry,
+                &build_owner,
             );
-            ctx.build_owner = Some(&build_owner);
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
 
@@ -796,8 +796,8 @@ mod tests {
                 &mut dirty,
                 &mut render_objects,
                 &mut element_registry,
+                &build_owner,
             );
-            ctx.build_owner = Some(&build_owner);
             Element::mount(&mut element, &mut ctx);
         }
 
@@ -813,8 +813,8 @@ mod tests {
                 &mut dirty,
                 &mut render_objects,
                 &mut element_registry,
+                &build_owner,
             );
-            ctx.build_owner = Some(&build_owner);
             Element::unmount(&mut element, &mut ctx);
         }
 

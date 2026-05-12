@@ -88,6 +88,7 @@ impl<'a> ElementContext<'a> {
         dirty: &'a mut DirtyTracking,
         render_objects: &'a mut RenderObjectRegistry,
         element_registry: &'a mut ElementRegistry,
+        build_owner: &'a BuildOwner,
     ) -> Self {
         Self {
             parent,
@@ -97,7 +98,7 @@ impl<'a> ElementContext<'a> {
             dirty,
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
-            build_owner: None,
+            build_owner: Some(build_owner),
         }
     }
 
@@ -230,7 +231,7 @@ impl<'a> ElementContext<'a> {
     pub fn inflate_widget(&mut self, widget: Box<dyn super::Widget>) -> Option<ElementId> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
-        let build_owner = self.build_owner;
+        let build_owner = self.build_owner?;
 
         let id = element_registry.inflate_widget(
             widget,
@@ -243,7 +244,7 @@ impl<'a> ElementContext<'a> {
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
-        self.build_owner = build_owner;
+        self.build_owner = Some(build_owner);
         Some(id)
     }
 
@@ -260,7 +261,7 @@ impl<'a> ElementContext<'a> {
     ) -> Option<ElementId> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
-        let build_owner = self.build_owner;
+        let build_owner = self.build_owner?;
 
         let id = element_registry.update_child(
             child_id,
@@ -274,7 +275,7 @@ impl<'a> ElementContext<'a> {
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
-        self.build_owner = build_owner;
+        self.build_owner = Some(build_owner);
         Some(id)
     }
 }
