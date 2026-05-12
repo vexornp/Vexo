@@ -37,6 +37,7 @@
 //! - `paint()` recursively collects commands from the root
 
 use std::any::Any;
+use std::sync::mpsc;
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, Relative, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers};
@@ -103,6 +104,15 @@ pub struct ThreeTreePipeline {
     /// Build owner for targeted rebuilds.
     build_owner: BuildOwner,
 
+    /// Channel for receiving dirty element signals from StatefulMutable callbacks.
+    ///
+    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
+    /// the element ID through this channel instead of directly calling
+    /// `mark_needs_build()`. The pipeline drains the channel and calls
+    /// `mark_needs_build()` itself, eliminating the need for raw pointers.
+    dirty_sender: mpsc::Sender<ElementId>,
+    dirty_receiver: mpsc::Receiver<ElementId>,
+
     /// Flag indicating if full reconcile is needed.
     ///
     /// True after initial mount or when root element type changes.
@@ -112,6 +122,7 @@ pub struct ThreeTreePipeline {
 impl ThreeTreePipeline {
     /// Create a new empty pipeline.
     pub fn new() -> Self {
+        let (dirty_sender, dirty_receiver) = mpsc::channel();
         Self {
             element_registry: ElementRegistry::new(),
             render_objects: RenderObjectRegistry::new(),
@@ -119,6 +130,8 @@ impl ThreeTreePipeline {
             dirty: DirtyTracking::new(),
             focused_element: None,
             build_owner: BuildOwner::new(),
+            dirty_sender,
+            dirty_receiver,
             needs_full_reconcile: true,
         }
     }
@@ -247,6 +260,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
                 &self.build_owner,
+                &self.dirty_sender,
             );
 
             element.rebuild(widget_as_any, &mut ctx);
@@ -260,6 +274,9 @@ impl ThreeTreePipeline {
     /// This is the Flutter-style rebuild: only dirty elements and their
     /// subtrees are reconciled. Much more efficient than full-tree reconcile.
     pub fn perform_rebuilds(&mut self) {
+        // First, drain any dirty signals from StatefulMutable callbacks
+        self.drain_dirty_channel();
+
         if !self.build_owner.has_pending_rebuilds() {
             return;
         }
@@ -306,6 +323,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
                 &self.build_owner,
+                &self.dirty_sender,
             );
 
             // Rebuild from current state
@@ -363,6 +381,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
                 &self.build_owner,
+                &self.dirty_sender,
             );
 
             element.rebuild(widget_as_any, &mut ctx);
@@ -384,7 +403,19 @@ impl ThreeTreePipeline {
             &mut self.dirty,
             &mut self.render_objects,
             &self.build_owner,
+            &self.dirty_sender,
         )
+    }
+
+    /// Drain dirty signals from the channel and mark elements for rebuild.
+    ///
+    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
+    /// the element ID through the channel. This method drains the channel
+    /// and calls `mark_needs_build()` on the BuildOwner for each one.
+    fn drain_dirty_channel(&mut self) {
+        while let Ok(element_id) = self.dirty_receiver.try_recv() {
+            self.build_owner.mark_needs_build(element_id);
+        }
     }
 
     /// Unmount an element and all its descendants.
@@ -414,6 +445,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
                 &self.build_owner,
+                &self.dirty_sender,
             );
 
             // Remove render object
@@ -746,6 +778,7 @@ impl ThreeTreePipeline {
                     modifiers,
                     &mut self.state,
                     &self.build_owner,
+                    &self.dirty_sender,
                 );
 
                 let message = element.on_event(event, &mut ctx);
@@ -793,6 +826,7 @@ impl ThreeTreePipeline {
             modifiers,
             &mut self.state,
             &self.build_owner,
+            &self.dirty_sender,
         );
 
         let any_message = self.element_registry.get_mut(focused)?

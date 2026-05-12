@@ -2,6 +2,8 @@
 //!
 //! Provides context during element event handling.
 
+use std::sync::mpsc;
+
 use crate::core::{Bounds, Logical, Point};
 use crate::input::Modifiers;
 
@@ -52,6 +54,13 @@ pub struct EventContext<'a> {
     /// (which is the normal case), and `None` in test contexts.
     pub build_owner: Option<&'a BuildOwner>,
 
+    /// Channel sender for dirty element signals from StatefulMutable callbacks.
+    ///
+    /// When a `StatefulMutable::set()` fires its dirty callback from within
+    /// an event handler, it sends the element ID through this channel.
+    /// The pipeline drains the channel and calls `mark_needs_build()` itself.
+    pub dirty_sender: Option<&'a mpsc::Sender<ElementId>>,
+
     /// Focus request from the element (if any).
     /// Set by `request_focus()`.
     focus_request: Option<ElementId>,
@@ -76,6 +85,7 @@ impl<'a> EventContext<'a> {
             modifiers,
             state,
             build_owner: None,
+            dirty_sender: None,
             focus_request: None,
             clear_focus_request: false,
         }
@@ -89,6 +99,7 @@ impl<'a> EventContext<'a> {
         modifiers: Modifiers,
         state: &'a mut StateStorage,
         build_owner: &'a BuildOwner,
+        dirty_sender: &'a mpsc::Sender<ElementId>,
     ) -> Self {
         Self {
             pointer_position,
@@ -97,6 +108,7 @@ impl<'a> EventContext<'a> {
             modifiers,
             state,
             build_owner: Some(build_owner),
+            dirty_sender: Some(dirty_sender),
             focus_request: None,
             clear_focus_request: false,
         }

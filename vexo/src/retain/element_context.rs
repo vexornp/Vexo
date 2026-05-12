@@ -1,5 +1,7 @@
 //! Context passed to Elements during operations.
 
+use std::sync::mpsc;
+
 use super::id::{ElementId, RenderObjectId};
 use super::state::StateStorage;
 use super::dirty::DirtyTracking;
@@ -35,6 +37,14 @@ pub struct ElementContext<'a> {
     /// Uses shared reference because BuildOwner uses interior mutability (RefCell)
     /// for both dirty tracking and global key registry.
     pub build_owner: Option<&'a BuildOwner>,
+
+    /// Channel sender for dirty element signals from StatefulMutable callbacks.
+    ///
+    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
+    /// the element ID through this channel instead of directly calling
+    /// `mark_needs_build()`. The pipeline drains the channel and calls
+    /// `mark_needs_build()` itself, eliminating the need for raw pointers.
+    pub dirty_sender: Option<&'a mpsc::Sender<ElementId>>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -57,6 +67,7 @@ impl<'a> ElementContext<'a> {
             render_objects: None,
             element_registry: None,
             build_owner: None,
+            dirty_sender: None,
         }
     }
 
@@ -77,6 +88,7 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: None,
             build_owner: None,
+            dirty_sender: None,
         }
     }
 
@@ -89,6 +101,7 @@ impl<'a> ElementContext<'a> {
         render_objects: &'a mut RenderObjectRegistry,
         element_registry: &'a mut ElementRegistry,
         build_owner: &'a BuildOwner,
+        dirty_sender: &'a mpsc::Sender<ElementId>,
     ) -> Self {
         Self {
             parent,
@@ -99,6 +112,7 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
             build_owner: Some(build_owner),
+            dirty_sender: Some(dirty_sender),
         }
     }
 
@@ -232,6 +246,7 @@ impl<'a> ElementContext<'a> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
         let build_owner = self.build_owner?;
+        let dirty_sender = self.dirty_sender?;
 
         let id = element_registry.inflate_widget(
             widget,
@@ -240,11 +255,13 @@ impl<'a> ElementContext<'a> {
             self.dirty,
             render_objects,
             build_owner,
+            dirty_sender,
         );
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
         self.build_owner = Some(build_owner);
+        self.dirty_sender = Some(dirty_sender);
         Some(id)
     }
 
@@ -262,6 +279,7 @@ impl<'a> ElementContext<'a> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
         let build_owner = self.build_owner?;
+        let dirty_sender = self.dirty_sender?;
 
         let id = element_registry.update_child(
             child_id,
@@ -271,11 +289,13 @@ impl<'a> ElementContext<'a> {
             self.dirty,
             render_objects,
             build_owner,
+            dirty_sender,
         );
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
         self.build_owner = Some(build_owner);
+        self.dirty_sender = Some(dirty_sender);
         Some(id)
     }
 }

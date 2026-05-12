@@ -5,6 +5,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::sync::mpsc;
 
 use super::id::{ElementId, RenderObjectId};
 use super::key::WidgetKey;
@@ -352,6 +353,7 @@ impl ElementRegistry {
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
         build_owner: &super::build_owner::BuildOwner,
+        dirty_sender: &mpsc::Sender<ElementId>,
     ) -> ElementId {
         // 1. Generate element ID - single source of truth
         let element_id = ElementId::new();
@@ -365,6 +367,7 @@ impl ElementRegistry {
             render_objects,
             self,
             build_owner,
+            dirty_sender,
         );
 
         // 3. Call mount lifecycle
@@ -424,6 +427,7 @@ impl ElementRegistry {
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
         build_owner: &super::build_owner::BuildOwner,
+        dirty_sender: &mpsc::Sender<ElementId>,
     ) -> ElementId {
         // 1. Create element from widget
         let element = widget.create_element();
@@ -436,6 +440,7 @@ impl ElementRegistry {
             dirty,
             render_objects,
             build_owner,
+            dirty_sender,
         );
 
         // 3. Get the render object for linking
@@ -486,6 +491,7 @@ impl ElementRegistry {
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
         build_owner: &super::build_owner::BuildOwner,
+        dirty_sender: &mpsc::Sender<ElementId>,
     ) -> ElementId {
         // Check if we can update an existing child
         let can_update_existing = child_id
@@ -516,6 +522,7 @@ impl ElementRegistry {
                     render_objects,
                     self,
                     build_owner,
+                    dirty_sender,
                 );
 
                 element.rebuild(widget_any, &mut ctx);
@@ -527,7 +534,7 @@ impl ElementRegistry {
         }
 
         // Mount new element tree
-        self.inflate_widget(new_widget, Some(parent), state, dirty, render_objects, build_owner)
+        self.inflate_widget(new_widget, Some(parent), state, dirty, render_objects, build_owner, dirty_sender)
     }
 }
 

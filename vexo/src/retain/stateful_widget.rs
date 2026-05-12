@@ -116,26 +116,20 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 /// This is the Vexo equivalent of Flutter's `State` class methods.
 /// The key method is `setState()`, which mutates state and marks the
 /// element dirty for rebuild.
-pub struct StateContext {
+pub struct StateContext<'a> {
     /// The element ID of the owning StatefulElement.
     element_id: ElementId,
 
-    /// Raw pointer to the BuildOwner for dirty marking.
+    /// Build owner for dirty marking.
     ///
-    /// # Safety
-    ///
-    /// The BuildOwner is owned by ThreeTreePipeline, which outlives all
-    /// State objects. This pointer is never stored beyond the duration
-    /// of a single setState call.
-    ///
-    /// Uses `*const` because `mark_needs_build()` takes `&self` via
-    /// RefCell interior mutability, so only a shared reference is needed.
-    build_owner: *const BuildOwner,
+    /// Uses a shared reference because `mark_needs_build()` takes `&self`
+    /// via RefCell interior mutability.
+    build_owner: &'a BuildOwner,
 }
 
-impl StateContext {
+impl<'a> StateContext<'a> {
     /// Create a new StateContext. Only called by StatefulElement.
-    fn new(element_id: ElementId, build_owner: *const BuildOwner) -> Self {
+    fn new(element_id: ElementId, build_owner: &'a BuildOwner) -> Self {
         Self {
             element_id,
             build_owner,
@@ -160,11 +154,7 @@ impl StateContext {
         F: FnOnce(&mut S),
     {
         callback(state); // Apply mutation immediately
-        // SAFETY: build_owner points to ThreeTreePipeline's BuildOwner,
-        // which is alive for the entire lifetime of the pipeline.
-        unsafe {
-            (*self.build_owner).mark_needs_build(self.element_id);
-        }
+        self.build_owner.mark_needs_build(self.element_id);
     }
 
     /// Mark this element as needing rebuild without mutating state.
@@ -172,10 +162,7 @@ impl StateContext {
     /// Useful when an external event requires a rebuild but no state
     /// mutation is needed (e.g., a reactive signal changed).
     pub fn request_rebuild(&self) {
-        // SAFETY: Same invariant as setState.
-        unsafe {
-            (*self.build_owner).mark_needs_build(self.element_id);
-        }
+        self.build_owner.mark_needs_build(self.element_id);
     }
 
     /// Get the element ID of the owning StatefulElement.
@@ -299,35 +286,17 @@ pub struct StatefulElement<W: StatefulWidget> {
 
     /// The render object ID (from child, if any).
     render_object_id: Option<RenderObjectId>,
-
-    /// Raw pointer to BuildOwner for creating StateContext and dirty callbacks.
-    ///
-    /// Set during mount when BuildOwner is available. Used by State lifecycle
-    /// methods (init, set_dirty_callback) and by rebuild_from_state().
-    ///
-    /// # Safety
-    ///
-    /// The BuildOwner is owned by ThreeTreePipeline, which outlives all
-    /// StatefulElement objects. The pointer is only dereferenced during
-    /// mount, unmount, and rebuild_from_state — all of which are called
-    /// by the pipeline while it holds a reference to BuildOwner.
-    ///
-    /// Uses `*const` because `mark_needs_build()` takes `&self` via
-    /// RefCell interior mutability.
-    build_owner_ptr: Option<*const BuildOwner>,
 }
 
 impl<W: StatefulWidget> StatefulElement<W> {
     /// Create a new StatefulElement from a widget.
     pub fn new(widget: W) -> Self {
-        let key = None; // StatefulWidget widgets can have keys via Widget trait
         Self {
             widget,
             id: None,
-            key,
+            key: None,
             child_element_id: None,
             render_object_id: None,
-            build_owner_ptr: None,
         }
     }
 }
@@ -368,34 +337,21 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         // Initialize state with Default
         let mut state = W::State::default();
 
-        // Wire up State lifecycle: set dirty callback and call init()
-        if let Some(build_owner) = context.get_build_owner() {
-            let bo_ptr = build_owner as *const BuildOwner;
-            self.build_owner_ptr = Some(bo_ptr);
-
-            // Create dirty callback for StatefulMutable fields.
-            // We use a *const pointer (read-only) because mark_needs_build()
-            // takes &self via interior mutability (RefCell).
-            // Cast to usize for Send+Sync safety — raw pointers are not Send/Sync,
-            // but usize is. The pointer is only dereferenced within the same
-            // thread where it was created (the main UI thread).
-            let bo_addr = bo_ptr as usize;
+        // Wire up dirty callback using channel sender.
+        // When a StatefulMutable::set() fires, it sends the element ID
+        // through the channel. The pipeline drains the channel and calls
+        // mark_needs_build() itself, eliminating the need for raw pointers.
+        if let Some(tx) = context.dirty_sender {
+            let tx = tx.clone(); // mpsc::Sender is cheap to clone
             let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                // SAFETY: BuildOwner outlives all State objects.
-                // This is guaranteed because BuildOwner is owned by ThreeTreePipeline.
-                // The pointer is only dereferenced on the main UI thread.
-                // mark_needs_build() takes &self via RefCell interior mutability,
-                // so this is safe even during event handling when the pipeline
-                // has a mutable borrow.
-                unsafe {
-                    let bo = bo_addr as *const BuildOwner;
-                    (*bo).mark_needs_build(element_id);
-                }
+                let _ = tx.send(element_id);
             });
             state.set_dirty_callback(dirty_callback);
+        }
 
-            // Call State::init() lifecycle hook
-            let mut state_ctx = StateContext::new(element_id, bo_ptr);
+        // Call State::init() lifecycle hook with safe &BuildOwner reference
+        if let Some(build_owner) = context.get_build_owner() {
+            let mut state_ctx = StateContext::new(element_id, build_owner);
             state.init(&mut state_ctx);
         }
 
@@ -700,7 +656,9 @@ mod tests {
         RenderObjectRegistry,
         ElementRegistry,
         BuildOwner,
+        std::sync::mpsc::Sender<ElementId>,
     ) {
+        let (dirty_sender, _) = std::sync::mpsc::channel();
         (
             ElementId::new(),
             StateStorage::new(),
@@ -708,6 +666,7 @@ mod tests {
             RenderObjectRegistry::new(),
             ElementRegistry::new(),
             BuildOwner::new(),
+            dirty_sender,
         )
     }
 
@@ -716,7 +675,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
 
         // Mount the element
         let mut ctx = ElementContext::full(
@@ -727,6 +686,7 @@ mod tests {
             &mut render_objects,
             &mut element_registry,
             &build_owner,
+            &dirty_sender,
         );
 
         let mut element = element;
@@ -742,7 +702,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
 
         // Mount
         {
@@ -754,6 +714,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
                 &build_owner,
+                &dirty_sender,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -772,6 +733,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
                 &build_owner,
+                &dirty_sender,
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
@@ -785,7 +747,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
 
         // Mount
         {
@@ -797,6 +759,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
                 &build_owner,
+                &dirty_sender,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -814,6 +777,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
                 &build_owner,
+                &dirty_sender,
             );
             Element::unmount(&mut element, &mut ctx);
         }
@@ -836,7 +800,7 @@ mod tests {
 
     #[test]
     fn test_build_context_request_rebuild() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner) = create_test_context();
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender) = create_test_context();
 
         let mut ctx = BuildContext {
             element_id,
