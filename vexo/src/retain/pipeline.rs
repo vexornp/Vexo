@@ -306,7 +306,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
             );
-            ctx.build_owner = Some(&mut self.build_owner);
+            ctx.build_owner = Some(&self.build_owner);
             // Note: build_owner is set here, which provides access to
             // global keys via interior mutability if needed during rebuild.
 
