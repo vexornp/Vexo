@@ -200,7 +200,9 @@ pub struct BuildContext<'a> {
     pub render_objects: &'a mut RenderObjectRegistry,
 
     /// Build owner for scheduling rebuilds.
-    pub build_owner: &'a mut BuildOwner,
+    /// Uses shared reference because mark_needs_build() takes &self
+    /// via interior mutability (RefCell).
+    pub build_owner: &'a BuildOwner,
 }
 
 impl<'a> BuildContext<'a> {
@@ -338,7 +340,7 @@ impl<W: StatefulWidget + Clone> StatefulElement<W> {
         state: &mut W::State,
         dirty: &mut DirtyTracking,
         render_objects: &mut RenderObjectRegistry,
-        build_owner: &mut BuildOwner,
+        build_owner: &BuildOwner,
     ) -> Box<dyn Widget> {
         // Create BuildContext and build
         let mut build_ctx = BuildContext {
@@ -367,13 +369,13 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let mut state = W::State::default();
 
         // Wire up State lifecycle: set dirty callback and call init()
-        if let Some(build_owner) = context.build_owner.as_mut() {
-            let bo_ptr = &**build_owner as *const BuildOwner;
+        if let Some(build_owner) = context.get_build_owner() {
+            let bo_ptr = build_owner as *const BuildOwner;
             self.build_owner_ptr = Some(bo_ptr);
 
             // Create dirty callback for StatefulMutable fields.
             // We use a *const pointer (read-only) because mark_needs_build()
-            // now takes &self via interior mutability (RefCell).
+            // takes &self via interior mutability (RefCell).
             // Cast to usize for Send+Sync safety — raw pointers are not Send/Sync,
             // but usize is. The pointer is only dereferenced within the same
             // thread where it was created (the main UI thread).
@@ -404,9 +406,10 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let child_widget;
 
         {
-            // Extract render_objects and build_owner first (they're Options)
+            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
+            let build_owner_opt = context.get_build_owner();
+            // Extract render_objects (it's an Option that needs take/restore)
             let render_objects = context.render_objects.take();
-            let mut build_owner = context.build_owner.take();
 
             // Now we can borrow state and dirty without conflict
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
@@ -414,17 +417,14 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
             // Build with the extracted references
             if let Some(ro) = render_objects {
-                let mut temp_build_owner = BuildOwner::new();
-                let bo = if let Some(bo) = build_owner.as_mut() {
-                    bo
-                } else {
-                    &mut temp_build_owner
-                };
+                // Create a temporary BuildOwner if not provided
+                let temp_build_owner = BuildOwner::new();
+                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
                 child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
 
                 // Restore the taken values
                 context.render_objects = Some(ro);
-                context.build_owner = build_owner;
+                context.build_owner = build_owner_opt;
             } else {
                 child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
             }
@@ -454,9 +454,10 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let child_widget;
 
         {
-            // Extract render_objects and build_owner first (they're Options)
+            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
+            let build_owner_opt = context.get_build_owner();
+            // Extract render_objects (it's an Option that needs take/restore)
             let render_objects = context.render_objects.take();
-            let mut build_owner = context.build_owner.take();
 
             // Now we can borrow state and dirty without conflict
             // Use reborrow to get &mut from &'a mut
@@ -464,21 +465,15 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             let dirty = &mut *context.dirty;
 
             // Build with the extracted references
-            // Note: build_owner is optional - we can build without it
             if let Some(ro) = render_objects {
                 // Create a temporary BuildOwner if not provided
-                let mut temp_build_owner = BuildOwner::new();
-                let bo = if let Some(bo) = build_owner.as_mut() {
-                    bo
-                } else {
-                    &mut temp_build_owner
-                };
+                let temp_build_owner = BuildOwner::new();
+                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
                 child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
 
                 // Restore the taken values
                 context.render_objects = Some(ro);
-                // Restore build_owner if it was Some
-                context.build_owner = build_owner;
+                context.build_owner = build_owner_opt;
             } else {
                 child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
             }
@@ -559,26 +554,24 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let child_widget;
 
         {
-            // Extract render_objects and build_owner first (they're Options)
+            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
+            let build_owner_opt = context.get_build_owner();
+            // Extract render_objects (it's an Option that needs take/restore)
             let render_objects = context.render_objects.take();
-            let mut build_owner = context.build_owner.take();
 
             // Get state and dirty
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let dirty = &mut *context.dirty;
 
             if let Some(ro) = render_objects {
-                let mut temp_build_owner = BuildOwner::new();
-                let bo = if let Some(bo) = build_owner.as_mut() {
-                    bo
-                } else {
-                    &mut temp_build_owner
-                };
+                // Create a temporary BuildOwner if not provided
+                let temp_build_owner = BuildOwner::new();
+                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
                 // Build with CURRENT widget, updated state
                 child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
 
                 context.render_objects = Some(ro);
-                context.build_owner = build_owner;
+                context.build_owner = build_owner_opt;
             } else {
                 child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
             }
@@ -734,7 +727,7 @@ mod tests {
             &mut render_objects,
             &mut element_registry,
         );
-        ctx.build_owner = Some(&mut build_owner);
+        ctx.build_owner = Some(&build_owner);
 
         let mut element = element;
         Element::mount(&mut element, &mut ctx);
@@ -761,7 +754,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
             );
-            ctx.build_owner = Some(&mut build_owner);
+            ctx.build_owner = Some(&build_owner);
             Element::mount(&mut element, &mut ctx);
         }
 
@@ -779,7 +772,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
             );
-            ctx.build_owner = Some(&mut build_owner);
+            ctx.build_owner = Some(&build_owner);
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
 
@@ -804,7 +797,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
             );
-            ctx.build_owner = Some(&mut build_owner);
+            ctx.build_owner = Some(&build_owner);
             Element::mount(&mut element, &mut ctx);
         }
 
@@ -821,7 +814,7 @@ mod tests {
                 &mut render_objects,
                 &mut element_registry,
             );
-            ctx.build_owner = Some(&mut build_owner);
+            ctx.build_owner = Some(&build_owner);
             Element::unmount(&mut element, &mut ctx);
         }
 
@@ -843,13 +836,13 @@ mod tests {
 
     #[test]
     fn test_build_context_request_rebuild() {
-        let (element_id, _state, mut dirty, mut render_objects, _, mut build_owner) = create_test_context();
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner) = create_test_context();
 
         let mut ctx = BuildContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,
-            build_owner: &mut build_owner,
+            build_owner: &build_owner,
         };
 
         ctx.request_rebuild();

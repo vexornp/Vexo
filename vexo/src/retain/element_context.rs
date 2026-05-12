@@ -5,7 +5,7 @@ use super::state::StateStorage;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObjectRegistry, RenderObject};
 use super::element::ElementRegistry;
-use super::global_key_registry::GlobalKeyRegistry;
+use super::build_owner::BuildOwner;
 
 /// Context provided to element lifecycle methods.
 pub struct ElementContext<'a> {
@@ -31,11 +31,10 @@ pub struct ElementContext<'a> {
     /// Element registry for mounting child elements.
     pub element_registry: Option<&'a mut ElementRegistry>,
 
-    /// Build owner for marking elements dirty.
-    pub build_owner: Option<&'a mut super::build_owner::BuildOwner>,
-
-    /// Global key registry for cross-parent element identity.
-    pub global_key_registry: Option<&'a mut GlobalKeyRegistry>,
+    /// Build owner for marking elements dirty and accessing global keys.
+    /// Uses shared reference because BuildOwner uses interior mutability (RefCell)
+    /// for both dirty tracking and global key registry.
+    pub build_owner: Option<&'a BuildOwner>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -58,7 +57,6 @@ impl<'a> ElementContext<'a> {
             render_objects: None,
             element_registry: None,
             build_owner: None,
-            global_key_registry: None,
         }
     }
 
@@ -79,7 +77,6 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: None,
             build_owner: None,
-            global_key_registry: None,
         }
     }
 
@@ -101,7 +98,6 @@ impl<'a> ElementContext<'a> {
             render_objects: Some(render_objects),
             element_registry: Some(element_registry),
             build_owner: None,
-            global_key_registry: None,
         }
     }
 
@@ -186,9 +182,20 @@ impl<'a> ElementContext<'a> {
         self.render_objects.as_mut().and_then(|registry| registry.get_mut(id))
     }
 
+    /// Get the build owner reference, if set.
+    ///
+    /// Returns a copy of the shared BuildOwner reference with the original
+    /// lifetime `'a`, not tied to the borrow of `self`. This allows the
+    /// caller to use the reference without holding an immutable borrow on
+    /// the ElementContext, which is needed to avoid borrow conflicts when
+    /// other fields are mutably borrowed.
+    pub fn get_build_owner(&self) -> Option<&'a BuildOwner> {
+        self.build_owner
+    }
+
     /// Mark an element as needing rebuild.
     pub fn mark_needs_build(&mut self, element_id: ElementId) {
-        if let Some(build_owner) = &mut self.build_owner {
+        if let Some(build_owner) = &self.build_owner {
             build_owner.mark_needs_build(element_id);
         }
     }
@@ -198,8 +205,8 @@ impl<'a> ElementContext<'a> {
     /// Called during mount() for elements with GlobalKey.
     /// Returns an error if the key is already registered to another element.
     pub fn register_global_key(&mut self, key: super::key::GlobalKey, element_id: ElementId) -> Result<(), super::global_key_registry::GlobalKeyError> {
-        if let Some(registry) = &mut self.global_key_registry {
-            registry.register(key, element_id)
+        if let Some(build_owner) = &self.build_owner {
+            build_owner.global_keys_mut().register(key, element_id)
         } else {
             Ok(())
         }
@@ -209,8 +216,8 @@ impl<'a> ElementContext<'a> {
     ///
     /// Called during unmount() for elements with GlobalKey.
     pub fn unregister_global_key(&mut self, element_id: ElementId) {
-        if let Some(registry) = &mut self.global_key_registry {
-            registry.unregister_element(element_id);
+        if let Some(build_owner) = &self.build_owner {
+            build_owner.global_keys_mut().unregister_element(element_id);
         }
     }
 
@@ -223,6 +230,7 @@ impl<'a> ElementContext<'a> {
     pub fn inflate_widget(&mut self, widget: Box<dyn super::Widget>) -> Option<ElementId> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
+        let build_owner = self.build_owner;
 
         let id = element_registry.inflate_widget(
             widget,
@@ -230,11 +238,12 @@ impl<'a> ElementContext<'a> {
             self.state,
             self.dirty,
             render_objects,
-            self.global_key_registry.take(),
+            build_owner,
         );
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
+        self.build_owner = build_owner;
         Some(id)
     }
 
@@ -251,6 +260,7 @@ impl<'a> ElementContext<'a> {
     ) -> Option<ElementId> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
+        let build_owner = self.build_owner;
 
         let id = element_registry.update_child(
             child_id,
@@ -259,11 +269,12 @@ impl<'a> ElementContext<'a> {
             self.state,
             self.dirty,
             render_objects,
-            self.global_key_registry.take(),
+            build_owner,
         );
 
         self.element_registry = Some(element_registry);
         self.render_objects = Some(render_objects);
+        self.build_owner = build_owner;
         Some(id)
     }
 }

@@ -247,7 +247,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
             );
-            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
+            ctx.build_owner = Some(&self.build_owner);
 
             element.rebuild(widget_as_any, &mut ctx);
 
@@ -307,8 +307,8 @@ impl ThreeTreePipeline {
                 &mut self.element_registry,
             );
             ctx.build_owner = Some(&mut self.build_owner);
-            // Note: global_key_registry not set here because rebuilds don't
-            // register new global keys (only mount does).
+            // Note: build_owner is set here, which provides access to
+            // global keys via interior mutability if needed during rebuild.
 
             // Rebuild from current state
             element.rebuild_from_state(&mut ctx);
@@ -365,7 +365,7 @@ impl ThreeTreePipeline {
                 &mut self.render_objects,
                 &mut self.element_registry,
             );
-            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
+            ctx.build_owner = Some(&self.build_owner);
 
             element.rebuild(widget_as_any, &mut ctx);
 
@@ -379,14 +379,13 @@ impl ThreeTreePipeline {
     /// creates an element, mounts it, and recursively mounts all children,
     /// linking render objects.
     fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
-        let global_keys = self.build_owner.global_keys_mut();
         self.element_registry.inflate_widget(
             widget,
             parent,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
-            Some(global_keys),
+            Some(&self.build_owner),
         )
     }
 
@@ -414,7 +413,7 @@ impl ThreeTreePipeline {
                 &mut self.dirty,
                 &mut self.render_objects,
             );
-            ctx.global_key_registry = Some(self.build_owner.global_keys_mut());
+            ctx.build_owner = Some(&self.build_owner);
 
             // Remove render object
             if let Some(render_id) = render_object_id {

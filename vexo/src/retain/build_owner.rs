@@ -18,7 +18,7 @@
 //! event handling, when the pipeline has a mutable borrow on itself.
 //! Using `RefCell` avoids aliasing UB that would occur with raw pointers.
 
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
 use super::global_key_registry::GlobalKeyRegistry;
@@ -57,7 +57,10 @@ pub struct BuildOwner {
     building: HashSet<ElementId>,
 
     /// Global key registry for cross-parent element identity.
-    global_keys: GlobalKeyRegistry,
+    /// Wrapped in RefCell so it can be borrowed mutably via &self,
+    /// enabling simultaneous shared borrow of BuildOwner and mutable
+    /// borrow of GlobalKeyRegistry.
+    global_keys: RefCell<GlobalKeyRegistry>,
 }
 
 impl BuildOwner {
@@ -67,7 +70,7 @@ impl BuildOwner {
             dirty_elements: RefCell::new(Vec::new()),
             dirty_set: RefCell::new(HashSet::new()),
             building: HashSet::new(),
-            global_keys: GlobalKeyRegistry::new(),
+            global_keys: RefCell::new(GlobalKeyRegistry::new()),
         }
     }
 
@@ -168,13 +171,18 @@ impl BuildOwner {
     }
 
     /// Get a reference to the global key registry.
-    pub fn global_keys(&self) -> &GlobalKeyRegistry {
-        &self.global_keys
+    pub fn global_keys(&self) -> Ref<'_, GlobalKeyRegistry> {
+        self.global_keys.borrow()
     }
 
-    /// Get a mutable reference to the global key registry.
-    pub fn global_keys_mut(&mut self) -> &mut GlobalKeyRegistry {
-        &mut self.global_keys
+    /// Get a mutable reference to the global key registry via interior mutability.
+    ///
+    /// Takes `&self` (not `&mut self`) so that a shared `&BuildOwner` reference
+    /// can coexist with a mutable borrow of the global key registry.
+    /// This is needed because the pipeline passes `&BuildOwner` to elements
+    /// while also needing mutable access to global keys for registration.
+    pub fn global_keys_mut(&self) -> RefMut<'_, GlobalKeyRegistry> {
+        self.global_keys.borrow_mut()
     }
 }
 

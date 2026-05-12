@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use super::id::{ElementId, RenderObjectId};
 use super::key::WidgetKey;
 use super::element_context::ElementContext;
-use super::global_key_registry::GlobalKeyRegistry;
 use super::widgets::Widget;
 
 /// Persistent element with state and lifecycle.
@@ -340,26 +339,41 @@ impl ElementRegistry {
     /// * `state` - State storage for elements
     /// * `dirty` - Dirty tracking for layout/paint
     /// * `render_objects` - Render object registry
+    /// * `build_owner` - Build owner for dirty marking and global key access
     ///
     /// # Returns
     ///
     /// The ID of the newly mounted element.
     pub fn mount_element(
         &mut self,
-        element: Box<dyn Element>,
+        mut element: Box<dyn Element>,
         parent: Option<ElementId>,
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
+        build_owner: Option<&super::build_owner::BuildOwner>,
     ) -> ElementId {
-        self.mount_element_with_global_keys(
-            element,
+        // 1. Generate element ID - single source of truth
+        let element_id = ElementId::new();
+
+        // 2. Create context with the element ID
+        let mut ctx = ElementContext::full(
+            element_id,
             parent,
             state,
             dirty,
             render_objects,
-            None,
-        )
+            self,
+        );
+        ctx.build_owner = build_owner;
+
+        // 3. Call mount lifecycle
+        element.mount(&mut ctx);
+
+        // 4. Register element with the same ID
+        self.mount_with_id(element, parent, element_id);
+
+        element_id
     }
 
     /// Mount a new element from an element box with full lifecycle and global keys.
@@ -380,43 +394,6 @@ impl ElementRegistry {
     /// * `state` - State storage for elements
     /// * `dirty` - Dirty tracking for layout/paint
     /// * `render_objects` - Render object registry
-    /// * `global_keys` - Optional global key registry for GlobalKey registration
-    ///
-    /// # Returns
-    ///
-    /// The ID of the newly mounted element.
-    pub fn mount_element_with_global_keys(
-        &mut self,
-        mut element: Box<dyn Element>,
-        parent: Option<ElementId>,
-        state: &mut super::state::StateStorage,
-        dirty: &mut super::dirty::DirtyTracking,
-        render_objects: &mut super::render_object::RenderObjectRegistry,
-        global_keys: Option<&mut super::global_key_registry::GlobalKeyRegistry>,
-    ) -> ElementId {
-        // 1. Generate element ID - single source of truth
-        let element_id = ElementId::new();
-
-        // 2. Create context with the element ID
-        let mut ctx = ElementContext::full(
-            element_id,
-            parent,
-            state,
-            dirty,
-            render_objects,
-            self,
-        );
-        ctx.global_key_registry = global_keys;
-
-        // 3. Call mount lifecycle
-        element.mount(&mut ctx);
-
-        // 4. Register element with the same ID
-        self.mount_with_id(element, parent, element_id);
-
-        element_id
-    }
-
     /// Inflate a widget into an element tree.
     ///
     /// This is the Flutter-style inflateWidget() equivalent.
@@ -434,7 +411,7 @@ impl ElementRegistry {
     /// * `state` - State storage for elements
     /// * `dirty` - Dirty tracking for layout/paint
     /// * `render_objects` - Render object registry
-    /// * `global_keys` - Optional global key registry for GlobalKey registration
+    /// * `build_owner` - Build owner for dirty marking and global key access
     ///
     /// # Returns
     ///
@@ -446,19 +423,19 @@ impl ElementRegistry {
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
-        global_keys: Option<&mut GlobalKeyRegistry>,
+        build_owner: Option<&super::build_owner::BuildOwner>,
     ) -> ElementId {
         // 1. Create element from widget
         let element = widget.create_element();
 
         // 2. Mount the element (calls mount() lifecycle)
-        let element_id = self.mount_element_with_global_keys(
+        let element_id = self.mount_element(
             element,
             parent,
             state,
             dirty,
             render_objects,
-            global_keys,
+            build_owner,
         );
 
         // 3. Get the render object for linking
@@ -495,7 +472,7 @@ impl ElementRegistry {
     /// * `state` - State storage for elements
     /// * `dirty` - Dirty tracking for layout/paint
     /// * `render_objects` - Render object registry
-    /// * `global_keys` - Optional global key registry
+    /// * `build_owner` - Build owner for dirty marking and global key access
     ///
     /// # Returns
     ///
@@ -508,7 +485,7 @@ impl ElementRegistry {
         state: &mut super::state::StateStorage,
         dirty: &mut super::dirty::DirtyTracking,
         render_objects: &mut super::render_object::RenderObjectRegistry,
-        global_keys: Option<&mut GlobalKeyRegistry>,
+        build_owner: Option<&super::build_owner::BuildOwner>,
     ) -> ElementId {
         // Check if we can update an existing child
         let can_update_existing = child_id
@@ -539,7 +516,7 @@ impl ElementRegistry {
                     render_objects,
                     self,
                 );
-                ctx.global_key_registry = global_keys;
+                ctx.build_owner = build_owner;
 
                 element.rebuild(widget_any, &mut ctx);
 
@@ -550,7 +527,7 @@ impl ElementRegistry {
         }
 
         // Mount new element tree
-        self.inflate_widget(new_widget, Some(parent), state, dirty, render_objects, global_keys)
+        self.inflate_widget(new_widget, Some(parent), state, dirty, render_objects, build_owner)
     }
 }
 
