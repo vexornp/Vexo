@@ -80,46 +80,38 @@ impl<T> StatefulMutable<T> {
     }
 }
 
-impl<T: Copy> StatefulMutable<T> {
+impl<T: PartialEq + Copy> StatefulMutable<T> {
     /// Get the current value (requires `T: Copy`).
     pub fn get(&self) -> T {
         self.inner.get()
     }
 
-    /// Set the value and mark the owning element dirty.
+    /// Set the value and mark the owning element dirty only if the value changed.
     ///
-    /// The element will be rebuilt on the next frame.
+    /// If the new value equals the old value, no dirty callback is fired,
+    /// avoiding spurious rebuilds.
     pub fn set(&self, value: T) {
+        let old = self.inner.get();
         self.inner.set(value);
-        if let Some(ref callback) = self.on_change {
-            callback();
+        if old != value {
+            if let Some(ref callback) = self.on_change {
+                callback();
+            }
         }
     }
 }
 
-impl<T: Clone> StatefulMutable<T> {
+impl<T: PartialEq + Clone> StatefulMutable<T> {
     /// Get a cloned copy of the current value (requires `T: Clone`).
     pub fn get_cloned(&self) -> T {
         self.inner.get_cloned()
     }
 
-    /// Set the value from a reference and mark dirty.
+    /// Set the value from a reference and mark dirty only if the value changed.
     pub fn set_from(&self, value: &T) {
+        let old = self.inner.get_cloned();
         self.inner.set(value.clone());
-        if let Some(ref callback) = self.on_change {
-            callback();
-        }
-    }
-}
-
-impl<T: PartialEq + Copy> StatefulMutable<T> {
-    /// Set the value only if it's different, and mark dirty if changed.
-    ///
-    /// This avoids spurious rebuilds when the value hasn't actually changed.
-    pub fn set_neq(&self, value: T) {
-        let old = self.inner.get();
-        self.inner.set_neq(value);
-        if old != value {
+        if old != *value {
             if let Some(ref callback) = self.on_change {
                 callback();
             }
