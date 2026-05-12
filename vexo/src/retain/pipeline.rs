@@ -404,14 +404,17 @@ impl ThreeTreePipeline {
         let render_object_id = self.element_registry.get(element_id)
             .and_then(|el| el.render_object());
 
-        // Get the element to perform unmount lifecycle
-        if let Some(element) = self.element_registry.get_mut(element_id) {
-            let mut ctx = ElementContext::with_registry(
+        // Get the element to perform unmount lifecycle.
+        // We temporarily remove the element from the registry to avoid
+        // double &mut borrow (same pattern as rebuild_root/perform_rebuilds).
+        if let Some(mut element) = self.element_registry.remove(element_id) {
+            let mut ctx = ElementContext::full(
                 element_id,
                 parent,
                 &mut self.state,
                 &mut self.dirty,
                 &mut self.render_objects,
+                &mut self.element_registry,
             );
             ctx.build_owner = Some(&self.build_owner);
 
@@ -427,7 +430,7 @@ impl ThreeTreePipeline {
         // Remove state
         self.state.remove(element_id);
 
-        // Unmount from registry
+        // Unmount from registry (removes from parent's children list, etc.)
         self.element_registry.unmount(element_id);
     }
 
