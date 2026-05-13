@@ -50,7 +50,7 @@ use super::element::ElementRegistry;
 use super::element_context::ElementContext;
 use super::event_context::EventContext;
 use super::hit_test::HitTestResult;
-use super::id::{ElementId, RenderObjectKey};
+use super::id::{ElementKey, RenderObjectKey};
 use super::render_object::{LayoutContext, LayoutResult, PaintContext, RenderObjectRegistry};
 use super::state::StateStorage;
 use super::widgets::Widget;
@@ -99,7 +99,7 @@ pub struct ThreeTreePipeline {
     dirty: DirtyTracking,
 
     /// Currently focused element (for keyboard events).
-    focused_element: Option<ElementId>,
+    focused_element: Option<ElementKey>,
 
     /// Build owner for targeted rebuilds.
     build_owner: BuildOwner,
@@ -110,8 +110,8 @@ pub struct ThreeTreePipeline {
     /// the element ID through this channel instead of directly calling
     /// `mark_needs_build()`. The pipeline drains the channel and calls
     /// `mark_needs_build()` itself, eliminating the need for raw pointers.
-    dirty_sender: mpsc::Sender<ElementId>,
-    dirty_receiver: mpsc::Receiver<ElementId>,
+    dirty_sender: mpsc::Sender<ElementKey>,
+    dirty_receiver: mpsc::Receiver<ElementKey>,
 
     /// Flag indicating if full reconcile is needed.
     ///
@@ -241,7 +241,7 @@ impl ThreeTreePipeline {
     ///
     /// This follows the Flutter-style pattern where each element's rebuild()
     /// method handles both updating the widget and reconciling children.
-    fn rebuild_root(&mut self, root_id: ElementId, widget: Box<dyn Widget>) {
+    fn rebuild_root(&mut self, root_id: ElementKey, widget: Box<dyn Widget>) {
         let parent = self.element_registry.parent(root_id);
 
         log::debug!(
@@ -251,7 +251,7 @@ impl ThreeTreePipeline {
 
         // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-        if let Some(mut element) = self.element_registry.remove(root_id) {
+        if let Some(mut element) = self.element_registry.vacate(root_id) {
             let mut ctx = ElementContext::full(
                 root_id,
                 parent,
@@ -265,7 +265,7 @@ impl ThreeTreePipeline {
 
             element.rebuild(widget_as_any, &mut ctx);
 
-            self.element_registry.insert(root_id, element);
+            self.element_registry.restore(root_id, element);
         }
     }
 
@@ -286,7 +286,7 @@ impl ThreeTreePipeline {
         self.build_owner.sort_dirty_by_depth(|id| element_registry.depth(id));
 
         // Drain dirty elements
-        let dirty_ids: Vec<ElementId> = self.build_owner.drain_dirty_sorted();
+        let dirty_ids: Vec<ElementKey> = self.build_owner.drain_dirty_sorted();
 
         // Rebuild each dirty element
         for element_id in dirty_ids {
@@ -306,7 +306,7 @@ impl ThreeTreePipeline {
             // Take the element out temporarily to avoid borrow conflicts
             // (we need &mut element_registry for the context while also
             // calling methods on the element)
-            let mut element = match self.element_registry.remove(element_id) {
+            let mut element = match self.element_registry.vacate(element_id) {
                 Some(e) => e,
                 None => {
                     self.build_owner.exit_build_scope(element_id);
@@ -330,7 +330,7 @@ impl ThreeTreePipeline {
             element.rebuild_from_state(&mut ctx);
 
             // Put the element back
-            self.element_registry.insert(element_id, element);
+            self.element_registry.restore(element_id, element);
 
             // Exit build scope
             self.build_owner.exit_build_scope(element_id);
@@ -346,7 +346,7 @@ impl ThreeTreePipeline {
     ///
     /// This is the entry point for Flutter-style targeted rebuilds.
     /// Elements call this when their state changes (e.g., setState equivalent).
-    pub fn mark_needs_build(&mut self, element_id: ElementId) {
+    pub fn mark_needs_build(&mut self, element_id: ElementKey) {
         self.build_owner.mark_needs_build(element_id);
     }
 
@@ -359,7 +359,7 @@ impl ThreeTreePipeline {
     ///
     /// This follows the Flutter-style pattern where each element's rebuild()
     /// method handles both updating the widget and reconciling children.
-    fn reconcile_element(&mut self, element_id: ElementId, widget: Box<dyn Widget>) {
+    fn reconcile_element(&mut self, element_id: ElementKey, widget: Box<dyn Widget>) {
         // Get parent before mutable borrow
         let parent = self.element_registry.parent(element_id);
 
@@ -372,7 +372,7 @@ impl ThreeTreePipeline {
         // We must take the element out temporarily to avoid borrow conflicts when
         // creating an ElementContext that needs &mut ElementRegistry.
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-        if let Some(mut element) = self.element_registry.remove(element_id) {
+        if let Some(mut element) = self.element_registry.vacate(element_id) {
             let mut ctx = ElementContext::full(
                 element_id,
                 parent,
@@ -386,7 +386,7 @@ impl ThreeTreePipeline {
 
             element.rebuild(widget_as_any, &mut ctx);
 
-            self.element_registry.insert(element_id, element);
+            self.element_registry.restore(element_id, element);
         }
     }
 
@@ -395,7 +395,7 @@ impl ThreeTreePipeline {
     /// This method delegates to ElementRegistry::inflate_widget() which
     /// creates an element, mounts it, and recursively mounts all children,
     /// linking render objects.
-    fn mount_element_tree(&mut self, parent: Option<ElementId>, widget: Box<dyn Widget>) -> ElementId {
+    fn mount_element_tree(&mut self, parent: Option<ElementKey>, widget: Box<dyn Widget>) -> ElementKey {
         self.element_registry.inflate_widget(
             widget,
             parent,
@@ -419,7 +419,7 @@ impl ThreeTreePipeline {
     }
 
     /// Unmount an element and all its descendants.
-    fn unmount_element_tree(&mut self, element_id: ElementId) {
+    fn unmount_element_tree(&mut self, element_id: ElementKey) {
         // Get children and parent before unmounting
         let children = self.element_registry.children(element_id).to_vec();
         let parent = self.element_registry.parent(element_id);
@@ -436,7 +436,7 @@ impl ThreeTreePipeline {
         // Get the element to perform unmount lifecycle.
         // We temporarily remove the element from the registry to avoid
         // double &mut borrow (same pattern as rebuild_root/perform_rebuilds).
-        if let Some(mut element) = self.element_registry.remove(element_id) {
+        if let Some(mut element) = self.element_registry.vacate(element_id) {
             let mut ctx = ElementContext::full(
                 element_id,
                 parent,
@@ -844,12 +844,12 @@ impl ThreeTreePipeline {
     }
 
     /// Get the currently focused element.
-    pub fn focused_element(&self) -> Option<ElementId> {
+    pub fn focused_element(&self) -> Option<ElementKey> {
         self.focused_element
     }
 
     /// Set focus to an element.
-    pub fn set_focus(&mut self, element: Option<ElementId>) {
+    pub fn set_focus(&mut self, element: Option<ElementKey>) {
         self.focused_element = element;
     }
 

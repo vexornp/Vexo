@@ -20,7 +20,7 @@ use crate::core::{Point, Size};
 use crate::layout::{LayoutEngine, LayoutNodeId};
 use crate::render::RenderCommand;
 
-use super::id::{ElementId, RenderObjectKey};
+use super::id::{ElementKey, RenderObjectKey};
 
 // ============================================================================
 // LAYOUT RESULT
@@ -310,7 +310,7 @@ pub trait RenderObject {
 /// returns None for removed keys).
 pub struct RenderObjectRegistry {
     objects: SlotMap<RenderObjectKey, Box<dyn RenderObject>>,
-    element_map: SecondaryMap<RenderObjectKey, ElementId>,
+    element_map: SecondaryMap<RenderObjectKey, ElementKey>,
     root: Option<RenderObjectKey>,
 }
 
@@ -329,7 +329,7 @@ impl RenderObjectRegistry {
     /// The render object is associated with the given element ID.
     /// This association is used during reconciliation to find render objects
     /// that correspond to elements.
-    pub fn create(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> RenderObjectKey {
+    pub fn create(&mut self, object: Box<dyn RenderObject>, owner: ElementKey) -> RenderObjectKey {
         let key = self.objects.insert(object);
         self.element_map.insert(key, owner);
         key
@@ -370,7 +370,7 @@ impl RenderObjectRegistry {
     }
 
     /// Get the element that owns a render object.
-    pub fn element_for(&self, key: RenderObjectKey) -> Option<ElementId> {
+    pub fn element_for(&self, key: RenderObjectKey) -> Option<ElementKey> {
         self.element_map.get(key).copied()
     }
 
@@ -449,10 +449,22 @@ mod tests {
         }
     }
 
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
+    fn make_two_element_keys() -> (ElementKey, ElementKey) {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let k1 = sm.insert(());
+        let k2 = sm.insert(());
+        (k1, k2)
+    }
+
     #[test]
     fn test_registry_create() {
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let obj = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -465,7 +477,7 @@ mod tests {
     #[test]
     fn test_registry_remove() {
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let obj = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -480,7 +492,7 @@ mod tests {
     #[test]
     fn test_registry_element_for() {
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let obj = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -493,7 +505,7 @@ mod tests {
     #[test]
     fn test_registry_root() {
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let obj = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -512,8 +524,7 @@ mod tests {
         assert!(registry.is_empty());
         assert_eq!(registry.len(), 0);
 
-        let element_id1 = ElementId::new();
-        let element_id2 = ElementId::new();
+        let (element_id1, element_id2) = make_two_element_keys();
 
         let obj1 = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -533,7 +544,7 @@ mod tests {
     #[test]
     fn test_registry_clear() {
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let obj = Box::new(MockRenderObject {
             layout_count: std::cell::Cell::new(0),
@@ -619,7 +630,7 @@ mod tests {
         }
 
         let mut registry = RenderObjectRegistry::new();
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
 
         let parent = Box::new(MockParentObject { child: None });
         let parent_id = registry.create(parent, element_id);

@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::element::ElementRegistry;
-use super::id::ElementId;
+use super::id::ElementKey;
 use super::key::WidgetKey;
 
 // Import Key for tests
@@ -32,10 +32,10 @@ impl ElementRegistry {
     /// 3. Fall back to position-based matching for non-keyed widgets
     /// 4. Unmount unmatched elements
     /// 5. Mount new widgets
-    pub fn reconcile_children(&mut self, parent: ElementId, new_widgets: Vec<Box<dyn Reconcilable>>) {
+    pub fn reconcile_children(&mut self, parent: ElementKey, new_widgets: Vec<Box<dyn Reconcilable>>) {
         // 1. Build key map for existing children (local keys only)
         let existing_children = self.children(parent).to_vec();
-        let key_map: HashMap<WidgetKey, ElementId> = existing_children
+        let key_map: HashMap<WidgetKey, ElementKey> = existing_children
             .iter()
             .filter_map(|&id| {
                 self.get(id)
@@ -164,14 +164,18 @@ mod tests {
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
     }
 
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
     #[test]
     fn test_reconcile_inserts_new_element() {
         let mut registry = ElementRegistry::new();
-        let parent = ElementId::new();
 
         // Create parent first
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        registry.mount(parent_element, None);
+        let parent = registry.mount(parent_element, None);
         registry.set_children(parent, vec![]);
 
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
@@ -186,11 +190,10 @@ mod tests {
     #[test]
     fn test_reconcile_updates_matching_key() {
         let mut registry = ElementRegistry::new();
-        let parent = ElementId::new();
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        registry.mount(parent_element, None);
+        let parent = registry.mount(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial widget with key
@@ -214,11 +217,10 @@ mod tests {
     #[test]
     fn test_reconcile_removes_unmatched() {
         let mut registry = ElementRegistry::new();
-        let parent = ElementId::new();
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        registry.mount(parent_element, None);
+        let parent = registry.mount(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial: two widgets
@@ -242,11 +244,10 @@ mod tests {
     #[test]
     fn test_reconcile_reorders_with_keys() {
         let mut registry = ElementRegistry::new();
-        let parent = ElementId::new();
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        registry.mount(parent_element, None);
+        let parent = registry.mount(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial: key1, key2

@@ -4,7 +4,7 @@
 //! multiple children (e.g., Column, Row, Stack).
 
 use super::RenderObjectElement;
-use crate::retain::{ElementContext, ElementId, RenderObjectKey};
+use crate::retain::{ElementContext, ElementKey, RenderObjectKey};
 
 /// Element with multiple child render objects.
 ///
@@ -24,13 +24,13 @@ use crate::retain::{ElementContext, ElementId, RenderObjectKey};
 /// - `clear_child_render_objects()` - Clear all children from parent
 pub trait MultiChildRenderObjectElement: RenderObjectElement {
     /// Get the child element IDs.
-    fn child_elements(&self) -> &[ElementId];
+    fn child_elements(&self) -> &[ElementKey];
 
     /// Set the child element IDs.
-    fn set_child_elements(&mut self, children: Vec<ElementId>);
+    fn set_child_elements(&mut self, children: Vec<ElementKey>);
 
     /// Add a child element ID.
-    fn add_child_element(&mut self, child: ElementId);
+    fn add_child_element(&mut self, child: ElementKey);
 
     /// Insert a child render object into this element's render object.
     ///

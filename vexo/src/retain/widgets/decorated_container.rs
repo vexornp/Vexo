@@ -11,7 +11,7 @@ use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutNodeId};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, ElementContext, ElementId, ElementRegistry, EventContext,
+    Element, ElementContext, ElementKey, ElementRegistry, EventContext,
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
     RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
 };
@@ -188,11 +188,11 @@ impl RenderObject for DecoratedContainerRenderObject {
 /// Manages a single child element and updates the render object
 /// when style changes.
 pub struct DecoratedContainerElement {
-    id: Option<ElementId>,
+    id: Option<ElementKey>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
-    child_element: Option<ElementId>,
+    child_element: Option<ElementKey>,
 }
 
 impl DecoratedContainerElement {
@@ -215,13 +215,13 @@ impl DecoratedContainerElement {
 
     /// Get the element ID.
     #[allow(dead_code)]
-    pub fn id(&self) -> Option<ElementId> {
+    pub fn id(&self) -> Option<ElementKey> {
         self.id
     }
 
     /// Get the child element ID.
     #[allow(dead_code)]
-    pub fn child_element(&self) -> Option<ElementId> {
+    pub fn child_element(&self) -> Option<ElementKey> {
         self.child_element
     }
 
@@ -263,22 +263,22 @@ impl RenderObjectElement for DecoratedContainerElement {
         self.key = key;
     }
 
-    fn element_id(&self) -> Option<ElementId> {
+    fn element_id(&self) -> Option<ElementKey> {
         self.id
     }
 
-    fn set_element_id(&mut self, id: Option<ElementId>) {
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
     }
 }
 
 // Implement SingleChildRenderObjectElement trait
 impl SingleChildRenderObjectElement for DecoratedContainerElement {
-    fn child_element(&self) -> Option<ElementId> {
+    fn child_element(&self) -> Option<ElementKey> {
         self.child_element
     }
 
-    fn set_child_element(&mut self, child: Option<ElementId>) {
+    fn set_child_element(&mut self, child: Option<ElementKey>) {
         self.child_element = child;
     }
 }
@@ -345,7 +345,7 @@ impl Element for DecoratedContainerElement {
         None
     }
 
-    fn add_child(&mut self, child_id: ElementId) {
+    fn add_child(&mut self, child_id: ElementKey) {
         self.child_element = Some(child_id);
     }
 

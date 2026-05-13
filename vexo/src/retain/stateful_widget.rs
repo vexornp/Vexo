@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use super::id::ElementId;
+use super::id::ElementKey;
 use super::id::RenderObjectKey;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
@@ -118,7 +118,7 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 /// element dirty for rebuild.
 pub struct StateContext<'a> {
     /// The element ID of the owning StatefulElement.
-    element_id: ElementId,
+    element_id: ElementKey,
 
     /// Build owner for dirty marking.
     ///
@@ -129,7 +129,7 @@ pub struct StateContext<'a> {
 
 impl<'a> StateContext<'a> {
     /// Create a new StateContext. Only called by StatefulElement.
-    fn new(element_id: ElementId, build_owner: &'a BuildOwner) -> Self {
+    fn new(element_id: ElementKey, build_owner: &'a BuildOwner) -> Self {
         Self {
             element_id,
             build_owner,
@@ -166,7 +166,7 @@ impl<'a> StateContext<'a> {
     }
 
     /// Get the element ID of the owning StatefulElement.
-    pub fn element_id(&self) -> ElementId {
+    pub fn element_id(&self) -> ElementKey {
         self.element_id
     }
 }
@@ -178,7 +178,7 @@ impl<'a> StateContext<'a> {
 /// Context provided to StatefulWidget::build().
 pub struct BuildContext<'a> {
     /// The element ID for this stateful element.
-    pub element_id: ElementId,
+    pub element_id: ElementKey,
 
     /// Dirty tracking for marking layout/paint dirty.
     pub dirty: &'a mut DirtyTracking,
@@ -276,13 +276,13 @@ pub struct StatefulElement<W: StatefulWidget> {
     widget: W,
 
     /// The element ID (set during mount).
-    id: Option<ElementId>,
+    id: Option<ElementKey>,
 
     /// The widget key (if any).
     key: Option<WidgetKey>,
 
     /// The child element ID (from build()).
-    child_element_id: Option<ElementId>,
+    child_element_id: Option<ElementKey>,
 
     /// The render object ID (from child, if any).
     render_object_id: Option<RenderObjectKey>,
@@ -305,7 +305,7 @@ impl<W: StatefulWidget + Clone> StatefulElement<W> {
     /// Build the child widget using the element's state.
     fn build_child_widget(
         &self,
-        element_id: ElementId,
+        element_id: ElementKey,
         state: &mut W::State,
         dirty: &mut DirtyTracking,
         render_objects: &mut RenderObjectRegistry,
@@ -620,6 +620,11 @@ impl<W: StatefulWidget + Clone + 'static> Widget for W {
 
 #[cfg(test)]
 mod tests {
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
     use super::*;
     use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner};
 
@@ -650,17 +655,17 @@ mod tests {
     }
 
     fn create_test_context() -> (
-        ElementId,
+        ElementKey,
         StateStorage,
         DirtyTracking,
         RenderObjectRegistry,
         ElementRegistry,
         BuildOwner,
-        std::sync::mpsc::Sender<ElementId>,
+        std::sync::mpsc::Sender<ElementKey>,
     ) {
         let (dirty_sender, _) = std::sync::mpsc::channel();
         (
-            ElementId::new(),
+            make_element_key(),
             StateStorage::new(),
             DirtyTracking::new(),
             RenderObjectRegistry::new(),

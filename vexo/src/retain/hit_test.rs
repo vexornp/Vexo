@@ -28,7 +28,7 @@
 //! ```
 
 use crate::core::{Absolute, Bounds, Logical, Position, Relative};
-use crate::retain::{ElementId, RenderObjectKey, RenderObjectRegistry};
+use crate::retain::{ElementKey, RenderObjectKey, RenderObjectRegistry};
 
 // ============================================================================
 // HIT TEST RESULT
@@ -43,7 +43,7 @@ pub struct HitTestResult {
     /// Path from root to the hit target (if any).
     path: Vec<RenderObjectKey>,
     /// The element IDs along the path.
-    element_path: Vec<ElementId>,
+    element_path: Vec<ElementKey>,
     /// Absolute bounds of the hit target (in window coordinates).
     absolute_bounds: Option<Bounds<Logical>>,
 }
@@ -59,14 +59,14 @@ impl HitTestResult {
     }
 
     /// Create a hit result with the given path.
-    pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementId>) -> Self {
+    pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementKey>) -> Self {
         Self { path, element_path, absolute_bounds: None }
     }
 
     /// Create a hit result with absolute bounds.
     pub fn hit_with_bounds(
         path: Vec<RenderObjectKey>,
-        element_path: Vec<ElementId>,
+        element_path: Vec<ElementKey>,
         absolute_bounds: Bounds<Logical>,
     ) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl HitTestResult {
     /// Get the target element.
     ///
     /// Returns None if nothing was hit.
-    pub fn target_element(&self) -> Option<ElementId> {
+    pub fn target_element(&self) -> Option<ElementKey> {
         self.element_path.last().copied()
     }
 
@@ -105,7 +105,7 @@ impl HitTestResult {
     /// Get the element path from root to target.
     ///
     /// Returns empty slice if nothing was hit.
-    pub fn element_path(&self) -> &[ElementId] {
+    pub fn element_path(&self) -> &[ElementKey] {
         &self.element_path
     }
 
@@ -191,7 +191,7 @@ impl RenderObjectRegistry {
         pointer_position: Position<Logical, Absolute>,
         parent_absolute_position: Position<Logical, Absolute>,
         path: &mut Vec<RenderObjectKey>,
-        element_path: &mut Vec<ElementId>,
+        element_path: &mut Vec<ElementKey>,
         absolute_bounds: &mut Option<Bounds<Logical>>,
     ) -> bool {
         let obj = match self.get(id) {
@@ -267,7 +267,7 @@ impl RenderObjectRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::{ElementId, TextRenderObject, RenderObject};
+    use crate::retain::{ElementKey, TextRenderObject, RenderObject};
     use crate::layout::{LayoutEngine, TaffyLayoutEngine};
     use crate::retain::LayoutContext;
     use std::sync::Arc;
@@ -276,6 +276,18 @@ mod tests {
         let font_data = crate::resource::file::FONT.to_vec();
         let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
         glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
+    fn make_two_element_keys() -> (ElementKey, ElementKey) {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let k1 = sm.insert(());
+        let k2 = sm.insert(());
+        (k1, k2)
     }
 
     #[test]
@@ -293,7 +305,7 @@ mod tests {
     fn test_hit_test_result_hit() {
         let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
         let obj_id = sm.insert(());
-        let elem_id = ElementId::new();
+        let elem_id = make_element_key();
 
         let result = HitTestResult::hit(vec![obj_id], vec![elem_id]);
 
@@ -309,8 +321,7 @@ mod tests {
         let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
         let obj1 = sm.insert(());
         let obj2 = sm.insert(());
-        let elem1 = ElementId::new();
-        let elem2 = ElementId::new();
+        let (elem1, elem2) = make_two_element_keys();
 
         let result = HitTestResult::hit(vec![obj1, obj2], vec![elem1, elem2]);
 
@@ -351,7 +362,7 @@ mod tests {
             obj.apply_layout(&ctx);
         }
 
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
         let id = registry.create(Box::new(obj), element_id);
         registry.set_root(id);
 
@@ -374,7 +385,7 @@ mod tests {
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
         obj.layout(&mut ctx, &[]);
 
-        let element_id = ElementId::new();
+        let element_id = make_element_key();
         let id = registry.create(Box::new(obj), element_id);
         registry.set_root(id);
 
@@ -408,7 +419,7 @@ mod tests {
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
         parent.layout(&mut ctx, &[]);
 
-        let parent_elem = ElementId::new();
+        let parent_elem = make_element_key();
         let parent_id = registry.create(Box::new(parent), parent_elem);
         registry.set_root(parent_id);
 
@@ -416,7 +427,7 @@ mod tests {
         let mut child = TextRenderObject::new("Child");
         child.layout(&mut ctx, &[]);
 
-        let child_elem = ElementId::new();
+        let child_elem = make_element_key();
         let child_id = registry.create(Box::new(child), child_elem);
 
         // Add child to parent

@@ -1,7 +1,19 @@
 //! Unit tests for BuildOwner.
 
 use super::build_owner::BuildOwner;
-use super::id::ElementId;
+use super::id::ElementKey;
+
+fn make_key() -> ElementKey {
+    let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+    sm.insert(())
+}
+
+fn make_two_keys() -> (ElementKey, ElementKey) {
+    let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+    let k1 = sm.insert(());
+    let k2 = sm.insert(());
+    (k1, k2)
+}
 
 #[test]
 fn test_build_owner_new() {
@@ -14,7 +26,7 @@ fn test_build_owner_new() {
 #[test]
 fn test_mark_needs_build() {
     let mut owner = BuildOwner::new();
-    let element_id = ElementId::new();
+    let element_id = make_key();
 
     owner.mark_needs_build(element_id);
 
@@ -26,7 +38,7 @@ fn test_mark_needs_build() {
 #[test]
 fn test_mark_needs_build_idempotent() {
     let mut owner = BuildOwner::new();
-    let element_id = ElementId::new();
+    let element_id = make_key();
 
     owner.mark_needs_build(element_id);
     owner.mark_needs_build(element_id);
@@ -38,7 +50,7 @@ fn test_mark_needs_build_idempotent() {
 #[test]
 fn test_clear_dirty() {
     let mut owner = BuildOwner::new();
-    let element_id = ElementId::new();
+    let element_id = make_key();
 
     owner.mark_needs_build(element_id);
     owner.clear_dirty();
@@ -50,8 +62,7 @@ fn test_clear_dirty() {
 #[test]
 fn test_drain_dirty() {
     let mut owner = BuildOwner::new();
-    let id1 = ElementId::new();
-    let id2 = ElementId::new();
+    let (id1, id2) = make_two_keys();
 
     owner.mark_needs_build(id1);
     owner.mark_needs_build(id2);
@@ -65,7 +76,7 @@ fn test_drain_dirty() {
 #[test]
 fn test_build_scope_no_cycle() {
     let mut owner = BuildOwner::new();
-    let element_id = ElementId::new();
+    let element_id = make_key();
 
     // Should succeed for first entry
     assert!(owner.enter_build_scope(element_id));
@@ -78,7 +89,7 @@ fn test_build_scope_no_cycle() {
 #[test]
 fn test_build_scope_detects_cycle() {
     let mut owner = BuildOwner::new();
-    let element_id = ElementId::new();
+    let element_id = make_key();
 
     // Enter once
     assert!(owner.enter_build_scope(element_id));
@@ -90,8 +101,7 @@ fn test_build_scope_detects_cycle() {
 #[test]
 fn test_build_scope_nested() {
     let mut owner = BuildOwner::new();
-    let parent = ElementId::new();
-    let child = ElementId::new();
+    let (parent, child) = make_two_keys();
 
     // Enter parent
     assert!(owner.enter_build_scope(parent));

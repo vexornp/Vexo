@@ -7,7 +7,9 @@
 
 use std::collections::HashMap;
 
-use super::id::ElementId;
+use slotmap::SecondaryMap;
+
+use super::id::ElementKey;
 use super::key::GlobalKey;
 
 /// Registry tracking GlobalKey to Element mappings.
@@ -15,27 +17,14 @@ use super::key::GlobalKey;
 /// This is the global key registry that enables cross-parent element identity.
 /// It is owned by the `BuildOwner` and passed through `ElementContext` during
 /// element lifecycle operations.
-///
-/// # Example
-///
-/// ```ignore
-/// let mut registry = GlobalKeyRegistry::new();
-/// let key = GlobalKey::new();
-/// let element_id = ElementId::new();
-///
-/// // Register a GlobalKey with an element
-/// registry.register(key.clone(), element_id).unwrap();
-///
-/// // Look up the element by key
-/// assert_eq!(registry.get_element(&key), Some(element_id));
-/// ```
 #[derive(Debug)]
 pub struct GlobalKeyRegistry {
-    /// Map from GlobalKey to the associated ElementId.
-    key_to_element: HashMap<GlobalKey, ElementId>,
+    /// Map from GlobalKey to the associated ElementKey.
+    key_to_element: HashMap<GlobalKey, ElementKey>,
 
-    /// Reverse map for efficient unregistration by element ID.
-    element_to_key: HashMap<ElementId, GlobalKey>,
+    /// Reverse map for efficient unregistration by element key.
+    /// Uses SecondaryMap so stale keys return None automatically.
+    element_to_key: SecondaryMap<ElementKey, Option<GlobalKey>>,
 }
 
 impl GlobalKeyRegistry {
@@ -43,7 +32,7 @@ impl GlobalKeyRegistry {
     pub fn new() -> Self {
         Self {
             key_to_element: HashMap::new(),
-            element_to_key: HashMap::new(),
+            element_to_key: SecondaryMap::new(),
         }
     }
 
@@ -56,33 +45,30 @@ impl GlobalKeyRegistry {
     /// # Arguments
     ///
     /// * `key` - The GlobalKey to register
-    /// * `element_id` - The ElementId to associate with this key
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut registry = GlobalKeyRegistry::new();
-    /// let key = GlobalKey::new();
-    /// let element_id = ElementId::new();
-    ///
-    /// registry.register(key.clone(), element_id).unwrap();
-    /// ```
-    pub fn register(&mut self, key: GlobalKey, element_id: ElementId) -> Result<(), GlobalKeyError> {
-        if let Some(&existing_id) = self.key_to_element.get(&key) {
-            if existing_id != element_id {
-                return Err(GlobalKeyError::KeyAlreadyRegistered(existing_id));
+    /// * `element_id` - The ElementKey to associate with this key
+    pub fn register(
+        &mut self,
+        key: GlobalKey,
+        element_id: ElementKey,
+    ) -> Result<(), GlobalKeyError> {
+        if let Some(&existing) = self.key_to_element.get(&key) {
+            if existing != element_id {
+                return Err(GlobalKeyError::KeyAlreadyRegistered {
+                    key,
+                    existing_element: existing,
+                });
             }
-            // Same key and same element - idempotent, not an error
+            // Same element re-registering the same key - idempotent
             return Ok(());
         }
 
-        // Remove any existing key for this element (element getting a new key)
-        if let Some(old_key) = self.element_to_key.remove(&element_id) {
+        // Remove any previous key for this element
+        if let Some(Some(old_key)) = self.element_to_key.get(element_id).cloned() {
             self.key_to_element.remove(&old_key);
         }
 
         self.key_to_element.insert(key.clone(), element_id);
-        self.element_to_key.insert(element_id, key);
+        self.element_to_key.insert(element_id, Some(key));
         Ok(())
     }
 
@@ -90,50 +76,30 @@ impl GlobalKeyRegistry {
     ///
     /// Removes the mapping from the registry. This is called when an element
     /// with a GlobalKey is unmounted.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The GlobalKey to unregister
     pub fn unregister(&mut self, key: &GlobalKey) {
         if let Some(element_id) = self.key_to_element.remove(key) {
-            self.element_to_key.remove(&element_id);
+            self.element_to_key.remove(element_id);
         }
     }
 
-    /// Unregister by element ID.
+    /// Unregister by element key.
     ///
     /// Removes any GlobalKey associated with this element. This is called
     /// during element unmount when the element has a GlobalKey.
-    ///
-    /// # Arguments
-    ///
-    /// * `element_id` - The ElementId to unregister
-    pub fn unregister_element(&mut self, element_id: ElementId) {
-        if let Some(key) = self.element_to_key.remove(&element_id) {
+    pub fn unregister_element(&mut self, element_id: ElementKey) {
+        if let Some(Some(key)) = self.element_to_key.remove(element_id) {
             self.key_to_element.remove(&key);
         }
     }
 
-    /// Get the element ID for a GlobalKey.
+    /// Get the element key for a GlobalKey.
     ///
     /// Returns `None` if the key is not registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The GlobalKey to look up
-    ///
-    /// # Returns
-    ///
-    /// The ElementId associated with this key, or None if not found.
-    pub fn get_element(&self, key: &GlobalKey) -> Option<ElementId> {
+    pub fn get_element(&self, key: &GlobalKey) -> Option<ElementKey> {
         self.key_to_element.get(key).copied()
     }
 
     /// Check if a GlobalKey is registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The GlobalKey to check
     pub fn contains_key(&self, key: &GlobalKey) -> bool {
         self.key_to_element.contains_key(key)
     }
@@ -165,14 +131,21 @@ impl Default for GlobalKeyRegistry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalKeyError {
     /// The key is already registered with another element.
-    KeyAlreadyRegistered(ElementId),
+    KeyAlreadyRegistered {
+        key: GlobalKey,
+        existing_element: ElementKey,
+    },
 }
 
 impl std::fmt::Display for GlobalKeyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GlobalKeyError::KeyAlreadyRegistered(element_id) => {
-                write!(f, "GlobalKey is already registered with element {:?}", element_id)
+            GlobalKeyError::KeyAlreadyRegistered { key, existing_element } => {
+                write!(
+                    f,
+                    "GlobalKey {:?} is already registered with element {:?}",
+                    key, existing_element
+                )
             }
         }
     }
@@ -183,6 +156,18 @@ impl std::error::Error for GlobalKeyError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
+    fn make_two_keys() -> (ElementKey, ElementKey) {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let k1 = sm.insert(());
+        let k2 = sm.insert(());
+        (k1, k2)
+    }
 
     #[test]
     fn test_global_key_registry_new() {
@@ -195,7 +180,7 @@ mod tests {
     fn test_global_key_register_and_lookup() {
         let mut registry = GlobalKeyRegistry::new();
         let key = GlobalKey::new();
-        let element_id = ElementId::new();
+        let element_id = make_key();
 
         registry.register(key.clone(), element_id).unwrap();
         assert_eq!(registry.get_element(&key), Some(element_id));
@@ -207,13 +192,15 @@ mod tests {
     fn test_global_key_collision_detection() {
         let mut registry = GlobalKeyRegistry::new();
         let key = GlobalKey::new();
-        let element1 = ElementId::new();
-        let element2 = ElementId::new();
+        let (element1, element2) = make_two_keys();
 
         registry.register(key.clone(), element1).unwrap();
         let result = registry.register(key.clone(), element2);
 
-        assert!(matches!(result, Err(GlobalKeyError::KeyAlreadyRegistered(id)) if id == element1));
+        assert!(matches!(
+            result,
+            Err(GlobalKeyError::KeyAlreadyRegistered { existing_element, .. }) if existing_element == element1
+        ));
         assert_eq!(registry.get_element(&key), Some(element1));
     }
 
@@ -221,7 +208,7 @@ mod tests {
     fn test_global_key_same_element_idempotent() {
         let mut registry = GlobalKeyRegistry::new();
         let key = GlobalKey::new();
-        let element_id = ElementId::new();
+        let element_id = make_key();
 
         registry.register(key.clone(), element_id).unwrap();
         // Registering same key with same element should succeed (idempotent)
@@ -233,7 +220,7 @@ mod tests {
     fn test_global_key_unregister() {
         let mut registry = GlobalKeyRegistry::new();
         let key = GlobalKey::new();
-        let element_id = ElementId::new();
+        let element_id = make_key();
 
         registry.register(key.clone(), element_id).unwrap();
         registry.unregister(&key);
@@ -246,7 +233,7 @@ mod tests {
     fn test_global_key_unregister_element() {
         let mut registry = GlobalKeyRegistry::new();
         let key = GlobalKey::new();
-        let element_id = ElementId::new();
+        let element_id = make_key();
 
         registry.register(key.clone(), element_id).unwrap();
         registry.unregister_element(element_id);
@@ -262,7 +249,7 @@ mod tests {
 
         // Should not panic
         registry.unregister(&key);
-        registry.unregister_element(ElementId::new());
+        registry.unregister_element(make_key());
     }
 
     #[test]
@@ -272,16 +259,17 @@ mod tests {
 
         assert!(!registry.contains_key(&key));
 
-        registry.register(key.clone(), ElementId::new()).unwrap();
+        registry.register(key.clone(), make_key()).unwrap();
         assert!(registry.contains_key(&key));
     }
 
     #[test]
     fn test_global_key_clear() {
         let mut registry = GlobalKeyRegistry::new();
+        let (elem1, elem2) = make_two_keys();
 
-        registry.register(GlobalKey::new(), ElementId::new()).unwrap();
-        registry.register(GlobalKey::new(), ElementId::new()).unwrap();
+        registry.register(GlobalKey::new(), elem1).unwrap();
+        registry.register(GlobalKey::new(), elem2).unwrap();
 
         assert_eq!(registry.len(), 2);
         registry.clear();
@@ -293,7 +281,7 @@ mod tests {
         let mut registry = GlobalKeyRegistry::new();
         let key1 = GlobalKey::new();
         let key2 = GlobalKey::new();
-        let element_id = ElementId::new();
+        let element_id = make_key();
 
         // Register with key1
         registry.register(key1.clone(), element_id).unwrap();

@@ -22,7 +22,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
 use super::global_key_registry::GlobalKeyRegistry;
-use super::id::ElementId;
+use super::id::ElementKey;
 
 /// Tracks dirty elements and drives targeted rebuilds.
 ///
@@ -44,17 +44,17 @@ pub struct BuildOwner {
     /// Elements that need rebuild, in insertion order.
     /// Sorted by depth before rebuild via `sort_dirty_by_depth()`.
     /// Wrapped in RefCell for interior mutability.
-    dirty_elements: RefCell<Vec<ElementId>>,
+    dirty_elements: RefCell<Vec<ElementKey>>,
 
     /// Set for O(1) membership check (kept in sync with dirty_elements).
     /// Wrapped in RefCell for interior mutability.
-    dirty_set: RefCell<HashSet<ElementId>>,
+    dirty_set: RefCell<HashSet<ElementKey>>,
 
     /// Elements in the current build scope.
     ///
     /// During a rebuild, we track which elements are being built
     /// to detect cycles.
-    building: HashSet<ElementId>,
+    building: HashSet<ElementKey>,
 
     /// Global key registry for cross-parent element identity.
     /// Wrapped in RefCell so it can be borrowed mutably via &self,
@@ -85,14 +85,14 @@ impl BuildOwner {
     /// This method uses interior mutability (RefCell), so it can be called
     /// from within callbacks that fire during event handling without
     /// requiring a mutable reference to the BuildOwner.
-    pub fn mark_needs_build(&self, element_id: ElementId) {
+    pub fn mark_needs_build(&self, element_id: ElementKey) {
         if self.dirty_set.borrow_mut().insert(element_id) {
             self.dirty_elements.borrow_mut().push(element_id);
         }
     }
 
     /// Check if an element is marked as dirty.
-    pub fn is_dirty(&self, element_id: ElementId) -> bool {
+    pub fn is_dirty(&self, element_id: ElementKey) -> bool {
         self.dirty_set.borrow().contains(&element_id)
     }
 
@@ -116,7 +116,7 @@ impl BuildOwner {
     /// change which children exist.
     pub fn sort_dirty_by_depth<F>(&self, mut depth: F)
     where
-        F: FnMut(ElementId) -> usize,
+        F: FnMut(ElementKey) -> usize,
     {
         self.dirty_elements.borrow_mut().sort_by_key(|id| depth(*id));
     }
@@ -125,7 +125,7 @@ impl BuildOwner {
     ///
     /// Call `sort_dirty_by_depth()` first to ensure parents come
     /// before children. Clears both the vec and the set.
-    pub fn drain_dirty_sorted(&mut self) -> Vec<ElementId> {
+    pub fn drain_dirty_sorted(&mut self) -> Vec<ElementKey> {
         self.dirty_set.borrow_mut().clear();
         self.dirty_elements.borrow_mut().drain(..).collect()
     }
@@ -136,7 +136,7 @@ impl BuildOwner {
     /// Elements are returned in insertion order (not depth-sorted).
     /// Prefer `sort_dirty_by_depth()` + `drain_dirty_sorted()` for
     /// correct parent-before-child ordering.
-    pub fn drain_dirty(&mut self) -> Vec<ElementId> {
+    pub fn drain_dirty(&mut self) -> Vec<ElementKey> {
         self.dirty_set.borrow_mut().clear();
         self.dirty_elements.borrow_mut().drain(..).collect()
     }
@@ -151,7 +151,7 @@ impl BuildOwner {
     ///
     /// Used to detect cycles during rebuild. Returns false if the element
     /// is already being built (cycle detected).
-    pub fn enter_build_scope(&mut self, element_id: ElementId) -> bool {
+    pub fn enter_build_scope(&mut self, element_id: ElementKey) -> bool {
         if self.building.contains(&element_id) {
             // Cycle detected
             return false;
@@ -161,12 +161,12 @@ impl BuildOwner {
     }
 
     /// Exit a build scope for an element.
-    pub fn exit_build_scope(&mut self, element_id: ElementId) {
+    pub fn exit_build_scope(&mut self, element_id: ElementKey) {
         self.building.remove(&element_id);
     }
 
     /// Check if currently building an element.
-    pub fn is_building(&self, element_id: ElementId) -> bool {
+    pub fn is_building(&self, element_id: ElementKey) -> bool {
         self.building.contains(&element_id)
     }
 

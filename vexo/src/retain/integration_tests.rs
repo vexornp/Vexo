@@ -227,7 +227,7 @@ mod event_handling_tests {
     use crate::core::{Point, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
-    use crate::retain::{ElementId, ThreeTreePipeline};
+    use crate::retain::{ElementKey, ThreeTreePipeline};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -284,7 +284,8 @@ mod event_handling_tests {
         assert!(pipeline.focused_element().is_none());
 
         // Set focus
-        let element_id = ElementId::new();
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let element_id = sm.insert(());
         pipeline.set_focus(Some(element_id));
         assert_eq!(pipeline.focused_element(), Some(element_id));
 
@@ -366,11 +367,12 @@ mod global_key_tests {
     fn test_global_key_registry_in_build_owner() {
         // Test that BuildOwner has GlobalKeyRegistry
         use crate::retain::build_owner::BuildOwner;
-        use crate::retain::ElementId;
+        use crate::retain::ElementKey;
 
         let mut build_owner = BuildOwner::new();
         let key = GlobalKey::new();
-        let element_id = ElementId::new();
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let element_id = sm.insert(());
 
         // Register a key
         build_owner.global_keys_mut().register(key.clone(), element_id).unwrap();

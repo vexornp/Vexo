@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectKey, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementKey, ElementRegistry, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::elements::{RenderObjectElement, MultiChildRenderObjectElement};
 use crate::retain::key::WidgetKey;
 
@@ -20,9 +20,9 @@ use crate::retain::key::WidgetKey;
 /// - Manages render object lifecycle via RenderObjectElement trait
 /// - Manages children via MultiChildRenderObjectElement trait
 pub struct ContainerElement {
-    id: Option<ElementId>,
+    id: Option<ElementKey>,
     key: Option<WidgetKey>,
-    children: Vec<ElementId>,
+    children: Vec<ElementKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
 }
@@ -59,12 +59,12 @@ impl ContainerElement {
     }
 
     /// Get the element ID.
-    pub fn id(&self) -> Option<ElementId> {
+    pub fn id(&self) -> Option<ElementKey> {
         self.id
     }
 
     /// Get the children.
-    pub fn children(&self) -> &[ElementId] {
+    pub fn children(&self) -> &[ElementKey] {
         &self.children
     }
 }
@@ -101,26 +101,26 @@ impl RenderObjectElement for ContainerElement {
         self.key = key;
     }
 
-    fn element_id(&self) -> Option<ElementId> {
+    fn element_id(&self) -> Option<ElementKey> {
         self.id
     }
 
-    fn set_element_id(&mut self, id: Option<ElementId>) {
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
     }
 }
 
 // Implement MultiChildRenderObjectElement trait
 impl MultiChildRenderObjectElement for ContainerElement {
-    fn child_elements(&self) -> &[ElementId] {
+    fn child_elements(&self) -> &[ElementKey] {
         &self.children
     }
 
-    fn set_child_elements(&mut self, children: Vec<ElementId>) {
+    fn set_child_elements(&mut self, children: Vec<ElementKey>) {
         self.children = children;
     }
 
-    fn add_child_element(&mut self, child: ElementId) {
+    fn add_child_element(&mut self, child: ElementKey) {
         self.children.push(child);
     }
 }
@@ -202,7 +202,7 @@ impl Element for ContainerElement {
         None
     }
 
-    fn add_child(&mut self, child_id: ElementId) {
+    fn add_child(&mut self, child_id: ElementKey) {
         self.children.push(child_id);
     }
 
@@ -246,7 +246,7 @@ impl Element for ContainerElement {
             }
 
             // Collect children to unmount (those that weren't matched)
-            let children_to_unmount: Vec<ElementId> = self.children.iter()
+            let children_to_unmount: Vec<ElementKey> = self.children.iter()
                 .skip(updated_children.len())
                 .copied()
                 .collect();
@@ -267,6 +267,11 @@ impl Element for ContainerElement {
 
 #[cfg(test)]
 mod tests {
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
     use super::*;
     use std::sync::mpsc;
     use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Column, Text, BuildOwner};
@@ -277,7 +282,7 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -296,7 +301,7 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -326,7 +331,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut context = ElementContext::full(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -361,7 +366,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut context = ElementContext::full(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,

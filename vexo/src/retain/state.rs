@@ -1,51 +1,52 @@
 use std::any::Any;
-use std::collections::HashMap;
 
-use super::id::ElementId;
+use slotmap::SecondaryMap;
+
+use super::id::ElementKey;
 
 /// Type-erased state storage for elements.
 ///
 /// Each element can store arbitrary state that persists across
 /// reconciliation as long as the element is not unmounted.
 pub struct StateStorage {
-    states: HashMap<ElementId, Box<dyn Any>>,
+    states: SecondaryMap<ElementKey, Box<dyn Any>>,
 }
 
 impl StateStorage {
     /// Create a new empty state storage.
     pub fn new() -> Self {
         Self {
-            states: HashMap::new(),
+            states: SecondaryMap::new(),
         }
     }
 
     /// Insert state for an element.
-    pub fn insert<T: 'static>(&mut self, element: ElementId, state: T) {
+    pub fn insert<T: 'static>(&mut self, element: ElementKey, state: T) {
         self.states.insert(element, Box::new(state));
     }
 
     /// Get a reference to state for an element.
-    pub fn get<T: 'static>(&self, element: ElementId) -> Option<&T> {
+    pub fn get<T: 'static>(&self, element: ElementKey) -> Option<&T> {
         self.states
-            .get(&element)
+            .get(element)
             .and_then(|boxed| boxed.downcast_ref::<T>())
     }
 
     /// Get a mutable reference to state for an element.
-    pub fn get_mut<T: 'static>(&mut self, element: ElementId) -> Option<&mut T> {
+    pub fn get_mut<T: 'static>(&mut self, element: ElementKey) -> Option<&mut T> {
         self.states
-            .get_mut(&element)
+            .get_mut(element)
             .and_then(|boxed| boxed.downcast_mut::<T>())
     }
 
     /// Remove state for an element.
-    pub fn remove(&mut self, element: ElementId) {
-        self.states.remove(&element);
+    pub fn remove(&mut self, element: ElementKey) {
+        self.states.remove(element);
     }
 
     /// Check if state exists for an element.
-    pub fn contains(&self, element: ElementId) -> bool {
-        self.states.contains_key(&element)
+    pub fn contains(&self, element: ElementKey) -> bool {
+        self.states.contains_key(element)
     }
 
     /// Clear all stored state.
@@ -64,10 +65,15 @@ impl Default for StateStorage {
 mod tests {
     use super::*;
 
+    fn make_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
     #[test]
     fn test_insert_and_get() {
         let mut storage = StateStorage::new();
-        let id = ElementId::new();
+        let id = make_key();
 
         storage.insert(id, 42i32);
 
@@ -77,7 +83,7 @@ mod tests {
     #[test]
     fn test_get_mut() {
         let mut storage = StateStorage::new();
-        let id = ElementId::new();
+        let id = make_key();
 
         storage.insert(id, String::from("hello"));
         storage.get_mut::<String>(id).map(|s| s.push_str(" world"));
@@ -88,7 +94,7 @@ mod tests {
     #[test]
     fn test_remove() {
         let mut storage = StateStorage::new();
-        let id = ElementId::new();
+        let id = make_key();
 
         storage.insert(id, 100u64);
         storage.remove(id);
@@ -99,8 +105,9 @@ mod tests {
     #[test]
     fn test_different_types() {
         let mut storage = StateStorage::new();
-        let id1 = ElementId::new();
-        let id2 = ElementId::new();
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let id1 = sm.insert(());
+        let id2 = sm.insert(());
 
         storage.insert(id1, 42i32);
         storage.insert(id2, String::from("text"));

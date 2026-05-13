@@ -4,7 +4,7 @@
 //! exactly one child (e.g., DecoratedContainer, Padding, Background).
 
 use super::RenderObjectElement;
-use crate::retain::{ElementContext, ElementId, RenderObjectKey};
+use crate::retain::{ElementContext, ElementKey, RenderObjectKey};
 
 /// Element with a single child render object.
 ///
@@ -22,10 +22,10 @@ use crate::retain::{ElementContext, ElementId, RenderObjectKey};
 /// - `remove_child_render_object()` - Unlink child render object from parent
 pub trait SingleChildRenderObjectElement: RenderObjectElement {
     /// Get the child element ID.
-    fn child_element(&self) -> Option<ElementId>;
+    fn child_element(&self) -> Option<ElementKey>;
 
     /// Set the child element ID.
-    fn set_child_element(&mut self, child: Option<ElementId>);
+    fn set_child_element(&mut self, child: Option<ElementKey>);
 
     /// Insert a child render object into this element's render object.
     ///

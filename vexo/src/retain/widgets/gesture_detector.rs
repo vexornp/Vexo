@@ -38,7 +38,7 @@ use crate::layout::{Layout, LayoutNodeId};
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
 use super::super::{
-    ElementContext, ElementId, ElementRegistry, EventContext,
+    ElementContext, ElementKey, ElementRegistry, EventContext,
     LayoutContext, LayoutResult, PaintContext, HitTestContext,
     RenderObject, RenderObjectKey,
 };
@@ -151,11 +151,11 @@ impl Widget for GestureDetector {
 /// - Handles pointer events via on_press/on_release callbacks
 /// - Follows the SingleChildRenderObjectElement pattern
 pub struct GestureDetectorElement {
-    id: Option<ElementId>,
+    id: Option<ElementKey>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
-    child_element: Option<ElementId>,
+    child_element: Option<ElementKey>,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
 }
@@ -226,22 +226,22 @@ impl RenderObjectElement for GestureDetectorElement {
         self.key = key;
     }
 
-    fn element_id(&self) -> Option<ElementId> {
+    fn element_id(&self) -> Option<ElementKey> {
         self.id
     }
 
-    fn set_element_id(&mut self, id: Option<ElementId>) {
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
     }
 }
 
 // Implement SingleChildRenderObjectElement trait
 impl SingleChildRenderObjectElement for GestureDetectorElement {
-    fn child_element(&self) -> Option<ElementId> {
+    fn child_element(&self) -> Option<ElementKey> {
         self.child_element
     }
 
-    fn set_child_element(&mut self, child: Option<ElementId>) {
+    fn set_child_element(&mut self, child: Option<ElementKey>) {
         self.child_element = child;
     }
 }
@@ -325,7 +325,7 @@ impl Element for GestureDetectorElement {
         None
     }
 
-    fn add_child(&mut self, child_id: ElementId) {
+    fn add_child(&mut self, child_id: ElementKey) {
         self.child_element = Some(child_id);
     }
 

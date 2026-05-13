@@ -10,7 +10,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, RenderObjectKey, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::key::WidgetKey;
 
 /// Element that owns and manages a RenderObject.
@@ -35,7 +35,7 @@ use crate::retain::key::WidgetKey;
 ///
 /// ```ignore
 /// pub struct MyLeafElement {
-///     id: Option<ElementId>,
+///     id: Option<ElementKey>,
 ///     key: Option<WidgetKey>,
 ///     render_object: Option<RenderObjectKey>,
 ///     widget: Option<Box<dyn Widget>>,
@@ -66,7 +66,7 @@ use crate::retain::key::WidgetKey;
 ///         self.key = key;
 ///     }
 ///
-///     fn element_id(&self) -> Option<ElementId> {
+///     fn element_id(&self) -> Option<ElementKey> {
 ///         self.id
 ///     }
 /// }
@@ -91,10 +91,10 @@ pub trait RenderObjectElement: Element {
     fn set_stored_key(&mut self, key: Option<WidgetKey>);
 
     /// Get the element ID.
-    fn element_id(&self) -> Option<ElementId>;
+    fn element_id(&self) -> Option<ElementKey>;
 
     /// Set the element ID.
-    fn set_element_id(&mut self, id: Option<ElementId>);
+    fn set_element_id(&mut self, id: Option<ElementKey>);
 
     /// Default mount implementation for render object creation.
     ///

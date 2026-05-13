@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use crate::core::{Bounds, Logical, Point};
 use crate::input::Modifiers;
 
-use super::{ElementId, StateStorage};
+use super::{ElementKey, StateStorage};
 use super::build_owner::BuildOwner;
 
 // ============================================================================
@@ -27,7 +27,7 @@ pub struct EventContext<'a> {
     pub pointer_position: Point<Logical>,
 
     /// Currently focused element (if any).
-    pub focused_element: Option<ElementId>,
+    pub focused_element: Option<ElementKey>,
 
     /// Bounds of the element receiving the event.
     pub bounds: Bounds<Logical>,
@@ -59,11 +59,11 @@ pub struct EventContext<'a> {
     /// When a `StatefulMutable::set()` fires its dirty callback from within
     /// an event handler, it sends the element ID through this channel.
     /// The pipeline drains the channel and calls `mark_needs_build()` itself.
-    pub dirty_sender: Option<&'a mpsc::Sender<ElementId>>,
+    pub dirty_sender: Option<&'a mpsc::Sender<ElementKey>>,
 
     /// Focus request from the element (if any).
     /// Set by `request_focus()`.
-    focus_request: Option<ElementId>,
+    focus_request: Option<ElementKey>,
 
     /// Whether the element requested to clear focus.
     clear_focus_request: bool,
@@ -73,7 +73,7 @@ impl<'a> EventContext<'a> {
     /// Create a new event context.
     pub fn new(
         pointer_position: Point<Logical>,
-        focused_element: Option<ElementId>,
+        focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
         state: &'a mut StateStorage,
@@ -94,12 +94,12 @@ impl<'a> EventContext<'a> {
     /// Create a new event context with BuildOwner access.
     pub fn with_build_owner(
         pointer_position: Point<Logical>,
-        focused_element: Option<ElementId>,
+        focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
         state: &'a mut StateStorage,
         build_owner: &'a BuildOwner,
-        dirty_sender: &'a mpsc::Sender<ElementId>,
+        dirty_sender: &'a mpsc::Sender<ElementKey>,
     ) -> Self {
         Self {
             pointer_position,
@@ -120,7 +120,7 @@ impl<'a> EventContext<'a> {
     }
 
     /// Check if this element is currently focused.
-    pub fn is_focused(&self, element: ElementId) -> bool {
+    pub fn is_focused(&self, element: ElementKey) -> bool {
         self.focused_element == Some(element)
     }
 
@@ -132,7 +132,7 @@ impl<'a> EventContext<'a> {
     /// Request focus for an element.
     ///
     /// The pipeline will process this request after the event is handled.
-    pub fn request_focus(&mut self, element: ElementId) {
+    pub fn request_focus(&mut self, element: ElementKey) {
         self.focus_request = Some(element);
         self.clear_focus_request = false;
     }
@@ -144,7 +144,7 @@ impl<'a> EventContext<'a> {
     }
 
     /// Get the focus request (if any).
-    pub fn focus_request(&self) -> Option<ElementId> {
+    pub fn focus_request(&self) -> Option<ElementKey> {
         self.focus_request
     }
 
@@ -172,7 +172,7 @@ impl<'a> EventContext<'a> {
     ///
     /// Convenience method for event handlers that need to trigger
     /// a rebuild after modifying state.
-    pub fn mark_needs_build(&self, element_id: ElementId) {
+    pub fn mark_needs_build(&self, element_id: ElementKey) {
         if let Some(bo) = self.build_owner {
             bo.mark_needs_build(element_id);
         }
@@ -187,6 +187,18 @@ impl<'a> EventContext<'a> {
 mod tests {
     use super::*;
     use crate::core::Bounds;
+
+    fn make_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
+    fn make_two_keys() -> (ElementKey, ElementKey) {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let k1 = sm.insert(());
+        let k2 = sm.insert(());
+        (k1, k2)
+    }
 
     #[test]
     fn test_event_context_is_pointer_inside() {
@@ -215,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_event_context_focus() {
-        let element = ElementId::new();
+        let (element, other) = make_two_keys();
         let mut state = StateStorage::new();
         let ctx = EventContext::new(
             Point::zero(),
@@ -227,7 +239,7 @@ mod tests {
 
         assert!(ctx.is_focused(element));
         assert!(ctx.has_focus());
-        assert!(!ctx.is_focused(ElementId::new()));
+        assert!(!ctx.is_focused(other));
     }
 
     #[test]
@@ -241,7 +253,7 @@ mod tests {
             &mut state,
         );
 
-        let element = ElementId::new();
+        let element = make_key();
         ctx.request_focus(element);
 
         assert_eq!(ctx.focus_request(), Some(element));

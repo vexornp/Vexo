@@ -2,7 +2,7 @@
 
 use std::sync::mpsc;
 
-use super::id::{ElementId, RenderObjectKey};
+use super::id::{ElementKey, RenderObjectKey};
 use super::state::StateStorage;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObjectRegistry, RenderObject};
@@ -12,11 +12,11 @@ use super::build_owner::BuildOwner;
 /// Context provided to element lifecycle methods.
 pub struct ElementContext<'a> {
     /// The parent element (None for root).
-    pub parent: Option<ElementId>,
+    pub parent: Option<ElementKey>,
 
     /// The element ID for this element.
     /// This is the single source of truth - always provided by the pipeline.
-    pub element_id: ElementId,
+    pub element_id: ElementKey,
 
     /// The render object created for this element (set during mount).
     pub render_object: Option<RenderObjectKey>,
@@ -44,7 +44,7 @@ pub struct ElementContext<'a> {
     /// the element ID through this channel instead of directly calling
     /// `mark_needs_build()`. The pipeline drains the channel and calls
     /// `mark_needs_build()` itself, eliminating the need for raw pointers.
-    pub dirty_sender: Option<&'a mpsc::Sender<ElementId>>,
+    pub dirty_sender: Option<&'a mpsc::Sender<ElementKey>>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -53,8 +53,8 @@ impl<'a> ElementContext<'a> {
     /// This is the primary constructor - the element ID must be provided.
     /// The pipeline generates the ID and passes it here.
     pub fn new(
-        element_id: ElementId,
-        parent: Option<ElementId>,
+        element_id: ElementKey,
+        parent: Option<ElementKey>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
     ) -> Self {
@@ -73,14 +73,14 @@ impl<'a> ElementContext<'a> {
 
     /// Create a new element context with all registries.
     pub fn full(
-        element_id: ElementId,
-        parent: Option<ElementId>,
+        element_id: ElementKey,
+        parent: Option<ElementKey>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
         render_objects: &'a mut RenderObjectRegistry,
         element_registry: &'a mut ElementRegistry,
         build_owner: &'a BuildOwner,
-        dirty_sender: &'a mpsc::Sender<ElementId>,
+        dirty_sender: &'a mpsc::Sender<ElementKey>,
     ) -> Self {
         Self {
             parent,
@@ -106,29 +106,29 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Get state for this element.
-    pub fn get_state<T: 'static>(&self, id: ElementId) -> Option<&T> {
+    pub fn get_state<T: 'static>(&self, id: ElementKey) -> Option<&T> {
         self.state.get::<T>(id)
     }
 
     /// Get mutable state for this element.
-    pub fn get_state_mut<T: 'static>(&mut self, id: ElementId) -> Option<&mut T> {
+    pub fn get_state_mut<T: 'static>(&mut self, id: ElementKey) -> Option<&mut T> {
         self.state.get_mut::<T>(id)
     }
 
     /// Insert state for this element.
-    pub fn insert_state<T: 'static>(&mut self, id: ElementId, state: T) {
+    pub fn insert_state<T: 'static>(&mut self, id: ElementKey, state: T) {
         self.state.insert(id, state);
     }
 
     /// Remove state for this element.
-    pub fn remove_state(&mut self, id: ElementId) {
+    pub fn remove_state(&mut self, id: ElementKey) {
         self.state.remove(id);
     }
 
     /// Create a render object in the registry.
     ///
     /// Returns the ID of the created render object, or None if no registry is available.
-    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> Option<RenderObjectKey> {
+    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementKey) -> Option<RenderObjectKey> {
         self.render_objects.as_mut().map(|registry| registry.create(object, owner))
     }
 
@@ -142,14 +142,14 @@ impl<'a> ElementContext<'a> {
     /// Mount a child element in the registry.
     ///
     /// Returns the ID of the mounted element, or None if no registry is available.
-    pub fn mount_child_element(&mut self, element: Box<dyn super::Element>, parent: ElementId) -> Option<ElementId> {
+    pub fn mount_child_element(&mut self, element: Box<dyn super::Element>, parent: ElementKey) -> Option<ElementKey> {
         self.element_registry.as_mut().map(|registry| registry.mount(element, Some(parent)))
     }
 
     /// Unmount a child element from the registry.
     ///
     /// Returns true if the element was unmounted, false if no registry or element found.
-    pub fn unmount_child_element(&mut self, child_id: ElementId) -> bool {
+    pub fn unmount_child_element(&mut self, child_id: ElementKey) -> bool {
         if let Some(registry) = self.element_registry.as_mut() {
             if registry.contains(child_id) {
                 registry.unmount(child_id);
@@ -188,7 +188,7 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Mark an element as needing rebuild.
-    pub fn mark_needs_build(&mut self, element_id: ElementId) {
+    pub fn mark_needs_build(&mut self, element_id: ElementKey) {
         if let Some(build_owner) = &self.build_owner {
             build_owner.mark_needs_build(element_id);
         }
@@ -198,7 +198,7 @@ impl<'a> ElementContext<'a> {
     ///
     /// Called during mount() for elements with GlobalKey.
     /// Returns an error if the key is already registered to another element.
-    pub fn register_global_key(&mut self, key: super::key::GlobalKey, element_id: ElementId) -> Result<(), super::global_key_registry::GlobalKeyError> {
+    pub fn register_global_key(&mut self, key: super::key::GlobalKey, element_id: ElementKey) -> Result<(), super::global_key_registry::GlobalKeyError> {
         if let Some(build_owner) = &self.build_owner {
             build_owner.global_keys_mut().register(key, element_id)
         } else {
@@ -209,7 +209,7 @@ impl<'a> ElementContext<'a> {
     /// Unregister a global key for this element.
     ///
     /// Called during unmount() for elements with GlobalKey.
-    pub fn unregister_global_key(&mut self, element_id: ElementId) {
+    pub fn unregister_global_key(&mut self, element_id: ElementKey) {
         if let Some(build_owner) = &self.build_owner {
             build_owner.global_keys_mut().unregister_element(element_id);
         }
@@ -221,7 +221,7 @@ impl<'a> ElementContext<'a> {
     /// This recursively mounts all children and links render objects.
     ///
     /// Returns the ID of the inflated element, or None if registries are not available.
-    pub fn inflate_widget(&mut self, widget: Box<dyn super::Widget>) -> Option<ElementId> {
+    pub fn inflate_widget(&mut self, widget: Box<dyn super::Widget>) -> Option<ElementKey> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
         let build_owner = self.build_owner?;
@@ -252,9 +252,9 @@ impl<'a> ElementContext<'a> {
     /// Returns the ID of the child element, or None if registries are not available.
     pub fn update_child(
         &mut self,
-        child_id: Option<ElementId>,
+        child_id: Option<ElementKey>,
         widget: Box<dyn super::Widget>,
-    ) -> Option<ElementId> {
+    ) -> Option<ElementKey> {
         let element_registry = self.element_registry.take()?;
         let render_objects = self.render_objects.take()?;
         let build_owner = self.build_owner?;

@@ -2,7 +2,6 @@
 
 use super::*;
 use super::key::{Key, WidgetKey};
-use super::id::ElementId;
 use super::reconcile::Reconcilable;
 use std::cell::Cell;
 
@@ -55,14 +54,14 @@ impl Element for MockElement {
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
 }
 
+
 #[test]
 fn test_reconcile_inserts_new_element() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
 
     // Create parent first
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: empty
@@ -81,11 +80,9 @@ fn test_reconcile_inserts_new_element() {
 #[test]
 fn test_reconcile_updates_matching_key() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial widget with key
@@ -109,11 +106,9 @@ fn test_reconcile_updates_matching_key() {
 #[test]
 fn test_reconcile_removes_unmatched() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: two widgets
@@ -137,11 +132,9 @@ fn test_reconcile_removes_unmatched() {
 #[test]
 fn test_reconcile_reorders_with_keys() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: key1, key2
@@ -169,11 +162,9 @@ fn test_reconcile_reorders_with_keys() {
 #[test]
 fn test_reconcile_preserves_state_on_update() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial widget with key
@@ -197,11 +188,9 @@ fn test_reconcile_preserves_state_on_update() {
 #[test]
 fn test_reconcile_handles_insertion_in_middle() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: key1, key3
@@ -233,11 +222,9 @@ fn test_reconcile_handles_insertion_in_middle() {
 #[test]
 fn test_reconcile_handles_non_keyed_position_matching() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: two non-keyed widgets
@@ -265,11 +252,9 @@ fn test_reconcile_handles_non_keyed_position_matching() {
 #[test]
 fn test_reconcile_clears_all_children() {
     let mut registry = ElementRegistry::new();
-    let parent = ElementId::new();
-
     // Create parent
     let parent_element = Box::new(MockElement { key: None, render_object: None });
-    registry.mount(parent_element, None);
+    let parent = registry.mount(parent_element, None);
     registry.set_children(parent, vec![]);
 
     // Initial: two widgets

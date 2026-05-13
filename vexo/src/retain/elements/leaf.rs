@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectKey, Widget};
+use crate::retain::{Element, ElementContext, ElementKey, ElementRegistry, RenderObjectKey, Widget};
 use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
 
@@ -27,7 +27,7 @@ use crate::retain::key::WidgetKey;
 /// element.mount(&mut context);
 /// ```
 pub struct LeafRenderObjectElement {
-    id: Option<ElementId>,
+    id: Option<ElementKey>,
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
@@ -63,7 +63,7 @@ impl LeafRenderObjectElement {
     }
 
     /// Get the element ID.
-    pub fn id(&self) -> Option<ElementId> {
+    pub fn id(&self) -> Option<ElementKey> {
         self.id
     }
 }
@@ -100,11 +100,11 @@ impl RenderObjectElement for LeafRenderObjectElement {
         self.key = key;
     }
 
-    fn element_id(&self) -> Option<ElementId> {
+    fn element_id(&self) -> Option<ElementKey> {
         self.id
     }
 
-    fn set_element_id(&mut self, id: Option<ElementId>) {
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
     }
 }
@@ -163,13 +163,18 @@ mod tests {
     use std::sync::mpsc;
     use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner};
 
+    fn make_element_key() -> ElementKey {
+        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        sm.insert(())
+    }
+
     #[test]
     fn test_leaf_element_mount() {
         let mut element = LeafRenderObjectElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -182,8 +187,6 @@ mod tests {
 
     #[test]
     fn test_leaf_element_mount_creates_render_object() {
-        // This test verifies that mounting a leaf element with a widget
-        // creates a render object in the registry.
         let mut element = LeafRenderObjectElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
@@ -195,7 +198,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut context = ElementContext::full(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -207,18 +210,14 @@ mod tests {
 
         element.mount(&mut context);
 
-        // After mount, the element should have a render object ID
         assert!(element.render_object().is_some());
 
-        // The registry should contain the render object
         let ro_id = element.render_object().unwrap();
         assert!(render_objects.get(ro_id).is_some());
     }
 
     #[test]
     fn test_leaf_element_unmount_removes_render_object() {
-        // This test verifies that unmounting a leaf element removes
-        // the render object from the registry.
         let mut element = LeafRenderObjectElement::new();
         let widget = Text::new("Hello");
         element.set_widget(&widget);
@@ -230,7 +229,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut context = ElementContext::full(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -243,10 +242,8 @@ mod tests {
         element.mount(&mut context);
         let ro_id = element.render_object().unwrap();
 
-        // Now unmount
         element.unmount(&mut context);
 
-        // The render object should be removed from the registry
         assert!(render_objects.get(ro_id).is_none());
     }
 
@@ -256,7 +253,7 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut context = ElementContext::new(
-            ElementId::new(),
+            make_element_key(),
             None,
             &mut state,
             &mut dirty,
@@ -264,9 +261,6 @@ mod tests {
 
         element.mount(&mut context);
         element.unmount(&mut context);
-
-        // Element should be cleaned up
-        // The id is still set (we don't clear it), but state should be removed
     }
 
     #[test]
@@ -305,13 +299,11 @@ mod tests {
     fn test_leaf_element_can_update() {
         let element = LeafRenderObjectElement::new();
 
-        // can_update should return true for any widget
         assert!(element.can_update(&"any widget" as &dyn Any));
     }
 
     #[test]
     fn test_backward_compatibility_alias() {
-        // Verify that LeafElement is still usable as an alias
         let element: LeafElement = LeafRenderObjectElement::new();
         assert!(element.id().is_none());
     }
