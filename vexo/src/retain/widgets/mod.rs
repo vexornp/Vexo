@@ -198,7 +198,7 @@ mod tests {
         fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut crate::retain::ElementContext) {}
         fn unmount(&mut self, _context: &mut crate::retain::ElementContext) {}
         fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
-        fn render_object(&self) -> Option<crate::retain::RenderObjectId> {
+        fn render_object(&self) -> Option<crate::retain::RenderObjectKey> {
             None
         }
         fn widget_key(&self) -> Option<WidgetKey> {

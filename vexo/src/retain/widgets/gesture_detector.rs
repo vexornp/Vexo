@@ -40,7 +40,7 @@ use super::super::key::WidgetKey;
 use super::super::{
     ElementContext, ElementId, ElementRegistry, EventContext,
     LayoutContext, LayoutResult, PaintContext, HitTestContext,
-    RenderObject, RenderObjectId,
+    RenderObject, RenderObjectKey,
 };
 use super::super::elements::{RenderObjectElement, SingleChildRenderObjectElement};
 
@@ -153,7 +153,7 @@ impl Widget for GestureDetector {
 pub struct GestureDetectorElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
-    render_object: Option<RenderObjectId>,
+    render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
     child_element: Option<ElementId>,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
@@ -210,11 +210,11 @@ impl RenderObjectElement for GestureDetectorElement {
         self.widget = Some(widget);
     }
 
-    fn render_object_id(&self) -> Option<RenderObjectId> {
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 
-    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
         self.render_object = id;
     }
 
@@ -287,7 +287,7 @@ impl Element for GestureDetectorElement {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectId> {
+    fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 
@@ -375,7 +375,7 @@ impl Element for GestureDetectorElement {
 /// - Generates no paint commands (invisible)
 /// - Hit tests using its computed bounds (for event routing)
 pub struct GestureDetectorRenderObject {
-    child: Option<RenderObjectId>,
+    child: Option<RenderObjectKey>,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeId>,
 }
@@ -429,7 +429,7 @@ impl RenderObject for GestureDetectorRenderObject {
         }
     }
 
-    fn children(&self) -> &[RenderObjectId] {
+    fn children(&self) -> &[RenderObjectKey] {
         match &self.child {
             Some(child) => std::slice::from_ref(child),
             None => &[],
@@ -444,7 +444,7 @@ impl RenderObject for GestureDetectorRenderObject {
         self
     }
 
-    fn set_child_id(&mut self, child: RenderObjectId) {
+    fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
     }
 

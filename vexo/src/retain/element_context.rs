@@ -2,7 +2,7 @@
 
 use std::sync::mpsc;
 
-use super::id::{ElementId, RenderObjectId};
+use super::id::{ElementId, RenderObjectKey};
 use super::state::StateStorage;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObjectRegistry, RenderObject};
@@ -19,7 +19,7 @@ pub struct ElementContext<'a> {
     pub element_id: ElementId,
 
     /// The render object created for this element (set during mount).
-    pub render_object: Option<RenderObjectId>,
+    pub render_object: Option<RenderObjectKey>,
 
     /// State storage for this element.
     pub state: &'a mut StateStorage,
@@ -96,13 +96,13 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Mark a render object as needing layout.
-    pub fn mark_needs_layout(&mut self, id: RenderObjectId) {
-        self.dirty.mark_needs_layout(id);
+    pub fn mark_needs_layout(&mut self, key: RenderObjectKey) {
+        self.dirty.mark_needs_layout(key);
     }
 
     /// Mark a render object as needing paint.
-    pub fn mark_needs_paint(&mut self, id: RenderObjectId) {
-        self.dirty.mark_needs_paint(id);
+    pub fn mark_needs_paint(&mut self, key: RenderObjectKey) {
+        self.dirty.mark_needs_paint(key);
     }
 
     /// Get state for this element.
@@ -128,14 +128,14 @@ impl<'a> ElementContext<'a> {
     /// Create a render object in the registry.
     ///
     /// Returns the ID of the created render object, or None if no registry is available.
-    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> Option<RenderObjectId> {
+    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> Option<RenderObjectKey> {
         self.render_objects.as_mut().map(|registry| registry.create(object, owner))
     }
 
     /// Remove a render object from the registry.
-    pub fn remove_render_object(&mut self, id: RenderObjectId) {
+    pub fn remove_render_object(&mut self, key: RenderObjectKey) {
         if let Some(registry) = &mut self.render_objects {
-            registry.remove(id);
+            registry.remove(key);
         }
     }
 
@@ -162,7 +162,7 @@ impl<'a> ElementContext<'a> {
     /// Set the child render object on a parent render object.
     ///
     /// Used by modifier elements to link their render object to their child's.
-    pub fn set_render_object_child(&mut self, parent: RenderObjectId, child: RenderObjectId) {
+    pub fn set_render_object_child(&mut self, parent: RenderObjectKey, child: RenderObjectKey) {
         if let Some(registry) = &mut self.render_objects {
             registry.set_child(parent, child);
         }
@@ -172,8 +172,8 @@ impl<'a> ElementContext<'a> {
     ///
     /// Returns None if the ID is not valid or no registry is available.
     /// Used during Element::update() to update render object properties.
-    pub fn get_render_object_mut(&mut self, id: RenderObjectId) -> Option<&mut Box<dyn RenderObject>> {
-        self.render_objects.as_mut().and_then(|registry| registry.get_mut(id))
+    pub fn get_render_object_mut(&mut self, key: RenderObjectKey) -> Option<&mut Box<dyn RenderObject>> {
+        self.render_objects.as_mut().and_then(|registry| registry.get_mut(key))
     }
 
     /// Get the build owner reference, if set.

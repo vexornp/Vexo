@@ -13,7 +13,7 @@ use crate::render::RenderCommand;
 use crate::retain::{
     Element, ElementContext, ElementId, ElementRegistry, EventContext,
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
-    RenderObject, RenderObjectId, Widget, WidgetKey, UpdateResult,
+    RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
 };
 use crate::retain::elements::{RenderObjectElement, SingleChildRenderObjectElement};
 use crate::retain::style::Style;
@@ -31,7 +31,7 @@ pub struct DecoratedContainerRenderObject {
     style: Style,
 
     /// Child render object ID.
-    child: Option<RenderObjectId>,
+    child: Option<RenderObjectKey>,
 
     /// Computed bounds from layout.
     computed_bounds: Option<Bounds<Logical>>,
@@ -151,7 +151,7 @@ impl RenderObject for DecoratedContainerRenderObject {
         }
     }
 
-    fn children(&self) -> &[RenderObjectId] {
+    fn children(&self) -> &[RenderObjectKey] {
         match &self.child {
             Some(child) => std::slice::from_ref(child),
             None => &[],
@@ -166,7 +166,7 @@ impl RenderObject for DecoratedContainerRenderObject {
         self
     }
 
-    fn set_child_id(&mut self, child: RenderObjectId) {
+    fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
     }
 
@@ -190,7 +190,7 @@ impl RenderObject for DecoratedContainerRenderObject {
 pub struct DecoratedContainerElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
-    render_object: Option<RenderObjectId>,
+    render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
     child_element: Option<ElementId>,
 }
@@ -247,11 +247,11 @@ impl RenderObjectElement for DecoratedContainerElement {
         self.widget = Some(widget);
     }
 
-    fn render_object_id(&self) -> Option<RenderObjectId> {
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 
-    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
         self.render_object = id;
     }
 
@@ -324,7 +324,7 @@ impl Element for DecoratedContainerElement {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectId> {
+    fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 

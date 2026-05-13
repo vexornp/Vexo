@@ -1,5 +1,5 @@
 use super::key::Key;
-use super::id::{ElementId, RenderObjectId};
+use super::id::{ElementId, RenderObjectKey};
 
 #[test]
 fn test_key_creation() {
@@ -45,9 +45,10 @@ fn test_element_id_uniqueness() {
 }
 
 #[test]
-fn test_render_object_id_uniqueness() {
-    let id1 = RenderObjectId::new();
-    let id2 = RenderObjectId::new();
+fn test_render_object_key_uniqueness() {
+    let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+    let id1 = sm.insert(());
+    let id2 = sm.insert(());
 
     assert_ne!(id1, id2);
 }

@@ -4,7 +4,7 @@
 //! exactly one child (e.g., DecoratedContainer, Padding, Background).
 
 use super::RenderObjectElement;
-use crate::retain::{ElementContext, ElementId, RenderObjectId};
+use crate::retain::{ElementContext, ElementId, RenderObjectKey};
 
 /// Element with a single child render object.
 ///
@@ -31,7 +31,7 @@ pub trait SingleChildRenderObjectElement: RenderObjectElement {
     ///
     /// This links the child's render object to the parent's render object
     /// via `set_child_id()`, enabling the render tree traversal.
-    fn insert_child_render_object(&mut self, child_ro: RenderObjectId, context: &mut ElementContext) {
+    fn insert_child_render_object(&mut self, child_ro: RenderObjectKey, context: &mut ElementContext) {
         if let Some(parent_ro) = self.render_object_id() {
             if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
                 parent_obj.set_child_id(child_ro);

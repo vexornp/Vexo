@@ -7,7 +7,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::mpsc;
 
-use super::id::{ElementId, RenderObjectId};
+use super::id::{ElementId, RenderObjectKey};
 use super::key::WidgetKey;
 use super::element_context::ElementContext;
 use super::widgets::Widget;
@@ -39,7 +39,7 @@ pub trait Element {
     fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element));
 
     /// Get associated render object (if any).
-    fn render_object(&self) -> Option<RenderObjectId>;
+    fn render_object(&self) -> Option<RenderObjectKey>;
 
     /// Get the widget key (local or global).
     fn widget_key(&self) -> Option<WidgetKey>;

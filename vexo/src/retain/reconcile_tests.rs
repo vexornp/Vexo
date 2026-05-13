@@ -42,7 +42,7 @@ impl Reconcilable for MockWidget {
 /// Mock element for testing reconciliation
 struct MockElement {
     key: Option<WidgetKey>,
-    render_object: Option<RenderObjectId>,
+    render_object: Option<RenderObjectKey>,
 }
 
 impl Element for MockElement {
@@ -50,7 +50,7 @@ impl Element for MockElement {
     fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut ElementContext) {}
     fn unmount(&mut self, _context: &mut ElementContext) {}
     fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
-    fn render_object(&self) -> Option<RenderObjectId> { self.render_object }
+    fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
     fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
 }

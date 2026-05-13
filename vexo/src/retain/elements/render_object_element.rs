@@ -10,7 +10,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, RenderObjectId, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementId, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::key::WidgetKey;
 
 /// Element that owns and manages a RenderObject.
@@ -37,7 +37,7 @@ use crate::retain::key::WidgetKey;
 /// pub struct MyLeafElement {
 ///     id: Option<ElementId>,
 ///     key: Option<WidgetKey>,
-///     render_object: Option<RenderObjectId>,
+///     render_object: Option<RenderObjectKey>,
 ///     widget: Option<Box<dyn Widget>>,
 /// }
 ///
@@ -50,11 +50,11 @@ use crate::retain::key::WidgetKey;
 ///         self.widget = Some(widget);
 ///     }
 ///
-///     fn render_object_id(&self) -> Option<RenderObjectId> {
+///     fn render_object_id(&self) -> Option<RenderObjectKey> {
 ///         self.render_object
 ///     }
 ///
-///     fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+///     fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
 ///         self.render_object = id;
 ///     }
 ///
@@ -79,10 +79,10 @@ pub trait RenderObjectElement: Element {
     fn set_widget(&mut self, widget: Box<dyn Widget>);
 
     /// Get the stored render object ID.
-    fn render_object_id(&self) -> Option<RenderObjectId>;
+    fn render_object_id(&self) -> Option<RenderObjectKey>;
 
     /// Set the render object ID after creation.
-    fn set_render_object_id(&mut self, id: Option<RenderObjectId>);
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>);
 
     /// Get the stored key.
     fn stored_key(&self) -> Option<WidgetKey>;

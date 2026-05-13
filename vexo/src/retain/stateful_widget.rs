@@ -4,7 +4,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use super::id::ElementId;
-use super::id::RenderObjectId;
+use super::id::RenderObjectKey;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 use super::build_owner::BuildOwner;
@@ -201,12 +201,12 @@ impl<'a> BuildContext<'a> {
     }
 
     /// Mark the element's render object as needing layout.
-    pub fn mark_needs_layout(&mut self, render_object_id: super::id::RenderObjectId) {
+    pub fn mark_needs_layout(&mut self, render_object_id: super::id::RenderObjectKey) {
         self.dirty.mark_needs_layout(render_object_id);
     }
 
     /// Mark the element's render object as needing paint.
-    pub fn mark_needs_paint(&mut self, render_object_id: super::id::RenderObjectId) {
+    pub fn mark_needs_paint(&mut self, render_object_id: super::id::RenderObjectKey) {
         self.dirty.mark_needs_paint(render_object_id);
     }
 }
@@ -285,7 +285,7 @@ pub struct StatefulElement<W: StatefulWidget> {
     child_element_id: Option<ElementId>,
 
     /// The render object ID (from child, if any).
-    render_object_id: Option<RenderObjectId>,
+    render_object_id: Option<RenderObjectKey>,
 }
 
 impl<W: StatefulWidget> StatefulElement<W> {
@@ -485,7 +485,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectId> {
+    fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object_id
     }
 

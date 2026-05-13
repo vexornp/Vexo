@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::elements::{RenderObjectElement, MultiChildRenderObjectElement};
 use crate::retain::key::WidgetKey;
 
@@ -23,7 +23,7 @@ pub struct ContainerElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
     children: Vec<ElementId>,
-    render_object: Option<RenderObjectId>,
+    render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
 }
 
@@ -85,11 +85,11 @@ impl RenderObjectElement for ContainerElement {
         self.widget = Some(widget);
     }
 
-    fn render_object_id(&self) -> Option<RenderObjectId> {
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 
-    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
         self.render_object = id;
     }
 
@@ -180,7 +180,7 @@ impl Element for ContainerElement {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectId> {
+    fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 

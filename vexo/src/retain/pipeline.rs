@@ -50,7 +50,7 @@ use super::element::ElementRegistry;
 use super::element_context::ElementContext;
 use super::event_context::EventContext;
 use super::hit_test::HitTestResult;
-use super::id::{ElementId, RenderObjectId};
+use super::id::{ElementId, RenderObjectKey};
 use super::render_object::{LayoutContext, LayoutResult, PaintContext, RenderObjectRegistry};
 use super::state::StateStorage;
 use super::widgets::Widget;
@@ -531,11 +531,11 @@ impl ThreeTreePipeline {
     /// Recursively build Taffy tree (bottom-up: children first).
     fn layout_build_recursive(
         &mut self,
-        id: RenderObjectId,
+        id: RenderObjectKey,
         ctx: &mut LayoutContext,
     ) -> LayoutResult {
         // Get children
-        let children: Vec<RenderObjectId> = self.render_objects.get(id)
+        let children: Vec<RenderObjectKey> = self.render_objects.get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
@@ -556,14 +556,14 @@ impl ThreeTreePipeline {
     }
 
     /// Get the layout node ID from a render object.
-    fn get_layout_node(&self, id: RenderObjectId) -> Option<LayoutNodeId> {
+    fn get_layout_node(&self, id: RenderObjectKey) -> Option<LayoutNodeId> {
         self.render_objects.get(id).and_then(|obj| obj.layout_node())
     }
 
     /// Recursively apply computed layouts.
-    fn apply_layout_recursive(&mut self, id: RenderObjectId, ctx: &LayoutContext) {
+    fn apply_layout_recursive(&mut self, id: RenderObjectKey, ctx: &LayoutContext) {
         // Get children first
-        let children: Vec<RenderObjectId> = self.render_objects.get(id)
+        let children: Vec<RenderObjectKey> = self.render_objects.get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
@@ -642,7 +642,7 @@ impl ThreeTreePipeline {
     }
 
     /// Recursively paint a render object and its children.
-    fn paint_recursive(&self, id: RenderObjectId, ctx: &mut PaintContext, parent_absolute_position: Position<Logical, Absolute>) {
+    fn paint_recursive(&self, id: RenderObjectKey, ctx: &mut PaintContext, parent_absolute_position: Position<Logical, Absolute>) {
         // Get the render object
         let obj = match self.render_objects.get(id) {
             Some(o) => o,

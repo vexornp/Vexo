@@ -3,7 +3,7 @@
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{FlexDirection, Layout, LayoutNodeId};
 use crate::render::RenderCommand;
-use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectId};
+use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
 
 /// RenderObject for container widgets (Column, Row).
 ///
@@ -19,7 +19,7 @@ use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, R
 /// container.add_child(child_id);
 /// ```
 pub struct ContainerRenderObject {
-    children: Vec<RenderObjectId>,
+    children: Vec<RenderObjectKey>,
     is_row: bool,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeId>,
@@ -47,12 +47,12 @@ impl ContainerRenderObject {
     }
 
     /// Add a child render object.
-    pub fn add_child(&mut self, child: RenderObjectId) {
+    pub fn add_child(&mut self, child: RenderObjectKey) {
         self.children.push(child);
     }
 
     /// Set children directly.
-    pub fn set_children(&mut self, children: Vec<RenderObjectId>) {
+    pub fn set_children(&mut self, children: Vec<RenderObjectKey>) {
         self.children = children;
     }
 
@@ -117,7 +117,7 @@ impl RenderObject for ContainerRenderObject {
         }
     }
 
-    fn children(&self) -> &[RenderObjectId] {
+    fn children(&self) -> &[RenderObjectKey] {
         &self.children
     }
 
@@ -129,7 +129,7 @@ impl RenderObject for ContainerRenderObject {
         self
     }
 
-    fn add_child(&mut self, child: RenderObjectId) {
+    fn add_child(&mut self, child: RenderObjectKey) {
         self.children.push(child);
     }
 
@@ -173,7 +173,8 @@ mod tests {
     #[test]
     fn test_container_add_child() {
         let mut obj = ContainerRenderObject::new_column();
-        let child_id = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let child_id = sm.insert(());
         obj.add_child(child_id);
 
         assert_eq!(obj.children().len(), 1);
@@ -184,8 +185,9 @@ mod tests {
     #[test]
     fn test_container_set_children() {
         let mut obj = ContainerRenderObject::new_column();
-        let child1 = RenderObjectId::new();
-        let child2 = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let child1 = sm.insert(());
+        let child2 = sm.insert(());
 
         obj.set_children(vec![child1, child2]);
 
@@ -197,8 +199,9 @@ mod tests {
     #[test]
     fn test_container_clear_children() {
         let mut obj = ContainerRenderObject::new_column();
-        obj.add_child(RenderObjectId::new());
-        obj.add_child(RenderObjectId::new());
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        obj.add_child(sm.insert(()));
+        obj.add_child(sm.insert(()));
         assert_eq!(obj.child_count(), 2);
 
         obj.clear_children();
@@ -270,8 +273,9 @@ mod tests {
     #[test]
     fn test_container_children_trait() {
         let mut obj = ContainerRenderObject::new_row();
-        let child1 = RenderObjectId::new();
-        let child2 = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let child1 = sm.insert(());
+        let child2 = sm.insert(());
 
         obj.add_child(child1);
         obj.add_child(child2);

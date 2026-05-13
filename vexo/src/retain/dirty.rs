@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use super::id::RenderObjectId;
+use super::id::RenderObjectKey;
 
 /// Tracks which render objects need layout or paint.
 pub struct DirtyTracking {
-    needs_layout: HashSet<RenderObjectId>,
-    needs_paint: HashSet<RenderObjectId>,
+    needs_layout: HashSet<RenderObjectKey>,
+    needs_paint: HashSet<RenderObjectKey>,
 }
 
 impl DirtyTracking {
@@ -18,33 +18,33 @@ impl DirtyTracking {
     }
 
     /// Mark a render object as needing layout.
-    pub fn mark_needs_layout(&mut self, id: RenderObjectId) {
-        self.needs_layout.insert(id);
+    pub fn mark_needs_layout(&mut self, key: RenderObjectKey) {
+        self.needs_layout.insert(key);
     }
 
     /// Mark a render object as needing paint.
-    pub fn mark_needs_paint(&mut self, id: RenderObjectId) {
-        self.needs_paint.insert(id);
+    pub fn mark_needs_paint(&mut self, key: RenderObjectKey) {
+        self.needs_paint.insert(key);
     }
 
     /// Check if a render object needs layout.
-    pub fn needs_layout(&self, id: RenderObjectId) -> bool {
-        self.needs_layout.contains(&id)
+    pub fn needs_layout(&self, key: RenderObjectKey) -> bool {
+        self.needs_layout.contains(&key)
     }
 
     /// Check if a render object needs paint.
-    pub fn needs_paint(&self, id: RenderObjectId) -> bool {
-        self.needs_paint.contains(&id)
+    pub fn needs_paint(&self, key: RenderObjectKey) -> bool {
+        self.needs_paint.contains(&key)
     }
 
     /// Clear layout dirty flag for a render object.
-    pub fn clear_layout(&mut self, id: RenderObjectId) {
-        self.needs_layout.remove(&id);
+    pub fn clear_layout(&mut self, key: RenderObjectKey) {
+        self.needs_layout.remove(&key);
     }
 
     /// Clear paint dirty flag for a render object.
-    pub fn clear_paint(&mut self, id: RenderObjectId) {
-        self.needs_paint.remove(&id);
+    pub fn clear_paint(&mut self, key: RenderObjectKey) {
+        self.needs_paint.remove(&key);
     }
 
     /// Check if there are any objects needing layout.
@@ -58,12 +58,12 @@ impl DirtyTracking {
     }
 
     /// Drain all objects needing layout.
-    pub fn drain_layout(&mut self) -> impl Iterator<Item = RenderObjectId> + '_ {
+    pub fn drain_layout(&mut self) -> impl Iterator<Item = RenderObjectKey> + '_ {
         self.needs_layout.drain()
     }
 
     /// Drain all objects needing paint.
-    pub fn drain_paint(&mut self) -> impl Iterator<Item = RenderObjectId> + '_ {
+    pub fn drain_paint(&mut self) -> impl Iterator<Item = RenderObjectKey> + '_ {
         self.needs_paint.drain()
     }
 
@@ -97,42 +97,46 @@ mod tests {
     #[test]
     fn test_mark_needs_layout() {
         let mut tracking = DirtyTracking::new();
-        let id = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let key = sm.insert(());
 
-        tracking.mark_needs_layout(id);
+        tracking.mark_needs_layout(key);
 
-        assert!(tracking.needs_layout(id));
+        assert!(tracking.needs_layout(key));
     }
 
     #[test]
     fn test_mark_needs_paint() {
         let mut tracking = DirtyTracking::new();
-        let id = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let key = sm.insert(());
 
-        tracking.mark_needs_paint(id);
+        tracking.mark_needs_paint(key);
 
-        assert!(tracking.needs_paint(id));
+        assert!(tracking.needs_paint(key));
     }
 
     #[test]
     fn test_clear_layout() {
         let mut tracking = DirtyTracking::new();
-        let id = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let key = sm.insert(());
 
-        tracking.mark_needs_layout(id);
-        tracking.clear_layout(id);
+        tracking.mark_needs_layout(key);
+        tracking.clear_layout(key);
 
-        assert!(!tracking.needs_layout(id));
+        assert!(!tracking.needs_layout(key));
     }
 
     #[test]
     fn test_drain_layout() {
         let mut tracking = DirtyTracking::new();
-        let id1 = RenderObjectId::new();
-        let id2 = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let key1 = sm.insert(());
+        let key2 = sm.insert(());
 
-        tracking.mark_needs_layout(id1);
-        tracking.mark_needs_layout(id2);
+        tracking.mark_needs_layout(key1);
+        tracking.mark_needs_layout(key2);
 
         let ids: Vec<_> = tracking.drain_layout().collect();
         assert_eq!(ids.len(), 2);

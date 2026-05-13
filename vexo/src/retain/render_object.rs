@@ -14,13 +14,13 @@
 //! RenderObjects persist across frames and are only updated when marked dirty.
 //! They are created during element inflation and destroyed during element unmounting.
 
-use std::collections::HashMap;
+use slotmap::{SlotMap, SecondaryMap};
 
 use crate::core::{Point, Size};
 use crate::layout::{LayoutEngine, LayoutNodeId};
 use crate::render::RenderCommand;
 
-use super::id::{ElementId, RenderObjectId};
+use super::id::{ElementId, RenderObjectKey};
 
 // ============================================================================
 // LAYOUT RESULT
@@ -242,7 +242,7 @@ pub trait RenderObject {
     /// Get children (for container render objects).
     ///
     /// Default implementation returns empty slice (leaf nodes).
-    fn children(&self) -> &[RenderObjectId] {
+    fn children(&self) -> &[RenderObjectKey] {
         &[]
     }
 
@@ -261,7 +261,7 @@ pub trait RenderObject {
     /// Only relevant for modifier render objects (e.g., Background, Padding, Border).
     /// Default implementation does nothing. This enables linking the render tree
     /// so that paint_recursive() can traverse to children.
-    fn set_child_id(&mut self, _child: RenderObjectId) {
+    fn set_child_id(&mut self, _child: RenderObjectKey) {
         // Default: no-op (leaf nodes and multi-children containers don't use this)
     }
 
@@ -270,7 +270,7 @@ pub trait RenderObject {
     /// Only relevant for container render objects (e.g., Column, Row).
     /// Default implementation does nothing. This enables linking the render tree
     /// so that paint_recursive() can traverse to children.
-    fn add_child(&mut self, _child: RenderObjectId) {
+    fn add_child(&mut self, _child: RenderObjectKey) {
         // Default: no-op (leaf nodes and single-child modifiers don't use this)
     }
 
@@ -303,103 +303,75 @@ pub trait RenderObject {
 // RENDER OBJECT REGISTRY
 // ============================================================================
 
-/// Registry for render objects, keyed by ID.
+/// Registry that manages render objects using generational keys.
 ///
-/// The registry owns all render objects and maintains the relationship
-/// between render objects and their owning elements.
-///
-/// # Thread Safety
-///
-/// The registry is not thread-safe. It should only be accessed from the
-/// main thread where rendering occurs.
-///
-/// # Example
-///
-/// ```ignore
-/// let mut registry = RenderObjectRegistry::new();
-///
-/// // Create a render object
-/// let element_id = ElementId::new();
-/// let obj = Box::new(MyRenderObject::new());
-/// let obj_id = registry.create(obj, element_id);
-///
-/// // Access the render object
-/// if let Some(obj) = registry.get(obj_id) {
-///     // Use the render object
-/// }
-///
-/// // Remove when the element is unmounted
-/// registry.remove(obj_id);
-/// ```
+/// Uses SlotMap for primary storage (provides ABA protection via generational
+/// indices) and SecondaryMap for the cross-tree element mapping (automatically
+/// returns None for removed keys).
 pub struct RenderObjectRegistry {
-    objects: HashMap<RenderObjectId, Box<dyn RenderObject>>,
-    element_map: HashMap<RenderObjectId, ElementId>,
-    root: Option<RenderObjectId>,
+    objects: SlotMap<RenderObjectKey, Box<dyn RenderObject>>,
+    element_map: SecondaryMap<RenderObjectKey, ElementId>,
+    root: Option<RenderObjectKey>,
 }
 
 impl RenderObjectRegistry {
     /// Create a new empty registry.
     pub fn new() -> Self {
         Self {
-            objects: HashMap::new(),
-            element_map: HashMap::new(),
+            objects: SlotMap::with_key(),
+            element_map: SecondaryMap::new(),
             root: None,
         }
     }
 
-    /// Create a render object and return its ID.
+    /// Create a render object and return its key.
     ///
     /// The render object is associated with the given element ID.
     /// This association is used during reconciliation to find render objects
     /// that correspond to elements.
-    pub fn create(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> RenderObjectId {
-        let id = RenderObjectId::new();
-        self.objects.insert(id, object);
-        self.element_map.insert(id, owner);
-        id
+    pub fn create(&mut self, object: Box<dyn RenderObject>, owner: ElementId) -> RenderObjectKey {
+        let key = self.objects.insert(object);
+        self.element_map.insert(key, owner);
+        key
     }
 
-    /// Get a render object by ID.
+    /// Get a render object by key.
     ///
-    /// Returns None if the ID is not valid.
-    pub fn get(&self, id: RenderObjectId) -> Option<&dyn RenderObject> {
-        self.objects.get(&id).map(|b| b.as_ref())
+    /// Returns None if the key is stale (element was removed).
+    pub fn get(&self, key: RenderObjectKey) -> Option<&dyn RenderObject> {
+        self.objects.get(key).map(|b| b.as_ref())
     }
 
-    /// Get a mutable render object by ID.
+    /// Get a mutable render object by key.
     ///
-    /// Returns None if the ID is not valid.
-    pub fn get_mut(&mut self, id: RenderObjectId) -> Option<&mut Box<dyn RenderObject>> {
-        self.objects.get_mut(&id)
+    /// Returns None if the key is stale (element was removed).
+    pub fn get_mut(&mut self, key: RenderObjectKey) -> Option<&mut Box<dyn RenderObject>> {
+        self.objects.get_mut(key)
     }
 
-    /// Remove a render object by ID.
+    /// Remove a render object by key.
     ///
-    /// Does nothing if the ID is not valid.
-    pub fn remove(&mut self, id: RenderObjectId) {
-        self.objects.remove(&id);
-        self.element_map.remove(&id);
+    /// After removal, the key becomes stale — any future access returns None.
+    /// This provides ABA protection: a new render object at the same slot
+    /// will have a different generation.
+    pub fn remove(&mut self, key: RenderObjectKey) {
+        self.objects.remove(key);
+        self.element_map.remove(key);
     }
 
     /// Set the root render object.
-    ///
-    /// The root is the top-level render object that contains all others.
-    pub fn set_root(&mut self, id: RenderObjectId) {
-        self.root = Some(id);
+    pub fn set_root(&mut self, key: RenderObjectKey) {
+        self.root = Some(key);
     }
 
-    /// Get the root render object ID.
-    ///
-    /// Returns None if no root has been set.
-    pub fn root(&self) -> Option<RenderObjectId> {
+    /// Get the root render object key.
+    pub fn root(&self) -> Option<RenderObjectKey> {
         self.root
     }
 
     /// Get the element that owns a render object.
-    ///
-    /// Returns None if the ID is not valid.
-    pub fn element_for(&self, id: RenderObjectId) -> Option<ElementId> {
-        self.element_map.get(&id).copied()
+    pub fn element_for(&self, key: RenderObjectKey) -> Option<ElementId> {
+        self.element_map.get(key).copied()
     }
 
     /// Check if the registry is empty.
@@ -420,11 +392,8 @@ impl RenderObjectRegistry {
     }
 
     /// Set the child render object for a parent.
-    ///
-    /// This is used by modifier elements to link their render object
-    /// to their child's render object for tree traversal.
-    pub fn set_child(&mut self, parent: RenderObjectId, child: RenderObjectId) {
-        if let Some(obj) = self.objects.get_mut(&parent) {
+    pub fn set_child(&mut self, parent: RenderObjectKey, child: RenderObjectKey) {
+        if let Some(obj) = self.objects.get_mut(parent) {
             obj.set_child_id(child);
         }
     }
@@ -608,7 +577,7 @@ mod tests {
     fn test_registry_set_child() {
         // Create a mock render object that supports set_child_id
         struct MockParentObject {
-            child: Option<RenderObjectId>,
+            child: Option<RenderObjectKey>,
         }
 
         impl RenderObject for MockParentObject {
@@ -628,8 +597,8 @@ mod tests {
                 true
             }
 
-            fn children(&self) -> &[RenderObjectId] {
-                static EMPTY: &[RenderObjectId] = &[];
+            fn children(&self) -> &[RenderObjectKey] {
+                static EMPTY: &[RenderObjectKey] = &[];
                 match &self.child {
                     Some(child) => std::slice::from_ref(child),
                     None => EMPTY,
@@ -644,7 +613,7 @@ mod tests {
                 self
             }
 
-            fn set_child_id(&mut self, child: RenderObjectId) {
+            fn set_child_id(&mut self, child: RenderObjectKey) {
                 self.child = Some(child);
             }
         }
@@ -659,8 +628,10 @@ mod tests {
         let parent_obj = registry.get(parent_id).unwrap();
         assert_eq!(parent_obj.children().len(), 0);
 
-        // Set a child
-        let child_id = RenderObjectId::new();
+        // Set a child - create a dummy key via a temporary SlotMap
+        let mut dummy_sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let child_id = dummy_sm.insert(());
+
         registry.set_child(parent_id, child_id);
 
         // Now the parent should have the child

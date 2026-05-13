@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectId, Widget};
+use crate::retain::{Element, ElementContext, ElementId, ElementRegistry, RenderObjectKey, Widget};
 use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
 
@@ -29,7 +29,7 @@ use crate::retain::key::WidgetKey;
 pub struct LeafRenderObjectElement {
     id: Option<ElementId>,
     key: Option<WidgetKey>,
-    render_object: Option<RenderObjectId>,
+    render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
 }
 
@@ -84,11 +84,11 @@ impl RenderObjectElement for LeafRenderObjectElement {
         self.widget = Some(widget);
     }
 
-    fn render_object_id(&self) -> Option<RenderObjectId> {
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 
-    fn set_render_object_id(&mut self, id: Option<RenderObjectId>) {
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
         self.render_object = id;
     }
 
@@ -130,7 +130,7 @@ impl Element for LeafRenderObjectElement {
         // Leaf elements have no children
     }
 
-    fn render_object(&self) -> Option<RenderObjectId> {
+    fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
 

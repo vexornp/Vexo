@@ -28,7 +28,7 @@
 //! ```
 
 use crate::core::{Absolute, Bounds, Logical, Position, Relative};
-use crate::retain::{ElementId, RenderObjectId, RenderObjectRegistry};
+use crate::retain::{ElementId, RenderObjectKey, RenderObjectRegistry};
 
 // ============================================================================
 // HIT TEST RESULT
@@ -41,7 +41,7 @@ use crate::retain::{ElementId, RenderObjectId, RenderObjectRegistry};
 #[derive(Debug, Clone)]
 pub struct HitTestResult {
     /// Path from root to the hit target (if any).
-    path: Vec<RenderObjectId>,
+    path: Vec<RenderObjectKey>,
     /// The element IDs along the path.
     element_path: Vec<ElementId>,
     /// Absolute bounds of the hit target (in window coordinates).
@@ -59,13 +59,13 @@ impl HitTestResult {
     }
 
     /// Create a hit result with the given path.
-    pub fn hit(path: Vec<RenderObjectId>, element_path: Vec<ElementId>) -> Self {
+    pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementId>) -> Self {
         Self { path, element_path, absolute_bounds: None }
     }
 
     /// Create a hit result with absolute bounds.
     pub fn hit_with_bounds(
-        path: Vec<RenderObjectId>,
+        path: Vec<RenderObjectKey>,
         element_path: Vec<ElementId>,
         absolute_bounds: Bounds<Logical>,
     ) -> Self {
@@ -84,7 +84,7 @@ impl HitTestResult {
     /// Get the target render object (deepest hit).
     ///
     /// Returns None if nothing was hit.
-    pub fn target(&self) -> Option<RenderObjectId> {
+    pub fn target(&self) -> Option<RenderObjectKey> {
         self.path.last().copied()
     }
 
@@ -98,7 +98,7 @@ impl HitTestResult {
     /// Get the path from root to target.
     ///
     /// Returns empty slice if nothing was hit.
-    pub fn path(&self) -> &[RenderObjectId] {
+    pub fn path(&self) -> &[RenderObjectKey] {
         &self.path
     }
 
@@ -187,10 +187,10 @@ impl RenderObjectRegistry {
     /// Returns true if this node or any descendant was hit.
     fn hit_test_recursive(
         &self,
-        id: RenderObjectId,
+        id: RenderObjectKey,
         pointer_position: Position<Logical, Absolute>,
         parent_absolute_position: Position<Logical, Absolute>,
-        path: &mut Vec<RenderObjectId>,
+        path: &mut Vec<RenderObjectKey>,
         element_path: &mut Vec<ElementId>,
         absolute_bounds: &mut Option<Bounds<Logical>>,
     ) -> bool {
@@ -291,7 +291,8 @@ mod tests {
 
     #[test]
     fn test_hit_test_result_hit() {
-        let obj_id = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let obj_id = sm.insert(());
         let elem_id = ElementId::new();
 
         let result = HitTestResult::hit(vec![obj_id], vec![elem_id]);
@@ -305,8 +306,9 @@ mod tests {
 
     #[test]
     fn test_hit_test_result_path() {
-        let obj1 = RenderObjectId::new();
-        let obj2 = RenderObjectId::new();
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+        let obj1 = sm.insert(());
+        let obj2 = sm.insert(());
         let elem1 = ElementId::new();
         let elem2 = ElementId::new();
 
