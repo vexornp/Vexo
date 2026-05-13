@@ -75,7 +75,7 @@ mod build_owner_tests;
 mod stateful_integration_test;
 
 pub use key::{Key, GlobalKey, WidgetKey};
-pub use id::{ElementId, ElementKey, RenderObjectId, RenderObjectKey};
+pub use id::{ElementKey, RenderObjectKey};
 pub use state::StateStorage;
 pub use element::{Element, ElementRegistry};
 pub use element_context::ElementContext;

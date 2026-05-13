@@ -4,7 +4,7 @@
 //! the layout engine. It defines:
 //!
 //! - `LayoutEngine` trait for layout computation
-//! - `LayoutNodeId` for node handles
+//! - `LayoutNodeKey` for node handles
 //! - `ComputedLayout` for layout results
 //! - `TaffyLayoutEngine` implementation
 //! - `Layout` struct for CSS-style layout properties
@@ -53,7 +53,6 @@ pub use node::{
     FlexDirection as NodeFlexDirection,
     LayoutConstraints,
     LayoutNodeKey,
-    LayoutNodeId,
     LayoutPadding,
 };
 pub use style::{
