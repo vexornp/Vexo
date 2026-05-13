@@ -2,7 +2,7 @@
 
 use crate::core::{Logical, Point, Size, WidgetId};
 use crate::input::InputEvent;
-use crate::layout::{Display, Layout, LayoutContext, LayoutNodeId, LayoutView, TrackSizing};
+use crate::layout::{Display, Layout, LayoutContext, LayoutNodeKey, LayoutView, TrackSizing};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetResponse};
@@ -96,8 +96,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
-        let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
+        let mut child_nodes: Vec<LayoutNodeKey> = Vec::new();
         for child in self.children.iter_mut() {
             child_nodes.push(child.layout(layout_context, widget_context));
         }
@@ -122,7 +122,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -153,7 +153,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Grid<M> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

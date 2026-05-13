@@ -41,7 +41,7 @@ use std::sync::mpsc;
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, Relative, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers};
-use crate::layout::{Layout, LayoutNodeId};
+use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 
 use super::build_owner::BuildOwner;
@@ -540,7 +540,7 @@ impl ThreeTreePipeline {
             .unwrap_or_default();
 
         // Layout children first (bottom-up)
-        let child_nodes: Vec<LayoutNodeId> = children
+        let child_nodes: Vec<LayoutNodeKey> = children
             .iter()
             .map(|child_id| self.layout_build_recursive(*child_id, ctx).node)
             .collect();
@@ -556,7 +556,7 @@ impl ThreeTreePipeline {
     }
 
     /// Get the layout node ID from a render object.
-    fn get_layout_node(&self, id: RenderObjectKey) -> Option<LayoutNodeId> {
+    fn get_layout_node(&self, id: RenderObjectKey) -> Option<LayoutNodeKey> {
         self.render_objects.get(id).and_then(|obj| obj.layout_node())
     }
 

@@ -1,5 +1,5 @@
 use crate::core::{Bounds, Color, Logical, Point, Stroke};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -207,7 +207,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
         CursorIcon::Text
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         // Use Layout properties, defaulting to flex_grow: 1.0 if not specified
         let layout = if self.layout.flex_grow.is_none() && self.layout.width.is_none() && self.layout.height.is_none() {
             Layout::default().flex_grow(1.0)
@@ -229,7 +229,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -294,7 +294,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for TextEdit {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

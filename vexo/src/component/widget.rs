@@ -4,7 +4,7 @@ use crate::component::{Component, KeyPath};
 use crate::core::{Logical, Point, WidgetId};
 use crate::input::CursorIcon;
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 use crate::testable::ComputedLayout;
@@ -67,7 +67,7 @@ impl<C: Component> Widget<C::Output> for ComponentWidget<C> {
         &mut self,
         layout_ctx: &mut LayoutContext,
         widget_ctx: &mut WidgetContext,
-    ) -> LayoutNodeId {
+    ) -> LayoutNodeKey {
         // Create component context first - it has access to ComponentStateStorage
         let mut component_ctx = widget_ctx.create_component_context(self.key_path.clone());
 
@@ -103,7 +103,7 @@ impl<C: Component> Widget<C::Output> for ComponentWidget<C> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -126,7 +126,7 @@ impl<C: Component> Widget<C::Output> for ComponentWidget<C> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
@@ -188,7 +188,7 @@ impl<C: Component> Widget<C::Output> for Box<ComponentWidget<C>> {
         &mut self,
         layout_ctx: &mut LayoutContext,
         widget_ctx: &mut WidgetContext,
-    ) -> LayoutNodeId {
+    ) -> LayoutNodeKey {
         (**self).layout(layout_ctx, widget_ctx)
     }
 
@@ -203,7 +203,7 @@ impl<C: Component> Widget<C::Output> for Box<ComponentWidget<C>> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -216,7 +216,7 @@ impl<C: Component> Widget<C::Output> for Box<ComponentWidget<C>> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

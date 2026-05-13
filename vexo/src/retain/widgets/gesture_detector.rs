@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::input::{ButtonState, InputEvent};
-use crate::layout::{Layout, LayoutNodeId};
+use crate::layout::{Layout, LayoutNodeKey};
 
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
@@ -377,7 +377,7 @@ impl Element for GestureDetectorElement {
 pub struct GestureDetectorRenderObject {
     child: Option<RenderObjectKey>,
     computed_bounds: Option<Bounds<Logical>>,
-    layout_node: Option<LayoutNodeId>,
+    layout_node: Option<LayoutNodeKey>,
 }
 
 impl GestureDetectorRenderObject {
@@ -398,7 +398,7 @@ impl Default for GestureDetectorRenderObject {
 }
 
 impl RenderObject for GestureDetectorRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
         // Pass-through: create a container node wrapping the child
         let layout = Layout::default();
         let node = ctx.engine().create_container(&layout, child_nodes);
@@ -448,7 +448,7 @@ impl RenderObject for GestureDetectorRenderObject {
         self.child = Some(child);
     }
 
-    fn layout_node(&self) -> Option<LayoutNodeId> {
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }
 

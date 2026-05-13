@@ -3,16 +3,17 @@
 //! This module provides a `LayoutEngine` implementation using the Taffy
 //! layout library (CSS Flexbox-style layout).
 
+use slotmap::{SlotMap, SecondaryMap};
+
 use crate::core::{Bounds, Size};
 use crate::core::Logical;
 
 use super::engine::LayoutEngine;
 use super::measurement::{measure_text_node, MeasureCache, MeasureContext};
-use super::node::{ComputedLayout, LayoutNodeId};
+use super::node::{ComputedLayout, LayoutNodeKey};
 use super::Layout;
 
 use glyphon::FontSystem;
-use std::collections::HashMap;
 use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 
 // ============================================================================
@@ -26,14 +27,12 @@ use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 pub struct TaffyLayoutEngine {
     /// The underlying Taffy tree with measure context support.
     inner: taffy::TaffyTree<MeasureContext>,
-    /// Mapping from our LayoutNodeId to Taffy's NodeId.
-    node_map: HashMap<LayoutNodeId, TaffyNodeId>,
-    /// Mapping from LayoutNodeId to its children (for traversal).
-    children_map: HashMap<LayoutNodeId, Vec<LayoutNodeId>>,
+    /// Mapping from our LayoutNodeKey to Taffy's NodeId.
+    node_map: SlotMap<LayoutNodeKey, TaffyNodeId>,
+    /// Mapping from LayoutNodeKey to its children (for traversal).
+    children_map: SecondaryMap<LayoutNodeKey, Vec<LayoutNodeKey>>,
     /// Cache for text measurement results.
     cache: MeasureCache,
-    /// Counter for generating unique node IDs.
-    next_id: u64,
 }
 
 impl TaffyLayoutEngine {
@@ -41,18 +40,10 @@ impl TaffyLayoutEngine {
     pub fn new() -> Self {
         Self {
             inner: taffy::TaffyTree::new(),
-            node_map: HashMap::new(),
-            children_map: HashMap::new(),
+            node_map: SlotMap::with_key(),
+            children_map: SecondaryMap::new(),
             cache: MeasureCache::new(),
-            next_id: 0,
         }
-    }
-
-    /// Generate a new unique LayoutNodeId.
-    fn generate_id(&mut self) -> LayoutNodeId {
-        let id = LayoutNodeId::new(self.next_id);
-        self.next_id += 1;
-        id
     }
 }
 
@@ -63,52 +54,47 @@ impl Default for TaffyLayoutEngine {
 }
 
 impl LayoutEngine for TaffyLayoutEngine {
-    fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeId {
-        let id = self.generate_id();
+    fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
         let taffy_id = self.inner.new_leaf(style).unwrap();
-        self.node_map.insert(id, taffy_id);
-        id
+        self.node_map.insert(taffy_id)
     }
 
     fn create_leaf_with_context(
         &mut self,
         layout: &Layout,
         context: MeasureContext,
-    ) -> LayoutNodeId {
-        let id = self.generate_id();
+    ) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
         let taffy_id = self.inner.new_leaf_with_context(style, context).unwrap();
-        self.node_map.insert(id, taffy_id);
-        id
+        self.node_map.insert(taffy_id)
     }
 
-    fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeId]) -> LayoutNodeId {
-        let id = self.generate_id();
+    fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeKey]) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
 
-        // Map our LayoutNodeIds to Taffy NodeIds
+        // Map our LayoutNodeKeys to Taffy NodeIds
         let child_taffy_ids: Vec<TaffyNodeId> = children
             .iter()
-            .filter_map(|c| self.node_map.get(c).copied())
+            .filter_map(|k| self.node_map.get(*k).copied())
             .collect();
 
         let taffy_id = self.inner.new_with_children(style, &child_taffy_ids).unwrap();
-        self.node_map.insert(id, taffy_id);
-        self.children_map.insert(id, children.to_vec());
-        id
+        let key = self.node_map.insert(taffy_id);
+        self.children_map.insert(key, children.to_vec());
+        key
     }
 
     fn compute(
         &mut self,
-        root: LayoutNodeId,
+        root: LayoutNodeKey,
         available_size: Size<Logical>,
         font_system: &mut FontSystem,
     ) {
-        if let Some(&root_taffy_id) = self.node_map.get(&root) {
+        if let Some(root_taffy_id) = self.node_map.get(root) {
             let cache = &mut self.cache;
             let _ = self.inner.compute_layout_with_measure(
-                root_taffy_id,
+                *root_taffy_id,
                 taffy::Size {
                     width: AvailableSpace::Definite(available_size.width),
                     height: AvailableSpace::Definite(available_size.height),
@@ -126,8 +112,8 @@ impl LayoutEngine for TaffyLayoutEngine {
         }
     }
 
-    fn get_layout(&self, node: LayoutNodeId) -> Option<ComputedLayout> {
-        let taffy_id = self.node_map.get(&node)?;
+    fn get_layout(&self, node: LayoutNodeKey) -> Option<ComputedLayout> {
+        let taffy_id = self.node_map.get(node)?;
         let layout = self.inner.layout(*taffy_id).ok()?;
 
         Some(ComputedLayout::new(
@@ -141,8 +127,8 @@ impl LayoutEngine for TaffyLayoutEngine {
         ))
     }
 
-    fn children(&self, node: LayoutNodeId) -> Vec<LayoutNodeId> {
-        self.children_map.get(&node).cloned().unwrap_or_default()
+    fn children(&self, node: LayoutNodeKey) -> Vec<LayoutNodeKey> {
+        self.children_map.get(node).cloned().unwrap_or_default()
     }
 
     fn clear(&mut self) {
@@ -150,7 +136,6 @@ impl LayoutEngine for TaffyLayoutEngine {
         self.node_map.clear();
         self.children_map.clear();
         self.cache.clear();
-        self.next_id = 0;
     }
 }
 

@@ -6,7 +6,7 @@ use glyphon::TextArea;
 
 use crate::core::{Logical, Physical, Point, Scale, Size};
 use crate::frame_context::FrameContext;
-use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView};
+use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeKey, LayoutView};
 use crate::render::{RenderError, WgpuBackend};
 use crate::renderer::UiBatcher;
 use crate::text_processor::PreparedText;
@@ -16,7 +16,7 @@ use crate::widgets::{Widget, WidgetContext};
 /// Output from layout computation stage.
 pub struct LayoutOutput<'a> {
     pub layout_view: LayoutView<'a>,
-    pub root_node: LayoutNodeId,
+    pub root_node: LayoutNodeKey,
 }
 
 /// Owned text data ready for rendering.
@@ -58,7 +58,7 @@ impl RenderPipeline {
         &mut self,
         widget: &mut dyn Widget<M>,
         layout_engine: &'a mut dyn LayoutEngine,
-        _root_node: LayoutNodeId,
+        _root_node: LayoutNodeKey,
         viewport_logical: Size<Logical>,
         widget_context: &mut WidgetContext,
     ) -> LayoutOutput<'a> {
@@ -82,7 +82,7 @@ impl RenderPipeline {
         &mut self,
         widget: &dyn Widget<M>,
         batcher: &mut UiBatcher,
-        root_node: LayoutNodeId,
+        root_node: LayoutNodeKey,
         ctx: &FrameContext,
         widget_context: &mut WidgetContext,
     ) {

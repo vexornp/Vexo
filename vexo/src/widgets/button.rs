@@ -1,4 +1,4 @@
-use crate::layout::{AlignItems, JustifyContent, Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{AlignItems, JustifyContent, Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::core::{Bounds, Logical, Point, WidgetId};
 use crate::widgets::{WidgetContext, WidgetResponse};
@@ -77,7 +77,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
         CursorIcon::Pointer
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         let content_node = self.content.layout(layout_context, widget_context);
 
         // Merge Button's layout with default flex container style
@@ -106,7 +106,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -138,7 +138,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Button<M> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

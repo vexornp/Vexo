@@ -1,7 +1,7 @@
 //! ContainerRenderObject implementation for Column and Row.
 
 use crate::core::{Bounds, Logical, Point, Size};
-use crate::layout::{FlexDirection, Layout, LayoutNodeId};
+use crate::layout::{FlexDirection, Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
 
@@ -22,7 +22,7 @@ pub struct ContainerRenderObject {
     children: Vec<RenderObjectKey>,
     is_row: bool,
     computed_bounds: Option<Bounds<Logical>>,
-    layout_node: Option<LayoutNodeId>,
+    layout_node: Option<LayoutNodeKey>,
 }
 
 impl ContainerRenderObject {
@@ -78,7 +78,7 @@ impl ContainerRenderObject {
 }
 
 impl RenderObject for ContainerRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
         // Create container layout with flex direction
         let layout = if self.is_row {
             Layout::default().flex_direction(FlexDirection::Row)
@@ -133,7 +133,7 @@ impl RenderObject for ContainerRenderObject {
         self.children.push(child);
     }
 
-    fn layout_node(&self) -> Option<LayoutNodeId> {
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }
 

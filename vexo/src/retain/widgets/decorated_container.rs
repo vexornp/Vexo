@@ -8,7 +8,7 @@ use std::any::Any;
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutNodeId};
+use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::retain::{
     Element, ElementContext, ElementKey, ElementRegistry, EventContext,
@@ -37,7 +37,7 @@ pub struct DecoratedContainerRenderObject {
     computed_bounds: Option<Bounds<Logical>>,
 
     /// Layout node in Taffy.
-    layout_node: Option<LayoutNodeId>,
+    layout_node: Option<LayoutNodeKey>,
 }
 
 impl DecoratedContainerRenderObject {
@@ -71,7 +71,7 @@ impl DecoratedContainerRenderObject {
 }
 
 impl RenderObject for DecoratedContainerRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
         // DecoratedContainer needs its own layout node to have a position in the parent container.
         // It wraps the child in a container-like node so the parent can position this container,
         // and the child is positioned relative to this container.
@@ -170,7 +170,7 @@ impl RenderObject for DecoratedContainerRenderObject {
         self.child = Some(child);
     }
 
-    fn layout_node(&self) -> Option<LayoutNodeId> {
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }
 

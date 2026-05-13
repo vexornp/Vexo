@@ -233,14 +233,14 @@ impl LayoutPadding {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedLayout {
     /// The ID of the node this layout belongs to.
-    pub id: LayoutNodeId,
+    pub id: LayoutNodeKey,
     /// The computed bounds (position and size) in logical coordinates.
     pub bounds: Bounds<Logical>,
 }
 
 impl ComputedLayout {
     /// Create a new computed layout.
-    pub fn new(id: LayoutNodeId, bounds: Bounds<Logical>) -> Self {
+    pub fn new(id: LayoutNodeKey, bounds: Bounds<Logical>) -> Self {
         Self { id, bounds }
     }
 
@@ -302,8 +302,11 @@ mod tests {
 
     #[test]
     fn test_computed_layout() {
+        let mut sm: slotmap::SlotMap<LayoutNodeKey, ()> = slotmap::SlotMap::with_key();
+        let key = sm.insert(());
+
         let layout = ComputedLayout::new(
-            LayoutNodeId::new(1),
+            key,
             Bounds::from_xywh(10.0, 20.0, 100.0, 50.0),
         );
 

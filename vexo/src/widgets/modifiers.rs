@@ -1,5 +1,5 @@
 use crate::core::{Bounds, Color, Logical, Point, Stroke};
-use crate::layout::{LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{LayoutContext, LayoutNodeKey, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetId, WidgetResponse};
 use crate::input::InputEvent;
@@ -128,7 +128,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         self.child.cursor()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         // Layout child, background uses same bounds
         self.child.layout(layout_context, widget_context)
     }
@@ -145,7 +145,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -171,7 +171,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
@@ -284,7 +284,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         self.child.cursor()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         // Layout child, border uses same bounds
         self.child.layout(layout_context, widget_context)
     }
@@ -301,7 +301,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -327,7 +327,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
@@ -421,7 +421,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
         self.child.cursor()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         self.child.layout(layout_context, widget_context)
     }
 
@@ -437,7 +437,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -457,7 +457,7 @@ impl<W: Widget<M> + crate::testable::Paint, M: Clone + std::fmt::Debug + Send> W
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

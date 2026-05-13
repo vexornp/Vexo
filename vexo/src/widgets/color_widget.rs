@@ -1,6 +1,6 @@
 use crate::core::{Bounds, Color, Point, Stroke, WidgetId};
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 use crate::widgets::{Widget, WidgetContext, WidgetResponse};
@@ -125,7 +125,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         layout_context.create_leaf(&self.layout)
     }
 
@@ -140,7 +140,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<crate::core::Logical>,
         focused_id: Option<WidgetId>,
@@ -161,7 +161,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for ColorWidget {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<crate::core::Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

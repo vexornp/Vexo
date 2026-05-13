@@ -3,7 +3,7 @@
 //! This module provides `LayoutContext` and `LayoutView` types that widgets
 //! use to interact with the layout engine during layout, draw, and event handling.
 
-use super::{ComputedLayout, Layout, LayoutEngine, LayoutNodeId};
+use super::{ComputedLayout, Layout, LayoutEngine, LayoutNodeKey};
 use super::measurement::MeasureContext;
 
 // ============================================================================
@@ -27,7 +27,7 @@ impl<'a> LayoutContext<'a> {
     /// Create a leaf node (no children).
     ///
     /// Returns a handle to reference this node later.
-    pub fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeId {
+    pub fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeKey {
         self.engine.create_leaf(layout)
     }
 
@@ -38,7 +38,7 @@ impl<'a> LayoutContext<'a> {
         &mut self,
         layout: &Layout,
         context: MeasureContext,
-    ) -> LayoutNodeId {
+    ) -> LayoutNodeKey {
         self.engine.create_leaf_with_context(layout, context)
     }
 
@@ -48,22 +48,22 @@ impl<'a> LayoutContext<'a> {
     pub fn create_container(
         &mut self,
         layout: &Layout,
-        children: &[LayoutNodeId],
-    ) -> LayoutNodeId {
+        children: &[LayoutNodeKey],
+    ) -> LayoutNodeKey {
         self.engine.create_container(layout, children)
     }
 
     /// Get the computed layout for a node.
     ///
     /// Returns `None` if layout hasn't been computed or node doesn't exist.
-    pub fn get_layout(&self, node: LayoutNodeId) -> Option<ComputedLayout> {
+    pub fn get_layout(&self, node: LayoutNodeKey) -> Option<ComputedLayout> {
         self.engine.get_layout(node)
     }
 
     /// Get children of a node.
     ///
     /// Used by container widgets to traverse their children.
-    pub fn children(&self, node: LayoutNodeId) -> Vec<LayoutNodeId> {
+    pub fn children(&self, node: LayoutNodeKey) -> Vec<LayoutNodeKey> {
         self.engine.children(node)
     }
 }
@@ -89,14 +89,14 @@ impl<'a> LayoutView<'a> {
     /// Get the computed layout for a node.
     ///
     /// Returns `None` if layout hasn't been computed or node doesn't exist.
-    pub fn get_layout(&self, node: LayoutNodeId) -> Option<ComputedLayout> {
+    pub fn get_layout(&self, node: LayoutNodeKey) -> Option<ComputedLayout> {
         self.engine.get_layout(node)
     }
 
     /// Get children of a node.
     ///
     /// Used by container widgets to traverse their children.
-    pub fn children(&self, node: LayoutNodeId) -> Vec<LayoutNodeId> {
+    pub fn children(&self, node: LayoutNodeKey) -> Vec<LayoutNodeKey> {
         self.engine.children(node)
     }
 }

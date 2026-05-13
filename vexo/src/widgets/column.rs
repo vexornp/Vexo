@@ -1,5 +1,5 @@
 use crate::core::{Logical, Point};
-use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{FlexDirection, Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -196,8 +196,8 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
-        let mut child_nodes: Vec<LayoutNodeId> = Vec::new();
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
+        let mut child_nodes: Vec<LayoutNodeKey> = Vec::new();
         for child in self.children.iter_mut() {
             child_nodes.push(child.layout(layout_context, widget_context));
         }
@@ -221,7 +221,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -252,7 +252,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Column<M> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

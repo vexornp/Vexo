@@ -210,11 +210,11 @@ mod tests {
     }
 
     struct TestRenderObject {
-        layout_node: Option<crate::layout::LayoutNodeId>,
+        layout_node: Option<crate::layout::LayoutNodeKey>,
     }
 
     impl RenderObject for TestRenderObject {
-        fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[crate::layout::LayoutNodeId]) -> crate::retain::LayoutResult {
+        fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[crate::layout::LayoutNodeKey]) -> crate::retain::LayoutResult {
             let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
             self.layout_node = Some(node);
             crate::retain::LayoutResult {

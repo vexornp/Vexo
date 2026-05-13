@@ -17,7 +17,7 @@
 use slotmap::{SlotMap, SecondaryMap};
 
 use crate::core::{Point, Size};
-use crate::layout::{LayoutEngine, LayoutNodeId};
+use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::render::RenderCommand;
 
 use super::id::{ElementKey, RenderObjectKey};
@@ -32,7 +32,7 @@ use super::id::{ElementKey, RenderObjectKey};
 #[derive(Debug)]
 pub struct LayoutResult {
     /// The Taffy node ID for this render object.
-    pub node: LayoutNodeId,
+    pub node: LayoutNodeKey,
     /// The computed size (available after Taffy computation).
     pub size: Size<crate::core::Logical>,
 }
@@ -221,7 +221,7 @@ pub trait RenderObject {
     ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeId]) -> LayoutResult;
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult;
 
     /// Apply computed layout from Taffy.
     ///
@@ -286,7 +286,7 @@ pub trait RenderObject {
     ///
     /// Returns the Taffy node ID that was created during layout().
     /// Used by the pipeline to call engine.compute() on the root node.
-    fn layout_node(&self) -> Option<LayoutNodeId> {
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
         None
     }
 
@@ -422,7 +422,7 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
+        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -592,7 +592,7 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
+            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 

@@ -10,7 +10,7 @@ use winit::{
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
 use crate::frame_context::FrameContext;
 use crate::input::{ButtonState, CursorIcon, InputEvent, Modifiers};
-use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeId, LayoutView, TaffyLayoutEngine};
+use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeKey, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
 use crate::retain::{ThreeTreePipeline, Widget as RetainWidget};
@@ -26,7 +26,7 @@ pub struct WindowState<A: Application + 'static> {
     batcher: crate::UiBatcher,
     layout_engine: Box<dyn LayoutEngine>,
     root_widget: Box<dyn Widget<A::Message>>,
-    root_node_id: LayoutNodeId,
+    root_node_id: LayoutNodeKey,
 
     // User's application state
     user_app_state: A::State,

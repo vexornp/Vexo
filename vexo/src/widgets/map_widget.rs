@@ -2,7 +2,7 @@
 
 use crate::core::{Logical, Point, WidgetId};
 use crate::input::{CursorIcon, InputEvent};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::render::RenderCommand;
 use crate::renderer::UiBatcher;
 use crate::testable::{ComputedLayout, PaintContext};
@@ -81,7 +81,7 @@ where
         &mut self,
         layout_ctx: &mut LayoutContext,
         widget_ctx: &mut WidgetContext,
-    ) -> LayoutNodeId {
+    ) -> LayoutNodeKey {
         self.inner.layout(layout_ctx, widget_ctx)
     }
 
@@ -97,7 +97,7 @@ where
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -118,7 +118,7 @@ where
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
@@ -168,7 +168,7 @@ where
         &mut self,
         layout_ctx: &mut LayoutContext,
         widget_ctx: &mut WidgetContext,
-    ) -> LayoutNodeId {
+    ) -> LayoutNodeKey {
         (**self).layout(layout_ctx, widget_ctx)
     }
 
@@ -183,7 +183,7 @@ where
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -196,7 +196,7 @@ where
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

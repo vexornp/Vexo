@@ -1,7 +1,7 @@
 //! TextRenderObject implementation.
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, Size};
-use crate::layout::{Layout, LayoutNodeId, MeasureContext, TextMeasureContext};
+use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext};
 use crate::render::RenderCommand;
 use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
 
@@ -22,7 +22,7 @@ pub struct TextRenderObject {
     content: String,
     font_size: f32,
     computed_bounds: Option<Bounds<Logical>>,
-    layout_node: Option<LayoutNodeId>,
+    layout_node: Option<LayoutNodeKey>,
 }
 
 impl TextRenderObject {
@@ -82,7 +82,7 @@ impl TextRenderObject {
 }
 
 impl RenderObject for TextRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeId]) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
         // Create measure context for text
         let measure_ctx = MeasureContext::Text(TextMeasureContext {
             content: self.content.clone(),
@@ -149,7 +149,7 @@ impl RenderObject for TextRenderObject {
         self
     }
 
-    fn layout_node(&self) -> Option<LayoutNodeId> {
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }
 

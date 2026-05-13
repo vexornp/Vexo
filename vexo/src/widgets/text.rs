@@ -1,5 +1,5 @@
 use crate::core::{Color, Logical, Point};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView, MeasureContext, TextMeasureContext};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView, MeasureContext, TextMeasureContext};
 use crate::renderer::UiBatcher;
 use crate::render::RenderCommand;
 use crate::widgets::{WidgetContext, WidgetId, WidgetResponse};
@@ -164,7 +164,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
         self.key.as_deref()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         // Create measurement context for accurate text sizing
         let measure_context = MeasureContext::Text(TextMeasureContext {
             content: self.content.clone(),
@@ -187,7 +187,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -209,7 +209,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Text {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,

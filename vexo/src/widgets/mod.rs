@@ -2,7 +2,7 @@ use crate::renderer::UiBatcher;
 use crate::core::{Logical, Physical, Point, Scale, WidgetId};
 use crate::state::WidgetStateRegistry;
 use crate::input::{CursorIcon, InputEvent};
-use crate::layout::{Layout, LayoutContext, LayoutNodeId, LayoutView};
+use crate::layout::{Layout, LayoutContext, LayoutNodeKey, LayoutView};
 use crate::render::RenderCommand;
 use glyphon::FontSystem;
 
@@ -25,7 +25,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
         CursorIcon::Default
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId;
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey;
 
     /// Receive computed layout after layout computation.
     ///
@@ -45,7 +45,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>, // Current focused widget (if have one), // Pass focus here for drawing. (eg: draw a blue border when focused)
@@ -56,7 +56,7 @@ pub trait Widget<M: Clone + std::fmt::Debug + Send> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>, // Current focused widget (if have one)
@@ -83,7 +83,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
         (**self).cursor()
     }
 
-    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeId {
+    fn layout(&mut self, layout_context: &mut LayoutContext, widget_context: &mut WidgetContext) -> LayoutNodeKey {
         (**self).layout(layout_context, widget_context)
     }
 
@@ -98,7 +98,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
     fn draw(
         &self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         renderer: &mut UiBatcher,
         offset: Point<Logical>,
         focused_id: Option<WidgetId>,
@@ -111,7 +111,7 @@ impl<M: Clone + std::fmt::Debug + Send> Widget<M> for Box<dyn Widget<M>> {
     fn on_event(
         &mut self,
         layout_view: &LayoutView,
-        node: LayoutNodeId,
+        node: LayoutNodeKey,
         offset: Point<Logical>,
         event: &InputEvent,
         focused_id: Option<WidgetId>,
@@ -228,7 +228,7 @@ type EditorRef = crate::state::EditorRef;
 /// PointerMoved handling logic.
 pub(crate) fn propagate_pointer_moved_to_containing_child<M: Clone + std::fmt::Debug + Send>(
     children: &mut [Box<dyn Widget<M>>],
-    child_ids: &[LayoutNodeId],
+    child_ids: &[LayoutNodeKey],
     layout_view: &LayoutView,
     offset: Point<Logical>,
     event: &InputEvent,

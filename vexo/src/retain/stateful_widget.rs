@@ -557,7 +557,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 pub struct EmptyRenderObject;
 
 impl RenderObject for EmptyRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, _children: &[crate::layout::LayoutNodeId]) -> LayoutResult {
+    fn layout(&mut self, ctx: &mut LayoutContext, _children: &[crate::layout::LayoutNodeKey]) -> LayoutResult {
         let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
         LayoutResult {
             node,

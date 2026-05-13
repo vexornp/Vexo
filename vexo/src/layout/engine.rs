@@ -9,7 +9,7 @@
 
 use crate::core::Size;
 use crate::core::Logical;
-use crate::layout::{ComputedLayout, Layout, LayoutNodeId};
+use crate::layout::{ComputedLayout, Layout, LayoutNodeKey};
 use crate::layout::measurement::MeasureContext;
 use glyphon::FontSystem;
 
@@ -25,7 +25,7 @@ pub trait LayoutEngine {
     /// Create a leaf node (no children).
     ///
     /// Returns a handle to reference this node later.
-    fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeId;
+    fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeKey;
 
     /// Create a leaf node with custom measurement context.
     ///
@@ -35,12 +35,12 @@ pub trait LayoutEngine {
         &mut self,
         layout: &Layout,
         context: MeasureContext,
-    ) -> LayoutNodeId;
+    ) -> LayoutNodeKey;
 
     /// Create a container node with children.
     ///
     /// Returns a handle to reference this node later.
-    fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeId]) -> LayoutNodeId;
+    fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeKey]) -> LayoutNodeKey;
 
     /// Compute layout for all nodes.
     ///
@@ -48,7 +48,7 @@ pub trait LayoutEngine {
     /// The font_system is used for text measurement during layout.
     fn compute(
         &mut self,
-        root: LayoutNodeId,
+        root: LayoutNodeKey,
         available_size: Size<Logical>,
         font_system: &mut FontSystem,
     );
@@ -56,12 +56,12 @@ pub trait LayoutEngine {
     /// Get the computed layout for a node.
     ///
     /// Returns `None` if `compute()` hasn't been called or node doesn't exist.
-    fn get_layout(&self, node: LayoutNodeId) -> Option<ComputedLayout>;
+    fn get_layout(&self, node: LayoutNodeKey) -> Option<ComputedLayout>;
 
     /// Get children of a node.
     ///
     /// Used by container widgets to traverse their children during draw and event handling.
-    fn children(&self, node: LayoutNodeId) -> Vec<LayoutNodeId>;
+    fn children(&self, node: LayoutNodeKey) -> Vec<LayoutNodeKey>;
 
     /// Clear all nodes.
     ///
