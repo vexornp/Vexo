@@ -52,6 +52,7 @@ pub use node::{
     ComputedLayout,
     FlexDirection as NodeFlexDirection,
     LayoutConstraints,
+    LayoutNodeKey,
     LayoutNodeId,
     LayoutPadding,
 };

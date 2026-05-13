@@ -2,6 +2,25 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use slotmap::new_key_type;
+
+new_key_type! {
+    /// Stable, generational key for elements in the retain-mode element tree.
+    /// Unlike ElementId (which is a simple counter), ElementKey provides ABA
+    /// protection: if an element is removed and a new element later occupies
+    /// the same slot, the old key's generation won't match, so access safely
+    /// returns None.
+    pub struct ElementKey;
+}
+
+new_key_type! {
+    /// Stable, generational key for render objects in the retain-mode render tree.
+    pub struct RenderObjectKey;
+}
+
+/// Legacy element identifier — a simple atomic counter.
+/// Will be replaced by ElementKey in a future migration step.
+
 static NEXT_ELEMENT_ID: AtomicUsize = AtomicUsize::new(1);
 static NEXT_RENDER_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -28,7 +47,8 @@ impl Default for ElementId {
     }
 }
 
-/// Unique identifier for a RenderObject in the render tree.
+/// Legacy render object identifier — a simple atomic counter.
+/// Will be replaced by RenderObjectKey in a future migration step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RenderObjectId(usize);
 

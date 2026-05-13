@@ -3,14 +3,24 @@
 //! This module provides the types used for layout computation, including
 //! constraints, node IDs, and computed results.
 
+use slotmap::new_key_type;
+
 use crate::core::{Bounds, Point, Size};
 use crate::core::Logical;
+
+new_key_type! {
+    /// Stable, generational key for layout nodes in the TaffyLayoutEngine.
+    /// Unlike LayoutNodeId (which is a simple counter), LayoutNodeKey provides
+    /// ABA protection via generational indices.
+    pub struct LayoutNodeKey;
+}
 
 // ============================================================================
 // LAYOUT NODE ID
 // ============================================================================
 
-/// Unique identifier for a layout node within a layout tree.
+/// Legacy layout node identifier — a simple counter.
+/// Will be replaced by LayoutNodeKey in a future migration step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LayoutNodeId(pub u64);
 

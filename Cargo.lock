@@ -2599,6 +2599,7 @@ dependencies = [
  "glyphon",
  "log",
  "pollster",
+ "slotmap",
  "taffy",
  "uniffi",
  "wgpu",
