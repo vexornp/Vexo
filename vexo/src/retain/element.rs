@@ -66,30 +66,10 @@ pub trait Element {
         false
     }
 
-    /// Update the given child with a new widget configuration.
-    fn update_child(
-        &mut self,
-        child: Option<ElementKey>,
-        new_widget: Option<Box<dyn Widget>>,
-        _slot: Option<usize>,
-        context: &mut ElementContext,
-    ) -> Option<ElementKey> {
-        match (child, new_widget) {
-            (None, None) => None,
-            (Some(child_key), None) => {
-                if let Some(registry) = context.element_registry.as_mut() {
-                    registry.unmount(child_key);
-                }
-                None
-            }
-            (None, Some(widget)) => {
-                context.inflate_widget(widget)
-            }
-            (Some(child_key), Some(widget)) => {
-                context.update_child(Some(child_key), widget)
-            }
-        }
-    }
+    /// Called by the pipeline after a ChildOp::Inflate is executed,
+    /// notifying the parent of the new child's key.
+    /// Elements that track children internally should override this.
+    fn child_mounted(&mut self, _child: ElementKey, _slot: Option<usize>) {}
 
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}
