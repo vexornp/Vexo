@@ -99,6 +99,7 @@ impl ElementRegistry {
 
     /// Insert an element into the registry and set up parent metadata.
     /// Does NOT call element.mount() — the pipeline handles lifecycle.
+    /// Does NOT add to parent's children list — the pipeline calls add_child() separately.
     pub fn insert(
         &mut self,
         element: Box<dyn Element>,
@@ -106,9 +107,7 @@ impl ElementRegistry {
     ) -> ElementKey {
         let key = self.slots.insert(element);
         self.parent_map.insert(key, parent);
-        if let Some(p) = parent {
-            self.children_map.entry(p).expect("entry for existing parent key").or_insert_with(Vec::new).push(key);
-        } else {
+        if parent.is_none() {
             self.root = Some(key);
         }
         key
