@@ -4,7 +4,8 @@ use crate::retain::build_owner::BuildOwner;
 use crate::retain::child_ops::ChildOps;
 use crate::retain::dirty::DirtyTracking;
 use crate::retain::id::{ElementKey, RenderObjectKey};
-use crate::retain::render_object::RenderObjectRegistry;
+use crate::retain::key::GlobalKey;
+use crate::retain::render_object::{RenderObject, RenderObjectRegistry};
 use crate::retain::state::StateStorage;
 
 /// Context passed to element lifecycle methods.
@@ -49,6 +50,8 @@ impl<'a> ElementContext<'a> {
         }
     }
 
+    // -- Child operations (emit commands, pipeline executes later) --
+
     /// Request inflation of a new child element.
     pub fn inflate_child(&mut self, slot: Option<usize>, widget: Box<dyn crate::retain::widgets::Widget>) {
         self.child_ops.inflate(slot, widget, self.element_id);
@@ -64,9 +67,48 @@ impl<'a> ElementContext<'a> {
         self.child_ops.unmount(child);
     }
 
+    // -- Dirty tracking --
+
+    /// Mark a render object as needing layout.
+    pub fn mark_needs_layout(&mut self, key: RenderObjectKey) {
+        self.dirty.mark_needs_layout(key);
+    }
+
+    /// Mark a render object as needing paint.
+    pub fn mark_needs_paint(&mut self, key: RenderObjectKey) {
+        self.dirty.mark_needs_paint(key);
+    }
+
     /// Mark this element as needing rebuild.
     pub fn mark_dirty(&mut self) {
         let _ = self.dirty_sender.send(self.element_id);
+    }
+
+    /// Mark an element as needing build via the BuildOwner.
+    pub fn mark_needs_build(&mut self, element_id: ElementKey) {
+        self.build_owner.mark_needs_build(element_id);
+    }
+
+    // -- State storage --
+
+    /// Get state for this element.
+    pub fn get_state<T: 'static>(&self, id: ElementKey) -> Option<&T> {
+        self.state.get::<T>(id)
+    }
+
+    /// Get mutable state for this element.
+    pub fn get_state_mut<T: 'static>(&mut self, id: ElementKey) -> Option<&mut T> {
+        self.state.get_mut::<T>(id)
+    }
+
+    /// Insert state for this element.
+    pub fn insert_state<T: 'static>(&mut self, id: ElementKey, state: T) {
+        self.state.insert(id, state);
+    }
+
+    /// Remove state for this element.
+    pub fn remove_state(&mut self, id: ElementKey) {
+        self.state.remove(id);
     }
 
     /// Get or create state for this element.
@@ -79,8 +121,37 @@ impl<'a> ElementContext<'a> {
         }
     }
 
-    /// Remove render object associated with this element.
-    pub fn remove_render_object(&mut self, render_object_id: RenderObjectKey) {
-        self.render_objects.remove(render_object_id);
+    // -- Render object registry --
+
+    /// Create a render object in the registry.
+    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementKey) -> Option<RenderObjectKey> {
+        Some(self.render_objects.create(object, owner))
+    }
+
+    /// Remove a render object from the registry.
+    pub fn remove_render_object(&mut self, key: RenderObjectKey) {
+        self.render_objects.remove(key);
+    }
+
+    /// Get a mutable reference to a render object by key.
+    pub fn get_render_object_mut(&mut self, key: RenderObjectKey) -> Option<&mut Box<dyn RenderObject>> {
+        self.render_objects.get_mut(key)
+    }
+
+    /// Set the child render object on a parent render object.
+    pub fn set_render_object_child(&mut self, parent: RenderObjectKey, child: RenderObjectKey) {
+        self.render_objects.set_child(parent, child);
+    }
+
+    // -- Global key registry --
+
+    /// Register a global key for this element.
+    pub fn register_global_key(&mut self, key: GlobalKey, element_id: ElementKey) -> Result<(), crate::retain::global_key_registry::GlobalKeyError> {
+        self.build_owner.global_keys_mut().register(key, element_id)
+    }
+
+    /// Unregister a global key for this element.
+    pub fn unregister_global_key(&mut self, element_id: ElementKey) {
+        self.build_owner.global_keys_mut().unregister_element(element_id);
     }
 }
