@@ -2,6 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## First Principles Thinking Guide
+
+When analyzing tasks, especially architecture or complex logic, adhere to these principles:
+
+1. **Deconstruct Problems:** Break complex tasks into fundamental, irrefutable truths. Avoid analogies or "how we did it before".
+2. **Challenge Assumptions:** Explicitly identify and question all assumptions. If a decision is based on convention, justify it or rebuild from scratch.
+3. **Invert the Problem:** Identify what we want to avoid, then work backward to define the correct solution.
+4. **Prefer Simplicity:** If a simpler, more efficient approach exists, state it before implementing.
+5. **Ask "Why?":** Use the "5 Whys" approach to get to the root cause of issues, not just surface-level symptoms.
+
+## Think Before Coding
+
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
 ## Build & Run Commands
 
 ```bash
@@ -151,179 +172,6 @@ Central dependency versions defined in root `Cargo.toml` workspace section; all 
 - glyphon (git branch: main for text rendering)
 - uniffi 0.30.0 (FFI bindings for iOS)
 
-## Project-Specific Patterns
-
-### Defining New Applications
-Implement the `Application` trait in `shared_app/src/lib.rs`:
-```rust
-pub enum MyMessage { Clicked, TextChanged(String), }
-pub struct MyState { /* ... */ }
-
-impl Application for MyState {
-    type Message = MyMessage;
-    type State = Self;
-    fn new() -> Self { /* initialize state */ }
-    fn update(state: &mut Self, msg: Self::Message) { /* pure state transition */ }
-    fn view(state: &Self) -> Box<dyn Widget<Self::Message>> {
-        Box::new(Column::new()
-            .push(Button::new(/* ... */, MyMessage::Clicked)))
-    }
-}
-```
-
-### Creating Custom Widgets
-
-Widgets in Vexo implement two complementary trait systems:
-
-**1. Separated Traits (for testability)** - Each concern is isolated:
-- `Identifiable`: `id()` - stable identity for focus/hover tracking
-- `Layout`: `constraints()`, `apply_layout()` - layout participation
-- `Paint`: `paint()` - generate `RenderCommand`s (testable without GPU)
-- `Interact<M>`: `on_event()` - handle `InputEvent` (testable without UI)
-
-**2. Legacy `Widget<M>` Trait (for runtime)** - Used for:
-- Child traversal via `dyn Widget<M>` trait objects
-- Container widgets use `Vec<Box<dyn Widget<M>>>` for children
-- Full layout/draw/event pipeline with `LayoutContext`, `UiBatcher`
-
-**All widgets implement both systems.** The separated traits enable unit testing of individual concerns, while the legacy trait enables runtime behavior.
-
-#### Example: Custom Leaf Widget
-
-```rust
-use vexo::testable::{Identifiable, Layout, LayoutConstraints, ComputedLayout, Paint, PaintContext, Interact, InteractionContext, InteractionResponse};
-use vexo::widgets::{WidgetId, WidgetResponse};
-use vexo::render::RenderCommand;
-use vexo::input::InputEvent;
-
-pub struct MyWidget {
-    key: Option<String>,
-    layout: vexo::layout::Layout,
-    computed_layout: Option<ComputedLayout>,
-}
-
-impl MyWidget {
-    pub fn new() -> Self {
-        Self {
-            key: None,
-            layout: vexo::layout::Layout::default(),
-            computed_layout: None,
-        }
-    }
-
-    pub fn with_key(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self
-    }
-}
-
-// === Separated Traits (for unit testing) ===
-
-impl Identifiable for MyWidget {
-    fn id(&self) -> Option<WidgetId> {
-        self.key.as_ref().map(|k| WidgetId::from_key(k))
-    }
-}
-
-impl Layout for MyWidget {
-    fn constraints(&self) -> LayoutConstraints {
-        LayoutConstraints::from_layout(&self.layout)
-    }
-
-    fn apply_layout(&mut self, layout: ComputedLayout) {
-        self.computed_layout = Some(layout);
-    }
-}
-
-impl Paint for MyWidget {
-    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        let layout = match &self.computed_layout {
-            Some(l) => l,
-            None => return Vec::new(),
-        };
-        // Generate render commands (testable without GPU)
-        vec![RenderCommand::rect(layout.bounds, vexo::core::Color::BLUE)]
-    }
-}
-
-impl<M: Clone + std::fmt::Debug + Send> Interact<M> for MyWidget {
-    fn on_event(
-        &mut self,
-        event: &InputEvent,
-        ctx: &InteractionContext,
-    ) -> InteractionResponse<M> {
-        // Handle input events (testable without UI)
-        InteractionResponse::default()
-    }
-}
-
-// === Legacy Widget<M> Trait (for runtime) ===
-
-impl<M: Clone + std::fmt::Debug + Send> vexo::Widget<M> for MyWidget {
-    fn key(&self) -> Option<&str> {
-        self.key.as_deref()
-    }
-
-    fn layout(
-        &mut self,
-        layout_ctx: &mut vexo::layout::LayoutContext,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) -> vexo::layout::LayoutNodeId {
-        layout_ctx.create_leaf(&self.layout)
-    }
-
-    fn apply_layout(&mut self, layout: ComputedLayout) {
-        self.computed_layout = Some(layout);
-    }
-
-    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        Paint::paint(self, ctx)  // Delegate to separated trait
-    }
-
-    fn draw(
-        &self,
-        layout_view: &vexo::layout::LayoutView,
-        node: vexo::layout::LayoutNodeId,
-        renderer: &mut vexo::renderer::UiBatcher,
-        offset: vexo::core::Point<vexo::core::Logical>,
-        focused_id: Option<WidgetId>,
-        cursor_blink: &vexo::CursorBlinkState,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) {
-        // Legacy draw to UiBatcher (for text, etc.)
-    }
-
-    fn on_event(
-        &mut self,
-        layout_view: &vexo::layout::LayoutView,
-        node: vexo::layout::LayoutNodeId,
-        offset: vexo::core::Point<vexo::core::Logical>,
-        event: &InputEvent,
-        focused_id: Option<WidgetId>,
-        widget_ctx: &mut vexo::widgets::WidgetContext,
-    ) -> WidgetResponse<M> {
-        WidgetResponse::default()
-    }
-}
-```
-
-#### Testing with Separated Traits
-
-The separated traits enable unit testing without GPU or window:
-
-```rust
-#[test]
-fn test_widget_paint() {
-    let mut widget = MyWidget::new();
-    widget.apply_layout(ComputedLayout::new(0.0, 0.0, 100.0, 50.0));
-
-    let mut ctx = PaintContext::new(vexo::core::Point::origin());
-    let commands = widget.paint(&mut ctx);
-
-    assert_eq!(commands.len(), 1);
-}
-```
-
 ### Input Events
 Use the platform-independent `InputEvent` enum:
 ```rust
@@ -371,18 +219,6 @@ backend.render();
 ## Development Workflow
 
 - Always run `cargo build` after making edits to Rust files, and `cargo test` after implementing features. Never assume tests pass without running them.
-
-## Git Workflow
-
-- After completing a feature or fix, offer to commit the changes with a descriptive message summarizing what was done.
-
-## Refactoring Guidelines
-
-- When refactoring across multiple files, verify each file builds before moving to the next batch to catch import conflicts early.
-
-## Debugging
-
-- For UI rendering bugs, trace the full event/data propagation path before implementing fixes, as initial fixes often miss edge cases.
 
 ## Commit Guidelines
 
