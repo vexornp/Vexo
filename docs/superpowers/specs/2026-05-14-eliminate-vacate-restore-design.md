@@ -249,7 +249,21 @@ fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
 }
 ```
 
-**Subtlety:** When an element emits `ChildOp::Inflate`, it doesn't know the new child's `ElementKey` yet (assigned when the pipeline executes the inflate). The pipeline updates the parent's children list in the registry metadata via `add_child()`. For elements that track children internally (e.g., `ContainerElement::self.children`), the pipeline can call `with_element` again to notify the parent of the new key, or the element can look up its children from the registry after rebuild.
+**How parents learn new child keys:** When an element emits `ChildOp::Inflate`, it doesn't know the new child's `ElementKey` yet (assigned when the pipeline executes the inflate). After the pipeline executes the inflate, it calls `element_registry.add_child(parent, child_key, slot)` to update the registry metadata. The element's internal `self.children` list is then updated via a second `with_element` call on the parent:
+
+```rust
+// In execute_child_ops, after inflating a child:
+ChildOp::Inflate { slot, widget, parent } => {
+    let child_key = self.mount_element_tree(Some(parent), widget);
+    self.element_registry.add_child(parent, child_key, slot);
+    // Notify parent element of new child key
+    self.element_registry.with_element(parent, &mut (), |element, _| {
+        element.child_mounted(child_key, slot);
+    });
+}
+```
+
+The `Element` trait gains an optional `child_mounted(&mut self, child: ElementKey, slot: Option<usize>)` method with a default no-op implementation. Elements that track children internally (e.g., `ContainerElement`) override it to push the key into `self.children`.
 
 ## ElementRegistry API Changes
 
@@ -286,8 +300,9 @@ No changes. The render object tree doesn't use vacate/restore. Layout, paint, an
 | `retain/elements/single_child.rs` | Same as container. |
 | `retain/elements/multi_child.rs` | Same as container. |
 | `retain/elements/leaf.rs` | No change. |
-| `retain/elements/render_object_element.rs` | Replace registry access with child_ops where needed. |
+| `retain/elements/render_object_element.rs` | Replace registry access with child_ops where needed. Implement `child_mounted`. |
 | `retain/stateful_widget.rs` | Remove take/restore. Replace registry calls with child_ops. |
+| `retain/element.rs` (trait) | Add optional `child_mounted` method with default no-op. |
 | `retain/mod.rs` | Add mod child_ops. |
 
 ## Vacate/Restore Instances Eliminated
