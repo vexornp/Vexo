@@ -91,6 +91,8 @@ pub use style::Style;
 pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, EmptyRenderObject, State, StateContext, SimpleState};
 
+pub use child_ops::{ChildOp, ChildOps};
+
 pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector};
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
