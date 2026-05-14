@@ -53,6 +53,7 @@ mod global_key_registry;
 mod style;
 mod update_result;
 mod stateful_widget;
+mod child_ops;
 
 pub mod widgets;
 pub mod elements;
