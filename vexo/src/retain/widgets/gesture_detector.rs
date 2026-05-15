@@ -252,20 +252,11 @@ impl Element for GestureDetectorElement {
         // Use RenderObjectElement's default mount for render object creation
         self.mount_render_object(context);
 
-        // Mount single child if present
-        if let Some(widget) = &self.widget {
-            if let Some(child_widget) = widget.child() {
-                if let Some(child_id) = context.inflate_widget(child_widget.clone_boxed()) {
-                    self.child_element = Some(child_id);
-
-                    // Link child render object
-                    if let Some(registry) = &context.element_registry {
-                        if let Some(child_ro) = registry.get(child_id).and_then(|el| el.render_object()) {
-                            self.insert_child_render_object(child_ro, context);
-                        }
-                    }
-                }
-            }
+        // Mount single child via child_ops (emit Inflate command)
+        // The pipeline will execute it after mount() returns,
+        // then call child_mounted() to notify us of the new child's key.
+        if let Some(child_widget) = self.get_child_widget() {
+            context.inflate_child(None, child_widget.clone_boxed());
         }
     }
 
@@ -343,17 +334,21 @@ impl Element for GestureDetectorElement {
             }
             self.widget = Some(*widget);
 
-            // Reconcile single child using update_child
+            // Reconcile single child via child_ops
             if let Some(child_widget) = self.get_child_widget() {
-                let new_child = self.update_child(
-                    self.child_element,
-                    Some(child_widget.clone_boxed()),
-                    None,
-                    context,
-                );
-                self.child_element = new_child;
+                match self.child_element {
+                    Some(old_child) => {
+                        // Update existing child
+                        context.update_child(old_child, child_widget.clone_boxed());
+                    }
+                    None => {
+                        // Inflate new child
+                        context.inflate_child(None, child_widget.clone_boxed());
+                    }
+                }
             } else if let Some(old_child) = self.child_element {
-                self.update_child(Some(old_child), None, None, context);
+                // No new child widget - unmount the old child
+                context.unmount_child(old_child);
                 self.child_element = None;
             }
         }
@@ -361,6 +356,14 @@ impl Element for GestureDetectorElement {
 
     fn has_children(&self) -> bool {
         self.child_element.is_some()
+    }
+
+    fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+        self.child_element = Some(child);
+        // Link the child's render object to our render object
+        if let Some(child_ro_key) = child_ro {
+            self.insert_child_render_object(child_ro_key, context);
+        }
     }
 }
 

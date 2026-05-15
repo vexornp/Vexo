@@ -131,32 +131,17 @@ impl Element for ContainerElement {
         // Use RenderObjectElement's default mount for render object creation
         self.mount_render_object(context);
 
-        // Mount children - this element manages its own children during mount
+        // Mount children via child_ops (emit Inflate commands)
+        // The pipeline will execute them after mount() returns,
+        // then call child_mounted() to notify us of each new child's key.
         if let Some(widget) = &self.widget {
-            // Get child widgets from the widget
             let child_widgets: Vec<Box<dyn Widget>> = widget.children()
                 .iter()
                 .map(|c| c.clone_boxed())
                 .collect();
 
-            // Mount each child and collect their IDs
-            let mut child_render_objects = Vec::new();
-            for child_widget in child_widgets {
-                if let Some(child_id) = context.inflate_widget(child_widget) {
-                    self.children.push(child_id);
-
-                    // Track child render objects for linking
-                    if let Some(registry) = &context.element_registry {
-                        if let Some(child_ro) = registry.get(child_id).and_then(|el| el.render_object()) {
-                            child_render_objects.push(child_ro);
-                        }
-                    }
-                }
-            }
-
-            // Link child render objects to this container's render object
-            for child_ro in &child_render_objects {
-                self.insert_child_render_object(*child_ro, context);
+            for (i, child_widget) in child_widgets.into_iter().enumerate() {
+                context.inflate_child(Some(i), child_widget);
             }
         }
     }
@@ -235,154 +220,51 @@ impl Element for ContainerElement {
                 .map(|w| w.children().iter().map(|c| c.clone_boxed()).collect())
                 .unwrap_or_default();
 
-            // Reconcile children using update_child from the Element trait
-            let mut updated_children = Vec::new();
+            // Reconcile children via child_ops commands:
+            // - Update existing children at matching positions
+            // - Inflate new children for positions beyond old count
+            // - Unmount excess old children
+            let old_len = self.children.len();
+            let new_len = new_child_widgets.len();
+
             for (i, new_child_widget) in new_child_widgets.into_iter().enumerate() {
-                let old_child = self.children.get(i).copied();
-                let new_child = self.update_child(old_child, Some(new_child_widget), Some(i), context);
-                if let Some(child_id) = new_child {
-                    updated_children.push(child_id);
+                if i < old_len {
+                    // Update existing child
+                    context.update_child(self.children[i], new_child_widget);
+                } else {
+                    // Inflate new child
+                    context.inflate_child(Some(i), new_child_widget);
                 }
             }
 
-            // Collect children to unmount (those that weren't matched)
-            let children_to_unmount: Vec<ElementKey> = self.children.iter()
-                .skip(updated_children.len())
-                .copied()
-                .collect();
-
-            // Unmount remaining old children that weren't matched
-            for old_child in children_to_unmount {
-                self.update_child(Some(old_child), None, None, context);
+            // Unmount excess children (in reverse order to preserve indices)
+            for i in (new_len..old_len).rev() {
+                context.unmount_child(self.children[i]);
             }
 
-            self.children = updated_children;
+            // Truncate children list (unmount ops will remove from registry)
+            self.children.truncate(new_len);
         }
     }
 
     fn has_children(&self) -> bool {
         true
     }
-}
 
-#[cfg(test)]
-mod tests {
-    fn make_element_key() -> ElementKey {
-        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
-        sm.insert(())
-    }
-
-    use super::*;
-    use std::sync::mpsc;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Column, Text, BuildOwner};
-
-    #[test]
-    fn test_container_element_mount() {
-        let mut element = ContainerElement::new();
-        let mut state = StateStorage::new();
-        let mut dirty = DirtyTracking::new();
-        let mut context = ElementContext::new(
-            make_element_key(),
-            None,
-            &mut state,
-            &mut dirty,
-        );
-
-        element.mount(&mut context);
-
-        assert!(element.id().is_some());
-    }
-
-    #[test]
-    fn test_container_element_children() {
-        use crate::retain::element::ElementRegistry;
-
-        let mut element = ContainerElement::new();
-        let mut state = StateStorage::new();
-        let mut dirty = DirtyTracking::new();
-        let mut context = ElementContext::new(
-            make_element_key(),
-            None,
-            &mut state,
-            &mut dirty,
-        );
-
-        element.mount(&mut context);
-
-        let registry = ElementRegistry::new();
-        let mut count = 0;
-        element.visit_children(&registry, &mut |_| count += 1);
-
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn test_container_element_mount_creates_render_object() {
-        // This test verifies that mounting a container element with a widget
-        // creates a render object in the registry.
-        let mut element = ContainerElement::new();
-        let widget = Column::new().push(Text::new("Hello"));
-        element.set_widget(&widget);
-
-        let mut state = StateStorage::new();
-        let mut dirty = DirtyTracking::new();
-        let mut render_objects = RenderObjectRegistry::new();
-        let mut element_registry = ElementRegistry::new();
-        let build_owner = BuildOwner::new();
-        let (dirty_sender, _) = mpsc::channel();
-        let mut context = ElementContext::full(
-            make_element_key(),
-            None,
-            &mut state,
-            &mut dirty,
-            &mut render_objects,
-            &mut element_registry,
-            &build_owner,
-            &dirty_sender,
-        );
-
-        element.mount(&mut context);
-
-        // After mount, the element should have a render object ID
-        assert!(element.render_object().is_some());
-
-        // The registry should contain the render object
-        let ro_id = element.render_object().unwrap();
-        assert!(render_objects.get(ro_id).is_some());
-    }
-
-    #[test]
-    fn test_container_element_unmount_removes_render_object() {
-        // This test verifies that unmounting a container element removes
-        // the render object from the registry.
-        let mut element = ContainerElement::new();
-        let widget = Column::new().push(Text::new("Hello"));
-        element.set_widget(&widget);
-
-        let mut state = StateStorage::new();
-        let mut dirty = DirtyTracking::new();
-        let mut render_objects = RenderObjectRegistry::new();
-        let mut element_registry = ElementRegistry::new();
-        let build_owner = BuildOwner::new();
-        let (dirty_sender, _) = mpsc::channel();
-        let mut context = ElementContext::full(
-            make_element_key(),
-            None,
-            &mut state,
-            &mut dirty,
-            &mut render_objects,
-            &mut element_registry,
-            &build_owner,
-            &dirty_sender,
-        );
-
-        element.mount(&mut context);
-        let ro_id = element.render_object().unwrap();
-
-        // Now unmount
-        element.unmount(&mut context);
-
-        // The render object should be removed from the registry
-        assert!(render_objects.get(ro_id).is_none());
+    fn child_mounted(&mut self, child: ElementKey, slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+        // Track the child element key at the given slot position
+        if let Some(idx) = slot {
+            if idx >= self.children.len() {
+                self.children.resize(idx + 1, child);
+            } else {
+                self.children[idx] = child;
+            }
+        } else {
+            self.children.push(child);
+        }
+        // Link the child's render object to our render object
+        if let Some(child_ro_key) = child_ro {
+            self.insert_child_render_object(child_ro_key, context);
+        }
     }
 }

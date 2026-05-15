@@ -93,7 +93,7 @@ impl ElementRegistry {
             } else {
                 // Mount new element
                 let element = widget.create_element();
-                let id = self.mount(element, Some(parent));
+                let id = self.insert(element, Some(parent));
                 new_children.push(id);
             }
         }
@@ -175,7 +175,7 @@ mod tests {
 
         // Create parent first
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        let parent = registry.mount(parent_element, None);
+        let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
         let widgets: Vec<Box<dyn Reconcilable>> = vec![
@@ -193,7 +193,7 @@ mod tests {
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        let parent = registry.mount(parent_element, None);
+        let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial widget with key
@@ -220,7 +220,7 @@ mod tests {
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        let parent = registry.mount(parent_element, None);
+        let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial: two widgets
@@ -247,7 +247,7 @@ mod tests {
 
         // Create parent
         let parent_element = Box::new(MockElement { key: None, render_object: None });
-        let parent = registry.mount(parent_element, None);
+        let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
         // Initial: key1, key2

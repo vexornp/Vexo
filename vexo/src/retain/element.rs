@@ -9,8 +9,6 @@ use slotmap::{SlotMap, SecondaryMap};
 use super::id::ElementKey;
 use super::key::WidgetKey;
 use super::element_context::ElementContext;
-use super::widgets::Widget;
-
 /// Persistent element with state and lifecycle.
 ///
 /// Elements represent the "live" state of the UI tree. They:
@@ -67,9 +65,11 @@ pub trait Element {
     }
 
     /// Called by the pipeline after a ChildOp::Inflate is executed,
-    /// notifying the parent of the new child's key.
+    /// notifying the parent of the new child's key and render object.
     /// Elements that track children internally should override this.
-    fn child_mounted(&mut self, _child: ElementKey, _slot: Option<usize>) {}
+    /// The `child_ro` parameter is the child's render object key (if any),
+    /// used for linking the render object tree.
+    fn child_mounted(&mut self, _child: ElementKey, _slot: Option<usize>, _child_ro: Option<super::id::RenderObjectKey>, _context: &mut ElementContext) {}
 
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}
@@ -116,7 +116,7 @@ impl ElementRegistry {
     /// Add a child to a parent's children list at the given slot position.
     /// Called by the pipeline after executing a ChildOp::Inflate.
     pub fn add_child(&mut self, parent: ElementKey, child: ElementKey, slot: Option<usize>) {
-        let children = self.children_map.entry(parent).expect("entry for existing parent key").or_insert_with(Vec::new);
+        let children = self.children_map.entry(parent).expect("entry for existing parent key").or_default();
         if let Some(idx) = slot {
             if idx >= children.len() {
                 children.resize(idx + 1, child);

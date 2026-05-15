@@ -161,7 +161,7 @@ pub type LeafElement = LeafRenderObjectElement;
 mod tests {
     use super::*;
     use std::sync::mpsc;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner};
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner, ChildOps};
 
     fn make_element_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -173,11 +173,20 @@ mod tests {
         let mut element = LeafRenderObjectElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let build_owner = BuildOwner::new();
+        let (dirty_sender, _) = mpsc::channel();
+        let mut child_ops = ChildOps::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            None,
             &mut state,
             &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &dirty_sender,
+            &mut child_ops,
         );
 
         element.mount(&mut context);
@@ -194,18 +203,19 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut element_registry = ElementRegistry::new();
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
-        let mut context = ElementContext::full(
+        let mut child_ops = ChildOps::new();
+        let mut context = ElementContext::new(
             make_element_key(),
+            None,
             None,
             &mut state,
             &mut dirty,
             &mut render_objects,
-            &mut element_registry,
             &build_owner,
             &dirty_sender,
+            &mut child_ops,
         );
 
         element.mount(&mut context);
@@ -225,18 +235,19 @@ mod tests {
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
         let mut render_objects = RenderObjectRegistry::new();
-        let mut element_registry = ElementRegistry::new();
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
-        let mut context = ElementContext::full(
+        let mut child_ops = ChildOps::new();
+        let mut context = ElementContext::new(
             make_element_key(),
+            None,
             None,
             &mut state,
             &mut dirty,
             &mut render_objects,
-            &mut element_registry,
             &build_owner,
             &dirty_sender,
+            &mut child_ops,
         );
 
         element.mount(&mut context);
@@ -252,11 +263,20 @@ mod tests {
         let mut element = LeafRenderObjectElement::new();
         let mut state = StateStorage::new();
         let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let build_owner = BuildOwner::new();
+        let (dirty_sender, _) = mpsc::channel();
+        let mut child_ops = ChildOps::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            None,
             &mut state,
             &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &dirty_sender,
+            &mut child_ops,
         );
 
         element.mount(&mut context);

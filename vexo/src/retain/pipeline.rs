@@ -431,9 +431,26 @@ impl ThreeTreePipeline {
             element.mount(ctx);
         });
 
+        // After mount, the element may have created a render object.
+        // If this is the root element (no parent), set it as the render object root.
+        if parent.is_none() {
+            if let Some(ro_key) = self.element_registry.get(key).and_then(|el| el.render_object()) {
+                self.render_objects.set_root(ro_key);
+            }
+        }
+
         // Execute any child ops the element emitted during mount
         // This recursively mounts children (who may emit their own child ops, etc.)
         self.execute_child_ops();
+
+        // After child ops are processed, the element's render_object() may have changed
+        // (e.g., StatefulElement delegates to its child's render object after child_mounted).
+        // Re-check the root render object if this is the root element.
+        if parent.is_none() {
+            if let Some(ro_key) = self.element_registry.get(key).and_then(|el| el.render_object()) {
+                self.render_objects.set_root(ro_key);
+            }
+        }
 
         key
     }
@@ -467,7 +484,13 @@ impl ThreeTreePipeline {
                         // Add child to parent's children list at the given slot
                         self.element_registry.add_child(parent, child_key, slot);
 
-                        // Notify parent element of the new child via child_mounted
+                        // Get the child's render object key for linking
+                        let child_ro = self.element_registry.get(child_key)
+                            .and_then(|el| el.render_object());
+
+                        // Notify parent element of the new child via child_mounted,
+                        // passing the child's render object key so the parent can
+                        // link the render object tree.
                         let parent_render_object = self.element_registry.get(parent)
                             .and_then(|el| el.render_object());
                         let parent_parent = self.element_registry.parent(parent);
@@ -484,8 +507,8 @@ impl ThreeTreePipeline {
                             &mut self.child_ops,
                         );
 
-                        self.element_registry.with_element(parent, &mut ctx, |element, _ctx| {
-                            element.child_mounted(child_key, slot);
+                        self.element_registry.with_element(parent, &mut ctx, |element, ctx| {
+                            element.child_mounted(child_key, slot, child_ro, ctx);
                         });
                     }
                     ChildOp::Update { child, widget } => {

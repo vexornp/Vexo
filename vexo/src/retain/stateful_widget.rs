@@ -338,113 +338,64 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let mut state = W::State::default();
 
         // Wire up dirty callback using channel sender.
-        // When a StatefulMutable::set() fires, it sends the element ID
-        // through the channel. The pipeline drains the channel and calls
-        // mark_needs_build() itself, eliminating the need for raw pointers.
-        if let Some(tx) = context.dirty_sender {
-            let tx = tx.clone(); // mpsc::Sender is cheap to clone
-            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                let _ = tx.send(element_id);
-            });
-            state.set_dirty_callback(dirty_callback);
-        }
+        let tx = context.dirty_sender.clone();
+        let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = tx.send(element_id);
+        });
+        state.set_dirty_callback(dirty_callback);
 
-        // Call State::init() lifecycle hook with safe &BuildOwner reference
-        if let Some(build_owner) = context.get_build_owner() {
-            let mut state_ctx = StateContext::new(element_id, build_owner);
-            state.init(&mut state_ctx);
-        }
+        // Call State::init() lifecycle hook
+        let mut state_ctx = StateContext::new(element_id, context.build_owner);
+        state.init(&mut state_ctx);
 
         // Store state in StateStorage
         context.insert_state(element_id, state);
 
-        // Build the child widget tree
-        let child_widget;
-
-        {
-            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
-            let build_owner_opt = context.get_build_owner();
-            // Extract render_objects (it's an Option that needs take/restore)
-            let render_objects = context.render_objects.take();
-
-            // Now we can borrow state and dirty without conflict
+        // Build the child widget tree using BuildContext
+        let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
-            let dirty = &mut *context.dirty;
+            self.build_child_widget(
+                element_id,
+                state_ref,
+                context.dirty,
+                context.render_objects,
+                context.build_owner,
+            )
+        };
 
-            // Build with the extracted references
-            if let Some(ro) = render_objects {
-                // Create a temporary BuildOwner if not provided
-                let temp_build_owner = BuildOwner::new();
-                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
-                child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
-
-                // Restore the taken values
-                context.render_objects = Some(ro);
-                context.build_owner = build_owner_opt;
-            } else {
-                child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
-            }
-        }
-
-        // Mount the child element tree using inflate_widget
-        self.child_element_id = context.inflate_widget(child_widget);
-
-        // Get the child's render object for delegation
-        if let Some(child_id) = self.child_element_id {
-            if let Some(registry) = &context.element_registry {
-                self.render_object_id = registry.get(child_id)
-                    .and_then(|el| el.render_object());
-            }
-        }
+        // Mount the child element tree via child_ops
+        context.inflate_child(None, child_widget);
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         // Downcast to the concrete widget type
-        // downcast::<W>() returns Box<W>, so we need to dereference
         if let Ok(widget) = new_widget.downcast::<W>() {
             self.widget = *widget;
         }
 
-        // Build the child widget tree
         let element_id = context.element_id;
-        let child_widget;
 
-        {
-            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
-            let build_owner_opt = context.get_build_owner();
-            // Extract render_objects (it's an Option that needs take/restore)
-            let render_objects = context.render_objects.take();
-
-            // Now we can borrow state and dirty without conflict
-            // Use reborrow to get &mut from &'a mut
+        // Build the child widget tree using BuildContext
+        let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
-            let dirty = &mut *context.dirty;
+            self.build_child_widget(
+                element_id,
+                state_ref,
+                context.dirty,
+                context.render_objects,
+                context.build_owner,
+            )
+        };
 
-            // Build with the extracted references
-            if let Some(ro) = render_objects {
-                // Create a temporary BuildOwner if not provided
-                let temp_build_owner = BuildOwner::new();
-                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
-                child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
-
-                // Restore the taken values
-                context.render_objects = Some(ro);
-                context.build_owner = build_owner_opt;
-            } else {
-                child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
+        // Reconcile child via child_ops
+        match self.child_element_id {
+            Some(old_child) => {
+                // Update existing child
+                context.update_child(old_child, child_widget);
             }
-        }
-
-        // Update or mount the child element tree using update_child
-        // This handles both updating existing children and mounting new ones,
-        // recursively mounting all children and linking render objects
-        self.child_element_id = context.update_child(self.child_element_id, child_widget);
-
-        // Update render object reference for delegation
-        if let Some(child_id) = self.child_element_id {
-            if let Some(registry) = &context.element_registry {
-                self.render_object_id = registry.get(child_id)
-                    .and_then(|el| el.render_object());
+            None => {
+                // Inflate new child
+                context.inflate_child(None, child_widget);
             }
         }
     }
@@ -464,11 +415,9 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             }
         }
 
-        // Unmount child element
+        // Unmount child element via child_ops
         if let Some(child_id) = self.child_element_id {
-            if let Some(registry) = &mut context.element_registry {
-                registry.unmount(child_id);
-            }
+            context.unmount_child(child_id);
         }
 
         // Remove state from storage
@@ -501,46 +450,40 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         self.child_element_id.is_some()
     }
 
+    fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, _context: &mut ElementContext) {
+        self.child_element_id = Some(child);
+        // StatefulElement delegates its render_object_id to its child's render object
+        self.render_object_id = child_ro;
+    }
+
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
         // Rebuild using the CURRENT widget + updated state.
         // This is called by perform_rebuilds() when setState() or
         // StatefulMutable::set() marked this element dirty.
 
         let element_id = self.id.unwrap_or(context.element_id);
-        let child_widget;
 
-        {
-            // Read build_owner first (Copy type, but needs explicit copy from &mut ref)
-            let build_owner_opt = context.get_build_owner();
-            // Extract render_objects (it's an Option that needs take/restore)
-            let render_objects = context.render_objects.take();
-
-            // Get state and dirty
+        // Build the child widget tree using BuildContext
+        let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
-            let dirty = &mut *context.dirty;
+            self.build_child_widget(
+                element_id,
+                state_ref,
+                context.dirty,
+                context.render_objects,
+                context.build_owner,
+            )
+        };
 
-            if let Some(ro) = render_objects {
-                // Create a temporary BuildOwner if not provided
-                let temp_build_owner = BuildOwner::new();
-                let bo = build_owner_opt.unwrap_or(&temp_build_owner);
-                // Build with CURRENT widget, updated state
-                child_widget = self.build_child_widget(element_id, state_ref, dirty, ro, bo);
-
-                context.render_objects = Some(ro);
-                context.build_owner = build_owner_opt;
-            } else {
-                child_widget = Box::new(super::widgets::Text::new("Error: Missing registries"));
+        // Reconcile child via child_ops
+        match self.child_element_id {
+            Some(old_child) => {
+                // Update existing child
+                context.update_child(old_child, child_widget);
             }
-        }
-
-        // Reconcile child
-        self.child_element_id = context.update_child(self.child_element_id, child_widget);
-
-        // Update render object reference
-        if let Some(child_id) = self.child_element_id {
-            if let Some(registry) = &context.element_registry {
-                self.render_object_id = registry.get(child_id)
-                    .and_then(|el| el.render_object());
+            None => {
+                // Inflate new child
+                context.inflate_child(None, child_widget);
             }
         }
     }
@@ -626,7 +569,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner};
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner, ChildOps};
 
     #[derive(Clone)]
     struct TestCounter {
@@ -662,6 +605,7 @@ mod tests {
         ElementRegistry,
         BuildOwner,
         std::sync::mpsc::Sender<ElementKey>,
+        ChildOps,
     ) {
         let (dirty_sender, _) = std::sync::mpsc::channel();
         (
@@ -672,6 +616,7 @@ mod tests {
             ElementRegistry::new(),
             BuildOwner::new(),
             dirty_sender,
+            ChildOps::new(),
         )
     }
 
@@ -680,18 +625,19 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
 
         // Mount the element
-        let mut ctx = ElementContext::full(
+        let mut ctx = ElementContext::new(
             element_id,
+            None,
             None,
             &mut state,
             &mut dirty,
             &mut render_objects,
-            &mut element_registry,
             &build_owner,
             &dirty_sender,
+            &mut child_ops,
         );
 
         let mut element = element;
@@ -707,19 +653,20 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
 
         // Mount
         {
-            let mut ctx = ElementContext::full(
+            let mut ctx = ElementContext::new(
                 element_id,
+                None,
                 None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
-                &mut element_registry,
                 &build_owner,
                 &dirty_sender,
+                &mut child_ops,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -730,15 +677,16 @@ mod tests {
         // Update with new widget
         let new_widget = TestCounter { label: "Updated".to_string() };
         {
-            let mut ctx = ElementContext::full(
+            let mut ctx = ElementContext::new(
                 element_id,
+                None,
                 None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
-                &mut element_registry,
                 &build_owner,
                 &dirty_sender,
+                &mut child_ops,
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
@@ -752,19 +700,20 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, mut element_registry, mut build_owner, dirty_sender) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
 
         // Mount
         {
-            let mut ctx = ElementContext::full(
+            let mut ctx = ElementContext::new(
                 element_id,
+                None,
                 None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
-                &mut element_registry,
                 &build_owner,
                 &dirty_sender,
+                &mut child_ops,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -774,15 +723,16 @@ mod tests {
 
         // Unmount
         {
-            let mut ctx = ElementContext::full(
+            let mut ctx = ElementContext::new(
                 element_id,
+                None,
                 None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
-                &mut element_registry,
                 &build_owner,
                 &dirty_sender,
+                &mut child_ops,
             );
             Element::unmount(&mut element, &mut ctx);
         }
@@ -805,7 +755,7 @@ mod tests {
 
     #[test]
     fn test_build_context_request_rebuild() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender) = create_test_context();
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops) = create_test_context();
 
         let mut ctx = BuildContext {
             element_id,

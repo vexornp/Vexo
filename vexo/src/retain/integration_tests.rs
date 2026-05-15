@@ -15,7 +15,7 @@ fn test_full_reconciliation_flow() {
         .push(Text::new("First"))
         .push(Text::new("Second"));
 
-    let root_element = element_registry.mount(
+    let root_element = element_registry.insert(
         root_widget.create_element(),
         None,
     );
@@ -45,7 +45,7 @@ fn test_key_preserves_identity() {
 
     // Create widget with key
     let widget1: Text = Text::new("Hello").with_key("greeting");
-    let element1 = element_registry.mount(widget1.create_element(), None);
+    let element1 = element_registry.insert(widget1.create_element(), None);
 
     // Create widget with same key
     let widget2: Text = Text::new("Hello World").with_key("greeting");
