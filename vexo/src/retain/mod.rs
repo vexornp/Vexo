@@ -50,6 +50,7 @@ mod render_objects;
 mod hit_test;
 mod pipeline;
 mod layouter;
+mod painter;
 mod global_key_registry;
 mod style;
 mod update_result;
