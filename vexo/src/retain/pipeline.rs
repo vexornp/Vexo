@@ -41,7 +41,6 @@ use std::sync::mpsc;
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, Relative, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers};
-use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 
 use super::build_owner::BuildOwner;
@@ -52,7 +51,8 @@ use super::element_context::ElementContext;
 use super::event_context::EventContext;
 use super::hit_test::HitTestResult;
 use super::id::{ElementKey, RenderObjectKey};
-use super::render_object::{LayoutContext, LayoutResult, PaintContext, RenderObjectRegistry};
+use super::layouter::Layouter;
+use super::render_object::{PaintContext, RenderObjectRegistry};
 use super::state::StateStorage;
 use super::widgets::Widget;
 
@@ -174,7 +174,9 @@ impl ThreeTreePipeline {
         // Check if we have an existing root element
         if let Some(root_id) = self.element_registry.root() {
             // Check if the widget can update the existing element
-            let can_update = self.element_registry.get(root_id)
+            let can_update = self
+                .element_registry
+                .get(root_id)
                 .map(|el| el.can_update(root_widget.as_any()))
                 .unwrap_or(false);
 
@@ -218,7 +220,9 @@ impl ThreeTreePipeline {
         } else {
             // Check if root can be updated
             if let Some(root_id) = self.element_registry.root() {
-                let can_update = self.element_registry.get(root_id)
+                let can_update = self
+                    .element_registry
+                    .get(root_id)
                     .map(|el| el.can_update(root_widget.as_any()))
                     .unwrap_or(false);
 
@@ -249,13 +253,8 @@ impl ThreeTreePipeline {
     /// method handles both updating the widget and reconciling children.
     fn rebuild_root(&mut self, root_id: ElementKey, widget: Box<dyn Widget>) {
         let parent = self.element_registry.parent(root_id);
-        let render_object = self.element_registry.get(root_id)
-            .and_then(|el| el.render_object());
 
-        log::debug!(
-            "[RetainMode] rebuild_root() - element_id: {:?}",
-            root_id
-        );
+        log::debug!("[RetainMode] rebuild_root() - element_id: {:?}", root_id);
 
         // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
@@ -263,7 +262,6 @@ impl ThreeTreePipeline {
         let mut ctx = ElementContext::new(
             root_id,
             parent,
-            render_object,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
@@ -272,9 +270,10 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
         );
 
-        self.element_registry.with_element(root_id, &mut ctx, |element, ctx| {
-            element.rebuild(widget_as_any, ctx);
-        });
+        self.element_registry
+            .with_element(root_id, &mut ctx, |element, ctx| {
+                element.rebuild(widget_as_any, ctx);
+            });
 
         // Execute any child operations emitted during rebuild
         self.execute_child_ops();
@@ -294,7 +293,8 @@ impl ThreeTreePipeline {
 
         // Sort by depth: parents must rebuild before children
         let element_registry = &self.element_registry;
-        self.build_owner.sort_dirty_by_depth(|id| element_registry.depth(id));
+        self.build_owner
+            .sort_dirty_by_depth(|id| element_registry.depth(id));
 
         // Drain dirty elements
         let dirty_ids: Vec<ElementKey> = self.build_owner.drain_dirty_sorted();
@@ -313,14 +313,11 @@ impl ThreeTreePipeline {
 
             // Get parent and render_object for context
             let parent = self.element_registry.parent(element_id);
-            let render_object = self.element_registry.get(element_id)
-                .and_then(|el| el.render_object());
 
             // Create context for the element
             let mut ctx = ElementContext::new(
                 element_id,
                 parent,
-                render_object,
                 &mut self.state,
                 &mut self.dirty,
                 &mut self.render_objects,
@@ -330,9 +327,10 @@ impl ThreeTreePipeline {
             );
 
             // Rebuild from current state using with_element
-            self.element_registry.with_element(element_id, &mut ctx, |element, ctx| {
-                element.rebuild_from_state(ctx);
-            });
+            self.element_registry
+                .with_element(element_id, &mut ctx, |element, ctx| {
+                    element.rebuild_from_state(ctx);
+                });
 
             // Execute any child operations emitted during rebuild
             self.execute_child_ops();
@@ -365,10 +363,7 @@ impl ThreeTreePipeline {
     /// This follows the Flutter-style pattern where each element's rebuild()
     /// method handles both updating the widget and reconciling children.
     fn reconcile_element(&mut self, element_id: ElementKey, widget: Box<dyn Widget>) {
-        // Get parent and render_object before mutable borrow
         let parent = self.element_registry.parent(element_id);
-        let render_object = self.element_registry.get(element_id)
-            .and_then(|el| el.render_object());
 
         log::debug!(
             "[RetainMode] reconcile_element() - element_id: {:?}",
@@ -381,7 +376,6 @@ impl ThreeTreePipeline {
         let mut ctx = ElementContext::new(
             element_id,
             parent,
-            render_object,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
@@ -390,9 +384,10 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
         );
 
-        self.element_registry.with_element(element_id, &mut ctx, |element, ctx| {
-            element.rebuild(widget_as_any, ctx);
-        });
+        self.element_registry
+            .with_element(element_id, &mut ctx, |element, ctx| {
+                element.rebuild(widget_as_any, ctx);
+            });
 
         // Execute any child operations emitted during rebuild
         self.execute_child_ops();
@@ -406,7 +401,11 @@ impl ThreeTreePipeline {
     ///
     /// Note: This does NOT add the element to its parent's children list
     /// or call child_mounted. The caller is responsible for that.
-    fn mount_element_tree(&mut self, parent: Option<ElementKey>, widget: Box<dyn Widget>) -> ElementKey {
+    fn mount_element_tree(
+        &mut self,
+        parent: Option<ElementKey>,
+        widget: Box<dyn Widget>,
+    ) -> ElementKey {
         // Create the element from the widget
         let element = widget.create_element();
 
@@ -417,7 +416,6 @@ impl ThreeTreePipeline {
         let mut ctx = ElementContext::new(
             key,
             parent,
-            None, // render_object not yet created
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
@@ -427,14 +425,19 @@ impl ThreeTreePipeline {
         );
 
         // Call mount() on the element via with_element
-        self.element_registry.with_element(key, &mut ctx, |element, ctx| {
-            element.mount(ctx);
-        });
+        self.element_registry
+            .with_element(key, &mut ctx, |element, ctx| {
+                element.mount(ctx);
+            });
 
         // After mount, the element may have created a render object.
         // If this is the root element (no parent), set it as the render object root.
         if parent.is_none() {
-            if let Some(ro_key) = self.element_registry.get(key).and_then(|el| el.render_object()) {
+            if let Some(ro_key) = self
+                .element_registry
+                .get(key)
+                .and_then(|el| el.render_object())
+            {
                 self.render_objects.set_root(ro_key);
             }
         }
@@ -447,7 +450,11 @@ impl ThreeTreePipeline {
         // (e.g., StatefulElement delegates to its child's render object after child_mounted).
         // Re-check the root render object if this is the root element.
         if parent.is_none() {
-            if let Some(ro_key) = self.element_registry.get(key).and_then(|el| el.render_object()) {
+            if let Some(ro_key) = self
+                .element_registry
+                .get(key)
+                .and_then(|el| el.render_object())
+            {
                 self.render_objects.set_root(ro_key);
             }
         }
@@ -477,7 +484,11 @@ impl ThreeTreePipeline {
 
             for op in ops {
                 match op {
-                    ChildOp::Inflate { slot, widget, parent } => {
+                    ChildOp::Inflate {
+                        slot,
+                        widget,
+                        parent,
+                    } => {
                         // Mount the new child element tree
                         let child_key = self.mount_element_tree(Some(parent), widget);
 
@@ -485,20 +496,19 @@ impl ThreeTreePipeline {
                         self.element_registry.add_child(parent, child_key, slot);
 
                         // Get the child's render object key for linking
-                        let child_ro = self.element_registry.get(child_key)
+                        let child_ro = self
+                            .element_registry
+                            .get(child_key)
                             .and_then(|el| el.render_object());
 
                         // Notify parent element of the new child via child_mounted,
                         // passing the child's render object key so the parent can
                         // link the render object tree.
-                        let parent_render_object = self.element_registry.get(parent)
-                            .and_then(|el| el.render_object());
                         let parent_parent = self.element_registry.parent(parent);
 
                         let mut ctx = ElementContext::new(
                             parent,
                             parent_parent,
-                            parent_render_object,
                             &mut self.state,
                             &mut self.dirty,
                             &mut self.render_objects,
@@ -507,9 +517,10 @@ impl ThreeTreePipeline {
                             &mut self.child_ops,
                         );
 
-                        self.element_registry.with_element(parent, &mut ctx, |element, ctx| {
-                            element.child_mounted(child_key, slot, child_ro, ctx);
-                        });
+                        self.element_registry
+                            .with_element(parent, &mut ctx, |element, ctx| {
+                                element.child_mounted(child_key, slot, child_ro, ctx);
+                            });
                     }
                     ChildOp::Update { child, widget } => {
                         // Rebuild the existing child element with the new widget
@@ -531,15 +542,12 @@ impl ThreeTreePipeline {
     /// any child ops emitted during the rebuild.
     fn rebuild_element(&mut self, element_id: ElementKey, widget: Box<dyn Widget>) {
         let parent = self.element_registry.parent(element_id);
-        let render_object = self.element_registry.get(element_id)
-            .and_then(|el| el.render_object());
 
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
 
         let mut ctx = ElementContext::new(
             element_id,
             parent,
-            render_object,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
@@ -548,9 +556,10 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
         );
 
-        self.element_registry.with_element(element_id, &mut ctx, |element, ctx| {
-            element.rebuild(widget_as_any, ctx);
-        });
+        self.element_registry
+            .with_element(element_id, &mut ctx, |element, ctx| {
+                element.rebuild(widget_as_any, ctx);
+            });
     }
 
     /// Drain dirty signals from the channel and mark elements for rebuild.
@@ -575,15 +584,10 @@ impl ThreeTreePipeline {
             self.unmount_element_tree(child_id);
         }
 
-        // Get render object ID before accessing the element
-        let render_object_id = self.element_registry.get(element_id)
-            .and_then(|el| el.render_object());
-
         // Build context for the unmount call
         let mut ctx = ElementContext::new(
             element_id,
             parent,
-            render_object_id,
             &mut self.state,
             &mut self.dirty,
             &mut self.render_objects,
@@ -593,15 +597,16 @@ impl ThreeTreePipeline {
         );
 
         // Call unmount() via with_element
-        self.element_registry.with_element(element_id, &mut ctx, |element, ctx| {
-            // Remove render object
-            if let Some(render_id) = render_object_id {
-                ctx.remove_render_object(render_id);
-            }
+        self.element_registry
+            .with_element(element_id, &mut ctx, |element, ctx| {
+                // Remove render object
+                if let Some(render_id) = element.render_object() {
+                    ctx.remove_render_object(render_id);
+                }
 
-            // Call unmount lifecycle
-            element.unmount(ctx);
-        });
+                // Call unmount lifecycle
+                element.unmount(ctx);
+            });
 
         // Remove state
         self.state.remove(element_id);
@@ -634,94 +639,7 @@ impl ThreeTreePipeline {
         engine: &mut dyn crate::layout::LayoutEngine,
         font_system: &mut glyphon::FontSystem,
     ) {
-        let dirty_layout_count = self.dirty.layout_count();
-        let total_objects = self.render_objects.len();
-
-        log::debug!(
-            "[RetainMode] layout() - Processing {} dirty objects out of {} total",
-            dirty_layout_count,
-            total_objects
-        );
-
-        // Get the root render object
-        let root_id = match self.render_objects.root() {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Phase 1: Build Taffy tree (bottom-up: children first, then parent)
-        // The pipeline traverses children first, collects their node IDs,
-        // then passes them to the parent's layout method.
-        {
-            let mut ctx = LayoutContext::new(engine, font_system);
-            self.layout_build_recursive(root_id, &mut ctx);
-        }
-
-        // Phase 2: Compute layout with Taffy
-        if let Some(root_node) = self.get_layout_node(root_id) {
-            engine.compute(root_node, available_size, font_system);
-        }
-
-        // Phase 3: Apply computed layouts back to render objects
-        {
-            let ctx = LayoutContext::new(engine, font_system);
-            self.apply_layout_recursive(root_id, &ctx);
-        }
-
-        // Clear dirty flags
-        self.dirty.drain_layout().for_each(drop);
-
-        log::debug!("[RetainMode] layout() complete - dirty flags cleared");
-    }
-
-    /// Recursively build Taffy tree (bottom-up: children first).
-    fn layout_build_recursive(
-        &mut self,
-        id: RenderObjectKey,
-        ctx: &mut LayoutContext,
-    ) -> LayoutResult {
-        // Get children
-        let children: Vec<RenderObjectKey> = self.render_objects.get(id)
-            .map(|obj| obj.children().to_vec())
-            .unwrap_or_default();
-
-        // Layout children first (bottom-up)
-        let child_nodes: Vec<LayoutNodeKey> = children
-            .iter()
-            .map(|child_id| self.layout_build_recursive(*child_id, ctx).node)
-            .collect();
-
-        // Now layout this object with child nodes
-        if let Some(obj) = self.render_objects.get_mut(id) {
-            obj.layout(ctx, &child_nodes)
-        } else {
-            // Fallback: create empty node
-            let node = ctx.engine().create_leaf(&Layout::default());
-            LayoutResult { node, size: Size::new(0.0, 0.0) }
-        }
-    }
-
-    /// Get the layout node ID from a render object.
-    fn get_layout_node(&self, id: RenderObjectKey) -> Option<LayoutNodeKey> {
-        self.render_objects.get(id).and_then(|obj| obj.layout_node())
-    }
-
-    /// Recursively apply computed layouts.
-    fn apply_layout_recursive(&mut self, id: RenderObjectKey, ctx: &LayoutContext) {
-        // Get children first
-        let children: Vec<RenderObjectKey> = self.render_objects.get(id)
-            .map(|obj| obj.children().to_vec())
-            .unwrap_or_default();
-
-        // Apply to this object
-        if let Some(obj) = self.render_objects.get_mut(id) {
-            obj.apply_layout(ctx);
-        }
-
-        // Recursively apply to children
-        for child_id in children {
-            self.apply_layout_recursive(child_id, ctx);
-        }
+        Layouter::layout(&mut self.render_objects, &mut self.dirty, available_size, engine, font_system);
     }
 
     /// Generate render commands from the render object tree.
@@ -788,7 +706,12 @@ impl ThreeTreePipeline {
     }
 
     /// Recursively paint a render object and its children.
-    fn paint_recursive(&self, id: RenderObjectKey, ctx: &mut PaintContext, parent_absolute_position: Position<Logical, Absolute>) {
+    fn paint_recursive(
+        &self,
+        id: RenderObjectKey,
+        ctx: &mut PaintContext,
+        parent_absolute_position: Position<Logical, Absolute>,
+    ) {
         // Get the render object
         let obj = match self.render_objects.get(id) {
             Some(o) => o,
@@ -798,7 +721,8 @@ impl ThreeTreePipeline {
         // Get this object's position relative to its parent (from Taffy layout)
         // For containers, this is their position within the parent container
         // For leafs, this is their position relative to their parent container
-        let position_in_parent: Position<Logical, Relative> = obj.computed_bounds()
+        let position_in_parent: Position<Logical, Relative> = obj
+            .computed_bounds()
             .map(|b| Position::new(b.left, b.top))
             .unwrap_or(Position::zero());
 
@@ -873,9 +797,7 @@ impl ThreeTreePipeline {
             InputEvent::PointerButton { position, .. } => {
                 self.handle_pointer_event(*position, event, modifiers)
             }
-            InputEvent::Keyboard { .. } => {
-                self.handle_keyboard_event(event, modifiers)
-            }
+            InputEvent::Keyboard { .. } => self.handle_keyboard_event(event, modifiers),
             _ => None,
         }
     }
@@ -945,7 +867,11 @@ impl ThreeTreePipeline {
 
         // If no element handled the event and it's a press, clear focus
         if any_message.is_none() {
-            if let InputEvent::PointerButton { state: ButtonState::Pressed, .. } = event {
+            if let InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            } = event
+            {
                 self.focused_element = None;
             }
         }
@@ -975,7 +901,9 @@ impl ThreeTreePipeline {
             &self.dirty_sender,
         );
 
-        let any_message = self.element_registry.get_mut(focused)?
+        let any_message = self
+            .element_registry
+            .get_mut(focused)?
             .on_event(event, &mut ctx);
 
         // Handle focus requests

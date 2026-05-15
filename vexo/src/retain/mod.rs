@@ -49,6 +49,7 @@ mod reconcile;
 mod render_objects;
 mod hit_test;
 mod pipeline;
+mod layouter;
 mod global_key_registry;
 mod style;
 mod update_result;
