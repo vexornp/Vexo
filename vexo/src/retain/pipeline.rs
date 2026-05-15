@@ -39,8 +39,8 @@
 use std::any::Any;
 use std::sync::mpsc;
 
-use crate::core::{Absolute, Bounds, Logical, Point, Position, Size};
-use crate::input::{ButtonState, InputEvent, Modifiers};
+use crate::core::{Absolute, Logical, Point, Position, Size};
+use crate::input::{InputEvent, Modifiers};
 use crate::render::RenderCommand;
 
 use super::build_owner::BuildOwner;
@@ -48,7 +48,7 @@ use super::child_ops::{ChildOp, ChildOps};
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::element_context::ElementContext;
-use super::event_context::EventContext;
+use super::event_handler::EventHandler;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::layouter::Layouter;
@@ -687,7 +687,7 @@ impl ThreeTreePipeline {
     /// }
     /// ```
     pub fn hit_test(&self, position: Position<Logical, Absolute>) -> HitTestResult {
-        self.render_objects.hit_test(position)
+        EventHandler::hit_test(&self.render_objects, position)
     }
 
     /// Handle an input event.
@@ -700,135 +700,21 @@ impl ThreeTreePipeline {
     /// specific message type by the caller.
     pub fn handle_event(
         &mut self,
-        _position: Point<Logical>,
-        event: &InputEvent,
-        modifiers: Modifiers,
-    ) -> Option<Box<dyn Any>> {
-        match event {
-            InputEvent::PointerMoved { position } => {
-                self.handle_pointer_event(*position, event, modifiers)
-            }
-            InputEvent::PointerButton { position, .. } => {
-                self.handle_pointer_event(*position, event, modifiers)
-            }
-            InputEvent::Keyboard { .. } => self.handle_keyboard_event(event, modifiers),
-            _ => None,
-        }
-    }
-
-    /// Handle a pointer event (moved or button).
-    ///
-    /// Events are dispatched using Flutter-style bubbling: the event is sent
-    /// to each element in the hit test path from deepest (innermost) to
-    /// shallowest (root). The first element that handles the event stops
-    /// propagation. This allows modifier elements like GestureDetector to
-    /// intercept events before they reach the child element.
-    fn handle_pointer_event(
-        &mut self,
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
     ) -> Option<Box<dyn Any>> {
-        // Convert Point to Position (absolute window coordinates)
-        let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
-
-        // 1. Hit test to find target and build element path
-        let hit_result = self.render_objects.hit_test(absolute_position);
-
-        if !hit_result.is_hit() {
-            return None;
-        }
-
-        // 2. Get absolute bounds for context (from hit test result)
-        let bounds = hit_result.absolute_bounds().unwrap_or_default();
-
-        // 3. Bubble event up the element path (deepest to shallowest)
-        // This matches Flutter's event propagation: innermost element gets
-        // the event first, then it bubbles up to parent elements.
-        // Modifier elements like GestureDetector can intercept events
-        // before they reach the child.
-        let element_path = hit_result.element_path();
-        let mut any_message: Option<Box<dyn Any>> = None;
-
-        // Iterate from deepest (last) to shallowest (first)
-        for &element_id in element_path.iter().rev() {
-            if let Some(element) = self.element_registry.get_mut(element_id) {
-                let mut ctx = EventContext::with_build_owner(
-                    position,
-                    self.focused_element,
-                    bounds,
-                    modifiers,
-                    &mut self.state,
-                    &self.build_owner,
-                    &self.dirty_sender,
-                );
-
-                let message = element.on_event(event, &mut ctx);
-
-                // Handle focus requests from this element
-                if let Some(focus) = ctx.focus_request() {
-                    self.focused_element = Some(focus);
-                } else if ctx.should_clear_focus() {
-                    self.focused_element = None;
-                }
-
-                if message.is_some() {
-                    any_message = message;
-                    break; // Event handled - stop bubbling
-                }
-            }
-        }
-
-        // If no element handled the event and it's a press, clear focus
-        if any_message.is_none() {
-            if let InputEvent::PointerButton {
-                state: ButtonState::Pressed,
-                ..
-            } = event
-            {
-                self.focused_element = None;
-            }
-        }
-
-        any_message
-    }
-
-    /// Handle a keyboard event.
-    fn handle_keyboard_event(
-        &mut self,
-        event: &InputEvent,
-        modifiers: Modifiers,
-    ) -> Option<Box<dyn Any>> {
-        // Get focused element
-        let focused = self.focused_element?;
-
-        // Bounds not critical for keyboard events
-        let bounds = Bounds::default();
-
-        let mut ctx = EventContext::with_build_owner(
-            Point::zero(),
-            self.focused_element,
-            bounds,
-            modifiers,
+        EventHandler::handle_event(
+            &mut self.element_registry,
+            &self.render_objects,
             &mut self.state,
             &self.build_owner,
             &self.dirty_sender,
-        );
-
-        let any_message = self
-            .element_registry
-            .get_mut(focused)?
-            .on_event(event, &mut ctx);
-
-        // Handle focus requests
-        if let Some(focus) = ctx.focus_request() {
-            self.focused_element = Some(focus);
-        } else if ctx.should_clear_focus() {
-            self.focused_element = None;
-        }
-
-        // Return the message directly (already Box<dyn Any>)
-        any_message
+            &mut self.focused_element,
+            position,
+            event,
+            modifiers,
+        )
     }
 
     /// Get the currently focused element.

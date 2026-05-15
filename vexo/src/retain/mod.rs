@@ -41,6 +41,7 @@ mod id;
 mod state;
 mod element;
 mod element_context;
+mod event_handler;
 mod event_context;
 mod render_object;
 mod dirty;
