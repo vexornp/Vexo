@@ -44,15 +44,15 @@ use crate::input::{InputEvent, Modifiers};
 use crate::render::RenderCommand;
 
 use super::build_owner::BuildOwner;
-use super::child_ops::{ChildOp, ChildOps};
+use super::child_ops::ChildOps;
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
-use super::element_context::ElementContext;
 use super::event_handler::EventHandler;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::layouter::Layouter;
 use super::painter::Painter;
+use super::reconciler::Reconciler;
 use super::render_object::RenderObjectRegistry;
 use super::state::StateStorage;
 use super::widgets::Widget;
@@ -172,27 +172,16 @@ impl ThreeTreePipeline {
     /// pipeline.reconcile(Box::new(Text::new("Hello World")));
     /// ```
     pub fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
-        // Check if we have an existing root element
-        if let Some(root_id) = self.element_registry.root() {
-            // Check if the widget can update the existing element
-            let can_update = self
-                .element_registry
-                .get(root_id)
-                .map(|el| el.can_update(root_widget.as_any()))
-                .unwrap_or(false);
-
-            if can_update {
-                // Recursively reconcile the element tree
-                self.reconcile_element(root_id, root_widget);
-                return;
-            }
-
-            // Can't update existing root - unmount it
-            self.unmount_element_tree(root_id);
-        }
-
-        // Mount new root element
-        self.mount_element_tree(None, root_widget);
+        Reconciler::reconcile(
+            &mut self.element_registry,
+            &mut self.render_objects,
+            &mut self.state,
+            &mut self.dirty,
+            &mut self.build_owner,
+            &mut self.child_ops,
+            &self.dirty_sender,
+            root_widget,
+        );
     }
 
     /// Reconcile or rebuild based on current state.
@@ -203,81 +192,18 @@ impl ThreeTreePipeline {
     ///
     /// After initial mount, prefer calling `mark_needs_build()` for updates.
     pub fn update(&mut self, root_widget: Box<dyn Widget>) {
-        // First, perform any pending state-driven rebuilds (from setState)
-        self.perform_rebuilds();
-
-        log::debug!(
-            "[RetainMode] update() - elements: {}, render_objects: {}, needs_full_reconcile: {}",
-            self.element_registry.len(),
-            self.render_objects.len(),
-            self.needs_full_reconcile
-        );
-
-        if self.needs_full_reconcile || self.element_registry.root().is_none() {
-            // Full reconcile needed (initial mount or root type changed)
-            log::debug!("[RetainMode] Performing FULL reconcile");
-            self.reconcile(root_widget);
-            self.needs_full_reconcile = false;
-        } else {
-            // Check if root can be updated
-            if let Some(root_id) = self.element_registry.root() {
-                let can_update = self
-                    .element_registry
-                    .get(root_id)
-                    .map(|el| el.can_update(root_widget.as_any()))
-                    .unwrap_or(false);
-
-                if can_update {
-                    // Targeted rebuild of root
-                    log::debug!("[RetainMode] Performing TARGETED rebuild (root can update)");
-                    self.rebuild_root(root_id, root_widget);
-                } else {
-                    // Root type changed, full reconcile
-                    log::debug!("[RetainMode] Performing FULL reconcile (root type changed)");
-                    self.reconcile(root_widget);
-                }
-            } else {
-                self.reconcile(root_widget);
-            }
-        }
-
-        log::debug!(
-            "[RetainMode] After update - dirty layout: {}, dirty paint: {}",
-            self.dirty.layout_count(),
-            self.dirty.paint_count()
-        );
-    }
-
-    /// Rebuild the root element with a new widget.
-    ///
-    /// This follows the Flutter-style pattern where each element's rebuild()
-    /// method handles both updating the widget and reconciling children.
-    fn rebuild_root(&mut self, root_id: ElementKey, widget: Box<dyn Widget>) {
-        let parent = self.element_registry.parent(root_id);
-
-        log::debug!("[RetainMode] rebuild_root() - element_id: {:?}", root_id);
-
-        // Call element.rebuild() which handles both update and child reconciliation
-        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-
-        let mut ctx = ElementContext::new(
-            root_id,
-            parent,
+        Reconciler::update(
+            &mut self.element_registry,
+            &mut self.render_objects,
             &mut self.state,
             &mut self.dirty,
-            &mut self.render_objects,
-            &self.build_owner,
-            &self.dirty_sender,
+            &mut self.build_owner,
             &mut self.child_ops,
+            &self.dirty_sender,
+            &self.dirty_receiver,
+            &mut self.needs_full_reconcile,
+            root_widget,
         );
-
-        self.element_registry
-            .with_element(root_id, &mut ctx, |element, ctx| {
-                element.rebuild(widget_as_any, ctx);
-            });
-
-        // Execute any child operations emitted during rebuild
-        self.execute_child_ops();
     }
 
     /// Perform targeted rebuilds for dirty elements.
@@ -285,65 +211,30 @@ impl ThreeTreePipeline {
     /// This is the Flutter-style rebuild: only dirty elements and their
     /// subtrees are reconciled. Much more efficient than full-tree reconcile.
     pub fn perform_rebuilds(&mut self) {
-        // First, drain any dirty signals from StatefulMutable callbacks
-        self.drain_dirty_channel();
-
-        if !self.build_owner.has_pending_rebuilds() {
-            return;
-        }
-
-        // Sort by depth: parents must rebuild before children
-        let element_registry = &self.element_registry;
-        self.build_owner
-            .sort_dirty_by_depth(|id| element_registry.depth(id));
-
-        // Drain dirty elements
-        let dirty_ids: Vec<ElementKey> = self.build_owner.drain_dirty_sorted();
-
-        // Rebuild each dirty element
-        for element_id in dirty_ids {
-            // Skip if element was removed during a previous rebuild
-            if !self.element_registry.contains(element_id) {
-                continue;
-            }
-
-            // Enter build scope (cycle detection)
-            if !self.build_owner.enter_build_scope(element_id) {
-                continue;
-            }
-
-            // Get parent and render_object for context
-            let parent = self.element_registry.parent(element_id);
-
-            // Create context for the element
-            let mut ctx = ElementContext::new(
-                element_id,
-                parent,
-                &mut self.state,
-                &mut self.dirty,
-                &mut self.render_objects,
-                &self.build_owner,
-                &self.dirty_sender,
-                &mut self.child_ops,
-            );
-
-            // Rebuild from current state using with_element
-            self.element_registry
-                .with_element(element_id, &mut ctx, |element, ctx| {
-                    element.rebuild_from_state(ctx);
-                });
-
-            // Execute any child operations emitted during rebuild
-            self.execute_child_ops();
-
-            // Exit build scope
-            self.build_owner.exit_build_scope(element_id);
-        }
+        Reconciler::perform_rebuilds(
+            &mut self.element_registry,
+            &mut self.render_objects,
+            &mut self.state,
+            &mut self.dirty,
+            &mut self.build_owner,
+            &mut self.child_ops,
+            &self.dirty_sender,
+            &self.dirty_receiver,
+        );
     }
 
     /// Perform state-driven rebuilds only, without a new widget tree.
     pub fn update_state_only(&mut self) {
-        self.perform_rebuilds();
+        Reconciler::update_state_only(
+            &mut self.element_registry,
+            &mut self.render_objects,
+            &mut self.state,
+            &mut self.dirty,
+            &mut self.build_owner,
+            &mut self.child_ops,
+            &self.dirty_sender,
+            &self.dirty_receiver,
+        );
     }
 
     /// Mark an element as needing rebuild.
@@ -357,263 +248,6 @@ impl ThreeTreePipeline {
     /// Check if there are pending rebuilds.
     pub fn has_pending_rebuilds(&self) -> bool {
         self.build_owner.has_pending_rebuilds()
-    }
-
-    /// Recursively reconcile an element and its children with a new widget tree.
-    ///
-    /// This follows the Flutter-style pattern where each element's rebuild()
-    /// method handles both updating the widget and reconciling children.
-    fn reconcile_element(&mut self, element_id: ElementKey, widget: Box<dyn Widget>) {
-        let parent = self.element_registry.parent(element_id);
-
-        log::debug!(
-            "[RetainMode] reconcile_element() - element_id: {:?}",
-            element_id
-        );
-
-        // Call element.rebuild() which handles both update and child reconciliation.
-        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-
-        let mut ctx = ElementContext::new(
-            element_id,
-            parent,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.render_objects,
-            &self.build_owner,
-            &self.dirty_sender,
-            &mut self.child_ops,
-        );
-
-        self.element_registry
-            .with_element(element_id, &mut ctx, |element, ctx| {
-                element.rebuild(widget_as_any, ctx);
-            });
-
-        // Execute any child operations emitted during rebuild
-        self.execute_child_ops();
-    }
-
-    /// Mount an element tree from a widget.
-    ///
-    /// Creates an element from the widget, inserts it into the registry,
-    /// calls mount() via with_element, then executes any child ops that
-    /// the element emitted during mount (which recursively mounts children).
-    ///
-    /// Note: This does NOT add the element to its parent's children list
-    /// or call child_mounted. The caller is responsible for that.
-    fn mount_element_tree(
-        &mut self,
-        parent: Option<ElementKey>,
-        widget: Box<dyn Widget>,
-    ) -> ElementKey {
-        // Create the element from the widget
-        let element = widget.create_element();
-
-        // Insert into registry (does NOT call mount — we handle lifecycle here)
-        let key = self.element_registry.insert(element, parent);
-
-        // Build context for the mount call
-        let mut ctx = ElementContext::new(
-            key,
-            parent,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.render_objects,
-            &self.build_owner,
-            &self.dirty_sender,
-            &mut self.child_ops,
-        );
-
-        // Call mount() on the element via with_element
-        self.element_registry
-            .with_element(key, &mut ctx, |element, ctx| {
-                element.mount(ctx);
-            });
-
-        // After mount, the element may have created a render object.
-        // If this is the root element (no parent), set it as the render object root.
-        if parent.is_none() {
-            if let Some(ro_key) = self
-                .element_registry
-                .get(key)
-                .and_then(|el| el.render_object())
-            {
-                self.render_objects.set_root(ro_key);
-            }
-        }
-
-        // Execute any child ops the element emitted during mount
-        // This recursively mounts children (who may emit their own child ops, etc.)
-        self.execute_child_ops();
-
-        // After child ops are processed, the element's render_object() may have changed
-        // (e.g., StatefulElement delegates to its child's render object after child_mounted).
-        // Re-check the root render object if this is the root element.
-        if parent.is_none() {
-            if let Some(ro_key) = self
-                .element_registry
-                .get(key)
-                .and_then(|el| el.render_object())
-            {
-                self.render_objects.set_root(ro_key);
-            }
-        }
-
-        key
-    }
-
-    /// Drain and execute all pending child operations.
-    ///
-    /// This method processes ChildOps emitted by element lifecycle methods
-    /// (mount, rebuild, update). Each operation is executed in order:
-    ///
-    /// - `Inflate`: Mounts a new child element tree, adds it to the parent's
-    ///   children list, and notifies the parent via `child_mounted`.
-    /// - `Update`: Rebuilds an existing child element with a new widget.
-    /// - `Unmount`: Unmounts a child element tree.
-    ///
-    /// Because element methods can emit ops recursively (e.g., mount emits
-    /// Inflate ops, which cause more mount calls that emit more ops), this
-    /// method loops until no ops remain.
-    fn execute_child_ops(&mut self) {
-        loop {
-            let ops = self.child_ops.drain();
-            if ops.is_empty() {
-                break;
-            }
-
-            for op in ops {
-                match op {
-                    ChildOp::Inflate {
-                        slot,
-                        widget,
-                        parent,
-                    } => {
-                        // Mount the new child element tree
-                        let child_key = self.mount_element_tree(Some(parent), widget);
-
-                        // Add child to parent's children list at the given slot
-                        self.element_registry.add_child(parent, child_key, slot);
-
-                        // Get the child's render object key for linking
-                        let child_ro = self
-                            .element_registry
-                            .get(child_key)
-                            .and_then(|el| el.render_object());
-
-                        // Notify parent element of the new child via child_mounted,
-                        // passing the child's render object key so the parent can
-                        // link the render object tree.
-                        let parent_parent = self.element_registry.parent(parent);
-
-                        let mut ctx = ElementContext::new(
-                            parent,
-                            parent_parent,
-                            &mut self.state,
-                            &mut self.dirty,
-                            &mut self.render_objects,
-                            &self.build_owner,
-                            &self.dirty_sender,
-                            &mut self.child_ops,
-                        );
-
-                        self.element_registry
-                            .with_element(parent, &mut ctx, |element, ctx| {
-                                element.child_mounted(child_key, slot, child_ro, ctx);
-                            });
-                    }
-                    ChildOp::Update { child, widget } => {
-                        // Rebuild the existing child element with the new widget
-                        self.rebuild_element(child, widget);
-                    }
-                    ChildOp::Unmount { child } => {
-                        // Unmount the child element tree
-                        self.unmount_element_tree(child);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Rebuild a single element with a new widget.
-    ///
-    /// This is used by execute_child_ops to handle ChildOp::Update.
-    /// It calls element.rebuild() via with_element and then executes
-    /// any child ops emitted during the rebuild.
-    fn rebuild_element(&mut self, element_id: ElementKey, widget: Box<dyn Widget>) {
-        let parent = self.element_registry.parent(element_id);
-
-        let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
-
-        let mut ctx = ElementContext::new(
-            element_id,
-            parent,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.render_objects,
-            &self.build_owner,
-            &self.dirty_sender,
-            &mut self.child_ops,
-        );
-
-        self.element_registry
-            .with_element(element_id, &mut ctx, |element, ctx| {
-                element.rebuild(widget_as_any, ctx);
-            });
-    }
-
-    /// Drain dirty signals from the channel and mark elements for rebuild.
-    ///
-    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
-    /// the element ID through the channel. This method drains the channel
-    /// and calls `mark_needs_build()` on the BuildOwner for each one.
-    fn drain_dirty_channel(&mut self) {
-        while let Ok(element_id) = self.dirty_receiver.try_recv() {
-            self.build_owner.mark_needs_build(element_id);
-        }
-    }
-
-    /// Unmount an element and all its descendants.
-    fn unmount_element_tree(&mut self, element_id: ElementKey) {
-        // Get children and parent before unmounting
-        let children = self.element_registry.children(element_id).to_vec();
-        let parent = self.element_registry.parent(element_id);
-
-        // Recursively unmount children first
-        for child_id in children {
-            self.unmount_element_tree(child_id);
-        }
-
-        // Build context for the unmount call
-        let mut ctx = ElementContext::new(
-            element_id,
-            parent,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.render_objects,
-            &self.build_owner,
-            &self.dirty_sender,
-            &mut self.child_ops,
-        );
-
-        // Call unmount() via with_element
-        self.element_registry
-            .with_element(element_id, &mut ctx, |element, ctx| {
-                // Remove render object
-                if let Some(render_id) = element.render_object() {
-                    ctx.remove_render_object(render_id);
-                }
-
-                // Call unmount lifecycle
-                element.unmount(ctx);
-            });
-
-        // Remove state
-        self.state.remove(element_id);
-
-        // Unmount from registry (removes from parent's children list, etc.)
-        self.element_registry.unmount(element_id);
     }
 
     /// Perform layout using Taffy layout engine.

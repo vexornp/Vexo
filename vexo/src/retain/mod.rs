@@ -52,6 +52,7 @@ mod hit_test;
 mod pipeline;
 mod layouter;
 mod painter;
+mod reconciler;
 mod global_key_registry;
 mod style;
 mod update_result;
