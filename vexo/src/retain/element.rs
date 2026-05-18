@@ -106,7 +106,7 @@ impl ElementRegistry {
     }
 
     /// Add a child to a parent's children list at the given slot position.
-    /// Called by the pipeline after executing a ChildOp::Inflate.
+    /// Called by the reconciler after executing a ChildOp::Inflate.
     pub fn add_child(&mut self, parent: ElementKey, child: ElementKey, slot: Option<usize>) {
         let children = self.children_map.entry(parent).expect("entry for existing parent key").or_default();
         if let Some(idx) = slot {

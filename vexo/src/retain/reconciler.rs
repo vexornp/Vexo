@@ -390,7 +390,8 @@ impl Reconciler {
     /// the element emitted during mount (which recursively mounts children).
     ///
     /// Note: This does NOT add the element to its parent's children list
-    /// or call child_mounted. The caller is responsible for that.
+    /// or call child_mounted to link the render object tree.
+    /// The caller is responsible for that.
     pub(crate) fn mount_element_tree(
         element_registry: &mut ElementRegistry,
         render_objects: &mut RenderObjectRegistry,
@@ -450,7 +451,7 @@ impl Reconciler {
         );
 
         // After child ops are processed, the element's render_object() may have changed
-        // (e.g., StatefulElement delegates to its child's render object after child_mounted).
+        // (e.g., StatefulElement delegates to its child's render object via child_mounted).
         // Re-check the root render object if this is the root element.
         if parent.is_none() {
             if let Some(ro_key) = element_registry
@@ -520,9 +521,8 @@ impl Reconciler {
                             .get(child_key)
                             .and_then(|el| el.render_object());
 
-                        // Notify parent element of the new child via child_mounted,
-                        // passing the child's render object key so the parent can
-                        // link the render object tree.
+                        // Call child_mounted to link the child's render object
+                        // into the parent's render object tree.
                         let parent_parent = element_registry.parent(parent);
 
                         let mut ctx = ElementContext::new(
