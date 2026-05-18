@@ -176,6 +176,7 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            Vec::new(),
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -204,6 +205,7 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            Vec::new(),
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -235,6 +237,7 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            Vec::new(),
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -263,6 +266,7 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
+            Vec::new(),
             &mut state,
             &mut dirty,
             &mut render_objects,

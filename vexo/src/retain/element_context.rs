@@ -16,6 +16,7 @@ use crate::retain::state::StateStorage;
 pub struct ElementContext<'a> {
     pub element_id: ElementKey,
     pub parent: Option<ElementKey>,
+    pub children: Vec<ElementKey>,
     pub state: &'a mut StateStorage,
     pub dirty: &'a mut DirtyTracking,
     pub render_objects: &'a mut RenderObjectRegistry,
@@ -28,6 +29,7 @@ impl<'a> ElementContext<'a> {
     pub fn new(
         element_id: ElementKey,
         parent: Option<ElementKey>,
+        children: Vec<ElementKey>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
         render_objects: &'a mut RenderObjectRegistry,
@@ -38,6 +40,7 @@ impl<'a> ElementContext<'a> {
         Self {
             element_id,
             parent,
+            children,
             state,
             dirty,
             render_objects,
@@ -45,6 +48,14 @@ impl<'a> ElementContext<'a> {
             dirty_sender,
             child_ops,
         }
+    }
+
+    /// Get the children of this element.
+    ///
+    /// Set by the reconciler before calling element lifecycle methods.
+    /// Elements use this instead of storing children internally.
+    pub fn children(&self) -> &[ElementKey] {
+        &self.children
     }
 
     // -- Child operations (emit commands, pipeline executes later) --

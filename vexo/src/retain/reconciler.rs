@@ -229,6 +229,7 @@ impl Reconciler {
         let mut ctx = ElementContext::new(
             root_id,
             parent,
+            element_registry.children(root_id).to_vec(),
             state,
             dirty,
             render_objects,
@@ -299,6 +300,7 @@ impl Reconciler {
             let mut ctx = ElementContext::new(
                 element_id,
                 parent,
+                element_registry.children(element_id).to_vec(),
                 state,
                 dirty,
                 render_objects,
@@ -356,6 +358,7 @@ impl Reconciler {
         let mut ctx = ElementContext::new(
             element_id,
             parent,
+            element_registry.children(element_id).to_vec(),
             state,
             dirty,
             render_objects,
@@ -409,6 +412,7 @@ impl Reconciler {
         let mut ctx = ElementContext::new(
             key,
             parent,
+            Vec::new(), // Newly mounted elements have no children yet
             state,
             dirty,
             render_objects,
@@ -524,6 +528,7 @@ impl Reconciler {
                         let mut ctx = ElementContext::new(
                             parent,
                             parent_parent,
+                            element_registry.children(parent).to_vec(),
                             state,
                             dirty,
                             render_objects,
@@ -591,6 +596,7 @@ impl Reconciler {
         let mut ctx = ElementContext::new(
             element_id,
             parent,
+            element_registry.children(element_id).to_vec(),
             state,
             dirty,
             render_objects,
@@ -634,7 +640,7 @@ impl Reconciler {
         let parent = element_registry.parent(element_id);
 
         // Recursively unmount children first
-        for child_id in children {
+        for child_id in &children {
             Self::unmount_element_tree(
                 element_registry,
                 render_objects,
@@ -643,7 +649,7 @@ impl Reconciler {
                 build_owner,
                 child_ops,
                 dirty_sender,
-                child_id,
+                *child_id,
             );
         }
 
@@ -651,6 +657,7 @@ impl Reconciler {
         let mut ctx = ElementContext::new(
             element_id,
             parent,
+            children,
             state,
             dirty,
             render_objects,

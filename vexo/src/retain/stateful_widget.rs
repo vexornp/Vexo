@@ -619,6 +619,7 @@ mod tests {
         let mut ctx = ElementContext::new(
             element_id,
             None,
+            Vec::new(),
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -647,6 +648,7 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
+                Vec::new(),
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
@@ -666,6 +668,7 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
+                Vec::new(),
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
@@ -692,6 +695,7 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
+                Vec::new(),
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
@@ -710,6 +714,7 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
+                Vec::new(),
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
