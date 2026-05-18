@@ -192,7 +192,6 @@ pub struct DecoratedContainerElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
-    child_element: Option<ElementKey>,
 }
 
 impl DecoratedContainerElement {
@@ -203,7 +202,6 @@ impl DecoratedContainerElement {
             key: None,
             render_object: None,
             widget: None,
-            child_element: None,
         }
     }
 
@@ -217,12 +215,6 @@ impl DecoratedContainerElement {
     #[allow(dead_code)]
     pub fn id(&self) -> Option<ElementKey> {
         self.id
-    }
-
-    /// Get the child element ID.
-    #[allow(dead_code)]
-    pub fn child_element(&self) -> Option<ElementKey> {
-        self.child_element
     }
 
     /// Get the child widget from the stored widget.
@@ -275,11 +267,11 @@ impl RenderObjectElement for DecoratedContainerElement {
 // Implement SingleChildRenderObjectElement trait
 impl SingleChildRenderObjectElement for DecoratedContainerElement {
     fn child_element(&self) -> Option<ElementKey> {
-        self.child_element
+        None
     }
 
-    fn set_child_element(&mut self, child: Option<ElementKey>) {
-        self.child_element = child;
+    fn set_child_element(&mut self, _child: Option<ElementKey>) {
+        // No-op: child tracking is now handled by ElementRegistry::children_map
     }
 }
 
@@ -291,7 +283,7 @@ impl Element for DecoratedContainerElement {
 
         // Mount single child via child_ops (emit Inflate command)
         // The pipeline will execute it after mount() returns,
-        // then call child_mounted() to notify us of the new child's key.
+        // then call child_mounted() to link the child's render object.
         if let Some(widget) = &self.widget {
             if let Some(child_widget) = widget.child() {
                 context.inflate_child(None, child_widget.clone_boxed());
@@ -355,27 +347,26 @@ impl Element for DecoratedContainerElement {
             }
 
             // Reconcile single child via child_ops
+            let old_child = context.children().first().copied();
             if let Some(child_widget) = self.get_child_widget() {
-                match self.child_element {
-                    Some(old_child) => {
+                match old_child {
+                    Some(old_child_key) => {
                         // Update existing child
-                        context.update_child(old_child, child_widget.clone_boxed());
+                        context.update_child(old_child_key, child_widget.clone_boxed());
                     }
                     None => {
                         // Inflate new child
                         context.inflate_child(None, child_widget.clone_boxed());
                     }
                 }
-            } else if let Some(old_child) = self.child_element {
+            } else if let Some(old_child_key) = old_child {
                 // No new child widget - unmount the old child
-                context.unmount_child(old_child);
-                self.child_element = None;
+                context.unmount_child(old_child_key);
             }
         }
     }
 
-    fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
-        self.child_element = Some(child);
+    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
