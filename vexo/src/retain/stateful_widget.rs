@@ -281,10 +281,7 @@ pub struct StatefulElement<W: StatefulWidget> {
     /// The widget key (if any).
     key: Option<WidgetKey>,
 
-    /// The child element ID (from build()).
-    child_element_id: Option<ElementKey>,
-
-    /// The render object ID (from child, if any).
+    /// The render object ID (delegated from child).
     render_object_id: Option<RenderObjectKey>,
 }
 
@@ -295,7 +292,6 @@ impl<W: StatefulWidget> StatefulElement<W> {
             widget,
             id: None,
             key: None,
-            child_element_id: None,
             render_object_id: None,
         }
     }
@@ -388,10 +384,11 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         };
 
         // Reconcile child via child_ops
-        match self.child_element_id {
-            Some(old_child) => {
+        let old_child = context.children().first().copied();
+        match old_child {
+            Some(old_child_key) => {
                 // Update existing child
-                context.update_child(old_child, child_widget);
+                context.update_child(old_child_key, child_widget);
             }
             None => {
                 // Inflate new child
@@ -416,8 +413,8 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         }
 
         // Unmount child element via child_ops
-        if let Some(child_id) = self.child_element_id {
-            context.unmount_child(child_id);
+        if let Some(child_key) = context.children().first().copied() {
+            context.unmount_child(child_key);
         }
 
         // Remove state from storage
@@ -438,8 +435,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         widget.downcast_ref::<W>().is_some()
     }
 
-    fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, _context: &mut ElementContext) {
-        self.child_element_id = Some(child);
+    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, _context: &mut ElementContext) {
         // StatefulElement delegates its render_object_id to its child's render object
         self.render_object_id = child_ro;
     }
@@ -464,10 +460,11 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         };
 
         // Reconcile child via child_ops
-        match self.child_element_id {
-            Some(old_child) => {
+        let old_child = context.children().first().copied();
+        match old_child {
+            Some(old_child_key) => {
                 // Update existing child
-                context.update_child(old_child, child_widget);
+                context.update_child(old_child_key, child_widget);
             }
             None => {
                 // Inflate new child
