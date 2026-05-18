@@ -171,7 +171,7 @@ impl ThreeTreePipeline {
     /// // Updated widget tree (reconciliation preserves state for matching elements)
     /// pipeline.reconcile(Box::new(Text::new("Hello World")));
     /// ```
-    pub fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
+    pub(crate) fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
         Reconciler::reconcile(
             &mut self.element_registry,
             &mut self.render_objects,
@@ -212,20 +212,6 @@ impl ThreeTreePipeline {
     /// subtrees are reconciled. Much more efficient than full-tree reconcile.
     pub fn perform_rebuilds(&mut self) {
         Reconciler::perform_rebuilds(
-            &mut self.element_registry,
-            &mut self.render_objects,
-            &mut self.state,
-            &mut self.dirty,
-            &mut self.build_owner,
-            &mut self.child_ops,
-            &self.dirty_sender,
-            &self.dirty_receiver,
-        );
-    }
-
-    /// Perform state-driven rebuilds only, without a new widget tree.
-    pub fn update_state_only(&mut self) {
-        Reconciler::update_state_only(
             &mut self.element_registry,
             &mut self.render_objects,
             &mut self.state,

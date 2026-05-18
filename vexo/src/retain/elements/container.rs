@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementKey, ElementRegistry, RenderObjectKey, Widget, UpdateResult};
+use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::elements::{RenderObjectElement, MultiChildRenderObjectElement};
 use crate::retain::key::WidgetKey;
 
@@ -157,14 +157,6 @@ impl Element for ContainerElement {
         // Children are unmounted by the registry
     }
 
-    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
-        for &child_id in &self.children {
-            if let Some(child) = registry.get(child_id) {
-                visitor(child);
-            }
-        }
-    }
-
     fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
@@ -185,10 +177,6 @@ impl Element for ContainerElement {
         // Container elements don't handle events themselves
         // Hit testing finds the specific child element
         None
-    }
-
-    fn add_child(&mut self, child_id: ElementKey) {
-        self.children.push(child_id);
     }
 
     fn rebuild(
@@ -245,10 +233,6 @@ impl Element for ContainerElement {
             // Truncate children list (unmount ops will remove from registry)
             self.children.truncate(new_len);
         }
-    }
-
-    fn has_children(&self) -> bool {
-        true
     }
 
     fn child_mounted(&mut self, child: ElementKey, slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {

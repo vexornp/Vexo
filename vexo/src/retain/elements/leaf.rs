@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use crate::retain::{Element, ElementContext, ElementKey, ElementRegistry, RenderObjectKey, Widget};
+use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget};
 use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
 
@@ -126,10 +126,6 @@ impl Element for LeafRenderObjectElement {
         self.unmount_render_object(context);
     }
 
-    fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {
-        // Leaf elements have no children
-    }
-
     fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
@@ -180,7 +176,6 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
-            None,
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -208,7 +203,6 @@ mod tests {
         let mut child_ops = ChildOps::new();
         let mut context = ElementContext::new(
             make_element_key(),
-            None,
             None,
             &mut state,
             &mut dirty,
@@ -241,7 +235,6 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
-            None,
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -270,7 +263,6 @@ mod tests {
         let mut context = ElementContext::new(
             make_element_key(),
             None,
-            None,
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -298,21 +290,6 @@ mod tests {
         assert!(element.id().is_none());
         assert!(element.widget_key().is_none());
         assert!(element.render_object().is_none());
-    }
-
-    #[test]
-    fn test_leaf_element_no_children() {
-        use crate::retain::element::ElementRegistry;
-
-        let element = LeafRenderObjectElement::new();
-        let registry = ElementRegistry::new();
-        let mut count = 0;
-
-        element.visit_children(&registry, &mut |_child| {
-            count += 1;
-        });
-
-        assert_eq!(count, 0);
     }
 
     #[test]

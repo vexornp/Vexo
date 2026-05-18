@@ -11,7 +11,7 @@ use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::retain::{
-    Element, ElementContext, ElementKey, ElementRegistry, EventContext,
+    Element, ElementContext, ElementKey, EventContext,
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
     RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
 };
@@ -309,14 +309,6 @@ impl Element for DecoratedContainerElement {
         self.unmount_render_object(context);
     }
 
-    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
-        if let Some(child_id) = self.child_element {
-            if let Some(child) = registry.get(child_id) {
-                visitor(child);
-            }
-        }
-    }
-
     fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object
     }
@@ -336,10 +328,6 @@ impl Element for DecoratedContainerElement {
     ) -> Option<Box<dyn Any>> {
         // DecoratedContainer doesn't handle events itself
         None
-    }
-
-    fn add_child(&mut self, child_id: ElementKey) {
-        self.child_element = Some(child_id);
     }
 
     fn rebuild(
@@ -384,10 +372,6 @@ impl Element for DecoratedContainerElement {
                 self.child_element = None;
             }
         }
-    }
-
-    fn has_children(&self) -> bool {
-        self.child_element.is_some()
     }
 
     fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {

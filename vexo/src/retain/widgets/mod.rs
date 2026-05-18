@@ -136,7 +136,7 @@ pub trait Widget: Any {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retain::element::{Element, ElementRegistry};
+    use crate::retain::element::Element;
     use crate::retain::key::{Key, WidgetKey};
     use crate::retain::{LayoutContext, RenderObject};
     use crate::layout::TaffyLayoutEngine;
@@ -197,7 +197,6 @@ mod tests {
         fn mount(&mut self, _context: &mut crate::retain::ElementContext) {}
         fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut crate::retain::ElementContext) {}
         fn unmount(&mut self, _context: &mut crate::retain::ElementContext) {}
-        fn visit_children(&self, _registry: &ElementRegistry, _visitor: &mut dyn FnMut(&dyn Element)) {}
         fn render_object(&self) -> Option<crate::retain::RenderObjectKey> {
             None
         }

@@ -34,7 +34,7 @@ impl Reconciler {
     /// 4. Unmounts elements for removed widgets
     /// 5. Creates/destroys render objects accordingly
     /// 6. Marks affected render objects as dirty
-    pub fn reconcile(
+    pub(crate) fn reconcile(
         element_registry: &mut ElementRegistry,
         render_objects: &mut RenderObjectRegistry,
         state: &mut StateStorage,
@@ -326,29 +326,6 @@ impl Reconciler {
             // Exit build scope
             build_owner.exit_build_scope(element_id);
         }
-    }
-
-    /// Perform state-driven rebuilds only, without a new widget tree.
-    pub fn update_state_only(
-        element_registry: &mut ElementRegistry,
-        render_objects: &mut RenderObjectRegistry,
-        state: &mut StateStorage,
-        dirty: &mut DirtyTracking,
-        build_owner: &mut BuildOwner,
-        child_ops: &mut ChildOps,
-        dirty_sender: &mpsc::Sender<ElementKey>,
-        dirty_receiver: &mpsc::Receiver<ElementKey>,
-    ) {
-        Self::perform_rebuilds(
-            element_registry,
-            render_objects,
-            state,
-            dirty,
-            build_owner,
-            child_ops,
-            dirty_sender,
-            dirty_receiver,
-        );
     }
 
     /// Recursively reconcile an element and its children with a new widget tree.

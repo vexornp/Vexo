@@ -26,9 +26,6 @@ pub trait Element {
     /// Called when element is removed from the tree.
     fn unmount(&mut self, context: &mut ElementContext);
 
-    /// Visit children for traversal.
-    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element));
-
     /// Get associated render object (if any).
     fn render_object(&self) -> Option<super::id::RenderObjectKey>;
 
@@ -47,9 +44,6 @@ pub trait Element {
         None
     }
 
-    /// Add a child element key.
-    fn add_child(&mut self, _child_key: ElementKey) {}
-
     /// Rebuild this element with a new widget.
     fn rebuild(
         &mut self,
@@ -59,16 +53,14 @@ pub trait Element {
         self.update(new_widget, context);
     }
 
-    /// Check if this element has children that need reconciliation.
-    fn has_children(&self) -> bool {
-        false
-    }
-
     /// Called by the pipeline after a ChildOp::Inflate is executed,
     /// notifying the parent of the new child's key and render object.
     /// Elements that track children internally should override this.
     /// The `child_ro` parameter is the child's render object key (if any),
     /// used for linking the render object tree.
+    ///
+    /// TODO: This overlaps with rebuild() — elements that override rebuild()
+    /// already manage their children there. Consider removing in a future pass.
     fn child_mounted(&mut self, _child: ElementKey, _slot: Option<usize>, _child_ro: Option<super::id::RenderObjectKey>, _context: &mut ElementContext) {}
 
     /// Rebuild this element from its current state (without a new widget).
