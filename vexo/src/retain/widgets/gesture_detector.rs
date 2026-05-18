@@ -155,7 +155,6 @@ pub struct GestureDetectorElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
-    child_element: Option<ElementKey>,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
 }
@@ -168,7 +167,6 @@ impl GestureDetectorElement {
             key: None,
             render_object: None,
             widget: None,
-            child_element: None,
             on_press: None,
             on_release: None,
         }
@@ -238,11 +236,11 @@ impl RenderObjectElement for GestureDetectorElement {
 // Implement SingleChildRenderObjectElement trait
 impl SingleChildRenderObjectElement for GestureDetectorElement {
     fn child_element(&self) -> Option<ElementKey> {
-        self.child_element
+        None
     }
 
-    fn set_child_element(&mut self, child: Option<ElementKey>) {
-        self.child_element = child;
+    fn set_child_element(&mut self, _child: Option<ElementKey>) {
+        // No-op: child tracking is done via ElementRegistry::children_map
     }
 }
 
@@ -254,7 +252,7 @@ impl Element for GestureDetectorElement {
 
         // Mount single child via child_ops (emit Inflate command)
         // The pipeline will execute it after mount() returns,
-        // then call child_mounted() to notify us of the new child's key.
+        // then call child_mounted() to link the child's render object.
         if let Some(child_widget) = self.get_child_widget() {
             context.inflate_child(None, child_widget.clone_boxed());
         }
@@ -324,26 +322,25 @@ impl Element for GestureDetectorElement {
 
             // Reconcile single child via child_ops
             if let Some(child_widget) = self.get_child_widget() {
-                match self.child_element {
-                    Some(old_child) => {
+                let old_child = context.children().first().copied();
+                match old_child {
+                    Some(old_child_key) => {
                         // Update existing child
-                        context.update_child(old_child, child_widget.clone_boxed());
+                        context.update_child(old_child_key, child_widget.clone_boxed());
                     }
                     None => {
                         // Inflate new child
                         context.inflate_child(None, child_widget.clone_boxed());
                     }
                 }
-            } else if let Some(old_child) = self.child_element {
+            } else if let Some(old_child_key) = context.children().first().copied() {
                 // No new child widget - unmount the old child
-                context.unmount_child(old_child);
-                self.child_element = None;
+                context.unmount_child(old_child_key);
             }
         }
     }
 
-    fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
-        self.child_element = Some(child);
+    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
