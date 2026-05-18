@@ -53,15 +53,15 @@ pub trait Element {
         self.update(new_widget, context);
     }
 
-    /// Called by the pipeline after a ChildOp::Inflate is executed,
-    /// notifying the parent of the new child's key and render object.
-    /// Elements that track children internally should override this.
-    /// The `child_ro` parameter is the child's render object key (if any),
-    /// used for linking the render object tree.
+    /// Called by the reconciler after a ChildOp::Inflate is executed,
+    /// to link the child's render object into the parent's render object tree.
     ///
-    /// TODO: This overlaps with rebuild() — elements that override rebuild()
-    /// already manage their children there. Consider removing in a future pass.
-    fn child_mounted(&mut self, _child: ElementKey, _slot: Option<usize>, _child_ro: Option<super::id::RenderObjectKey>, _context: &mut ElementContext) {}
+    /// Elements that own render objects and have children should override this
+    /// to connect the child's render object to their own.
+    ///
+    /// The `child_ro` parameter is the child's render object key (if any).
+    /// The `slot` parameter indicates the position for multi-child elements.
+    fn child_mounted(&mut self, _slot: Option<usize>, _child_ro: Option<super::id::RenderObjectKey>, _context: &mut ElementContext) {}
 
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}

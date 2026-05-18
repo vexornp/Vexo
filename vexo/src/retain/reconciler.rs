@@ -533,7 +533,7 @@ impl Reconciler {
                         );
 
                         element_registry.with_element(parent, &mut ctx, |element, ctx| {
-                            element.child_mounted(child_key, slot, child_ro, ctx);
+                            element.child_mounted(slot, child_ro, ctx);
                         });
                     }
                     ChildOp::Update { child, widget } => {
