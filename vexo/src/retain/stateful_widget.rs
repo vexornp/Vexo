@@ -12,7 +12,10 @@ use super::element::Element;
 use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
+use super::widgets::TextEdit;
+use super::EventContext;
 use crate::core::Logical;
+use crate::input::InputEvent;
 use crate::render::RenderCommand;
 
 // ============================================================================
@@ -471,6 +474,40 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
                 context.inflate_child(None, child_widget);
             }
         }
+    }
+
+    fn on_event(
+        &mut self,
+        event: &InputEvent,
+        context: &mut EventContext,
+    ) -> Option<Box<dyn Any>> {
+        // For keyboard events, check if this element is focused
+        if let InputEvent::Keyboard { .. } = event {
+            if let Some(id) = self.id {
+                if context.is_focused(id) {
+                    // Delegate to the widget's handle_event if it's a TextEdit
+                    if let Some(text_edit) = self.widget.as_any().downcast_ref::<TextEdit>() {
+                        return text_edit.handle_event(event, context);
+                    }
+                }
+            }
+        }
+
+        // For pointer events (click to focus), check if pointer is inside
+        if let InputEvent::PointerButton {
+            state: crate::input::ButtonState::Pressed,
+            ..
+        } = event
+        {
+            if context.is_pointer_inside() {
+                if let Some(id) = self.id {
+                    context.request_focus(id);
+                    return Some(Box::new(()));
+                }
+            }
+        }
+
+        None
     }
 }
 

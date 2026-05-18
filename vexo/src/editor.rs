@@ -1,5 +1,5 @@
 use crate::core::{Logical, Size};
-use glyphon::{Edit, FontSystem};
+use glyphon::{Buffer, Edit, FontSystem};
 
 pub struct Editor {
     raw: glyphon::Editor<'static>,
@@ -23,6 +23,17 @@ impl Editor {
         self.raw.with_buffer_mut(|buffer| {
             buffer.set_size(font_system, Some(size.width), Some(size.height));
         });
+    }
+
+    /// Apply a mutable operation to the underlying buffer.
+    ///
+    /// This exposes `glyphon::Editor::with_buffer_mut` for operations
+    /// like `set_text` that need direct buffer access.
+    pub fn with_buffer_mut<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&mut Buffer) -> T,
+    {
+        self.raw.with_buffer_mut(f)
     }
 
     pub fn action(&mut self, font_system: &mut FontSystem, action: glyphon::Action) {

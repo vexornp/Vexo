@@ -97,7 +97,7 @@ pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, EmptyRe
 
 pub use child_ops::{ChildOp, ChildOps};
 
-pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector};
+pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, TextEditState, TextEditingController};
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject};
 pub use pipeline::ThreeTreePipeline;

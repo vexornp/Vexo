@@ -7,6 +7,7 @@ mod container;
 mod decorated_container;
 mod gesture_detector;
 mod text;
+mod text_edit;
 
 use std::any::Any;
 
@@ -19,6 +20,7 @@ pub use container::{Column, Row};
 pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
 pub use text::Text;
+pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use super::{Key, GlobalKey};
 
 /// Immutable widget configuration - rebuilt each frame.
