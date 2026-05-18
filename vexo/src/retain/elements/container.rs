@@ -22,7 +22,6 @@ use crate::retain::key::WidgetKey;
 pub struct ContainerElement {
     id: Option<ElementKey>,
     key: Option<WidgetKey>,
-    children: Vec<ElementKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
 }
@@ -33,7 +32,6 @@ impl ContainerElement {
         Self {
             id: None,
             key: None,
-            children: Vec::new(),
             render_object: None,
             widget: None,
         }
@@ -44,7 +42,6 @@ impl ContainerElement {
         Self {
             id: None,
             key,
-            children: Vec::new(),
             render_object: None,
             widget: None,
         }
@@ -61,11 +58,6 @@ impl ContainerElement {
     /// Get the element ID.
     pub fn id(&self) -> Option<ElementKey> {
         self.id
-    }
-
-    /// Get the children.
-    pub fn children(&self) -> &[ElementKey] {
-        &self.children
     }
 }
 
@@ -113,15 +105,15 @@ impl RenderObjectElement for ContainerElement {
 // Implement MultiChildRenderObjectElement trait
 impl MultiChildRenderObjectElement for ContainerElement {
     fn child_elements(&self) -> &[ElementKey] {
-        &self.children
+        &[]
     }
 
-    fn set_child_elements(&mut self, children: Vec<ElementKey>) {
-        self.children = children;
+    fn set_child_elements(&mut self, _children: Vec<ElementKey>) {
+        // No-op: children are tracked in ElementRegistry, not stored locally
     }
 
-    fn add_child_element(&mut self, child: ElementKey) {
-        self.children.push(child);
+    fn add_child_element(&mut self, _child: ElementKey) {
+        // No-op: children are tracked in ElementRegistry, not stored locally
     }
 }
 
@@ -133,7 +125,7 @@ impl Element for ContainerElement {
 
         // Mount children via child_ops (emit Inflate commands)
         // The pipeline will execute them after mount() returns,
-        // then call child_mounted() to notify us of each new child's key.
+        // then call child_mounted() to link each child's render object.
         if let Some(widget) = &self.widget {
             let child_widgets: Vec<Box<dyn Widget>> = widget.children()
                 .iter()
@@ -212,13 +204,14 @@ impl Element for ContainerElement {
             // - Update existing children at matching positions
             // - Inflate new children for positions beyond old count
             // - Unmount excess old children
-            let old_len = self.children.len();
+            let old_children = context.children().to_vec();
+            let old_len = old_children.len();
             let new_len = new_child_widgets.len();
 
             for (i, new_child_widget) in new_child_widgets.into_iter().enumerate() {
                 if i < old_len {
                     // Update existing child
-                    context.update_child(self.children[i], new_child_widget);
+                    context.update_child(old_children[i], new_child_widget);
                 } else {
                     // Inflate new child
                     context.inflate_child(Some(i), new_child_widget);
@@ -227,25 +220,12 @@ impl Element for ContainerElement {
 
             // Unmount excess children (in reverse order to preserve indices)
             for i in (new_len..old_len).rev() {
-                context.unmount_child(self.children[i]);
+                context.unmount_child(old_children[i]);
             }
-
-            // Truncate children list (unmount ops will remove from registry)
-            self.children.truncate(new_len);
         }
     }
 
-    fn child_mounted(&mut self, child: ElementKey, slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
-        // Track the child element key at the given slot position
-        if let Some(idx) = slot {
-            if idx >= self.children.len() {
-                self.children.resize(idx + 1, child);
-            } else {
-                self.children[idx] = child;
-            }
-        } else {
-            self.children.push(child);
-        }
+    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
