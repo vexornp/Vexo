@@ -16,7 +16,6 @@ use crate::retain::state::StateStorage;
 pub struct ElementContext<'a> {
     pub element_id: ElementKey,
     pub parent: Option<ElementKey>,
-    pub render_object: Option<RenderObjectKey>,
     pub state: &'a mut StateStorage,
     pub dirty: &'a mut DirtyTracking,
     pub render_objects: &'a mut RenderObjectRegistry,
@@ -29,7 +28,6 @@ impl<'a> ElementContext<'a> {
     pub fn new(
         element_id: ElementKey,
         parent: Option<ElementKey>,
-        render_object: Option<RenderObjectKey>,
         state: &'a mut StateStorage,
         dirty: &'a mut DirtyTracking,
         render_objects: &'a mut RenderObjectRegistry,
@@ -40,7 +38,6 @@ impl<'a> ElementContext<'a> {
         Self {
             element_id,
             parent,
-            render_object,
             state,
             dirty,
             render_objects,

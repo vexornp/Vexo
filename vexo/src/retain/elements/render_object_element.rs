@@ -119,7 +119,6 @@ pub trait RenderObjectElement: Element {
             let render_obj = widget.create_render_object();
             if let Some(ro_id) = context.create_render_object(render_obj, context.element_id) {
                 self.set_render_object_id(Some(ro_id));
-                context.render_object = Some(ro_id);
                 context.mark_needs_layout(ro_id);
                 context.mark_needs_paint(ro_id);
             }

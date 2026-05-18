@@ -8,7 +8,7 @@ use super::id::RenderObjectKey;
 use super::dirty::DirtyTracking;
 use super::render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 use super::build_owner::BuildOwner;
-use super::element::{Element, ElementRegistry};
+use super::element::Element;
 use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
@@ -426,14 +426,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         }
     }
 
-    fn visit_children(&self, registry: &ElementRegistry, visitor: &mut dyn FnMut(&dyn Element)) {
-        if let Some(child_id) = self.child_element_id {
-            if let Some(child) = registry.get(child_id) {
-                visitor(child);
-            }
-        }
-    }
-
     fn render_object(&self) -> Option<RenderObjectKey> {
         self.render_object_id
     }
@@ -444,10 +436,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 
     fn can_update(&self, widget: &dyn Any) -> bool {
         widget.downcast_ref::<W>().is_some()
-    }
-
-    fn has_children(&self) -> bool {
-        self.child_element_id.is_some()
     }
 
     fn child_mounted(&mut self, child: ElementKey, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, _context: &mut ElementContext) {
@@ -631,7 +619,6 @@ mod tests {
         let mut ctx = ElementContext::new(
             element_id,
             None,
-            None,
             &mut state,
             &mut dirty,
             &mut render_objects,
@@ -660,7 +647,6 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
-                None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
@@ -679,7 +665,6 @@ mod tests {
         {
             let mut ctx = ElementContext::new(
                 element_id,
-                None,
                 None,
                 &mut state,
                 &mut dirty,
@@ -707,7 +692,6 @@ mod tests {
             let mut ctx = ElementContext::new(
                 element_id,
                 None,
-                None,
                 &mut state,
                 &mut dirty,
                 &mut render_objects,
@@ -725,7 +709,6 @@ mod tests {
         {
             let mut ctx = ElementContext::new(
                 element_id,
-                None,
                 None,
                 &mut state,
                 &mut dirty,
