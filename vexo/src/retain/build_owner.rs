@@ -61,6 +61,12 @@ pub struct BuildOwner {
     /// enabling simultaneous shared borrow of BuildOwner and mutable
     /// borrow of GlobalKeyRegistry.
     global_keys: RefCell<GlobalKeyRegistry>,
+
+    /// The currently focused element, if any.
+    /// Wrapped in RefCell for interior mutability so that
+    /// `set_focused_element()` can be called from event handlers
+    /// that only have `&BuildOwner`.
+    focused_element: RefCell<Option<ElementKey>>,
 }
 
 impl BuildOwner {
@@ -71,6 +77,7 @@ impl BuildOwner {
             dirty_set: RefCell::new(HashSet::new()),
             building: HashSet::new(),
             global_keys: RefCell::new(GlobalKeyRegistry::new()),
+            focused_element: RefCell::new(None),
         }
     }
 
@@ -183,6 +190,16 @@ impl BuildOwner {
     /// while also needing mutable access to global keys for registration.
     pub fn global_keys_mut(&self) -> RefMut<'_, GlobalKeyRegistry> {
         self.global_keys.borrow_mut()
+    }
+
+    /// Get the currently focused element.
+    pub fn focused_element(&self) -> Option<ElementKey> {
+        *self.focused_element.borrow()
+    }
+
+    /// Set the currently focused element.
+    pub fn set_focused_element(&self, element: Option<ElementKey>) {
+        *self.focused_element.borrow_mut() = element;
     }
 }
 

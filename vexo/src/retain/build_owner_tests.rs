@@ -116,3 +116,20 @@ fn test_build_scope_nested() {
     assert!(!owner.is_building(parent));
     assert!(!owner.is_building(child));
 }
+
+#[test]
+fn test_build_owner_focused_element() {
+    let owner = BuildOwner::new();
+
+    // Initially no element is focused
+    assert!(owner.focused_element().is_none());
+
+    // Set a focused element
+    let key = make_key();
+    owner.set_focused_element(Some(key));
+    assert_eq!(owner.focused_element(), Some(key));
+
+    // Clear the focused element
+    owner.set_focused_element(None);
+    assert!(owner.focused_element().is_none());
+}
