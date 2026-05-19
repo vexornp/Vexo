@@ -302,7 +302,8 @@ mod tests {
             state: ButtonState::Pressed,
         };
 
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default());
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system);
 
         // 4. Check if the click was handled
         let clicks = click_count.load(Ordering::SeqCst);

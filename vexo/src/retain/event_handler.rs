@@ -42,6 +42,7 @@ impl EventHandler {
         element_registry: &mut ElementRegistry,
         render_objects: &RenderObjectRegistry,
         state: &mut StateStorage,
+        font_system: &mut glyphon::FontSystem,
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
@@ -54,6 +55,7 @@ impl EventHandler {
                 element_registry,
                 render_objects,
                 state,
+                font_system,
                 build_owner,
                 dirty_sender,
                 focused_element,
@@ -65,6 +67,7 @@ impl EventHandler {
                 element_registry,
                 render_objects,
                 state,
+                font_system,
                 build_owner,
                 dirty_sender,
                 focused_element,
@@ -75,6 +78,7 @@ impl EventHandler {
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
                 state,
+                font_system,
                 build_owner,
                 dirty_sender,
                 focused_element,
@@ -96,6 +100,7 @@ impl EventHandler {
         element_registry: &mut ElementRegistry,
         render_objects: &RenderObjectRegistry,
         state: &mut StateStorage,
+        font_system: &mut glyphon::FontSystem,
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
@@ -133,6 +138,7 @@ impl EventHandler {
                     bounds,
                     modifiers,
                     state,
+                    font_system,
                     build_owner,
                     dirty_sender,
                 );
@@ -171,6 +177,7 @@ impl EventHandler {
     pub(crate) fn handle_keyboard_event(
         element_registry: &mut ElementRegistry,
         state: &mut StateStorage,
+        font_system: &mut glyphon::FontSystem,
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
@@ -189,6 +196,7 @@ impl EventHandler {
             bounds,
             modifiers,
             state,
+            font_system,
             build_owner,
             dirty_sender,
         );

@@ -451,6 +451,13 @@ mod tests {
     use super::super::Key;
     use crate::retain::Text;
     use std::cell::Cell;
+    use std::sync::Arc;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
 
     #[test]
     fn test_gesture_detector_creation() {
@@ -489,6 +496,7 @@ mod tests {
         elem.on_press = Some(Rc::new(RefCell::new(move || called_clone.set(true))));
 
         let mut state = crate::retain::StateStorage::new();
+        let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
         let mut ctx = EventContext::new(
             Point::new(50.0, 25.0),
@@ -496,6 +504,7 @@ mod tests {
             bounds,
             crate::input::Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         let event = InputEvent::PointerButton {
@@ -518,6 +527,7 @@ mod tests {
         elem.on_release = Some(Rc::new(RefCell::new(move || called_clone.set(true))));
 
         let mut state = crate::retain::StateStorage::new();
+        let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
         let mut ctx = EventContext::new(
             Point::new(50.0, 25.0),
@@ -525,6 +535,7 @@ mod tests {
             bounds,
             crate::input::Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         let event = InputEvent::PointerButton {
@@ -544,6 +555,7 @@ mod tests {
         elem.on_press = Some(Rc::new(RefCell::new(|| {})));
 
         let mut state = crate::retain::StateStorage::new();
+        let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
         let mut ctx = EventContext::new(
             Point::new(200.0, 200.0), // Outside bounds
@@ -551,6 +563,7 @@ mod tests {
             bounds,
             crate::input::Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         let event = InputEvent::PointerButton {

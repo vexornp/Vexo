@@ -22,6 +22,7 @@ use super::build_owner::BuildOwner;
 /// - Element bounds for position calculations
 /// - State storage for element-local state
 /// - Build owner for marking elements dirty from event handlers
+/// - Font system for text editing operations
 pub struct EventContext<'a> {
     /// Current pointer position in logical coordinates.
     pub pointer_position: Point<Logical>,
@@ -37,6 +38,13 @@ pub struct EventContext<'a> {
 
     /// State storage for element-local state.
     pub state: &'a mut StateStorage,
+
+    /// Font system for text editing operations.
+    ///
+    /// Required by TextEdit for editor actions (insert, delete, cursor movement)
+    /// which need font_system for text shaping. Follows the same pattern as
+    /// LayoutContext which also provides font_system.
+    pub font_system: &'a mut glyphon::FontSystem,
 
     /// Build owner for marking elements dirty from event handlers.
     ///
@@ -77,6 +85,7 @@ impl<'a> EventContext<'a> {
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
         state: &'a mut StateStorage,
+        font_system: &'a mut glyphon::FontSystem,
     ) -> Self {
         Self {
             pointer_position,
@@ -84,6 +93,7 @@ impl<'a> EventContext<'a> {
             bounds,
             modifiers,
             state,
+            font_system,
             build_owner: None,
             dirty_sender: None,
             focus_request: None,
@@ -98,6 +108,7 @@ impl<'a> EventContext<'a> {
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
         state: &'a mut StateStorage,
+        font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
         dirty_sender: &'a mpsc::Sender<ElementKey>,
     ) -> Self {
@@ -107,6 +118,7 @@ impl<'a> EventContext<'a> {
             bounds,
             modifiers,
             state,
+            font_system,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
             focus_request: None,
@@ -187,6 +199,13 @@ impl<'a> EventContext<'a> {
 mod tests {
     use super::*;
     use crate::core::Bounds;
+    use std::sync::Arc;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
 
     fn make_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -203,23 +222,27 @@ mod tests {
     #[test]
     fn test_event_context_is_pointer_inside() {
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
             Point::new(50.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         assert!(ctx.is_pointer_inside());
 
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
             Point::new(150.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         assert!(!ctx.is_pointer_inside());
@@ -229,12 +252,14 @@ mod tests {
     fn test_event_context_focus() {
         let (element, other) = make_two_keys();
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
             Point::zero(),
             Some(element),
             Bounds::default(),
             Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         assert!(ctx.is_focused(element));
@@ -245,12 +270,14 @@ mod tests {
     #[test]
     fn test_event_context_focus_request() {
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let mut ctx = EventContext::new(
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         let element = make_key();
@@ -263,12 +290,14 @@ mod tests {
     #[test]
     fn test_event_context_clear_focus_request() {
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let mut ctx = EventContext::new(
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
             &mut state,
+            &mut font_system,
         );
 
         ctx.clear_focus();
@@ -280,12 +309,14 @@ mod tests {
     #[test]
     fn test_event_context_modifiers() {
         let mut state = StateStorage::new();
+        let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::control(),
             &mut state,
+            &mut font_system,
         );
 
         assert!(ctx.is_control_pressed());

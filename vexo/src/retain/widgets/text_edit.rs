@@ -264,16 +264,11 @@ impl TextEdit {
     ///
     /// Called by StatefulElement::on_event() when this element is focused
     /// and receives a keyboard event. Operates on the controller to mutate
-    /// the editor state.
-    ///
-    /// Note: This method requires a FontSystem for text shaping, which is
-    /// not currently available in EventContext. For now, this handles the
-    /// event routing logic. Actual editor mutations will be performed when
-    /// FontSystem access is added to EventContext.
+    /// the editor state using FontSystem from EventContext for text shaping.
     pub fn handle_event(
         &self,
         event: &InputEvent,
-        _ctx: &mut EventContext,
+        ctx: &mut EventContext,
     ) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::Keyboard {
@@ -286,35 +281,33 @@ impl TextEdit {
 
                 match key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        // controller.move_cursor(Motion::Left, font_system);
-                        // TODO: requires FontSystem access in EventContext
+                        self.controller.move_cursor(Motion::Left, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        // controller.move_cursor(Motion::Right, font_system);
+                        self.controller.move_cursor(Motion::Right, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        // controller.move_cursor(Motion::Up, font_system);
+                        self.controller.move_cursor(Motion::Up, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        // controller.move_cursor(Motion::Down, font_system);
+                        self.controller.move_cursor(Motion::Down, ctx.font_system);
                     }
                     Key::Named(NamedKey::Home) => {
-                        // controller.move_cursor(Motion::Home, font_system);
+                        self.controller.move_cursor(Motion::Home, ctx.font_system);
                     }
                     Key::Named(NamedKey::End) => {
-                        // controller.move_cursor(Motion::End, font_system);
+                        self.controller.move_cursor(Motion::End, ctx.font_system);
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        // controller.delete_backward(font_system);
+                        self.controller.delete_backward(ctx.font_system);
                     }
                     Key::Named(NamedKey::Delete) => {
-                        // controller.delete_forward(font_system);
+                        self.controller.delete_forward(ctx.font_system);
                     }
                     Key::Named(NamedKey::Enter) => {
-                        // controller.insert_newline(font_system);
+                        self.controller.insert_newline(ctx.font_system);
                     }
                     Key::Named(NamedKey::Escape) => {
-                        // Clear focus — handled by returning None
                         return None;
                     }
                     Key::Character(_ch) => {
@@ -324,7 +317,7 @@ impl TextEdit {
                                     if c.is_control() {
                                         continue;
                                     }
-                                    // controller.insert_char(c, font_system);
+                                    self.controller.insert_char(c, ctx.font_system);
                                 }
                             }
                         }

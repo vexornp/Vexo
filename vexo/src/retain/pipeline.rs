@@ -323,11 +323,13 @@ impl ThreeTreePipeline {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
+        font_system: &mut glyphon::FontSystem,
     ) -> Option<Box<dyn Any>> {
         EventHandler::handle_event(
             &mut self.element_registry,
             &self.render_objects,
             &mut self.state,
+            font_system,
             &self.build_owner,
             &self.dirty_sender,
             &mut self.focused_element,

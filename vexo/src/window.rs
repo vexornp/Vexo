@@ -354,7 +354,7 @@ impl<A: Application + 'static> WindowState<A> {
             None => return,
         };
 
-        let message = pipeline.handle_event(position, &input_event, modifiers);
+        let message = pipeline.handle_event(position, &input_event, modifiers, &mut self.widget_context.font_system);
 
         if let Some(msg) = message {
             // Retain mode widgets return Box<dyn Any> as their message type.

@@ -246,7 +246,8 @@ mod event_handling_tests {
             state: ButtonState::Pressed,
         };
 
-        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default());
+        let mut font_system = create_test_font_system();
+        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default(), &mut font_system);
         assert!(message.is_none());
     }
 
@@ -270,7 +271,8 @@ mod event_handling_tests {
         };
 
         // Text element doesn't handle events, so should return None
-        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default());
+        let mut font_system = create_test_font_system();
+        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default(), &mut font_system);
 
         // Text element returns None by default
         assert!(message.is_none());
