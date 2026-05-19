@@ -115,6 +115,14 @@ impl EventHandler {
         let hit_result = render_objects.hit_test(absolute_position);
 
         if !hit_result.is_hit() {
+            // Click outside all widgets — clear focus on pointer press
+            if let InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            } = event
+            {
+                *focused_element = None;
+            }
             return None;
         }
 
@@ -155,6 +163,59 @@ impl EventHandler {
                 if message.is_some() {
                     any_message = message;
                     break; // Event handled - stop bubbling
+                }
+            }
+        }
+
+        // 4. Continue bubbling up through ancestor elements not in the hit path.
+        // Elements like StatefulElement may not have render objects in the
+        // render tree (they delegate to their child's render object), so they
+        // won't appear in the hit test element_path. But they still need to
+        // receive pointer events for focus requests and other interactions.
+        // We walk up from the shallowest element in the hit path to the root.
+        if any_message.is_none() {
+            // Start from the shallowest (first) element in the hit path
+            let shallowest = element_path.first().copied();
+            let mut current = shallowest;
+
+            while let Some(element_id) = current {
+                let parent = element_registry.parent(element_id);
+                if let Some(parent_id) = parent {
+                    // Skip if this parent is already in the hit path
+                    if element_path.contains(&parent_id) {
+                        current = Some(parent_id);
+                        continue;
+                    }
+
+                    if let Some(element) = element_registry.get_mut(parent_id) {
+                        let mut ctx = EventContext::with_build_owner(
+                            position,
+                            *focused_element,
+                            bounds,
+                            modifiers,
+                            state,
+                            font_system,
+                            build_owner,
+                            dirty_sender,
+                        );
+
+                        let message = element.on_event(event, &mut ctx);
+
+                        // Handle focus requests from this element
+                        if let Some(focus) = ctx.focus_request() {
+                            *focused_element = Some(focus);
+                        } else if ctx.should_clear_focus() {
+                            *focused_element = None;
+                        }
+
+                        if message.is_some() {
+                            any_message = message;
+                            break; // Event handled - stop bubbling
+                        }
+                    }
+                    current = Some(parent_id);
+                } else {
+                    break; // No more parents
                 }
             }
         }

@@ -618,4 +618,93 @@ mod tests {
         let result = pipeline.hit_test(Position::<crate::core::Logical, Absolute>::new(5.0, 5.0));
         assert!(result.is_hit());
     }
+
+    // ========================================================================
+    // Focus integration tests
+    // ========================================================================
+
+    use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+    use crate::core::{Logical, Point};
+
+    #[test]
+    fn test_text_edit_click_inside_focuses() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let text_edit = TextEdit::new(controller.clone());
+
+        let mut pipeline = ThreeTreePipeline::new();
+        pipeline.reconcile(Box::new(text_edit));
+
+        let mut engine = TaffyLayoutEngine::new();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
+
+        // No element should be focused initially
+        assert!(pipeline.focused_element().is_none());
+
+        // Simulate a pointer press inside the TextEdit bounds
+        let event = InputEvent::PointerButton {
+            position: Point::<Logical>::new(10.0, 10.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::<Logical>::new(10.0, 10.0),
+            &event,
+            Modifiers::default(),
+            &mut fs,
+        );
+
+        // The TextEdit's StatefulElement should now be focused
+        let focused = pipeline.focused_element();
+        assert!(focused.is_some(), "TextEdit should be focused after clicking inside it");
+
+        // The focused element should be the root StatefulElement
+        let root = pipeline.element_registry().root().unwrap();
+        assert_eq!(focused, Some(root), "The focused element should be the root StatefulElement");
+    }
+
+    #[test]
+    fn test_text_edit_click_outside_unfocuses() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let text_edit = TextEdit::new(controller.clone());
+
+        let mut pipeline = ThreeTreePipeline::new();
+        pipeline.reconcile(Box::new(text_edit));
+
+        let mut engine = TaffyLayoutEngine::new();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
+
+        // First, click inside to focus the TextEdit
+        let click_inside = InputEvent::PointerButton {
+            position: Point::<Logical>::new(10.0, 10.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::<Logical>::new(10.0, 10.0),
+            &click_inside,
+            Modifiers::default(),
+            &mut fs,
+        );
+
+        // Verify TextEdit is focused
+        assert!(pipeline.focused_element().is_some(), "TextEdit should be focused after clicking inside");
+
+        // Now click far outside the TextEdit bounds
+        let click_outside = InputEvent::PointerButton {
+            position: Point::<Logical>::new(700.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::<Logical>::new(700.0, 500.0),
+            &click_outside,
+            Modifiers::default(),
+            &mut fs,
+        );
+
+        // Focus should be cleared because no element handled the click
+        assert!(pipeline.focused_element().is_none(), "Focus should be cleared after clicking outside the TextEdit");
+    }
 }
