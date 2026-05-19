@@ -187,15 +187,11 @@ impl std::fmt::Debug for TextEditingController {
 /// This state type is minimal — the actual editing state lives in the
 /// TextEditingController, which is owned externally. The state exists
 /// to satisfy the StatefulWidget pattern.
-pub struct TextEditState {
-    controller_wired: bool,
-}
+pub struct TextEditState;
 
 impl Default for TextEditState {
     fn default() -> Self {
-        Self {
-            controller_wired: false,
-        }
+        Self
     }
 }
 
@@ -259,6 +255,11 @@ impl TextEdit {
     /// Get the controller.
     pub fn controller(&self) -> &TextEditingController {
         &self.controller
+    }
+
+    /// Wire the controller's dirty callback to trigger a rebuild.
+    pub fn wire_controller_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+        self.controller.set_dirty_callback(callback);
     }
 
     /// Handle a keyboard input event.
@@ -543,7 +544,9 @@ mod tests {
     #[test]
     fn test_text_edit_state_default() {
         let state = TextEditState::default();
-        assert!(!state.controller_wired);
+        // TextEditState is a unit struct with no fields to assert on,
+        // but we verify it can be constructed.
+        let _ = state;
     }
 
     // ========================================================================

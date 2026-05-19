@@ -355,6 +355,17 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         // Store state in StateStorage
         context.insert_state(element_id, state);
 
+        // Wire controller dirty callback for TextEdit widgets.
+        // The TextEditingController lives outside the State, so it needs
+        // its own dirty callback wired to trigger rebuilds on text mutations.
+        if let Some(text_edit) = (&mut self.widget as &mut dyn Any).downcast_mut::<TextEdit>() {
+            let tx = context.dirty_sender.clone();
+            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                let _ = tx.send(element_id);
+            });
+            text_edit.wire_controller_dirty_callback(dirty_callback);
+        }
+
         // Build the child widget tree using BuildContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
