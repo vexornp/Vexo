@@ -143,6 +143,11 @@ impl ThreeTreePipeline {
         }
     }
 
+    /// Sync focused_element to BuildOwner so StatefulWidget::build() can access it.
+    fn sync_focus_to_build_owner(&self) {
+        self.build_owner.set_focused_element(self.focused_element);
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
@@ -172,6 +177,7 @@ impl ThreeTreePipeline {
     /// pipeline.reconcile(Box::new(Text::new("Hello World")));
     /// ```
     pub(crate) fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
+        self.sync_focus_to_build_owner();
         Reconciler::reconcile(
             &mut self.element_registry,
             &mut self.render_objects,
@@ -192,6 +198,7 @@ impl ThreeTreePipeline {
     ///
     /// After initial mount, prefer calling `mark_needs_build()` for updates.
     pub fn update(&mut self, root_widget: Box<dyn Widget>) {
+        self.sync_focus_to_build_owner();
         Reconciler::update(
             &mut self.element_registry,
             &mut self.render_objects,
@@ -211,6 +218,7 @@ impl ThreeTreePipeline {
     /// This is the Flutter-style rebuild: only dirty elements and their
     /// subtrees are reconciled. Much more efficient than full-tree reconcile.
     pub fn perform_rebuilds(&mut self) {
+        self.sync_focus_to_build_owner();
         Reconciler::perform_rebuilds(
             &mut self.element_registry,
             &mut self.render_objects,
@@ -611,5 +619,19 @@ mod tests {
 
         // Just verify the element still exists
         assert_eq!(pipeline.element_registry().len(), 1);
+    }
+
+    #[test]
+    fn test_pipeline_syncs_focused_element_to_build_owner() {
+        let mut pipeline = ThreeTreePipeline::new();
+        pipeline.reconcile(Box::new(Text::new("Hello")));
+
+        // Set focus on the root element
+        let root_id = pipeline.element_registry().root().unwrap();
+        pipeline.set_focus(Some(root_id));
+
+        // After update, BuildOwner should have the focused element
+        pipeline.update(Box::new(Text::new("Hello")));
+        assert_eq!(pipeline.build_owner().focused_element(), Some(root_id));
     }
 }
