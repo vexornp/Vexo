@@ -212,6 +212,11 @@ impl<'a> BuildContext<'a> {
     pub fn mark_needs_paint(&mut self, render_object_id: super::id::RenderObjectKey) {
         self.dirty.mark_needs_paint(render_object_id);
     }
+
+    /// Check if this element is currently focused.
+    pub fn is_focused(&self) -> bool {
+        self.build_owner.focused_element() == Some(self.element_id)
+    }
 }
 
 /// Trait for widgets that have persistent mutable state.
@@ -789,5 +794,39 @@ mod tests {
         ctx.request_rebuild();
 
         assert!(build_owner.is_dirty(element_id));
+    }
+
+    #[test]
+    fn test_build_context_is_focused() {
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops) = create_test_context();
+
+        // Not focused initially
+        let ctx = BuildContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+        };
+        assert!(!ctx.is_focused());
+
+        // Set this element as focused
+        build_owner.set_focused_element(Some(element_id));
+        let ctx = BuildContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+        };
+        assert!(ctx.is_focused());
+
+        // Clear focus
+        build_owner.set_focused_element(None);
+        let ctx = BuildContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+        };
+        assert!(!ctx.is_focused());
     }
 }
