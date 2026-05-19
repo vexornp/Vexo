@@ -172,6 +172,7 @@ impl vexo::component::Component for CounterComponent {
 pub struct State {
     click_count: u32,
     milestones: u32,
+    text_editor_controller: Option<vexo::retain::TextEditingController>,
 }
 
 impl Application for State {
@@ -182,6 +183,7 @@ impl Application for State {
         Self {
             click_count: 0,
             milestones: 0,
+            text_editor_controller: None,
         }
     }
 
@@ -259,13 +261,23 @@ impl Application for State {
         .boxed()
     }
 
-    fn retain_view(_state: &Self::State) -> Option<Box<dyn retain::Widget>> {
+    fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {
+        // Lazily initialize the TextEdit controller
+        if state.text_editor_controller.is_none() {
+            state.text_editor_controller = Some(
+                vexo::retain::TextEditingController::new("Type here...", font_system)
+            );
+        }
+
+        let controller = state.text_editor_controller.as_ref().unwrap();
+
         Some(Box::new(
             retain::Column::new()
                 .push(retain::Text::new("Retain Mode Demo"))
                 .push(RetainCounter {
                     label: "Stateful Counter".to_string(),
-                }),
+                })
+                .push(retain::TextEdit::new(controller.clone())),
         ))
     }
 }

@@ -445,8 +445,8 @@ impl<A: Application + 'static> WindowState<A> {
     ///
     /// Returns the widget tree from `Application::retain_view()`,
     /// or None if the application doesn't implement retain-mode.
-    fn view_retain(&self) -> Option<Box<dyn RetainWidget>> {
-        A::retain_view(&self.user_app_state)
+    fn view_retain(&mut self) -> Option<Box<dyn RetainWidget>> {
+        A::retain_view(&mut self.user_app_state, &mut self.widget_context.font_system)
     }
 
     /// Render using the three-tree retain-mode pipeline.
