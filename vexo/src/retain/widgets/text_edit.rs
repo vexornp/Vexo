@@ -233,7 +233,8 @@ impl State for TextEditState {
 /// - TextEditState is the state (lifecycle)
 /// - TextEditingController is the controller (editing state)
 ///
-/// build() returns a Text widget displaying the current content.
+/// build() returns a DecoratedContainer wrapping a Text widget, with
+/// focus-dependent border styling.
 #[derive(Clone)]
 pub struct TextEdit {
     controller: TextEditingController,
@@ -339,9 +340,30 @@ impl StatefulWidget for TextEdit {
     fn build(
         &self,
         _state: &mut TextEditState,
-        _ctx: &mut BuildContext,
+        ctx: &mut BuildContext,
     ) -> Box<dyn Widget> {
-        Box::new(super::Text::new(self.controller.text()).with_font_size(self.controller.font_size()))
+        let is_focused = ctx.is_focused();
+
+        let border_color = if is_focused {
+            crate::core::Color::rgb(0.2, 0.4, 0.8) // Blue border when focused
+        } else {
+            crate::core::Color::rgb(0.6, 0.6, 0.6) // Gray border when unfocused
+        };
+
+        let border_width = if is_focused { 2.0 } else { 1.0 };
+
+        let style = crate::retain::Style::new()
+            .background(crate::core::Color::WHITE)
+            .border(border_color, border_width)
+            .corner_radius(4.0)
+            .padding(8.0);
+
+        Box::new(
+            crate::retain::DecoratedContainer::new(
+                Box::new(super::Text::new(self.controller.text()).with_font_size(self.controller.font_size()))
+            )
+            .style(style)
+        )
     }
 }
 
@@ -543,8 +565,8 @@ mod tests {
 
         // Should have elements in the tree
         assert!(pipeline.element_registry().root().is_some());
-        // StatefulElement + child Text element = 2 elements
-        assert_eq!(pipeline.element_registry().len(), 2);
+        // StatefulElement + DecoratedContainer + child Text element = 3 elements
+        assert_eq!(pipeline.element_registry().len(), 3);
     }
 
     #[test]
