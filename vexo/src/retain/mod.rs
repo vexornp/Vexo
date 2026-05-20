@@ -98,7 +98,7 @@ pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRe
 
 pub use child_ops::{ChildOp, ChildOps};
 
-pub use focus::{FocusNodeKey, FocusNodeData, FocusScopeData, UnfocusDisposition, TraversalPolicy};
+pub use focus::{FocusNodeKey, FocusNodeData, FocusScopeData, UnfocusDisposition, TraversalPolicy, FocusManager};
 
 pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, TextEditState, TextEditingController};
 pub use elements::{LeafElement, ContainerElement};
