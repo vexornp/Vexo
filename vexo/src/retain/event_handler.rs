@@ -91,11 +91,14 @@ impl EventHandler {
 
     /// Handle a pointer event (moved or button).
     ///
-    /// Events are dispatched using Flutter-style bubbling: the event is sent
+    /// Events are dispatched using single-phase bubbling: the event is sent
     /// to each element in the hit test path from deepest (innermost) to
     /// shallowest (root). The first element that handles the event stops
     /// propagation. This allows modifier elements like GestureDetector to
     /// intercept events before they reach the child element.
+    ///
+    /// All elements (including StatefulElement) appear in the hit test path
+    /// because they own ProxyRenderObjects that participate in the render tree.
     pub(crate) fn handle_pointer_event(
         element_registry: &mut ElementRegistry,
         render_objects: &RenderObjectRegistry,
@@ -163,67 +166,6 @@ impl EventHandler {
                 if message.is_some() {
                     any_message = message;
                     break; // Event handled - stop bubbling
-                }
-            }
-        }
-
-        // 4. Continue bubbling up through ancestor elements not in the hit path.
-        // Elements like StatefulElement may not have render objects in the
-        // render tree (they delegate to their child's render object), so they
-        // won't appear in the hit test element_path. But they still need to
-        // receive pointer events for focus requests and other interactions.
-        // We walk up from the deepest element in the hit path to the root,
-        // visiting ancestors that are NOT in the hit path.
-        //
-        // Starting from the deepest element is critical because:
-        // - The deepest element is closest to the leaf in the element tree
-        // - Its parent chain includes any wrapper elements (like StatefulElement)
-        //   that delegated their render object to the child
-        // - Starting from the shallowest would miss these wrapper elements
-        //   because they are children of the shallowest, not parents
-        if any_message.is_none() {
-            // Start from the deepest (last) element in the hit path
-            let deepest = element_path.last().copied();
-            let mut current = deepest;
-
-            while let Some(element_id) = current {
-                let parent = element_registry.parent(element_id);
-                if let Some(parent_id) = parent {
-                    // Skip if this parent is already in the hit path
-                    if element_path.contains(&parent_id) {
-                        current = Some(parent_id);
-                        continue;
-                    }
-
-                    if let Some(element) = element_registry.get_mut(parent_id) {
-                        let mut ctx = EventContext::with_build_owner(
-                            position,
-                            *focused_element,
-                            bounds,
-                            modifiers,
-                            state,
-                            font_system,
-                            build_owner,
-                            dirty_sender,
-                        );
-
-                        let message = element.on_event(event, &mut ctx);
-
-                        // Handle focus requests from this element
-                        if let Some(focus) = ctx.focus_request() {
-                            *focused_element = Some(focus);
-                        } else if ctx.should_clear_focus() {
-                            *focused_element = None;
-                        }
-
-                        if message.is_some() {
-                            any_message = message;
-                            break; // Event handled - stop bubbling
-                        }
-                    }
-                    current = Some(parent_id);
-                } else {
-                    break; // No more parents
                 }
             }
         }
