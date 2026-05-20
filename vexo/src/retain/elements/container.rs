@@ -4,12 +4,12 @@
 //! Used by container widgets like Column, Row, etc.
 //!
 //! This element owns a render object and manages its lifecycle through
-//! the RenderObjectElement and MultiChildRenderObjectElement traits.
+//! the RenderObjectElement trait.
 
 use std::any::Any;
 
 use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
-use crate::retain::elements::{RenderObjectElement, MultiChildRenderObjectElement};
+use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
 
 /// Element for container widgets (multiple children).
@@ -18,7 +18,6 @@ use crate::retain::key::WidgetKey;
 /// - Owns a render object
 /// - Has multiple children
 /// - Manages render object lifecycle via RenderObjectElement trait
-/// - Manages children via MultiChildRenderObjectElement trait
 pub struct ContainerElement {
     id: Option<ElementKey>,
     key: Option<WidgetKey>,
@@ -99,21 +98,6 @@ impl RenderObjectElement for ContainerElement {
 
     fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
-    }
-}
-
-// Implement MultiChildRenderObjectElement trait
-impl MultiChildRenderObjectElement for ContainerElement {
-    fn child_elements(&self) -> &[ElementKey] {
-        &[]
-    }
-
-    fn set_child_elements(&mut self, _children: Vec<ElementKey>) {
-        // No-op: children are tracked in ElementRegistry, not stored locally
-    }
-
-    fn add_child_element(&mut self, _child: ElementKey) {
-        // No-op: children are tracked in ElementRegistry, not stored locally
     }
 }
 

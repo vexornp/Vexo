@@ -42,7 +42,7 @@ use super::super::{
     LayoutContext, LayoutResult, PaintContext, HitTestContext,
     RenderObject, RenderObjectKey,
 };
-use super::super::elements::{RenderObjectElement, SingleChildRenderObjectElement};
+use super::super::elements::RenderObjectElement;
 
 // ============================================================================
 // GESTURE DETECTOR WIDGET
@@ -149,7 +149,7 @@ impl Widget for GestureDetector {
 /// - Owns a render object (pass-through, invisible)
 /// - Has a single child element
 /// - Handles pointer events via on_press/on_release callbacks
-/// - Follows the SingleChildRenderObjectElement pattern
+/// - Handles pointer events via on_press/on_release callbacks
 pub struct GestureDetectorElement {
     id: Option<ElementKey>,
     key: Option<WidgetKey>,
@@ -230,17 +230,6 @@ impl RenderObjectElement for GestureDetectorElement {
 
     fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
-    }
-}
-
-// Implement SingleChildRenderObjectElement trait
-impl SingleChildRenderObjectElement for GestureDetectorElement {
-    fn child_element(&self) -> Option<ElementKey> {
-        None
-    }
-
-    fn set_child_element(&mut self, _child: Option<ElementKey>) {
-        // No-op: child tracking is done via ElementRegistry::children_map
     }
 }
 

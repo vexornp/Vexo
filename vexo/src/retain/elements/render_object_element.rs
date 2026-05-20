@@ -96,6 +96,22 @@ pub trait RenderObjectElement: Element {
     /// Set the element ID.
     fn set_element_id(&mut self, id: Option<ElementKey>);
 
+    /// Link a child render object into this element's render object.
+    ///
+    /// Calls both `set_child_id` and `add_child` on the parent render object.
+    /// Concrete render objects override whichever method they need:
+    /// - Single-child (ProxyRenderObject, etc.) override `set_child_id`
+    /// - Multi-child (ContainerRenderObject) override `add_child`
+    /// The other method is a no-op by default, so calling both is safe.
+    fn insert_child_render_object(&mut self, child_ro: RenderObjectKey, context: &mut ElementContext) {
+        if let Some(parent_ro) = self.render_object_id() {
+            if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
+                parent_obj.set_child_id(child_ro);
+                parent_obj.add_child(child_ro);
+            }
+        }
+    }
+
     /// Default mount implementation for render object creation.
     ///
     /// This method:

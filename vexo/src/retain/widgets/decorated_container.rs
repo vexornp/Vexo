@@ -15,7 +15,7 @@ use crate::retain::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext,
     RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
 };
-use crate::retain::elements::{RenderObjectElement, SingleChildRenderObjectElement};
+use crate::retain::elements::RenderObjectElement;
 use crate::retain::style::Style;
 
 // ============================================================================
@@ -261,17 +261,6 @@ impl RenderObjectElement for DecoratedContainerElement {
 
     fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
-    }
-}
-
-// Implement SingleChildRenderObjectElement trait
-impl SingleChildRenderObjectElement for DecoratedContainerElement {
-    fn child_element(&self) -> Option<ElementKey> {
-        None
-    }
-
-    fn set_child_element(&mut self, _child: Option<ElementKey>) {
-        // No-op: child tracking is now handled by ElementRegistry::children_map
     }
 }
 
@@ -622,6 +611,6 @@ mod tests {
         let element = DecoratedContainerElement::default();
 
         assert!(element.id().is_none());
-        assert!(element.child_element().is_none());
+        assert!(element.render_object_id().is_none());
     }
 }

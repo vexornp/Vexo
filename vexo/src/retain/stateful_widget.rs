@@ -13,7 +13,7 @@ use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
 use super::widgets::TextEdit;
-use super::elements::{RenderObjectElement, SingleChildRenderObjectElement};
+use super::elements::RenderObjectElement;
 use super::EventContext;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
@@ -359,16 +359,6 @@ impl<W: StatefulWidget + Clone> RenderObjectElement for StatefulElement<W> {
 
     fn set_element_id(&mut self, id: Option<ElementKey>) {
         self.id = id;
-    }
-}
-
-impl<W: StatefulWidget + Clone> SingleChildRenderObjectElement for StatefulElement<W> {
-    fn child_element(&self) -> Option<ElementKey> {
-        None
-    }
-
-    fn set_child_element(&mut self, _child: Option<ElementKey>) {
-        // No-op: child tracking is done via ElementRegistry::children_map
     }
 }
 
