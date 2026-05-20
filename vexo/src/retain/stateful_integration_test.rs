@@ -350,6 +350,50 @@ mod tests {
         }
     }
 
+    /// Test that StatefulElement appears in the hit test element_path.
+    /// This verifies that ProxyRenderObject correctly forwards hit tests
+    /// so that StatefulElement is part of the render tree hit path.
+    #[test]
+    fn test_stateful_element_in_hit_test_path() {
+        use crate::retain::SimpleState;
+        use crate::core::{Position, Logical, Absolute};
+
+        // Create a simple StatefulWidget that wraps Text
+        #[derive(Clone)]
+        struct SimpleStateful;
+
+        impl StatefulWidget for SimpleStateful {
+            type State = SimpleState<()>;
+            fn build(&self, _state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+                Box::new(Text::new("Stateful"))
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new();
+        pipeline.reconcile(Box::new(SimpleStateful));
+
+        // Layout
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+        // Hit test inside the text bounds (top-left area where text renders)
+        let result = pipeline.hit_test(Position::<Logical, Absolute>::new(5.0, 5.0));
+
+        // Should hit something
+        assert!(result.is_hit(), "Hit test should find a target");
+
+        // The StatefulElement (root) should be in the element path
+        let root_id = pipeline.element_registry().root().unwrap();
+        let element_path = result.element_path();
+        assert!(element_path.contains(&root_id),
+            "StatefulElement should appear in hit test element path. Path: {:?}", element_path);
+
+        // Should have at least StatefulElement + child
+        assert!(element_path.len() >= 2,
+            "Element path should have at least StatefulElement + child. Got: {:?}", element_path);
+    }
+
     /// Test that directly exercises the state → rebuild → render path
     /// without relying on hit testing.
     #[test]
