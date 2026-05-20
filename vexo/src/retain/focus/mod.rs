@@ -9,3 +9,6 @@ pub use node::FocusNodeData;
 pub use scope::{FocusScopeData, UnfocusDisposition};
 pub use traversal::TraversalPolicy;
 pub use manager::FocusManager;
+
+#[cfg(test)]
+mod manager_tests;

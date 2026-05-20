@@ -174,8 +174,13 @@ impl FocusManager {
             }
             UnfocusDisposition::RestorePrevious => {
                 // Try to restore from the enclosing scope's history.
+                // First clear focused_child (it points to the node being
+                // unfocused), then pop from history to find the previous.
                 let restored = if let Some(sk) = scope_key {
-                    self.scopes.get_mut(sk).and_then(|scope| scope.pop_focused_child())
+                    self.scopes.get_mut(sk).and_then(|scope| {
+                        scope.focused_child = None;
+                        scope.focused_child_history.pop()
+                    })
                 } else {
                     None
                 };
