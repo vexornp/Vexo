@@ -14,7 +14,6 @@ use super::key::WidgetKey;
 use super::widgets::Widget;
 use super::widgets::TextEdit;
 use super::EventContext;
-use crate::core::Logical;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
 
@@ -528,32 +527,76 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
 }
 
 // ============================================================================
-// EMPTY RENDER OBJECT
+// PROXY RENDER OBJECT
 // ============================================================================
 
-/// Empty render object for StatefulElement.
+/// Proxy render object for StatefulElement.
 ///
-/// StatefulElement doesn't render itself - it delegates to its child.
-/// This render object exists only to satisfy the Widget trait.
-pub struct EmptyRenderObject;
+/// StatefulElement doesn't render itself - it delegates painting to its child.
+/// But unlike EmptyRenderObject, ProxyRenderObject participates in the render tree:
+/// - Pass-through layout (wraps child's Taffy node)
+/// - No paint commands (invisible)
+/// - Bounds-based hit test (enables StatefulElement to appear in hit test path)
+///
+/// This eliminates the need for Phase 2 ancestor walking in event dispatch.
+pub struct ProxyRenderObject {
+    child: Option<RenderObjectKey>,
+    computed_bounds: Option<crate::core::Bounds<crate::core::Logical>>,
+    layout_node: Option<crate::layout::LayoutNodeKey>,
+}
 
-impl RenderObject for EmptyRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, _children: &[crate::layout::LayoutNodeKey]) -> LayoutResult {
-        let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
+impl ProxyRenderObject {
+    /// Create a new ProxyRenderObject.
+    pub fn new() -> Self {
+        Self {
+            child: None,
+            computed_bounds: None,
+            layout_node: None,
+        }
+    }
+}
+
+impl Default for ProxyRenderObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RenderObject for ProxyRenderObject {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[crate::layout::LayoutNodeKey]) -> LayoutResult {
+        let layout = crate::layout::Layout::default();
+        let node = ctx.engine().create_container(&layout, child_nodes);
+        self.layout_node = Some(node);
         LayoutResult {
             node,
-            size: crate::core::Size::new(0.0, 0.0),
+            size: crate::core::Size::zero(),
         }
     }
 
-    fn apply_layout(&mut self, _ctx: &LayoutContext) {}
+    fn apply_layout(&mut self, ctx: &LayoutContext) {
+        if let Some(node) = self.layout_node {
+            if let Some(computed) = ctx.engine_ref().get_layout(node) {
+                self.computed_bounds = Some(computed.bounds);
+            }
+        }
+    }
 
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
         Vec::new()
     }
 
-    fn hit_test(&self, _position: crate::core::Point<Logical>, _ctx: &HitTestContext) -> bool {
-        false
+    fn hit_test(&self, position: crate::core::Point<crate::core::Logical>, _ctx: &HitTestContext) -> bool {
+        match &self.computed_bounds {
+            Some(bounds) => bounds.contains(&position),
+            None => false,
+        }
+    }
+
+    fn children(&self) -> &[RenderObjectKey] {
+        match &self.child {
+            Some(child) => std::slice::from_ref(child),
+            None => &[],
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -562,6 +605,18 @@ impl RenderObject for EmptyRenderObject {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn set_child_id(&mut self, child: RenderObjectKey) {
+        self.child = Some(child);
+    }
+
+    fn layout_node(&self) -> Option<crate::layout::LayoutNodeKey> {
+        self.layout_node
+    }
+
+    fn computed_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
+        self.computed_bounds
     }
 }
 
@@ -583,7 +638,7 @@ impl<W: StatefulWidget + Clone + 'static> Widget for W {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(EmptyRenderObject)
+        Box::new(ProxyRenderObject::new())
     }
 
     fn as_any(&self) -> &dyn Any {

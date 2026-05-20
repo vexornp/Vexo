@@ -93,7 +93,7 @@ pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
-pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, EmptyRenderObject, State, StateContext, SimpleState};
+pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
 
 pub use child_ops::{ChildOp, ChildOps};
 
