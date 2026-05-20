@@ -172,11 +172,19 @@ impl EventHandler {
         // render tree (they delegate to their child's render object), so they
         // won't appear in the hit test element_path. But they still need to
         // receive pointer events for focus requests and other interactions.
-        // We walk up from the shallowest element in the hit path to the root.
+        // We walk up from the deepest element in the hit path to the root,
+        // visiting ancestors that are NOT in the hit path.
+        //
+        // Starting from the deepest element is critical because:
+        // - The deepest element is closest to the leaf in the element tree
+        // - Its parent chain includes any wrapper elements (like StatefulElement)
+        //   that delegated their render object to the child
+        // - Starting from the shallowest would miss these wrapper elements
+        //   because they are children of the shallowest, not parents
         if any_message.is_none() {
-            // Start from the shallowest (first) element in the hit path
-            let shallowest = element_path.first().copied();
-            let mut current = shallowest;
+            // Start from the deepest (last) element in the hit path
+            let deepest = element_path.last().copied();
+            let mut current = deepest;
 
             while let Some(element_id) = current {
                 let parent = element_registry.parent(element_id);

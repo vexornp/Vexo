@@ -710,4 +710,59 @@ mod tests {
         // Focus should be cleared because no element handled the click
         assert!(pipeline.focused_element().is_none(), "Focus should be cleared after clicking outside the TextEdit");
     }
+
+    #[test]
+    fn test_text_edit_in_column_click_focuses() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let text_edit = TextEdit::new(controller.clone());
+
+        // Put TextEdit inside a Column, like the real app does
+        let column = crate::retain::Column::new()
+            .push(crate::retain::Text::new("Title"))
+            .push(text_edit);
+
+        let mut pipeline = ThreeTreePipeline::new();
+        pipeline.reconcile(Box::new(column));
+
+        let mut engine = TaffyLayoutEngine::new();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
+
+        // No element should be focused initially
+        assert!(pipeline.focused_element().is_none());
+
+        // Find the TextEdit's StatefulElement by walking the tree
+        let root = pipeline.element_registry().root().unwrap();
+        let children = pipeline.element_registry().children(root).to_vec();
+        // Column has 2 children: Text and TextEdit
+        assert_eq!(children.len(), 2, "Column should have 2 children");
+        let text_edit_element_id = children[1]; // TextEdit is the second child
+
+        // Click inside the TextEdit area (below the title text)
+        // The title is roughly 29px tall, so clicking at y=30 should be
+        // inside the TextEdit's DecoratedContainer.
+        let event = InputEvent::PointerButton {
+            position: Point::<Logical>::new(10.0, 30.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::<Logical>::new(10.0, 30.0),
+            &event,
+            Modifiers::default(),
+            &mut fs,
+        );
+
+        // The TextEdit's StatefulElement should now be focused
+        let focused = pipeline.focused_element();
+        assert!(
+            focused.is_some(),
+            "TextEdit should be focused after clicking inside it (when inside a Column)"
+        );
+        assert_eq!(
+            focused,
+            Some(text_edit_element_id),
+            "The focused element should be the TextEdit's StatefulElement"
+        );
+    }
 }
