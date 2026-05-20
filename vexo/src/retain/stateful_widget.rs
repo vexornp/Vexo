@@ -13,6 +13,7 @@ use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
 use super::widgets::TextEdit;
+use super::elements::{RenderObjectElement, SingleChildRenderObjectElement};
 use super::EventContext;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
@@ -288,7 +289,7 @@ pub struct StatefulElement<W: StatefulWidget> {
     /// The widget key (if any).
     key: Option<WidgetKey>,
 
-    /// The render object ID (delegated from child).
+    /// The render object ID (ProxyRenderObject, set during mount).
     render_object_id: Option<RenderObjectKey>,
 }
 
@@ -325,15 +326,57 @@ impl<W: StatefulWidget + Clone> StatefulElement<W> {
     }
 }
 
+impl<W: StatefulWidget + Clone> RenderObjectElement for StatefulElement<W> {
+    fn widget(&self) -> Option<&dyn Widget> {
+        Some(&self.widget)
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        if let Some(w) = widget.as_any().downcast_ref::<W>() {
+            self.widget = w.clone();
+        }
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
+        self.render_object_id
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
+        self.render_object_id = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementKey> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
+        self.id = id;
+    }
+}
+
+impl<W: StatefulWidget + Clone> SingleChildRenderObjectElement for StatefulElement<W> {
+    fn child_element(&self) -> Option<ElementKey> {
+        None
+    }
+
+    fn set_child_element(&mut self, _child: Option<ElementKey>) {
+        // No-op: child tracking is done via ElementRegistry::children_map
+    }
+}
+
 impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     fn mount(&mut self, context: &mut ElementContext) {
-        // Store the element ID
-        self.id = Some(context.element_id);
-
-        // Register global key if present
-        if let Some(WidgetKey::Global(key)) = &self.key {
-            let _ = context.register_global_key(key.clone(), context.element_id);
-        }
+        // Use RenderObjectElement's default mount for render object creation
+        // This creates the ProxyRenderObject and stores the element ID + key
+        self.mount_render_object(context);
 
         let element_id = context.element_id;
 
@@ -355,8 +398,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         context.insert_state(element_id, state);
 
         // Wire controller dirty callback for TextEdit widgets.
-        // The TextEditingController lives outside the State, so it needs
-        // its own dirty callback wired to trigger rebuilds on text mutations.
         if let Some(text_edit) = (&mut self.widget as &mut dyn Any).downcast_mut::<TextEdit>() {
             let tx = context.dirty_sender.clone();
             let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -385,6 +426,12 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         // Downcast to the concrete widget type
         if let Ok(widget) = new_widget.downcast::<W>() {
             self.widget = *widget;
+        }
+
+        // ProxyRenderObject has no properties to update from widget config
+        // Just mark it as needing layout in case child changed
+        if let Some(ro_id) = self.render_object_id {
+            context.mark_needs_layout(ro_id);
         }
 
         let element_id = context.element_id;
@@ -423,21 +470,13 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             }
         }
 
-        // Unregister global key if present
-        if let Some(WidgetKey::Global(_)) = &self.key {
-            if let Some(id) = self.id {
-                context.unregister_global_key(id);
-            }
-        }
+        // Use RenderObjectElement's default unmount for render object removal
+        // This unregisters global key, removes render object, and removes state
+        self.unmount_render_object(context);
 
         // Unmount child element via child_ops
         if let Some(child_key) = context.children().first().copied() {
             context.unmount_child(child_key);
-        }
-
-        // Remove state from storage
-        if let Some(id) = self.id {
-            context.remove_state(id);
         }
     }
 
@@ -453,9 +492,11 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         widget.downcast_ref::<W>().is_some()
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, _context: &mut ElementContext) {
-        // StatefulElement delegates its render_object_id to its child's render object
-        self.render_object_id = child_ro;
+    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+        // Link the child's render object to our ProxyRenderObject
+        if let Some(child_ro_key) = child_ro {
+            self.insert_child_render_object(child_ro_key, context);
+        }
     }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
