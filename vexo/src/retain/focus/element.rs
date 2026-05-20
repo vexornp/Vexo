@@ -123,7 +123,12 @@ impl Element for FocusElement {
 
         // Set element key on the focus node so FocusManager can map
         // focus nodes back to elements
-        context.focus_manager().set_element_key(focus_node, Some(context.element_id));
+        let element_id = context.element_id;
+        context.focus_manager().set_element_key(focus_node, Some(element_id));
+
+        // Store the FocusNodeKey in StateStorage so children can find it
+        // via parent_focus_node().
+        context.insert_state(context.element_id, focus_node);
 
         // Apply widget configuration to the focus node
         if let Some(focus_widget) = self.get_focus_widget() {
@@ -175,6 +180,7 @@ impl Element for FocusElement {
         }
 
         // Use RenderObjectElement's default unmount for render object removal
+        // (which also removes state from StateStorage)
         self.unmount_render_object(context);
     }
 
@@ -375,7 +381,12 @@ impl Element for FocusScopeElement {
         self.focus_node = Some(focus_node);
 
         // Set element key on the scope node
-        context.focus_manager().set_element_key(focus_node, Some(context.element_id));
+        let element_id = context.element_id;
+        context.focus_manager().set_element_key(focus_node, Some(element_id));
+
+        // Store the FocusNodeKey in StateStorage so children can find it
+        // via parent_focus_node().
+        context.insert_state(context.element_id, focus_node);
 
         // Apply widget configuration to the scope node
         if let Some(scope_widget) = self.get_scope_widget() {
@@ -412,6 +423,9 @@ impl Element for FocusScopeElement {
             context.focus_manager().remove_node(focus_node);
             self.focus_node = None;
         }
+
+        // Remove the FocusNodeKey from StateStorage.
+        context.remove_state(context.element_id);
 
         // Use RenderObjectElement's default unmount for render object removal
         self.unmount_render_object(context);

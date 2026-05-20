@@ -414,6 +414,19 @@ impl FocusManager {
         }
     }
 
+    /// Find the focus node associated with an element key.
+    ///
+    /// Returns the FocusNodeKey of the first node whose element_key
+    /// matches the given ElementKey, or None if no such node exists.
+    pub fn node_for_element(&self, element_key: ElementKey) -> Option<FocusNodeKey> {
+        for (key, node) in &self.nodes {
+            if node.element_key == Some(element_key) {
+                return Some(key);
+            }
+        }
+        None
+    }
+
     /// Set the focus callbacks for a node.
     pub fn set_callbacks(
         &mut self,

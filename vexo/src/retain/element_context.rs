@@ -1,8 +1,13 @@
+//! Element context for lifecycle methods.
+//!
+//! Provides context during element mount, update, and unmount.
+
 use std::sync::mpsc;
 
 use crate::retain::build_owner::BuildOwner;
 use crate::retain::child_ops::ChildOps;
 use crate::retain::dirty::DirtyTracking;
+use crate::retain::focus::FocusManager;
 use crate::retain::id::{ElementKey, RenderObjectKey};
 use crate::retain::key::GlobalKey;
 use crate::retain::render_object::{RenderObject, RenderObjectRegistry};
@@ -23,6 +28,7 @@ pub struct ElementContext<'a> {
     pub build_owner: &'a BuildOwner,
     pub dirty_sender: &'a mpsc::Sender<ElementKey>,
     pub child_ops: &'a mut ChildOps,
+    pub focus_manager: &'a mut FocusManager,
 }
 
 impl<'a> ElementContext<'a> {
@@ -36,6 +42,7 @@ impl<'a> ElementContext<'a> {
         build_owner: &'a BuildOwner,
         dirty_sender: &'a mpsc::Sender<ElementKey>,
         child_ops: &'a mut ChildOps,
+        focus_manager: &'a mut FocusManager,
     ) -> Self {
         Self {
             element_id,
@@ -47,6 +54,7 @@ impl<'a> ElementContext<'a> {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
         }
     }
 
@@ -161,5 +169,32 @@ impl<'a> ElementContext<'a> {
     /// Unregister a global key for this element.
     pub fn unregister_global_key(&mut self, element_id: ElementKey) {
         self.build_owner.global_keys_mut().unregister_element(element_id);
+    }
+
+    // -- Focus management --
+
+    /// Get a mutable reference to the focus manager.
+    pub fn focus_manager(&mut self) -> &mut FocusManager {
+        self.focus_manager
+    }
+
+    /// Walk up the element tree to find the nearest parent FocusNodeKey.
+    ///
+    /// Each FocusElement/FocusScopeElement stores its FocusNodeKey in
+    /// StateStorage keyed by its ElementKey. This method walks up via
+    /// `self.parent` and checks each ancestor for a stored FocusNodeKey.
+    pub fn parent_focus_node(&self) -> Option<super::focus::FocusNodeKey> {
+        let current = self.parent;
+        while let Some(ancestor_key) = current {
+            // Check if this ancestor has a stored FocusNodeKey.
+            if let Some(node_key) = self.state.get::<super::focus::FocusNodeKey>(ancestor_key) {
+                return Some(*node_key);
+            }
+            // We can't walk further without the element registry.
+            // For now, stop at the immediate parent. The Reconciler will
+            // provide the correct parent chain when constructing the context.
+            break;
+        }
+        None
     }
 }

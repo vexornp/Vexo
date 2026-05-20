@@ -9,6 +9,7 @@ use crate::input::Modifiers;
 
 use super::{ElementKey, StateStorage};
 use super::build_owner::BuildOwner;
+use super::focus::{FocusManager, FocusNodeKey, UnfocusDisposition};
 
 // ============================================================================
 // EVENT CONTEXT
@@ -23,6 +24,7 @@ use super::build_owner::BuildOwner;
 /// - State storage for element-local state
 /// - Build owner for marking elements dirty from event handlers
 /// - Font system for text editing operations
+/// - Focus manager for focus requests via FocusNodeKey
 pub struct EventContext<'a> {
     /// Current pointer position in logical coordinates.
     pub pointer_position: Point<Logical>,
@@ -75,6 +77,12 @@ pub struct EventContext<'a> {
 
     /// Whether the element requested to clear focus.
     clear_focus_request: bool,
+
+    /// Focus manager for focus requests via FocusNodeKey.
+    ///
+    /// This is `Some` when the pipeline provides FocusManager access
+    /// (which is the normal case), and `None` in test contexts.
+    focus_manager: Option<&'a mut FocusManager>,
 }
 
 impl<'a> EventContext<'a> {
@@ -98,6 +106,7 @@ impl<'a> EventContext<'a> {
             dirty_sender: None,
             focus_request: None,
             clear_focus_request: false,
+            focus_manager: None,
         }
     }
 
@@ -123,6 +132,34 @@ impl<'a> EventContext<'a> {
             dirty_sender: Some(dirty_sender),
             focus_request: None,
             clear_focus_request: false,
+            focus_manager: None,
+        }
+    }
+
+    /// Create a new event context with BuildOwner and FocusManager access.
+    pub fn with_focus_manager(
+        pointer_position: Point<Logical>,
+        focused_element: Option<ElementKey>,
+        bounds: Bounds<Logical>,
+        modifiers: Modifiers,
+        state: &'a mut StateStorage,
+        font_system: &'a mut glyphon::FontSystem,
+        build_owner: &'a BuildOwner,
+        dirty_sender: &'a mpsc::Sender<ElementKey>,
+        focus_manager: &'a mut FocusManager,
+    ) -> Self {
+        Self {
+            pointer_position,
+            focused_element,
+            bounds,
+            modifiers,
+            state,
+            font_system,
+            build_owner: Some(build_owner),
+            dirty_sender: Some(dirty_sender),
+            focus_request: None,
+            clear_focus_request: false,
+            focus_manager: Some(focus_manager),
         }
     }
 
@@ -141,12 +178,22 @@ impl<'a> EventContext<'a> {
         self.focused_element.is_some()
     }
 
-    /// Request focus for an element.
+    /// Request focus for an element (backward compat).
     ///
     /// The pipeline will process this request after the event is handled.
     pub fn request_focus(&mut self, element: ElementKey) {
         self.focus_request = Some(element);
         self.clear_focus_request = false;
+    }
+
+    /// Request focus via FocusManager with a FocusNodeKey.
+    ///
+    /// This is the preferred way to request focus when a FocusNodeKey
+    /// is available. It directly calls FocusManager::request_focus().
+    pub fn request_focus_via_manager(&mut self, node_key: FocusNodeKey, user_initiated: bool) {
+        if let Some(ref mut fm) = self.focus_manager {
+            fm.request_focus(node_key, user_initiated);
+        }
     }
 
     /// Request to clear focus from the currently focused element.
@@ -188,6 +235,11 @@ impl<'a> EventContext<'a> {
         if let Some(bo) = self.build_owner {
             bo.mark_needs_build(element_id);
         }
+    }
+
+    /// Get a mutable reference to the FocusManager (if available).
+    pub fn focus_manager_mut(&mut self) -> Option<&mut FocusManager> {
+        self.focus_manager.as_deref_mut()
     }
 }
 

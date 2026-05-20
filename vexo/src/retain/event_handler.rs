@@ -8,11 +8,12 @@ use std::any::Any;
 use std::sync::mpsc;
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position};
-use crate::input::{ButtonState, InputEvent, Modifiers};
+use crate::input::{ButtonState, InputEvent, Key, Modifiers, NamedKey};
 
 use super::build_owner::BuildOwner;
 use super::element::ElementRegistry;
 use super::event_context::EventContext;
+use super::focus::{FocusManager, UnfocusDisposition};
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
@@ -46,6 +47,7 @@ impl EventHandler {
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
+        focus_manager: &mut FocusManager,
         _position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
@@ -59,6 +61,7 @@ impl EventHandler {
                 build_owner,
                 dirty_sender,
                 focused_element,
+                focus_manager,
                 *position,
                 event,
                 modifiers,
@@ -71,6 +74,7 @@ impl EventHandler {
                 build_owner,
                 dirty_sender,
                 focused_element,
+                focus_manager,
                 *position,
                 event,
                 modifiers,
@@ -82,6 +86,7 @@ impl EventHandler {
                 build_owner,
                 dirty_sender,
                 focused_element,
+                focus_manager,
                 event,
                 modifiers,
             ),
@@ -107,6 +112,7 @@ impl EventHandler {
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
+        focus_manager: &mut FocusManager,
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
@@ -124,6 +130,8 @@ impl EventHandler {
                 ..
             } = event
             {
+                // Unfocus via FocusManager AND clear the cache
+                focus_manager.unfocus(UnfocusDisposition::Clear);
                 *focused_element = None;
             }
             return None;
@@ -143,7 +151,7 @@ impl EventHandler {
         // Iterate from deepest (last) to shallowest (first)
         for &element_id in element_path.iter().rev() {
             if let Some(element) = element_registry.get_mut(element_id) {
-                let mut ctx = EventContext::with_build_owner(
+                let mut ctx = EventContext::with_focus_manager(
                     position,
                     *focused_element,
                     bounds,
@@ -152,6 +160,7 @@ impl EventHandler {
                     font_system,
                     build_owner,
                     dirty_sender,
+                    focus_manager,
                 );
 
                 let message = element.on_event(event, &mut ctx);
@@ -160,6 +169,7 @@ impl EventHandler {
                 if let Some(focus) = ctx.focus_request() {
                     *focused_element = Some(focus);
                 } else if ctx.should_clear_focus() {
+                    focus_manager.unfocus(UnfocusDisposition::Clear);
                     *focused_element = None;
                 }
 
@@ -177,6 +187,7 @@ impl EventHandler {
                 ..
             } = event
             {
+                focus_manager.unfocus(UnfocusDisposition::Clear);
                 *focused_element = None;
             }
         }
@@ -192,39 +203,81 @@ impl EventHandler {
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focused_element: &mut Option<ElementKey>,
+        focus_manager: &mut FocusManager,
         event: &InputEvent,
         modifiers: Modifiers,
     ) -> Option<Box<dyn Any>> {
+        // Check for Tab key for focus traversal.
+        if let InputEvent::Keyboard {
+            key,
+            state: ButtonState::Pressed,
+            ..
+        } = event
+        {
+            match key {
+                Key::Named(NamedKey::Tab) => {
+                    if modifiers.shift {
+                        focus_manager.traverse_backward();
+                    } else {
+                        focus_manager.traverse_forward();
+                    }
+                    focus_manager.dispatch_focus_changes();
+                    *focused_element = focus_manager.focused_element();
+                    return None;
+                }
+                _ => {}
+            }
+        }
+
         // Get focused element
-        let focused = focused_element.as_ref()?;
+        let focused = match focused_element.as_ref() {
+            Some(f) => *f,
+            None => {
+                // No focused element; dispatch focus changes and return
+                focus_manager.dispatch_focus_changes();
+                *focused_element = focus_manager.focused_element();
+                return None;
+            }
+        };
 
         // Bounds not critical for keyboard events
         let bounds = Bounds::default();
 
-        let mut ctx = EventContext::with_build_owner(
-            Point::zero(),
-            *focused_element,
-            bounds,
-            modifiers,
-            state,
-            font_system,
-            build_owner,
-            dirty_sender,
-        );
+        if let Some(element) = element_registry.get_mut(focused) {
+            let mut ctx = EventContext::with_focus_manager(
+                Point::zero(),
+                *focused_element,
+                bounds,
+                modifiers,
+                state,
+                font_system,
+                build_owner,
+                dirty_sender,
+                focus_manager,
+            );
 
-        let any_message = element_registry
-            .get_mut(*focused)?
-            .on_event(event, &mut ctx);
+            let any_message = element.on_event(event, &mut ctx);
 
-        // Handle focus requests
-        if let Some(focus) = ctx.focus_request() {
-            *focused_element = Some(focus);
-        } else if ctx.should_clear_focus() {
-            *focused_element = None;
+            // Handle focus requests
+            if let Some(focus) = ctx.focus_request() {
+                *focused_element = Some(focus);
+            } else if ctx.should_clear_focus() {
+                focus_manager.unfocus(UnfocusDisposition::Clear);
+                *focused_element = None;
+            }
+
+            // Dispatch focus changes after processing.
+            focus_manager.dispatch_focus_changes();
+            *focused_element = focus_manager.focused_element();
+
+            // Return the message directly (already Box<dyn Any>)
+            any_message
+        } else {
+            // Focused element not found in registry
+            focus_manager.dispatch_focus_changes();
+            *focused_element = focus_manager.focused_element();
+            None
         }
-
-        // Return the message directly (already Box<dyn Any>)
-        any_message
     }
 
     /// Hit test at a given position.
