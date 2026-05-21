@@ -23,3 +23,6 @@ pub use scope::{FocusScopeData, UnfocusDisposition, TraversalEdgeBehavior};
 pub use manager::FocusManager;
 pub use attachment::FocusAttachment;
 pub use widget::{Focus, FocusScope};
+
+#[cfg(test)]
+mod integration_tests;
