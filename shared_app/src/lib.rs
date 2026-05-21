@@ -277,7 +277,7 @@ impl Application for State {
                 .push(RetainCounter {
                     label: "Stateful Counter".to_string(),
                 })
-                .push(retain::Focus::new(Box::new(retain::TextEdit::new(controller.clone())))),
+                .push(retain::TextEdit::new(controller.clone())),
         ))
     }
 }

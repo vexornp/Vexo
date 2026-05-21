@@ -58,7 +58,6 @@ mod style;
 mod update_result;
 mod stateful_widget;
 mod child_ops;
-mod focus;
 
 pub mod widgets;
 pub mod elements;
@@ -97,8 +96,6 @@ pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
 
 pub use child_ops::{ChildOp, ChildOps};
-
-pub use focus::{FocusNodeKey, FocusNodeData, FocusScopeData, UnfocusDisposition, TraversalPolicy, FocusManager, Focus, FocusScope};
 
 pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, TextEditState, TextEditingController};
 pub use elements::{LeafElement, ContainerElement};

@@ -158,7 +158,6 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner, ChildOps};
-    use crate::retain::focus::FocusManager;
 
     fn make_element_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -174,7 +173,6 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
-        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -185,7 +183,6 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
-            &mut focus_manager,
         );
 
         element.mount(&mut context);
@@ -205,7 +202,6 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
-        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -216,7 +212,6 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
-            &mut focus_manager,
         );
 
         element.mount(&mut context);
@@ -239,7 +234,6 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
-        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -250,7 +244,6 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
-            &mut focus_manager,
         );
 
         element.mount(&mut context);
@@ -270,7 +263,6 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
-        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -281,7 +273,6 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
-            &mut focus_manager,
         );
 
         element.mount(&mut context);

@@ -635,11 +635,8 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        // Wrap TextEdit with Focus widget — focus is now managed by FocusElement
-        let focused_text_edit = crate::retain::focus::Focus::new(Box::new(text_edit));
-
         let mut pipeline = ThreeTreePipeline::new();
-        pipeline.reconcile(Box::new(focused_text_edit));
+        pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
@@ -660,13 +657,13 @@ mod tests {
             &mut fs,
         );
 
-        // The FocusElement wrapping TextEdit should now be focused
+        // The TextEdit's StatefulElement should now be focused
         let focused = pipeline.focused_element();
-        assert!(focused.is_some(), "FocusElement should be focused after clicking inside TextEdit");
+        assert!(focused.is_some(), "TextEdit should be focused after clicking inside it");
 
-        // The focused element should be the root FocusElement
+        // The focused element should be the root StatefulElement
         let root = pipeline.element_registry().root().unwrap();
-        assert_eq!(focused, Some(root), "The focused element should be the root FocusElement");
+        assert_eq!(focused, Some(root), "The focused element should be the root StatefulElement");
     }
 
     #[test]
@@ -675,11 +672,8 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        // Wrap TextEdit with Focus widget — focus is now managed by FocusElement
-        let focused_text_edit = crate::retain::focus::Focus::new(Box::new(text_edit));
-
         let mut pipeline = ThreeTreePipeline::new();
-        pipeline.reconcile(Box::new(focused_text_edit));
+        pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
@@ -697,8 +691,8 @@ mod tests {
             &mut fs,
         );
 
-        // Verify FocusElement is focused
-        assert!(pipeline.focused_element().is_some(), "FocusElement should be focused after clicking inside");
+        // Verify TextEdit is focused
+        assert!(pipeline.focused_element().is_some(), "TextEdit should be focused after clicking inside");
 
         // Now click far outside the TextEdit bounds
         let click_outside = InputEvent::PointerButton {
@@ -723,13 +717,10 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        // Wrap TextEdit with Focus widget — focus is now managed by FocusElement
-        let focused_text_edit = crate::retain::focus::Focus::new(Box::new(text_edit));
-
-        // Put Focus-wrapped TextEdit inside a Column, like the real app does
+        // Put TextEdit inside a Column, like the real app does
         let column = crate::retain::Column::new()
             .push(crate::retain::Text::new("Title"))
-            .push(focused_text_edit);
+            .push(text_edit);
 
         let mut pipeline = ThreeTreePipeline::new();
         pipeline.reconcile(Box::new(column));
@@ -740,12 +731,12 @@ mod tests {
         // No element should be focused initially
         assert!(pipeline.focused_element().is_none());
 
-        // Find the FocusElement by walking the tree
+        // Find the TextEdit's StatefulElement by walking the tree
         let root = pipeline.element_registry().root().unwrap();
         let children = pipeline.element_registry().children(root).to_vec();
-        // Column has 2 children: Text and Focus(wrapping TextEdit)
+        // Column has 2 children: Text and TextEdit
         assert_eq!(children.len(), 2, "Column should have 2 children");
-        let focus_element_id = children[1]; // Focus is the second child
+        let text_edit_element_id = children[1]; // TextEdit is the second child
 
         // Click inside the TextEdit area (below the title text)
         // The title is roughly 29px tall, so clicking at y=30 should be
@@ -762,16 +753,16 @@ mod tests {
             &mut fs,
         );
 
-        // The FocusElement wrapping TextEdit should now be focused
+        // The TextEdit's StatefulElement should now be focused
         let focused = pipeline.focused_element();
         assert!(
             focused.is_some(),
-            "FocusElement should be focused after clicking inside TextEdit (when inside a Column)"
+            "TextEdit should be focused after clicking inside it (when inside a Column)"
         );
         assert_eq!(
             focused,
-            Some(focus_element_id),
-            "The focused element should be the FocusElement wrapping TextEdit"
+            Some(text_edit_element_id),
+            "The focused element should be the TextEdit's StatefulElement"
         );
     }
 }

@@ -564,16 +564,15 @@ mod tests {
     // ProxyRenderObject that appears in the hit test path, so the event
     // reaches StatefulElement via Phase 1 bubbling.
 
-    /// Verify that TextEdit click-to-focus works via FocusElement wrapper.
+    /// Verify that TextEdit click-to-focus works without Phase 2.
     ///
-    /// Focus is now managed by FocusElement wrappers rather than directly
-    /// by StatefulElement. When a TextEdit is wrapped with Focus, clicking
-    /// inside it triggers FocusElement::on_event() which requests focus
-    /// via the FocusManager.
+    /// After removing the Phase 2 ancestor walk from EventHandler, focus
+    /// requests from StatefulElement should still be honored because
+    /// ProxyRenderObject places StatefulElement in the hit test path,
+    /// allowing Phase 1 bubbling to deliver the event to it.
     #[test]
     fn test_textedit_click_to_focus_without_phase2() {
         use crate::retain::{TextEdit, TextEditingController};
-        use crate::retain::focus::Focus;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::core::Point;
 
@@ -581,11 +580,8 @@ mod tests {
         let controller = TextEditingController::new("editable", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        // Wrap TextEdit with Focus widget — focus is now managed by FocusElement
-        let focused_text_edit = Focus::new(Box::new(text_edit));
-
         let mut pipeline = ThreeTreePipeline::new();
-        pipeline.reconcile(Box::new(focused_text_edit));
+        pipeline.reconcile(Box::new(text_edit));
 
         // Layout
         let mut engine = TaffyLayoutEngine::new();
@@ -606,14 +602,16 @@ mod tests {
         let mut fs = create_test_font_system();
         let _result = pipeline.handle_event(click_position, &event, Modifiers::default(), &mut fs);
 
-        // After clicking, the FocusElement should be focused
-        // FocusElement handles pointer press and requests focus via FocusManager.
+        // After clicking, the TextEdit's StatefulElement should be focused
+        // This works because ProxyRenderObject appears in the hit test path,
+        // so Phase 1 bubbling delivers the event to StatefulElement, which
+        // then requests focus via on_event().
         assert!(pipeline.focused_element().is_some(),
-            "FocusElement should be focused after click");
+            "TextEdit should be focused after click (via Phase 1 bubbling, no Phase 2 needed)");
 
-        // The focused element should be the root FocusElement
+        // The focused element should be the root StatefulElement
         let root = pipeline.element_registry().root().unwrap();
         assert_eq!(pipeline.focused_element(), Some(root),
-            "The focused element should be the FocusElement wrapping TextEdit");
+            "The focused element should be the TextEdit's StatefulElement");
     }
 }

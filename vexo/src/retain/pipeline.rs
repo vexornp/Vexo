@@ -48,7 +48,6 @@ use super::child_ops::ChildOps;
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::event_handler::EventHandler;
-use super::focus::{FocusManager, UnfocusDisposition};
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::layouter::Layouter;
@@ -101,11 +100,8 @@ pub struct ThreeTreePipeline {
     /// Dirty tracking for incremental updates.
     dirty: DirtyTracking,
 
-    /// Currently focused element (cache synced from FocusManager).
+    /// Currently focused element (for keyboard events).
     focused_element: Option<ElementKey>,
-
-    /// Focus manager — the authoritative source for focus state.
-    focus_manager: FocusManager,
 
     /// Build owner for targeted rebuilds.
     build_owner: BuildOwner,
@@ -139,7 +135,6 @@ impl ThreeTreePipeline {
             state: StateStorage::new(),
             dirty: DirtyTracking::new(),
             focused_element: None,
-            focus_manager: FocusManager::new(),
             build_owner: BuildOwner::new(),
             child_ops: ChildOps::new(),
             dirty_sender,
@@ -148,10 +143,8 @@ impl ThreeTreePipeline {
         }
     }
 
-    /// Sync focused_element from FocusManager (authoritative) and then to BuildOwner.
-    fn sync_focus_to_build_owner(&mut self) {
-        // FocusManager is the authoritative source; sync the cache from it.
-        self.focused_element = self.focus_manager.focused_element();
+    /// Sync focused_element to BuildOwner so StatefulWidget::build() can access it.
+    fn sync_focus_to_build_owner(&self) {
         self.build_owner.set_focused_element(self.focused_element);
     }
 
@@ -193,7 +186,6 @@ impl ThreeTreePipeline {
             &mut self.build_owner,
             &mut self.child_ops,
             &self.dirty_sender,
-            &mut self.focus_manager,
             root_widget,
         );
     }
@@ -216,7 +208,6 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
             &self.dirty_sender,
             &self.dirty_receiver,
-            &mut self.focus_manager,
             &mut self.needs_full_reconcile,
             root_widget,
         );
@@ -237,7 +228,6 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
             &self.dirty_sender,
             &self.dirty_receiver,
-            &mut self.focus_manager,
         );
     }
 
@@ -351,7 +341,6 @@ impl ThreeTreePipeline {
             &self.build_owner,
             &self.dirty_sender,
             &mut self.focused_element,
-            &mut self.focus_manager,
             position,
             event,
             modifiers,
@@ -364,34 +353,8 @@ impl ThreeTreePipeline {
     }
 
     /// Set focus to an element.
-    ///
-    /// Updates both the FocusManager (authoritative source) and the
-    /// local cache. FocusManager is the source of truth; the cache
-    /// is synced from it during `sync_focus_to_build_owner()`.
     pub fn set_focus(&mut self, element: Option<ElementKey>) {
-        if let Some(element_id) = element {
-            // Find the focus node for this element and request focus
-            let node_key = self.focus_manager.node_for_element(element_id);
-            if let Some(node_key) = node_key {
-                self.focus_manager.request_focus(node_key, true);
-            } else {
-                // No focus node for this element; just update the cache
-                self.focused_element = Some(element_id);
-            }
-        } else {
-            self.focus_manager.unfocus(UnfocusDisposition::Clear);
-            self.focused_element = None;
-        }
-    }
-
-    /// Get the focus manager.
-    pub fn focus_manager(&self) -> &FocusManager {
-        &self.focus_manager
-    }
-
-    /// Get a mutable reference to the focus manager.
-    pub fn focus_manager_mut(&mut self) -> &mut FocusManager {
-        &mut self.focus_manager
+        self.focused_element = element;
     }
 
     /// Get the element registry.
@@ -660,18 +623,15 @@ mod tests {
 
     #[test]
     fn test_pipeline_syncs_focused_element_to_build_owner() {
-        use crate::retain::focus::Focus;
-
         let mut pipeline = ThreeTreePipeline::new();
-        // Use a Focus widget so a focus node is created for the root element
-        pipeline.reconcile(Box::new(Focus::new(Box::new(Text::new("Hello")))));
+        pipeline.reconcile(Box::new(Text::new("Hello")));
 
-        // Set focus on the root element (which now has a focus node)
+        // Set focus on the root element
         let root_id = pipeline.element_registry().root().unwrap();
         pipeline.set_focus(Some(root_id));
 
         // After update, BuildOwner should have the focused element
-        pipeline.update(Box::new(Focus::new(Box::new(Text::new("Hello")))));
+        pipeline.update(Box::new(Text::new("Hello")));
         assert_eq!(pipeline.build_owner().focused_element(), Some(root_id));
     }
 }
