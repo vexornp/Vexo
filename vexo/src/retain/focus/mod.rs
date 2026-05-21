@@ -15,7 +15,9 @@
 mod node;
 mod scope;
 mod manager;
+mod attachment;
 
 pub use node::{FocusNodeId, FocusNodeData};
 pub use scope::{FocusScopeData, UnfocusDisposition, TraversalEdgeBehavior};
 pub use manager::FocusManager;
+pub use attachment::FocusAttachment;
