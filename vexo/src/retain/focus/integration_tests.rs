@@ -218,3 +218,59 @@ fn test_multiple_focus_requests_last_wins() {
     pipeline.set_focus(Some(root));
     assert_eq!(pipeline.focused_element(), Some(root));
 }
+
+#[test]
+fn test_click_to_focus_with_stateful_element() {
+    let mut pipeline = ThreeTreePipeline::new();
+    let mut font_system = create_test_font_system();
+
+    // Reconcile a TextEdit wrapped in Focus.
+    // TextEdit is a StatefulWidget that requests focus on pointer press.
+    let controller = crate::retain::TextEditingController::new("Hello", &mut font_system);
+    let widget = Focus::new(crate::retain::TextEdit::new(controller.clone()));
+    pipeline.reconcile(Box::new(widget));
+    layout_pipeline(&mut pipeline, &mut font_system);
+
+    // Click inside the text bounds — TextEdit's StatefulElement
+    // requests focus on pointer press.
+    let event = pointer_press(5.0, 5.0);
+    pipeline.handle_event(
+        Point::new(5.0, 5.0),
+        &event,
+        Modifiers::default(),
+        &mut font_system,
+    );
+
+    // Focus should be set (TextEdit requested focus)
+    assert!(pipeline.focused_element().is_some());
+}
+
+#[test]
+fn test_focus_wrapper_inflates_child() {
+    let mut pipeline = ThreeTreePipeline::new();
+
+    // Reconcile Focus::new(Text::new("Hello"))
+    // Focus now overrides children() to return the child as a slice,
+    // so ContainerElement should inflate the child.
+    let widget = Focus::new(Text::new("Hello"));
+    pipeline.reconcile(Box::new(widget));
+
+    // Should have at least 2 elements (Focus ContainerElement + Text LeafElement)
+    assert!(pipeline.element_registry().len() >= 2);
+}
+
+#[test]
+fn test_focus_scope_wrapper_inflates_child() {
+    let mut pipeline = ThreeTreePipeline::new();
+
+    // Reconcile FocusScope::new(Column::new().push(Text::new("A")).push(Text::new("B")))
+    let widget = FocusScope::new(
+        Column::new()
+            .push(Text::new("A"))
+            .push(Text::new("B")),
+    );
+    pipeline.reconcile(Box::new(widget));
+
+    // Should have at least 4 elements (FocusScope + Column + 2 Text)
+    assert!(pipeline.element_registry().len() >= 4);
+}

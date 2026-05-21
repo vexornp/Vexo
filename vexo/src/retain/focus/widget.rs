@@ -85,6 +85,12 @@ impl Widget for Focus {
         Some(self.child.as_ref())
     }
 
+    fn children(&self) -> &[Box<dyn Widget>] {
+        // ContainerElement::mount() uses children() to inflate child widgets.
+        // Return the single child as a slice so it gets inflated.
+        std::slice::from_ref(&self.child)
+    }
+
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         // Focus is a proxy — delegate to child
         self.child.update_render_object(render_object)
@@ -154,6 +160,10 @@ impl Widget for FocusScope {
 
     fn child(&self) -> Option<&dyn Widget> {
         Some(self.child.as_ref())
+    }
+
+    fn children(&self) -> &[Box<dyn Widget>] {
+        std::slice::from_ref(&self.child)
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
@@ -273,5 +283,21 @@ mod tests {
     fn test_focus_scope_create_element() {
         let scope = FocusScope::new(Text::new("Hello"));
         let _element = scope.create_element();
+    }
+
+    #[test]
+    fn test_focus_children_returns_child_as_slice() {
+        let focus = Focus::new(Text::new("Hello"));
+        let children = focus.children();
+        assert_eq!(children.len(), 1);
+        assert!(children[0].as_any().downcast_ref::<Text>().is_some());
+    }
+
+    #[test]
+    fn test_focus_scope_children_returns_child_as_slice() {
+        let scope = FocusScope::new(Text::new("Hello"));
+        let children = scope.children();
+        assert_eq!(children.len(), 1);
+        assert!(children[0].as_any().downcast_ref::<Text>().is_some());
     }
 }
