@@ -325,7 +325,7 @@ impl FocusManager {
         let scope_id = self.enclosing_scope(focused_id);
 
         match disposition {
-            UnfocusDisposition::PreviouslyFocusedChild => {
+            UnfocusDisposition::RestorePrevious => {
                 // Walk up the scope tree looking for a scope with a
                 // focused_child memory that is not the node being unfocused.
                 let mut current_scope = scope_id;
@@ -358,7 +358,7 @@ impl FocusManager {
                     self.primary_focus = None;
                 }
             }
-            UnfocusDisposition::Scope => {
+            UnfocusDisposition::Clear => {
                 // Focus the enclosing scope node itself.
                 if let Some(sid) = scope_id {
                     self.primary_focus = Some(sid);
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(mgr.primary_focus(), Some(node_b));
 
         // Unfocus with PreviouslyFocusedChild — should restore A.
-        let prev = mgr.unfocus_with_disposition(UnfocusDisposition::PreviouslyFocusedChild);
+        let prev = mgr.unfocus_with_disposition(UnfocusDisposition::RestorePrevious);
         assert_eq!(prev, Some(node_b));
         assert_eq!(mgr.primary_focus(), Some(node_a));
     }

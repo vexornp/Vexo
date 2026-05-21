@@ -45,16 +45,15 @@ impl Default for FocusScopeData {
 /// Mirrors Flutter's `UnfocusDisposition`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnfocusDisposition {
-    /// Move focus to the nearest focusable ancestor scope.
-    /// This is the default behavior.
-    PreviouslyFocusedChild,
-    /// Move focus to the scope itself (the scope node receives focus).
-    Scope,
+    /// Restore the scope's previously focused child from the history stack.
+    RestorePrevious,
+    /// Clear focus entirely (set primary_focus to None).
+    Clear,
 }
 
 impl Default for UnfocusDisposition {
     fn default() -> Self {
-        Self::PreviouslyFocusedChild
+        Self::RestorePrevious
     }
 }
 
@@ -63,16 +62,16 @@ impl Default for UnfocusDisposition {
 /// Mirrors Flutter's `TraversalEdgeBehavior`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraversalEdgeBehavior {
-    /// When traversal reaches the edge of a scope, wrap around to the
-    /// other side of the same scope.
-    LoopAround,
-    /// When traversal reaches the edge of a scope, move to the parent
-    /// scope and continue traversal there.
-    LeaveScope,
+    /// Wrap around within the scope (Tab from last goes to first).
+    ClosedLoop,
+    /// Exit to the parent scope and continue traversal there.
+    ParentScope,
+    /// Stay at the current position (no wrapping, no exit).
+    Stop,
 }
 
 impl Default for TraversalEdgeBehavior {
     fn default() -> Self {
-        Self::LoopAround
+        Self::ParentScope
     }
 }

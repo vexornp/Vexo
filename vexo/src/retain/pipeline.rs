@@ -48,6 +48,7 @@ use super::child_ops::ChildOps;
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::event_handler::EventHandler;
+use super::focus::FocusManager;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::layouter::Layouter;
@@ -100,8 +101,8 @@ pub struct ThreeTreePipeline {
     /// Dirty tracking for incremental updates.
     dirty: DirtyTracking,
 
-    /// Currently focused element (for keyboard events).
-    focused_element: Option<ElementKey>,
+    /// Focus manager for the focus tree.
+    focus_manager: FocusManager,
 
     /// Build owner for targeted rebuilds.
     build_owner: BuildOwner,
@@ -134,7 +135,7 @@ impl ThreeTreePipeline {
             render_objects: RenderObjectRegistry::new(),
             state: StateStorage::new(),
             dirty: DirtyTracking::new(),
-            focused_element: None,
+            focus_manager: FocusManager::new(),
             build_owner: BuildOwner::new(),
             child_ops: ChildOps::new(),
             dirty_sender,
@@ -145,7 +146,7 @@ impl ThreeTreePipeline {
 
     /// Sync focused_element to BuildOwner so StatefulWidget::build() can access it.
     fn sync_focus_to_build_owner(&self) {
-        self.build_owner.set_focused_element(self.focused_element);
+        self.build_owner.set_focused_element(self.focus_manager.primary_focus_element());
     }
 
     /// Reconcile a new widget tree with the existing element tree.
@@ -340,7 +341,7 @@ impl ThreeTreePipeline {
             font_system,
             &self.build_owner,
             &self.dirty_sender,
-            &mut self.focused_element,
+            &mut self.focus_manager,
             position,
             event,
             modifiers,
@@ -349,12 +350,29 @@ impl ThreeTreePipeline {
 
     /// Get the currently focused element.
     pub fn focused_element(&self) -> Option<ElementKey> {
-        self.focused_element
+        self.focus_manager.primary_focus_element()
     }
 
     /// Set focus to an element.
+    ///
+    /// If the element does not yet have a FocusNode in the focus tree,
+    /// one is created under the root scope before requesting focus.
+    /// Pass `None` to clear focus.
     pub fn set_focus(&mut self, element: Option<ElementKey>) {
-        self.focused_element = element;
+        if let Some(element_key) = element {
+            // Ensure a FocusNode exists for this element.
+            let node_id = if let Some(existing) = self.focus_manager.node_for_element(element_key) {
+                existing
+            } else {
+                self.focus_manager.create_node_with_element(
+                    self.focus_manager.root_scope(),
+                    element_key,
+                )
+            };
+            self.focus_manager.request_focus(node_id);
+        } else {
+            self.focus_manager.unfocus();
+        }
     }
 
     /// Get the element registry.
