@@ -369,33 +369,25 @@ impl FocusManager {
 
         match disposition {
             UnfocusDisposition::RestorePrevious => {
-                // Walk up the scope tree looking for a scope with a
-                // focused_child memory that is not the node being unfocused.
-                let mut current_scope = scope_id;
-                let mut new_focus: Option<FocusNodeId> = None;
-
-                while let Some(sid) = current_scope {
-                    if let Some(scope_data) = self.scopes.get(sid) {
-                        // Try to find a focused child that is not the one being unfocused.
-                        for &child_id in scope_data.focused_children.iter().rev() {
-                            if child_id != focused_id && self.nodes.contains_key(child_id) {
-                                new_focus = Some(child_id);
-                                break;
-                            }
-                        }
-                        if new_focus.is_some() {
-                            break;
-                        }
+                // Remove the currently focused node from its enclosing scope's
+                // focused_children history.
+                if let Some(sid) = scope_id {
+                    if let Some(scope) = self.scopes.get_mut(sid) {
+                        scope.focused_children.retain(|c| *c != focused_id);
                     }
-                    // Move to parent scope.
-                    current_scope = self.nodes.get(sid)
-                        .and_then(|n| n.parent)
-                        .filter(|&pid| self.nodes.get(pid).map(|n| n.is_scope).unwrap_or(false));
                 }
 
-                if let Some(nf) = new_focus {
-                    self.primary_focus = Some(nf);
-                    self.set_as_focused_child_for_scope(nf);
+                // Get the previous focused child from the same scope.
+                let prev_child = scope_id
+                    .and_then(|sid| self.scopes.get(sid))
+                    .and_then(|s| s.focused_child());
+
+                if let Some(prev) = prev_child {
+                    // If the previous child is a scope, descend into it to
+                    // restore the leaf node it remembers.
+                    let target = self.descend_to_leaf(prev);
+                    self.primary_focus = Some(target);
+                    self.set_as_focused_child_for_scope(target);
                 } else {
                     // No previously focused child found; clear primary focus.
                     self.primary_focus = None;
@@ -490,19 +482,56 @@ impl FocusManager {
     }
 
     /// Record `node_id` as the most-recently focused child in its
-    /// enclosing scope's `focused_children` stack.
+    /// enclosing scope's `focused_children` stack, then walk up ancestor
+    /// scopes and push each scope as the focused child of its parent.
+    ///
+    /// This ensures that when a leaf node gains focus, every ancestor
+    /// scope remembers which of its children (including intermediate
+    /// scopes) was most recently focused, enabling `descend_to_leaf()`
+    /// to restore the correct leaf when a scope regains focus.
     fn set_as_focused_child_for_scope(&mut self, node_id: FocusNodeId) {
-        let parent_scope = self.nodes.get(node_id)
-            .and_then(|n| n.parent);
+        let mut current = Some(node_id);
 
-        let Some(scope_id) = parent_scope else {
-            return;
-        };
+        while let Some(cid) = current {
+            let parent_scope = self.nodes.get(cid)
+                .and_then(|n| n.parent);
 
-        // Remove any previous occurrence of node_id in the focused_children stack.
-        if let Some(scope) = self.scopes.get_mut(scope_id) {
-            scope.focused_children.retain(|c| *c != node_id);
-            scope.focused_children.push(node_id);
+            let Some(scope_id) = parent_scope else {
+                return;
+            };
+
+            // Remove any previous occurrence of current node in the
+            // parent scope's focused_children stack, then push to top.
+            if let Some(scope) = self.scopes.get_mut(scope_id) {
+                scope.focused_children.retain(|c| *c != cid);
+                scope.focused_children.push(cid);
+            }
+
+            // Walk up: next iteration records the parent scope in its
+            // own parent's focused_children.
+            current = Some(scope_id);
+        }
+    }
+
+    /// Descend through nested scopes' `focused_children` to find the leaf node.
+    ///
+    /// If `id` is a leaf node, returns `id` itself. If `id` is a scope,
+    /// follows the scope's `focused_child()` chain until a leaf is reached.
+    /// If a scope has no focused child, the scope itself is returned.
+    pub fn descend_to_leaf(&self, id: FocusNodeId) -> FocusNodeId {
+        let mut current = id;
+        loop {
+            let node = match self.nodes.get(current) {
+                Some(n) => n,
+                None => return current,
+            };
+            if !node.is_scope {
+                return current;
+            }
+            match self.scopes.get(current).and_then(|s| s.focused_child()) {
+                Some(child) => current = child,
+                None => return current,
+            }
         }
     }
 
@@ -854,5 +883,50 @@ mod tests {
         mgr.request_focus(node2);
         mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node2));
+    }
+
+    #[test]
+    fn test_scope_focus_memory_nested() {
+        let mut mgr = FocusManager::new();
+        let root = mgr.root_scope();
+        let outer_scope = mgr.create_scope(root);
+        let inner_scope = mgr.create_scope(outer_scope);
+        let node1 = mgr.create_node(inner_scope);
+        let node2 = mgr.create_node(inner_scope);
+
+        // Focus node1, then node2
+        mgr.request_focus(node1);
+        mgr.apply_focus_changes();
+        mgr.request_focus(node2);
+        mgr.apply_focus_changes();
+        assert_eq!(mgr.primary_focus(), Some(node2));
+
+        // Unfocus node2 with RestorePrevious
+        mgr.unfocus_with_disposition(UnfocusDisposition::RestorePrevious);
+        assert_eq!(mgr.primary_focus(), Some(node1));
+
+        // Inner scope should remember node1
+        assert_eq!(mgr.get_scope(inner_scope).unwrap().focused_child(), Some(node1));
+    }
+
+    #[test]
+    fn test_descend_to_leaf() {
+        let mut mgr = FocusManager::new();
+        let root = mgr.root_scope();
+        let scope1 = mgr.create_scope(root);
+        let scope2 = mgr.create_scope(scope1);
+        let leaf = mgr.create_node(scope2);
+
+        // Focus the leaf
+        mgr.request_focus(leaf);
+        mgr.apply_focus_changes();
+
+        // scope2 should remember leaf
+        assert_eq!(mgr.get_scope(scope2).unwrap().focused_child(), Some(leaf));
+        // scope1 should remember scope2
+        assert_eq!(mgr.get_scope(scope1).unwrap().focused_child(), Some(scope2));
+
+        // Descend from scope1 should reach leaf
+        assert_eq!(mgr.descend_to_leaf(scope1), leaf);
     }
 }
