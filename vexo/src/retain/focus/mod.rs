@@ -15,4 +15,7 @@ pub use widget::{Focus, FocusScope};
 pub use element::{FocusElement, FocusScopeElement};
 
 #[cfg(test)]
+mod integration_tests;
+
+#[cfg(test)]
 mod manager_tests;

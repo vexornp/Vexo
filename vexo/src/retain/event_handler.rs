@@ -167,6 +167,11 @@ impl EventHandler {
 
                 // Handle focus requests from this element
                 if let Some(focus) = ctx.focus_request() {
+                    // Update FocusManager (authoritative source) via node_for_element
+                    let node_key = focus_manager.node_for_element(focus);
+                    if let Some(node_key) = node_key {
+                        focus_manager.request_focus(node_key, true);
+                    }
                     *focused_element = Some(focus);
                 } else if ctx.should_clear_focus() {
                     focus_manager.unfocus(UnfocusDisposition::Clear);

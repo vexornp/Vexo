@@ -288,6 +288,11 @@ impl FocusManager {
         self.root_scope
     }
 
+    /// Returns the total number of nodes (including scopes and root_scope).
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Walk up from `key` to find the nearest enclosing scope.
     ///
     /// The node itself is not considered; we look at ancestors only.
