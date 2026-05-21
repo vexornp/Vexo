@@ -58,6 +58,14 @@ impl FocusElement {
         }
     }
 
+    /// Store the widget on this element.
+    ///
+    /// Called by Focus::create_element() before returning the element,
+    /// so that mount() can access the child widget for inflation.
+    pub fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
+    }
+
     /// Get the child widget from the stored widget.
     fn get_child_widget(&self) -> Option<&dyn Widget> {
         self.widget.as_ref()?.child()
@@ -315,6 +323,14 @@ impl FocusScopeElement {
             widget: None,
             focus_node: None,
         }
+    }
+
+    /// Store the widget on this element.
+    ///
+    /// Called by FocusScope::create_element() before returning the element,
+    /// so that mount() can access the child widget for inflation.
+    pub fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
     }
 
     /// Get the child widget from the stored widget.

@@ -539,19 +539,8 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             }
         }
 
-        // For pointer events (click to focus), check if pointer is inside
-        if let InputEvent::PointerButton {
-            state: crate::input::ButtonState::Pressed,
-            ..
-        } = event
-        {
-            if context.is_pointer_inside() {
-                if let Some(id) = self.id {
-                    context.request_focus(id);
-                    return Some(Box::new(()));
-                }
-            }
-        }
+        // Focus is now managed by FocusElement wrappers — StatefulElement
+        // no longer requests focus on pointer press.
 
         None
     }

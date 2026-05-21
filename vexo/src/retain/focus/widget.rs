@@ -126,7 +126,9 @@ impl Widget for Focus {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(super::element::FocusElement::new())
+        let mut elem = super::element::FocusElement::new();
+        elem.set_widget(self.clone_boxed());
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
@@ -233,7 +235,9 @@ impl Widget for FocusScope {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(super::element::FocusScopeElement::new())
+        let mut elem = super::element::FocusScopeElement::new();
+        elem.set_widget(self.clone_boxed());
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
