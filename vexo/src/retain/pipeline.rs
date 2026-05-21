@@ -334,7 +334,7 @@ impl ThreeTreePipeline {
         modifiers: Modifiers,
         font_system: &mut glyphon::FontSystem,
     ) -> Option<Box<dyn Any>> {
-        EventHandler::handle_event(
+        let result = EventHandler::handle_event(
             &mut self.element_registry,
             &self.render_objects,
             &mut self.state,
@@ -345,7 +345,12 @@ impl ThreeTreePipeline {
             position,
             event,
             modifiers,
-        )
+        );
+
+        // Commit deferred focus changes
+        self.focus_manager.apply_focus_changes();
+
+        result
     }
 
     /// Get the currently focused element.
@@ -373,6 +378,8 @@ impl ThreeTreePipeline {
         } else {
             self.focus_manager.unfocus();
         }
+        // Apply deferred focus changes immediately for programmatic focus changes.
+        self.focus_manager.apply_focus_changes();
     }
 
     /// Get the element registry.

@@ -27,6 +27,10 @@ pub struct FocusManager {
     /// Maps element keys to focus nodes. Used during the transition period
     /// from the flat `Option<ElementKey>` focus model.
     element_to_node: HashMap<ElementKey, FocusNodeId>,
+    /// Pending focus request (deferred until apply_focus_changes).
+    pending_focus_request: Option<FocusNodeId>,
+    /// Whether a focus change has been requested this frame.
+    has_pending_focus_change: bool,
 }
 
 impl FocusManager {
@@ -47,6 +51,8 @@ impl FocusManager {
             root_scope,
             primary_focus: None,
             element_to_node: HashMap::new(),
+            pending_focus_request: None,
+            has_pending_focus_change: false,
         }
     }
 
@@ -269,38 +275,75 @@ impl FocusManager {
 
     /// Request focus on `node_id`.
     ///
-    /// This is an immediate (non-deferred) focus change. Returns the
-    /// previously focused node, if any.
+    /// This is a deferred focus change — the actual `primary_focus` update
+    /// happens when `apply_focus_changes()` is called (typically at the end
+    /// of event processing).
     ///
-    /// If `can_request_focus` is `false` on the target node, this is a
-    /// no-op and returns `None`.
-    pub fn request_focus(&mut self, node_id: FocusNodeId) -> Option<FocusNodeId> {
-        let can_request = self.nodes.get(node_id)
-            .map(|n| n.can_request_focus)
-            .unwrap_or(false);
-
-        if !can_request {
-            return None;
+    /// If `can_request_focus` is `false` on the target node, this is a no-op.
+    pub fn request_focus(&mut self, node_id: FocusNodeId) {
+        if let Some(node) = self.nodes.get(node_id) {
+            if !node.can_request_focus {
+                return;
+            }
+        } else {
+            return;
         }
-
-        let previous = self.primary_focus;
-        self.primary_focus = Some(node_id);
-
-        // Update scope focused-children memory.
-        self.set_as_focused_child_for_scope(node_id);
-
-        previous
+        self.pending_focus_request = Some(node_id);
+        self.has_pending_focus_change = true;
     }
 
     /// Request focus by element key.
     ///
     /// Looks up the focus node associated with `element_key` and requests
-    /// focus on it. Returns the previously focused node, if any.
-    /// Returns `None` if no node is associated with the element key or
-    /// if the node cannot request focus.
-    pub fn request_focus_by_element(&mut self, element_key: ElementKey) -> Option<FocusNodeId> {
-        let node_id = self.element_to_node.get(&element_key).copied()?;
-        self.request_focus(node_id)
+    /// focus on it (deferred). Returns `None` if no node is associated with
+    /// the element key or if the node cannot request focus.
+    pub fn request_focus_by_element(&mut self, element_key: ElementKey) {
+        let Some(node_id) = self.element_to_node.get(&element_key).copied() else {
+            return;
+        };
+        self.request_focus(node_id);
+    }
+
+    /// Commit any pending deferred focus changes.
+    ///
+    /// This should be called at the end of event processing (by the pipeline)
+    /// so that all focus requests made during event handling are applied
+    /// atomically.
+    pub fn apply_focus_changes(&mut self) {
+        if !self.has_pending_focus_change {
+            return;
+        }
+        self.has_pending_focus_change = false;
+
+        let new_focus = self.pending_focus_request.take();
+
+        // Commit the focus change
+        self.primary_focus = new_focus;
+
+        // Update scope focused_children for the new focus
+        if let Some(new) = new_focus {
+            self.set_as_focused_child_for_scope(new);
+        }
+    }
+
+    /// Return `true` if there are pending deferred focus changes.
+    pub fn has_pending_changes(&self) -> bool {
+        self.has_pending_focus_change
+    }
+
+    /// Return the ancestor path from `id` up to the root.
+    fn ancestor_path(&self, id: FocusNodeId) -> Vec<FocusNodeId> {
+        let mut path = vec![id];
+        let mut current = id;
+        while let Some(node) = self.nodes.get(current) {
+            if let Some(parent) = node.parent {
+                path.push(parent);
+                current = parent;
+            } else {
+                break;
+            }
+        }
+        path
     }
 
     /// Unfocus the current primary focus.
@@ -593,16 +636,16 @@ mod tests {
         let node_a = mgr.create_node(root);
         let node_b = mgr.create_node(root);
 
-        // Request focus on A.
-        let prev = mgr.request_focus(node_a);
-        assert!(prev.is_none());
+        // Request focus on A (deferred).
+        mgr.request_focus(node_a);
+        mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node_a));
         assert!(mgr.has_primary_focus(node_a));
         assert!(!mgr.has_primary_focus(node_b));
 
-        // Request focus on B — should return A as previous.
-        let prev = mgr.request_focus(node_b);
-        assert_eq!(prev, Some(node_a));
+        // Request focus on B — last request wins.
+        mgr.request_focus(node_b);
+        mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node_b));
         assert!(mgr.has_primary_focus(node_b));
     }
@@ -617,13 +660,14 @@ mod tests {
 
         // Focus A first.
         mgr.request_focus(node_a);
+        mgr.apply_focus_changes();
 
         // Make B unable to request focus.
         mgr.get_node_mut(node_b).unwrap().can_request_focus = false;
 
         // Requesting focus on B should be a no-op.
-        let prev = mgr.request_focus(node_b);
-        assert!(prev.is_none());
+        mgr.request_focus(node_b);
+        mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node_a));
     }
 
@@ -634,6 +678,7 @@ mod tests {
 
         let node = mgr.create_node(root);
         mgr.request_focus(node);
+        mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node));
 
         let prev = mgr.unfocus();
@@ -648,6 +693,7 @@ mod tests {
 
         let node = mgr.create_node(root);
         mgr.request_focus(node);
+        mgr.apply_focus_changes();
 
         // Remove the focused node.
         assert!(mgr.remove_node(node));
@@ -716,11 +762,13 @@ mod tests {
 
         // Focus A — it should be recorded in scope's focused_children.
         mgr.request_focus(node_a);
+        mgr.apply_focus_changes();
         let scope_data = mgr.get_scope(scope).unwrap();
         assert_eq!(scope_data.focused_child(), Some(node_a));
 
         // Focus B — B should replace A as the focused child.
         mgr.request_focus(node_b);
+        mgr.apply_focus_changes();
         let scope_data = mgr.get_scope(scope).unwrap();
         assert_eq!(scope_data.focused_child(), Some(node_b));
         // A should still be in the stack (just not at the top).
@@ -738,7 +786,9 @@ mod tests {
 
         // Focus A, then B.
         mgr.request_focus(node_a);
+        mgr.apply_focus_changes();
         mgr.request_focus(node_b);
+        mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(node_b));
 
         // Unfocus with PreviouslyFocusedChild — should restore A.
@@ -765,11 +815,44 @@ mod tests {
 
         // Focus the node.
         mgr.request_focus(node);
+        mgr.apply_focus_changes();
         assert!(mgr.is_element_focused(ek));
 
         // Remove the node — mapping should be gone.
         mgr.remove_node(node);
         assert!(mgr.node_for_element(ek).is_none());
         assert!(!mgr.is_element_focused(ek));
+    }
+
+    #[test]
+    fn test_deferred_focus_change() {
+        let mut mgr = FocusManager::new();
+        let root = mgr.root_scope();
+        let node1 = mgr.create_node(root);
+
+        // Request focus (deferred)
+        mgr.request_focus(node1);
+        assert!(mgr.has_pending_changes());
+        // Primary focus not yet changed
+        assert!(mgr.primary_focus().is_none());
+
+        // Apply changes
+        mgr.apply_focus_changes();
+        assert_eq!(mgr.primary_focus(), Some(node1));
+        assert!(!mgr.has_pending_changes());
+    }
+
+    #[test]
+    fn test_deferred_coalescing() {
+        let mut mgr = FocusManager::new();
+        let root = mgr.root_scope();
+        let node1 = mgr.create_node(root);
+        let node2 = mgr.create_node(root);
+
+        // Multiple requests in one frame — only last wins
+        mgr.request_focus(node1);
+        mgr.request_focus(node2);
+        mgr.apply_focus_changes();
+        assert_eq!(mgr.primary_focus(), Some(node2));
     }
 }
