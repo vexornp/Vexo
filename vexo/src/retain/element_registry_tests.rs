@@ -1,9 +1,12 @@
 //! Tests for Element registry.
 
 use super::*;
+use super::focus::attachment::FocusAttachment;
 
 /// Mock element for testing.
-struct MockElement;
+struct MockElement {
+    focus_attachment: Option<FocusAttachment>,
+}
 
 impl Element for MockElement {
     fn mount(&mut self, _context: &mut ElementContext) {}
@@ -12,13 +15,15 @@ impl Element for MockElement {
     fn render_object(&self) -> Option<RenderObjectKey> { None }
     fn widget_key(&self) -> Option<WidgetKey> { None }
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
+    fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
 }
 
 #[test]
 fn test_mount_creates_element() {
     let mut registry = ElementRegistry::new();
 
-    let id = registry.insert(Box::new(MockElement), None);
+    let id = registry.insert(Box::new(MockElement { focus_attachment: None }), None);
 
     assert!(registry.contains(id));
 }
@@ -27,7 +32,7 @@ fn test_mount_creates_element() {
 fn test_unmount_removes_element() {
     let mut registry = ElementRegistry::new();
 
-    let id = registry.insert(Box::new(MockElement), None);
+    let id = registry.insert(Box::new(MockElement { focus_attachment: None }), None);
     registry.unmount(id);
 
     assert!(!registry.contains(id));
@@ -37,9 +42,9 @@ fn test_unmount_removes_element() {
 fn test_children_tracking() {
     let mut registry = ElementRegistry::new();
 
-    let parent = registry.insert(Box::new(MockElement), None);
-    let child1 = registry.insert(Box::new(MockElement), Some(parent));
-    let child2 = registry.insert(Box::new(MockElement), Some(parent));
+    let parent = registry.insert(Box::new(MockElement { focus_attachment: None }), None);
+    let child1 = registry.insert(Box::new(MockElement { focus_attachment: None }), Some(parent));
+    let child2 = registry.insert(Box::new(MockElement { focus_attachment: None }), Some(parent));
 
     // insert() does NOT add children to parent's list — the pipeline
     // calls add_child() separately after executing ChildOp::Inflate.

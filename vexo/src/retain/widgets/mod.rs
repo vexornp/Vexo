@@ -177,7 +177,7 @@ mod tests {
         }
 
         fn create_element(&self) -> Box<dyn Element> {
-            Box::new(TestElement)
+            Box::new(TestElement { focus_attachment: None })
         }
 
         fn create_render_object(&self) -> Box<dyn RenderObject> {
@@ -193,7 +193,9 @@ mod tests {
         }
     }
 
-    struct TestElement;
+    struct TestElement {
+        focus_attachment: Option<crate::retain::focus::attachment::FocusAttachment>,
+    }
 
     impl Element for TestElement {
         fn mount(&mut self, _context: &mut crate::retain::ElementContext) {}
@@ -207,6 +209,12 @@ mod tests {
         }
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool {
             true
+        }
+        fn focus_attachment(&self) -> &Option<crate::retain::focus::attachment::FocusAttachment> {
+            &self.focus_attachment
+        }
+        fn focus_attachment_mut(&mut self) -> &mut Option<crate::retain::focus::attachment::FocusAttachment> {
+            &mut self.focus_attachment
         }
     }
 

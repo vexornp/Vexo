@@ -9,6 +9,7 @@ use slotmap::{SlotMap, SecondaryMap};
 use super::id::ElementKey;
 use super::key::WidgetKey;
 use super::element_context::ElementContext;
+use super::focus::attachment::FocusAttachment;
 /// Persistent element with state and lifecycle.
 ///
 /// Elements represent the "live" state of the UI tree. They:
@@ -65,6 +66,12 @@ pub trait Element {
 
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}
+
+    /// Get the focus attachment for this element.
+    fn focus_attachment(&self) -> &Option<FocusAttachment>;
+
+    /// Get mutable access to the focus attachment for this element.
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment>;
 }
 
 /// Central registry for all live elements using generational keys.

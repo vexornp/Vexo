@@ -16,6 +16,7 @@ use crate::retain::{
     RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
 };
 use crate::retain::elements::RenderObjectElement;
+use crate::retain::focus::attachment::FocusAttachment;
 use crate::retain::style::Style;
 
 // ============================================================================
@@ -192,6 +193,7 @@ pub struct DecoratedContainerElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl DecoratedContainerElement {
@@ -202,6 +204,7 @@ impl DecoratedContainerElement {
             key: None,
             render_object: None,
             widget: None,
+            focus_attachment: None,
         }
     }
 
@@ -360,6 +363,14 @@ impl Element for DecoratedContainerElement {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
     }
 }
 

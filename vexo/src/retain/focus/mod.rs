@@ -12,7 +12,7 @@
 
 mod node;
 mod manager;
-mod attachment;
+pub mod attachment;
 mod widget;
 
 pub use node::{FocusNodeId, FocusNodeData};

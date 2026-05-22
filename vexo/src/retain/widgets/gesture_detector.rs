@@ -43,6 +43,7 @@ use super::super::{
     RenderObject, RenderObjectKey,
 };
 use super::super::elements::RenderObjectElement;
+use super::super::focus::attachment::FocusAttachment;
 
 // ============================================================================
 // GESTURE DETECTOR WIDGET
@@ -157,6 +158,7 @@ pub struct GestureDetectorElement {
     widget: Option<Box<dyn Widget>>,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl GestureDetectorElement {
@@ -169,6 +171,7 @@ impl GestureDetectorElement {
             widget: None,
             on_press: None,
             on_release: None,
+            focus_attachment: None,
         }
     }
 
@@ -334,6 +337,14 @@ impl Element for GestureDetectorElement {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
     }
 }
 

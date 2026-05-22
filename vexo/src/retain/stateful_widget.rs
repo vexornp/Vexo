@@ -15,6 +15,7 @@ use super::widgets::Widget;
 use super::widgets::TextEdit;
 use super::elements::RenderObjectElement;
 use super::EventContext;
+use super::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
 
@@ -291,6 +292,9 @@ pub struct StatefulElement<W: StatefulWidget> {
 
     /// The render object ID (ProxyRenderObject, set during mount).
     render_object_id: Option<RenderObjectKey>,
+
+    /// Focus tree attachment for this element.
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl<W: StatefulWidget> StatefulElement<W> {
@@ -301,6 +305,7 @@ impl<W: StatefulWidget> StatefulElement<W> {
             id: None,
             key: None,
             render_object_id: None,
+            focus_attachment: None,
         }
     }
 }
@@ -554,6 +559,14 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         }
 
         None
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
     }
 }
 

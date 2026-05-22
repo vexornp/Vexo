@@ -115,6 +115,7 @@ mod tests {
     use super::*;
     use super::Key;
     use super::super::{Element, ElementContext, RenderObjectKey};
+    use super::super::focus::attachment::FocusAttachment;
     use std::cell::Cell;
 
     struct MockWidget {
@@ -145,6 +146,7 @@ mod tests {
             Box::new(MockElement {
                 key: self.key.clone(),
                 render_object: None,
+                focus_attachment: None,
             })
         }
     }
@@ -152,6 +154,7 @@ mod tests {
     struct MockElement {
         key: Option<WidgetKey>,
         render_object: Option<RenderObjectKey>,
+        focus_attachment: Option<FocusAttachment>,
     }
 
     impl Element for MockElement {
@@ -161,6 +164,8 @@ mod tests {
         fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
         fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
         fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
+        fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
+        fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
     }
 
     fn make_element_key() -> ElementKey {
@@ -173,7 +178,7 @@ mod tests {
         let mut registry = ElementRegistry::new();
 
         // Create parent first
-        let parent_element = Box::new(MockElement { key: None, render_object: None });
+        let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
         let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
@@ -191,7 +196,7 @@ mod tests {
         let mut registry = ElementRegistry::new();
 
         // Create parent
-        let parent_element = Box::new(MockElement { key: None, render_object: None });
+        let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
         let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
@@ -218,7 +223,7 @@ mod tests {
         let mut registry = ElementRegistry::new();
 
         // Create parent
-        let parent_element = Box::new(MockElement { key: None, render_object: None });
+        let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
         let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 
@@ -245,7 +250,7 @@ mod tests {
         let mut registry = ElementRegistry::new();
 
         // Create parent
-        let parent_element = Box::new(MockElement { key: None, render_object: None });
+        let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
         let parent = registry.insert(parent_element, None);
         registry.set_children(parent, vec![]);
 

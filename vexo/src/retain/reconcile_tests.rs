@@ -3,6 +3,7 @@
 use super::*;
 use super::key::{Key, WidgetKey};
 use super::reconcile::Reconcilable;
+use super::focus::attachment::FocusAttachment;
 use std::cell::Cell;
 
 /// Mock widget for testing reconciliation
@@ -34,6 +35,7 @@ impl Reconcilable for MockWidget {
         Box::new(MockElement {
             key: self.key.clone(),
             render_object: None,
+            focus_attachment: None,
         })
     }
 }
@@ -42,6 +44,7 @@ impl Reconcilable for MockWidget {
 struct MockElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl Element for MockElement {
@@ -51,6 +54,8 @@ impl Element for MockElement {
     fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
     fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
     fn can_update(&self, _widget: &dyn std::any::Any) -> bool { true }
+    fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
 }
 
 
@@ -59,7 +64,7 @@ fn test_reconcile_inserts_new_element() {
     let mut registry = ElementRegistry::new();
 
     // Create parent first
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -80,7 +85,7 @@ fn test_reconcile_inserts_new_element() {
 fn test_reconcile_updates_matching_key() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -106,7 +111,7 @@ fn test_reconcile_updates_matching_key() {
 fn test_reconcile_removes_unmatched() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -132,7 +137,7 @@ fn test_reconcile_removes_unmatched() {
 fn test_reconcile_reorders_with_keys() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -162,7 +167,7 @@ fn test_reconcile_reorders_with_keys() {
 fn test_reconcile_preserves_state_on_update() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -188,7 +193,7 @@ fn test_reconcile_preserves_state_on_update() {
 fn test_reconcile_handles_insertion_in_middle() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -222,7 +227,7 @@ fn test_reconcile_handles_insertion_in_middle() {
 fn test_reconcile_handles_non_keyed_position_matching() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 
@@ -252,7 +257,7 @@ fn test_reconcile_handles_non_keyed_position_matching() {
 fn test_reconcile_clears_all_children() {
     let mut registry = ElementRegistry::new();
     // Create parent
-    let parent_element = Box::new(MockElement { key: None, render_object: None });
+    let parent_element = Box::new(MockElement { key: None, render_object: None, focus_attachment: None });
     let parent = registry.insert(parent_element, None);
     registry.set_children(parent, vec![]);
 

@@ -11,6 +11,7 @@ use std::any::Any;
 use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
 use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
+use crate::retain::focus::attachment::FocusAttachment;
 
 /// Element for container widgets (multiple children).
 ///
@@ -23,6 +24,7 @@ pub struct ContainerElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl ContainerElement {
@@ -33,6 +35,7 @@ impl ContainerElement {
             key: None,
             render_object: None,
             widget: None,
+            focus_attachment: None,
         }
     }
 
@@ -43,6 +46,7 @@ impl ContainerElement {
             key,
             render_object: None,
             widget: None,
+            focus_attachment: None,
         }
     }
 
@@ -214,5 +218,13 @@ impl Element for ContainerElement {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
     }
 }

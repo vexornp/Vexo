@@ -11,6 +11,7 @@ use std::any::Any;
 use crate::retain::{Element, ElementContext, ElementKey, RenderObjectKey, Widget};
 use crate::retain::elements::RenderObjectElement;
 use crate::retain::key::WidgetKey;
+use crate::retain::focus::attachment::FocusAttachment;
 
 /// Element for leaf widgets (no children).
 ///
@@ -31,6 +32,7 @@ pub struct LeafRenderObjectElement {
     key: Option<WidgetKey>,
     render_object: Option<RenderObjectKey>,
     widget: Option<Box<dyn Widget>>,
+    focus_attachment: Option<FocusAttachment>,
 }
 
 impl LeafRenderObjectElement {
@@ -41,6 +43,7 @@ impl LeafRenderObjectElement {
             key: None,
             render_object: None,
             widget: None,
+            focus_attachment: None,
         }
     }
 
@@ -51,6 +54,7 @@ impl LeafRenderObjectElement {
             key,
             render_object: None,
             widget: None,
+            focus_attachment: None,
         }
     }
 
@@ -145,6 +149,14 @@ impl Element for LeafRenderObjectElement {
     ) -> Option<Box<dyn Any>> {
         // Leaf elements (like Text) don't handle events by default
         None
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
     }
 }
 
