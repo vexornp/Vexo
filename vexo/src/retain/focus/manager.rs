@@ -12,7 +12,9 @@
 //! itself is never focusable — it exists solely as the top-level
 //! container for the focus tree.
 
-use slotmap::{SlotMap, SecondaryMap};
+use std::collections::HashMap;
+
+use slotmap::SlotMap;
 
 use crate::retain::id::ElementKey;
 use super::node::{FocusNodeId, FocusNodeData};
@@ -25,8 +27,8 @@ use super::node::{FocusNodeId, FocusNodeData};
 pub struct FocusManager {
     /// All focus nodes, keyed by `FocusNodeId`.
     nodes: SlotMap<FocusNodeId, FocusNodeData>,
-    /// Per-node element key, for reverse lookups.
-    element_to_node: SecondaryMap<FocusNodeId, Option<ElementKey>>,
+    /// Reverse mapping from `ElementKey` to `FocusNodeId` for O(1) lookups.
+    element_to_node: HashMap<ElementKey, FocusNodeId>,
     /// The node that currently holds primary focus, if any.
     primary_focus: Option<FocusNodeId>,
     /// The root node of the focus tree.
@@ -49,12 +51,9 @@ impl FocusManager {
             skip_traversal: true,
         });
 
-        let mut element_to_node = SecondaryMap::new();
-        element_to_node.insert(root, None);
-
         Self {
             nodes,
-            element_to_node,
+            element_to_node: HashMap::new(),
             primary_focus: None,
             root,
             pending_focus_change: None,
@@ -84,7 +83,6 @@ impl FocusManager {
             can_request_focus: true,
             skip_traversal: false,
         });
-        self.element_to_node.insert(id, None);
         self.nodes[parent_id].children.push(id);
         id
     }
@@ -106,9 +104,49 @@ impl FocusManager {
             can_request_focus: true,
             skip_traversal: false,
         });
-        self.element_to_node.insert(id, Some(element_key));
+        self.element_to_node.insert(element_key, id);
         self.nodes[parent].children.push(id);
         id
+    }
+
+    /// Create a focus node associated with `element_key` as a child of
+    /// `parent`, or return the existing node if one is already associated
+    /// with this element.
+    ///
+    /// This method is idempotent: calling it multiple times with the same
+    /// `element_key` returns the same `FocusNodeId` without creating
+    /// duplicates.
+    ///
+    /// If `parent` is `None`, the node is attached to the root.
+    pub fn create_node_for_element(
+        &mut self,
+        element_key: ElementKey,
+        parent_id: Option<FocusNodeId>,
+    ) -> Option<FocusNodeId> {
+        // If a node already exists for this element, return it (idempotent).
+        if let Some(existing) = self.node_for_element(element_key) {
+            return Some(existing);
+        }
+
+        let parent = parent_id.unwrap_or(self.root);
+
+        let node_id = self.nodes.insert(FocusNodeData {
+            element_key: Some(element_key),
+            parent: Some(parent),
+            children: Vec::new(),
+            can_request_focus: true,
+            skip_traversal: false,
+        });
+
+        // Register in parent's children list.
+        if let Some(parent_data) = self.nodes.get_mut(parent) {
+            parent_data.children.push(node_id);
+        }
+
+        // Register in element-to-node HashMap for O(1) lookup.
+        self.element_to_node.insert(element_key, node_id);
+
+        Some(node_id)
     }
 
     // -----------------------------------------------------------------------
@@ -127,12 +165,7 @@ impl FocusManager {
 
     /// Look up the focus node associated with `element_key`, if any.
     pub fn node_for_element(&self, element_key: ElementKey) -> Option<FocusNodeId> {
-        for (id, key_opt) in &self.element_to_node {
-            if key_opt.as_ref() == Some(&element_key) {
-                return Some(id);
-            }
-        }
-        None
+        self.element_to_node.get(&element_key).copied()
     }
 
     /// Return the currently focused node id, if any.
@@ -216,6 +249,13 @@ impl FocusManager {
                 if let Some(parent) = self.nodes.get_mut(parent_id) {
                     parent.children.retain(|c| *c != id);
                 }
+            }
+        }
+
+        // Remove from element_to_node HashMap if this node has an element_key.
+        if let Some(node) = self.nodes.get(id) {
+            if let Some(ek) = node.element_key {
+                self.element_to_node.remove(&ek);
             }
         }
 
@@ -388,5 +428,129 @@ mod tests {
         // Only the last request should win.
         mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(id2));
+    }
+
+    // -----------------------------------------------------------------------
+    // create_node_for_element tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_create_node_for_element_basic() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+
+        let node_id = mgr
+            .create_node_for_element(key, None)
+            .expect("should return a node id");
+
+        // The node should be findable via node_for_element.
+        assert_eq!(mgr.node_for_element(key), Some(node_id));
+
+        // The node data should have the correct element_key.
+        let data = mgr.get(node_id).expect("node should exist");
+        assert_eq!(data.element_key, Some(key));
+        assert_eq!(data.parent, Some(mgr.root_scope()));
+        assert!(data.can_request_focus);
+        assert!(!data.skip_traversal);
+
+        // It should be a child of root.
+        let root_data = mgr.get(mgr.root_scope()).unwrap();
+        assert!(root_data.children.contains(&node_id));
+    }
+
+    #[test]
+    fn test_create_node_for_element_with_parent() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let parent_key = elem_map.insert(());
+        let child_key = elem_map.insert(());
+
+        let parent_id = mgr
+            .create_node_for_element(parent_key, None)
+            .expect("parent node id");
+
+        let child_id = mgr
+            .create_node_for_element(child_key, Some(parent_id))
+            .expect("child node id");
+
+        // Child should have parent_id as its parent.
+        let child_data = mgr.get(child_id).unwrap();
+        assert_eq!(child_data.parent, Some(parent_id));
+
+        // Parent should list child in its children.
+        let parent_data = mgr.get(parent_id).unwrap();
+        assert!(parent_data.children.contains(&child_id));
+    }
+
+    #[test]
+    fn test_create_node_for_element_idempotent() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+
+        let id1 = mgr.create_node_for_element(key, None).unwrap();
+        let id2 = mgr.create_node_for_element(key, None).unwrap();
+
+        // Should return the same node id both times.
+        assert_eq!(id1, id2);
+
+        // Should not create duplicates in parent's children list.
+        let root_data = mgr.get(mgr.root_scope()).unwrap();
+        let count = root_data.children.iter().filter(|c| **c == id1).count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_create_node_for_element_removed_node_not_returned() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+
+        let id1 = mgr.create_node_for_element(key, None).unwrap();
+        mgr.remove_node(id1);
+
+        // After removal, node_for_element should return None.
+        assert_eq!(mgr.node_for_element(key), None);
+
+        // Creating again should produce a new, different node.
+        let id2 = mgr.create_node_for_element(key, None).unwrap();
+        assert_ne!(id1, id2);
+        assert_eq!(mgr.node_for_element(key), Some(id2));
+    }
+
+    #[test]
+    fn test_remove_node_cleans_up_hashmap() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+
+        let id = mgr.create_node_with_element(mgr.root_scope(), key);
+        assert_eq!(mgr.node_for_element(key), Some(id));
+
+        mgr.remove_node(id);
+
+        // The HashMap should no longer contain the mapping.
+        assert_eq!(mgr.node_for_element(key), None);
+    }
+
+    #[test]
+    fn test_remove_node_recursive_cleans_up_child_hashmap() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let parent_key = elem_map.insert(());
+        let child_key = elem_map.insert(());
+
+        let parent_id = mgr
+            .create_node_for_element(parent_key, None)
+            .unwrap();
+        let _child_id = mgr
+            .create_node_for_element(child_key, Some(parent_id))
+            .unwrap();
+
+        // Removing the parent should also clean up the child's HashMap entry.
+        mgr.remove_node(parent_id);
+        assert_eq!(mgr.node_for_element(parent_key), None);
+        assert_eq!(mgr.node_for_element(child_key), None);
     }
 }
