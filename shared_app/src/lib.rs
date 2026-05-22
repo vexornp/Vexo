@@ -308,12 +308,12 @@ impl Application for State {
                 // Title
                 .push(retain::Text::new("Focus Scope Demo"))
                 .push(retain::Text::new("Click a field to focus it. Click outside to unfocus."))
-                .push(retain::Text::new("Each FocusScope remembers which child was last focused."))
-                // Scope A: two fields grouped together
+                .push(retain::Text::new("Scope A restores the previously focused child; Scope B clears focus entirely."))
+                // Scope A: RestorePrevious (default) — remembers which child was focused
                 .push(retain::DecoratedContainer::new(Box::new(
                     vexo::retain::FocusScope::new(
                         retain::Column::new()
-                            .push(retain::Text::new("Scope A"))
+                            .push(retain::Text::new("Scope A (RestorePrevious)"))
                             .push(vexo::retain::Focus::new(retain::TextEdit::new(a1.clone())))
                             .push(vexo::retain::Focus::new(retain::TextEdit::new(a2.clone())))
                     )
@@ -325,14 +325,15 @@ impl Application for State {
                         .corner_radius(8.0)
                         .padding(8.0)
                 ))
-                // Scope B: two fields grouped together
+                // Scope B: Clear — focus is lost entirely when unfocused
                 .push(retain::DecoratedContainer::new(Box::new(
                     vexo::retain::FocusScope::new(
                         retain::Column::new()
-                            .push(retain::Text::new("Scope B"))
+                            .push(retain::Text::new("Scope B (Clear)"))
                             .push(vexo::retain::Focus::new(retain::TextEdit::new(b1.clone())))
                             .push(vexo::retain::Focus::new(retain::TextEdit::new(b2.clone())))
                     )
+                    .unfocus_disposition(vexo::retain::UnfocusDisposition::Clear)
                 ))
                 .style(
                     retain::Style::new()

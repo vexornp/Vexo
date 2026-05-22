@@ -142,13 +142,33 @@ impl FocusManager {
         parent_scope: FocusNodeId,
         element_key: ElementKey,
     ) -> FocusNodeId {
-        self.create_scope_internal(parent_scope, Some(element_key))
+        self.create_scope_internal(parent_scope, Some(element_key), FocusScopeData::new())
+    }
+
+    /// Create a new scope node with custom scope data.
+    pub fn create_scope_with_data(
+        &mut self,
+        parent_scope: FocusNodeId,
+        scope_data: FocusScopeData,
+    ) -> FocusNodeId {
+        self.create_scope_internal(parent_scope, None, scope_data)
+    }
+
+    /// Create a new scope node with an element key and custom scope data.
+    pub fn create_scope_with_element_and_data(
+        &mut self,
+        parent_scope: FocusNodeId,
+        element_key: ElementKey,
+        scope_data: FocusScopeData,
+    ) -> FocusNodeId {
+        self.create_scope_internal(parent_scope, Some(element_key), scope_data)
     }
 
     fn create_scope_internal(
         &mut self,
         parent_scope: FocusNodeId,
         element_key: Option<ElementKey>,
+        scope_data: FocusScopeData,
     ) -> FocusNodeId {
         let mut data = FocusNodeData::new_scope();
         data.parent = Some(parent_scope);
@@ -156,7 +176,7 @@ impl FocusManager {
         let id = self.nodes.insert(data);
 
         // Insert scope extension data.
-        self.scopes.insert(id, FocusScopeData::new());
+        self.scopes.insert(id, scope_data);
 
         // Register in parent's children list.
         if let Some(parent) = self.nodes.get_mut(parent_scope) {

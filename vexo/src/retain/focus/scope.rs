@@ -16,6 +16,8 @@ pub struct FocusScopeData {
     /// is restored.
     pub focused_children: Vec<FocusNodeId>,
     /// How this scope behaves when unfocused.
+    pub unfocus_disposition: UnfocusDisposition,
+    /// How focus traversal behaves at the edges of this scope.
     pub traversal_edge_behavior: TraversalEdgeBehavior,
 }
 
@@ -24,8 +26,21 @@ impl FocusScopeData {
     pub fn new() -> Self {
         Self {
             focused_children: Vec::new(),
+            unfocus_disposition: UnfocusDisposition::default(),
             traversal_edge_behavior: TraversalEdgeBehavior::default(),
         }
+    }
+
+    /// Create scope data with the given unfocus disposition.
+    pub fn with_unfocus_disposition(mut self, disposition: UnfocusDisposition) -> Self {
+        self.unfocus_disposition = disposition;
+        self
+    }
+
+    /// Create scope data with the given traversal edge behavior.
+    pub fn with_traversal_edge_behavior(mut self, behavior: TraversalEdgeBehavior) -> Self {
+        self.traversal_edge_behavior = behavior;
+        self
     }
 
     /// Return the most-recently focused child, or `None` if the stack is empty.

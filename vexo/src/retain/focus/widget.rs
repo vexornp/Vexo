@@ -14,6 +14,7 @@ use crate::retain::key::WidgetKey;
 use crate::retain::render_object::RenderObject;
 use crate::retain::widgets::Widget;
 use crate::retain::UpdateResult;
+use super::scope::{UnfocusDisposition, TraversalEdgeBehavior};
 
 // ============================================================================
 // Focus Widget
@@ -116,14 +117,56 @@ impl Widget for Focus {
 /// FocusScope is a proxy widget — it delegates rendering entirely to its child.
 pub struct FocusScope {
     child: Box<dyn Widget>,
+    /// What happens when this scope is unfocused.
+    unfocus_disposition: UnfocusDisposition,
+    /// How focus traversal behaves at the edges of this scope.
+    traversal_edge_behavior: TraversalEdgeBehavior,
 }
 
 impl FocusScope {
     /// Create a new FocusScope widget wrapping the given child.
+    ///
+    /// Defaults to `UnfocusDisposition::RestorePrevious` (scope remembers
+    /// which child was last focused) and `TraversalEdgeBehavior::ParentScope`
+    /// (Tab past the last child exits to the parent scope).
     pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             child: Box::new(child),
+            unfocus_disposition: UnfocusDisposition::default(),
+            traversal_edge_behavior: TraversalEdgeBehavior::default(),
         }
+    }
+
+    /// Set what happens when this scope is unfocused.
+    ///
+    /// - `UnfocusDisposition::RestorePrevious` — restore the previously
+    ///   focused child from the scope's history stack (default)
+    /// - `UnfocusDisposition::Clear` — clear focus entirely
+    pub fn unfocus_disposition(mut self, disposition: UnfocusDisposition) -> Self {
+        self.unfocus_disposition = disposition;
+        self
+    }
+
+    /// Set how focus traversal behaves at the edges of this scope.
+    ///
+    /// - `TraversalEdgeBehavior::ParentScope` — Tab past the last child
+    ///   exits to the parent scope (default)
+    /// - `TraversalEdgeBehavior::ClosedLoop` — Tab wraps around within
+    ///   this scope
+    /// - `TraversalEdgeBehavior::Stop` — Tab stops at the boundary
+    pub fn traversal_edge_behavior(mut self, behavior: TraversalEdgeBehavior) -> Self {
+        self.traversal_edge_behavior = behavior;
+        self
+    }
+
+    /// Get the unfocus disposition.
+    pub fn get_unfocus_disposition(&self) -> UnfocusDisposition {
+        self.unfocus_disposition
+    }
+
+    /// Get the traversal edge behavior.
+    pub fn get_traversal_edge_behavior(&self) -> TraversalEdgeBehavior {
+        self.traversal_edge_behavior
     }
 }
 
