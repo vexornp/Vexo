@@ -173,6 +173,10 @@ pub struct State {
     click_count: u32,
     milestones: u32,
     text_editor_controller: Option<vexo::retain::TextEditingController>,
+    editor_a1: Option<vexo::retain::TextEditingController>,
+    editor_a2: Option<vexo::retain::TextEditingController>,
+    editor_b1: Option<vexo::retain::TextEditingController>,
+    editor_b2: Option<vexo::retain::TextEditingController>,
 }
 
 impl Application for State {
@@ -184,6 +188,10 @@ impl Application for State {
             click_count: 0,
             milestones: 0,
             text_editor_controller: None,
+            editor_a1: None,
+            editor_a2: None,
+            editor_b1: None,
+            editor_b2: None,
         }
     }
 
@@ -262,22 +270,79 @@ impl Application for State {
     }
 
     fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {
-        // Lazily initialize the TextEdit controller
+        // Lazily initialize TextEdit controllers
         if state.text_editor_controller.is_none() {
             state.text_editor_controller = Some(
                 vexo::retain::TextEditingController::new("Type here...", font_system)
             );
         }
+        if state.editor_a1.is_none() {
+            state.editor_a1 = Some(
+                vexo::retain::TextEditingController::new("Field A1", font_system)
+            );
+        }
+        if state.editor_a2.is_none() {
+            state.editor_a2 = Some(
+                vexo::retain::TextEditingController::new("Field A2", font_system)
+            );
+        }
+        if state.editor_b1.is_none() {
+            state.editor_b1 = Some(
+                vexo::retain::TextEditingController::new("Field B1", font_system)
+            );
+        }
+        if state.editor_b2.is_none() {
+            state.editor_b2 = Some(
+                vexo::retain::TextEditingController::new("Field B2", font_system)
+            );
+        }
 
         let controller = state.text_editor_controller.as_ref().unwrap();
+        let a1 = state.editor_a1.as_ref().unwrap();
+        let a2 = state.editor_a2.as_ref().unwrap();
+        let b1 = state.editor_b1.as_ref().unwrap();
+        let b2 = state.editor_b2.as_ref().unwrap();
 
         Some(Box::new(
             retain::Column::new()
-                .push(retain::Text::new("Retain Mode Demo"))
-                .push(RetainCounter {
-                    label: "Stateful Counter".to_string(),
-                })
-                .push(vexo::retain::Focus::new(retain::TextEdit::new(controller.clone()))),
+                // Title
+                .push(retain::Text::new("Focus Scope Demo"))
+                .push(retain::Text::new("Click a field to focus it. Click outside to unfocus."))
+                .push(retain::Text::new("Each FocusScope remembers which child was last focused."))
+                // Scope A: two fields grouped together
+                .push(retain::DecoratedContainer::new(Box::new(
+                    vexo::retain::FocusScope::new(
+                        retain::Column::new()
+                            .push(retain::Text::new("Scope A"))
+                            .push(vexo::retain::Focus::new(retain::TextEdit::new(a1.clone())))
+                            .push(vexo::retain::Focus::new(retain::TextEdit::new(a2.clone())))
+                    )
+                ))
+                .style(
+                    retain::Style::new()
+                        .background(vexo::Color::rgb(0.95, 0.95, 1.0))
+                        .border(vexo::Color::rgb(0.5, 0.5, 0.8), 1.0)
+                        .corner_radius(8.0)
+                        .padding(8.0)
+                ))
+                // Scope B: two fields grouped together
+                .push(retain::DecoratedContainer::new(Box::new(
+                    vexo::retain::FocusScope::new(
+                        retain::Column::new()
+                            .push(retain::Text::new("Scope B"))
+                            .push(vexo::retain::Focus::new(retain::TextEdit::new(b1.clone())))
+                            .push(vexo::retain::Focus::new(retain::TextEdit::new(b2.clone())))
+                    )
+                ))
+                .style(
+                    retain::Style::new()
+                        .background(vexo::Color::rgb(1.0, 0.95, 0.95))
+                        .border(vexo::Color::rgb(0.8, 0.5, 0.5), 1.0)
+                        .corner_radius(8.0)
+                        .padding(8.0)
+                ))
+                // Standalone field (not in a scope)
+                .push(vexo::retain::Focus::new(retain::TextEdit::new(controller.clone())))
         ))
     }
 }
