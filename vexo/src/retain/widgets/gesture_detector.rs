@@ -239,6 +239,16 @@ impl RenderObjectElement for GestureDetectorElement {
 // Implement Element trait
 impl Element for GestureDetectorElement {
     fn mount(&mut self, context: &mut ElementContext) {
+        // Create focus attachment BEFORE mounting child.
+        // The child will look up this element's focus node as its parent
+        // when it mounts, so it must exist before child mounting begins.
+        let element_key = context.element_id;
+        let parent_id = context.parent_focus_node_id();
+        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        if let Some(node_id) = node_id {
+            self.focus_attachment = Some(FocusAttachment::new(node_id));
+        }
+
         // Use RenderObjectElement's default mount for render object creation
         self.mount_render_object(context);
 

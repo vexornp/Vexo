@@ -116,6 +116,15 @@ impl RenderObjectElement for LeafRenderObjectElement {
 // Implement Element trait using RenderObjectElement defaults
 impl Element for LeafRenderObjectElement {
     fn mount(&mut self, context: &mut ElementContext) {
+        // Create focus attachment for this element before any other work.
+        // This ensures children (if any later change) can find our focus node.
+        let element_key = context.element_id;
+        let parent_id = context.parent_focus_node_id();
+        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        if let Some(node_id) = node_id {
+            self.focus_attachment = Some(FocusAttachment::new(node_id));
+        }
+
         // Use RenderObjectElement's default mount implementation
         self.mount_render_object(context);
     }
@@ -170,6 +179,7 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner, ChildOps};
+    use crate::retain::focus::FocusManager;
 
     fn make_element_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -185,6 +195,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
+        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -195,6 +206,8 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
+            &mut focus_manager,
+            None,
         );
 
         element.mount(&mut context);
@@ -214,6 +227,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
+        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -224,6 +238,8 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
+            &mut focus_manager,
+            None,
         );
 
         element.mount(&mut context);
@@ -246,6 +262,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
+        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -256,6 +273,8 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
+            &mut focus_manager,
+            None,
         );
 
         element.mount(&mut context);
@@ -275,6 +294,7 @@ mod tests {
         let build_owner = BuildOwner::new();
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
+        let mut focus_manager = FocusManager::new();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -285,6 +305,8 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
+            &mut focus_manager,
+            None,
         );
 
         element.mount(&mut context);

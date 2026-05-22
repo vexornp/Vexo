@@ -187,6 +187,7 @@ impl ThreeTreePipeline {
             &mut self.build_owner,
             &mut self.child_ops,
             &self.dirty_sender,
+            &mut self.focus_manager,
             root_widget,
         );
     }
@@ -209,6 +210,7 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
             &self.dirty_sender,
             &self.dirty_receiver,
+            &mut self.focus_manager,
             &mut self.needs_full_reconcile,
             root_widget,
         );
@@ -228,6 +230,7 @@ impl ThreeTreePipeline {
             &mut self.build_owner,
             &mut self.child_ops,
             &self.dirty_sender,
+            &mut self.focus_manager,
             &self.dirty_receiver,
         );
     }

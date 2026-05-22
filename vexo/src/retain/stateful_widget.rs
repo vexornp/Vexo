@@ -369,6 +369,16 @@ impl<W: StatefulWidget + Clone> RenderObjectElement for StatefulElement<W> {
 
 impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     fn mount(&mut self, context: &mut ElementContext) {
+        // Create focus attachment BEFORE mounting children.
+        // Children will look up this element's focus node as their parent
+        // when they mount, so it must exist before child mounting begins.
+        let element_key = context.element_id;
+        let parent_id = context.parent_focus_node_id();
+        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        if let Some(node_id) = node_id {
+            self.focus_attachment = Some(FocusAttachment::new(node_id));
+        }
+
         // Use RenderObjectElement's default mount for render object creation
         // This creates the ProxyRenderObject and stores the element ID + key
         self.mount_render_object(context);
@@ -706,7 +716,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner, ChildOps};
+    use crate::retain::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner, ChildOps, FocusManager};
 
     #[derive(Clone)]
     struct TestCounter {
@@ -743,6 +753,7 @@ mod tests {
         BuildOwner,
         std::sync::mpsc::Sender<ElementKey>,
         ChildOps,
+        FocusManager,
     ) {
         let (dirty_sender, _) = std::sync::mpsc::channel();
         (
@@ -754,6 +765,7 @@ mod tests {
             BuildOwner::new(),
             dirty_sender,
             ChildOps::new(),
+            FocusManager::new(),
         )
     }
 
@@ -762,7 +774,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
 
         // Mount the element
         let mut ctx = ElementContext::new(
@@ -775,6 +787,8 @@ mod tests {
             &build_owner,
             &dirty_sender,
             &mut child_ops,
+            &mut focus_manager,
+            None,
         );
 
         let mut element = element;
@@ -790,7 +804,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
 
         // Mount
         {
@@ -804,6 +818,8 @@ mod tests {
                 &build_owner,
                 &dirty_sender,
                 &mut child_ops,
+                &mut focus_manager,
+                None,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -824,6 +840,8 @@ mod tests {
                 &build_owner,
                 &dirty_sender,
                 &mut child_ops,
+                &mut focus_manager,
+                None,
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
@@ -837,7 +855,7 @@ mod tests {
         let widget = TestCounter { label: "Count".to_string() };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops) = create_test_context();
+        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
 
         // Mount
         {
@@ -851,6 +869,8 @@ mod tests {
                 &build_owner,
                 &dirty_sender,
                 &mut child_ops,
+                &mut focus_manager,
+                None,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -870,6 +890,8 @@ mod tests {
                 &build_owner,
                 &dirty_sender,
                 &mut child_ops,
+                &mut focus_manager,
+                None,
             );
             Element::unmount(&mut element, &mut ctx);
         }
@@ -892,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_build_context_request_rebuild() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops) = create_test_context();
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
 
         let mut ctx = BuildContext {
             element_id,
@@ -908,7 +930,7 @@ mod tests {
 
     #[test]
     fn test_build_context_is_focused() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops) = create_test_context();
+        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
 
         // Not focused initially
         let ctx = BuildContext {

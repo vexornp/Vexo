@@ -12,6 +12,7 @@ use super::child_ops::{ChildOp, ChildOps};
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::element_context::ElementContext;
+use super::focus::{FocusManager, FocusNodeId};
 use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
 use super::state::StateStorage;
@@ -25,6 +26,33 @@ use super::widgets::Widget;
 pub struct Reconciler;
 
 impl Reconciler {
+    // -----------------------------------------------------------------------
+    // Helper: resolve parent focus node ID
+    // -----------------------------------------------------------------------
+
+    /// Walk up the element tree from `element_key` to find the nearest
+    /// ancestor that has a focus attachment, and return its focus node ID.
+    ///
+    /// Returns `None` if no ancestor has a focus attachment (the element
+    /// will attach to the root of the focus tree).
+    fn resolve_parent_focus_node_id(
+        element_registry: &ElementRegistry,
+        element_key: ElementKey,
+    ) -> Option<FocusNodeId> {
+        let mut current = element_registry.parent(element_key);
+        while let Some(key) = current {
+            if let Some(node_id) = element_registry
+                .get(key)
+                .and_then(|el| el.focus_attachment().as_ref())
+                .map(|att| att.node_id())
+            {
+                return Some(node_id);
+            }
+            current = element_registry.parent(key);
+        }
+        None
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
@@ -42,6 +70,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         root_widget: Box<dyn Widget>,
     ) {
         // Check if we have an existing root element
@@ -62,6 +91,7 @@ impl Reconciler {
                     build_owner,
                     child_ops,
                     dirty_sender,
+                    focus_manager,
                     root_id,
                     root_widget,
                 );
@@ -77,6 +107,7 @@ impl Reconciler {
                 build_owner,
                 child_ops,
                 dirty_sender,
+                focus_manager,
                 root_id,
             );
         }
@@ -90,6 +121,7 @@ impl Reconciler {
             build_owner,
             child_ops,
             dirty_sender,
+            focus_manager,
             None,
             root_widget,
         );
@@ -111,6 +143,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
+        focus_manager: &mut FocusManager,
         needs_full_reconcile: &mut bool,
         root_widget: Box<dyn Widget>,
     ) {
@@ -123,6 +156,7 @@ impl Reconciler {
             build_owner,
             child_ops,
             dirty_sender,
+            focus_manager,
             dirty_receiver,
         );
 
@@ -144,6 +178,7 @@ impl Reconciler {
                 build_owner,
                 child_ops,
                 dirty_sender,
+                focus_manager,
                 root_widget,
             );
             *needs_full_reconcile = false;
@@ -166,6 +201,7 @@ impl Reconciler {
                         build_owner,
                         child_ops,
                         dirty_sender,
+                        focus_manager,
                         root_id,
                         root_widget,
                     );
@@ -180,6 +216,7 @@ impl Reconciler {
                         build_owner,
                         child_ops,
                         dirty_sender,
+                        focus_manager,
                         root_widget,
                     );
                 }
@@ -192,6 +229,7 @@ impl Reconciler {
                     build_owner,
                     child_ops,
                     dirty_sender,
+                    focus_manager,
                     root_widget,
                 );
             }
@@ -216,6 +254,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         root_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -236,6 +275,8 @@ impl Reconciler {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            None, // parent_focus_node_id not needed during rebuild
         );
 
         element_registry.with_element(root_id, &mut ctx, |element, ctx| {
@@ -251,6 +292,7 @@ impl Reconciler {
             build_owner,
             child_ops,
             dirty_sender,
+            focus_manager,
         );
     }
 
@@ -266,6 +308,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
     ) {
         // First, drain any dirty signals from StatefulMutable callbacks
@@ -307,6 +350,8 @@ impl Reconciler {
                 build_owner,
                 dirty_sender,
                 child_ops,
+                focus_manager,
+                None, // parent_focus_node_id not needed during rebuild
             );
 
             // Rebuild from current state using with_element
@@ -323,6 +368,7 @@ impl Reconciler {
                 build_owner,
                 child_ops,
                 dirty_sender,
+                focus_manager,
             );
 
             // Exit build scope
@@ -342,6 +388,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -365,6 +412,8 @@ impl Reconciler {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            None, // parent_focus_node_id not needed during reconcile
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -380,6 +429,7 @@ impl Reconciler {
             build_owner,
             child_ops,
             dirty_sender,
+            focus_manager,
         );
     }
 
@@ -400,6 +450,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         parent: Option<ElementKey>,
         widget: Box<dyn Widget>,
     ) -> ElementKey {
@@ -408,6 +459,11 @@ impl Reconciler {
 
         // Insert into registry (does NOT call mount — we handle lifecycle here)
         let key = element_registry.insert(element, parent);
+
+        // Resolve the parent's focus node ID before creating the context.
+        // The parent element (if any) is already mounted and has a focus attachment,
+        // because in retain mode, parent.mount() is called before children are mounted.
+        let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, key);
 
         // Build context for the mount call
         let mut ctx = ElementContext::new(
@@ -420,6 +476,8 @@ impl Reconciler {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            parent_focus_node_id,
         );
 
         // Call mount() on the element via with_element
@@ -448,6 +506,7 @@ impl Reconciler {
             build_owner,
             child_ops,
             dirty_sender,
+            focus_manager,
         );
 
         // After child ops are processed, the element's render_object() may have changed
@@ -486,6 +545,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
     ) {
         loop {
             let ops = child_ops.drain();
@@ -509,6 +569,7 @@ impl Reconciler {
                             build_owner,
                             child_ops,
                             dirty_sender,
+                            focus_manager,
                             Some(parent),
                             widget,
                         );
@@ -535,6 +596,8 @@ impl Reconciler {
                             build_owner,
                             dirty_sender,
                             child_ops,
+                            focus_manager,
+                            None, // parent_focus_node_id not needed during child_mounted
                         );
 
                         element_registry.with_element(parent, &mut ctx, |element, ctx| {
@@ -551,6 +614,7 @@ impl Reconciler {
                             build_owner,
                             child_ops,
                             dirty_sender,
+                            focus_manager,
                             child,
                             widget,
                         );
@@ -565,6 +629,7 @@ impl Reconciler {
                             build_owner,
                             child_ops,
                             dirty_sender,
+                            focus_manager,
                             child,
                         );
                     }
@@ -586,6 +651,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -603,6 +669,8 @@ impl Reconciler {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            None, // parent_focus_node_id not needed during rebuild
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -633,6 +701,7 @@ impl Reconciler {
         build_owner: &mut BuildOwner,
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
         element_id: ElementKey,
     ) {
         // Get children and parent before unmounting
@@ -649,6 +718,7 @@ impl Reconciler {
                 build_owner,
                 child_ops,
                 dirty_sender,
+                focus_manager,
                 *child_id,
             );
         }
@@ -664,6 +734,8 @@ impl Reconciler {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            None, // parent_focus_node_id not needed during unmount
         );
 
         // Call unmount() via with_element

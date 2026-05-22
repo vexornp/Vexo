@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use crate::retain::build_owner::BuildOwner;
 use crate::retain::child_ops::ChildOps;
 use crate::retain::dirty::DirtyTracking;
+use crate::retain::focus::{FocusManager, FocusNodeId};
 use crate::retain::id::{ElementKey, RenderObjectKey};
 use crate::retain::key::GlobalKey;
 use crate::retain::render_object::{RenderObject, RenderObjectRegistry};
@@ -23,6 +24,12 @@ pub struct ElementContext<'a> {
     pub build_owner: &'a BuildOwner,
     pub dirty_sender: &'a mpsc::Sender<ElementKey>,
     pub child_ops: &'a mut ChildOps,
+    /// Focus manager for creating/removing focus nodes during mount/unmount.
+    pub focus_manager: &'a mut FocusManager,
+    /// Pre-computed focus node ID of the nearest ancestor element that has
+    /// a focus attachment. Set by the reconciler before calling mount().
+    /// `None` means no ancestor has a focus node (will attach to root).
+    pub parent_focus_node_id: Option<FocusNodeId>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -36,6 +43,8 @@ impl<'a> ElementContext<'a> {
         build_owner: &'a BuildOwner,
         dirty_sender: &'a mpsc::Sender<ElementKey>,
         child_ops: &'a mut ChildOps,
+        focus_manager: &'a mut FocusManager,
+        parent_focus_node_id: Option<FocusNodeId>,
     ) -> Self {
         Self {
             element_id,
@@ -47,7 +56,21 @@ impl<'a> ElementContext<'a> {
             build_owner,
             dirty_sender,
             child_ops,
+            focus_manager,
+            parent_focus_node_id,
         }
+    }
+
+    /// Returns the focus manager for creating/removing focus nodes.
+    pub fn focus_manager(&mut self) -> &mut FocusManager {
+        self.focus_manager
+    }
+
+    /// Returns the pre-computed focus node ID of the nearest ancestor
+    /// element that has a focus attachment. `None` if no ancestor has
+    /// a focus node (will attach to root).
+    pub fn parent_focus_node_id(&self) -> Option<FocusNodeId> {
+        self.parent_focus_node_id
     }
 
     /// Get the children of this element.
