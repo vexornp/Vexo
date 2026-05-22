@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::core::{Point, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
-use crate::retain::{Column, Focus, FocusScope, Text, ThreeTreePipeline};
+use crate::retain::{Column, Focus, Text, ThreeTreePipeline};
 
 fn create_test_font_system() -> glyphon::FontSystem {
     let font_data = crate::resource::file::FONT.to_vec();
@@ -130,24 +130,6 @@ fn test_focus_syncs_to_build_owner() {
 }
 
 #[test]
-fn test_focus_scope_in_pipeline() {
-    let mut pipeline = ThreeTreePipeline::new();
-
-    // Reconcile a FocusScope wrapping a Column with Text children.
-    // FocusScope uses ContainerElement which creates an element.
-    let widget = FocusScope::new(
-        Column::new()
-            .push(Text::new("First"))
-            .push(Text::new("Second")),
-    );
-    pipeline.reconcile(Box::new(widget));
-
-    // Should have elements in the registry
-    assert!(!pipeline.element_registry().is_empty());
-    assert!(pipeline.element_registry().root().is_some());
-}
-
-#[test]
 fn test_click_inside_hit_succeeds_then_unfocuses() {
     let mut pipeline = ThreeTreePipeline::new();
     let mut font_system = create_test_font_system();
@@ -257,20 +239,4 @@ fn test_focus_wrapper_inflates_child() {
 
     // Should have at least 2 elements (Focus ContainerElement + Text LeafElement)
     assert!(pipeline.element_registry().len() >= 2);
-}
-
-#[test]
-fn test_focus_scope_wrapper_inflates_child() {
-    let mut pipeline = ThreeTreePipeline::new();
-
-    // Reconcile FocusScope::new(Column::new().push(Text::new("A")).push(Text::new("B")))
-    let widget = FocusScope::new(
-        Column::new()
-            .push(Text::new("A"))
-            .push(Text::new("B")),
-    );
-    pipeline.reconcile(Box::new(widget));
-
-    // Should have at least 4 elements (FocusScope + Column + 2 Text)
-    assert!(pipeline.element_registry().len() >= 4);
 }

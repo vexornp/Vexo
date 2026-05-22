@@ -49,7 +49,7 @@ impl FocusAttachment {
     /// tree. This is a no-op if the attachment has already been detached.
     pub fn reparent(&self, new_parent: FocusNodeId, manager: &mut FocusManager) {
         if self.is_attached {
-            manager.reparent(self.node_id, new_parent);
+            manager.reparent(self.node_id, Some(new_parent));
         }
     }
 
@@ -73,8 +73,7 @@ mod tests {
     #[test]
     fn test_new_attachment_is_attached() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let node = mgr.create_node(root);
+        let node = mgr.create_node(None);
 
         let attachment = FocusAttachment::new(node);
         assert!(attachment.is_attached());
@@ -84,23 +83,21 @@ mod tests {
     #[test]
     fn test_detach_removes_node_and_marks_detached() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let node = mgr.create_node(root);
+        let node = mgr.create_node(None);
 
         let mut attachment = FocusAttachment::new(node);
-        assert!(mgr.contains(node));
+        assert!(mgr.get(node).is_some());
 
         attachment.detach(&mut mgr);
 
         assert!(!attachment.is_attached());
-        assert!(!mgr.contains(node));
+        assert!(mgr.get(node).is_none());
     }
 
     #[test]
     fn test_detach_is_idempotent() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let node = mgr.create_node(root);
+        let node = mgr.create_node(None);
 
         let mut attachment = FocusAttachment::new(node);
         attachment.detach(&mut mgr);
@@ -115,22 +112,22 @@ mod tests {
         let mut mgr = FocusManager::new();
         let root = mgr.root_scope();
 
-        let scope_a = mgr.create_scope(root);
-        let scope_b = mgr.create_scope(root);
-        let node = mgr.create_node(scope_a);
+        let parent_a = mgr.create_node(Some(root));
+        let parent_b = mgr.create_node(Some(root));
+        let node = mgr.create_node(Some(parent_a));
 
         let attachment = FocusAttachment::new(node);
 
-        // Node starts under scope_a.
-        assert!(mgr.get_node(scope_a).unwrap().children.contains(&node));
+        // Node starts under parent_a.
+        assert!(mgr.get(parent_a).unwrap().children.contains(&node));
 
-        // Reparent to scope_b.
-        attachment.reparent(scope_b, &mut mgr);
+        // Reparent to parent_b.
+        attachment.reparent(parent_b, &mut mgr);
 
-        // Node is now under scope_b.
-        assert!(!mgr.get_node(scope_a).unwrap().children.contains(&node));
-        assert!(mgr.get_node(scope_b).unwrap().children.contains(&node));
-        assert_eq!(mgr.get_node(node).unwrap().parent, Some(scope_b));
+        // Node is now under parent_b.
+        assert!(!mgr.get(parent_a).unwrap().children.contains(&node));
+        assert!(mgr.get(parent_b).unwrap().children.contains(&node));
+        assert_eq!(mgr.get(node).unwrap().parent, Some(parent_b));
     }
 
     #[test]
@@ -138,17 +135,17 @@ mod tests {
         let mut mgr = FocusManager::new();
         let root = mgr.root_scope();
 
-        let scope_a = mgr.create_scope(root);
-        let scope_b = mgr.create_scope(root);
-        let node = mgr.create_node(scope_a);
+        let parent_a = mgr.create_node(Some(root));
+        let parent_b = mgr.create_node(Some(root));
+        let node = mgr.create_node(Some(parent_a));
 
         let mut attachment = FocusAttachment::new(node);
         attachment.detach(&mut mgr);
 
         // Reparent after detach should be a no-op (node no longer exists).
-        attachment.reparent(scope_b, &mut mgr);
+        attachment.reparent(parent_b, &mut mgr);
 
-        // scope_b should not have gained any children from this.
-        assert!(mgr.get_node(scope_b).unwrap().children.is_empty());
+        // parent_b should not have gained any children from this.
+        assert!(mgr.get(parent_b).unwrap().children.is_empty());
     }
 }

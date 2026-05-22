@@ -11,19 +11,14 @@ new_key_type! {
     pub struct FocusNodeId;
 }
 
-/// Data stored for every focus node (both leaf nodes and scope nodes).
-///
-/// Scope nodes additionally carry [`FocusScopeData`] in a `SecondaryMap`
-/// keyed by the same `FocusNodeId`.
+/// Data stored for every focus node in the focus tree.
 #[derive(Debug, Clone)]
 pub struct FocusNodeData {
     /// The element this node is associated with, if any.
-    /// During the transition period, this maps back to the element tree.
     pub element_key: Option<ElementKey>,
-    /// Parent node in the focus tree. `None` only for the root scope.
+    /// Parent node in the focus tree. `None` only for the root node.
     pub parent: Option<FocusNodeId>,
-    /// Child nodes in the focus tree. For scope nodes, these are the
-    /// nodes that belong to this scope.
+    /// Child nodes in the focus tree.
     pub children: Vec<FocusNodeId>,
     /// Whether this node can receive focus via `request_focus()`.
     /// Defaults to `true`. When `false`, `request_focus()` is a no-op.
@@ -31,13 +26,10 @@ pub struct FocusNodeData {
     /// Whether this node should be skipped during directional traversal
     /// (Tab / Shift+Tab). Defaults to `false`.
     pub skip_traversal: bool,
-    /// Whether this node is a scope node. Scope nodes carry extra data
-    /// in the `SecondaryMap<FocusNodeId, FocusScopeData>`.
-    pub is_scope: bool,
 }
 
 impl FocusNodeData {
-    /// Create a new leaf focus node with default values.
+    /// Create a new focus node with default values.
     pub fn new() -> Self {
         Self {
             element_key: None,
@@ -45,22 +37,6 @@ impl FocusNodeData {
             children: Vec::new(),
             can_request_focus: true,
             skip_traversal: false,
-            is_scope: false,
-        }
-    }
-
-    /// Create a new scope focus node.
-    ///
-    /// Sets `is_scope = true`. The caller must also insert a
-    /// [`FocusScopeData`] entry into the `SecondaryMap`.
-    pub fn new_scope() -> Self {
-        Self {
-            element_key: None,
-            parent: None,
-            children: Vec::new(),
-            can_request_focus: true,
-            skip_traversal: false,
-            is_scope: true,
         }
     }
 }

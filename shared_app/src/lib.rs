@@ -306,17 +306,14 @@ impl Application for State {
         Some(Box::new(
             retain::Column::new()
                 // Title
-                .push(retain::Text::new("Focus Scope Demo"))
+                .push(retain::Text::new("Focus Demo"))
                 .push(retain::Text::new("Click a field to focus it. Click outside to unfocus."))
-                .push(retain::Text::new("Scope A restores the previously focused child; Scope B clears focus entirely."))
-                // Scope A: RestorePrevious (default) — remembers which child was focused
+                // Group A: Focus fields in a decorated container
                 .push(retain::DecoratedContainer::new(Box::new(
-                    vexo::retain::FocusScope::new(
-                        retain::Column::new()
-                            .push(retain::Text::new("Scope A (RestorePrevious)"))
-                            .push(vexo::retain::Focus::new(retain::TextEdit::new(a1.clone())))
-                            .push(vexo::retain::Focus::new(retain::TextEdit::new(a2.clone())))
-                    )
+                    retain::Column::new()
+                        .push(retain::Text::new("Group A"))
+                        .push(vexo::retain::Focus::new(retain::TextEdit::new(a1.clone())))
+                        .push(vexo::retain::Focus::new(retain::TextEdit::new(a2.clone())))
                 ))
                 .style(
                     retain::Style::new()
@@ -325,15 +322,12 @@ impl Application for State {
                         .corner_radius(8.0)
                         .padding(8.0)
                 ))
-                // Scope B: Clear — focus is lost entirely when unfocused
+                // Group B: Focus fields in a decorated container
                 .push(retain::DecoratedContainer::new(Box::new(
-                    vexo::retain::FocusScope::new(
-                        retain::Column::new()
-                            .push(retain::Text::new("Scope B (Clear)"))
-                            .push(vexo::retain::Focus::new(retain::TextEdit::new(b1.clone())))
-                            .push(vexo::retain::Focus::new(retain::TextEdit::new(b2.clone())))
-                    )
-                    .unfocus_disposition(vexo::retain::UnfocusDisposition::Clear)
+                    retain::Column::new()
+                        .push(retain::Text::new("Group B"))
+                        .push(vexo::retain::Focus::new(retain::TextEdit::new(b1.clone())))
+                        .push(vexo::retain::Focus::new(retain::TextEdit::new(b2.clone())))
                 ))
                 .style(
                     retain::Style::new()
@@ -342,7 +336,7 @@ impl Application for State {
                         .corner_radius(8.0)
                         .padding(8.0)
                 ))
-                // Standalone field (not in a scope)
+                // Standalone field
                 .push(vexo::retain::Focus::new(retain::TextEdit::new(controller.clone())))
         ))
     }

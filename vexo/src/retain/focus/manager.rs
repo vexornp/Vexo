@@ -1,610 +1,264 @@
-//! [`FocusManager`] — owns the focus tree and provides all focus operations.
-
-use std::collections::HashMap;
+//! Focus tree manager.
+//!
+//! [`FocusManager`] owns a tree of [`FocusNodeData`] entries stored in a
+//! `SlotMap<FocusNodeId, FocusNodeData>`. It tracks which node holds
+//! primary focus and provides methods for requesting focus, unfocusing,
+//! and querying the focus state.
+//!
+//! # Tree structure
+//!
+//! The tree has a single root node (created in [`FocusManager::new`]).
+//! All application focus nodes are descendants of this root. The root
+//! itself is never focusable — it exists solely as the top-level
+//! container for the focus tree.
 
 use slotmap::{SlotMap, SecondaryMap};
 
 use crate::retain::id::ElementKey;
 use super::node::{FocusNodeId, FocusNodeData};
-use super::scope::{FocusScopeData, UnfocusDisposition};
 
-/// Owns the focus tree and provides operations for focus requests, unfocus,
-/// reparenting, and scope-aware traversal.
-///
-/// The tree is stored in a single `SlotMap<FocusNodeId, FocusNodeData>`.
-/// Scope nodes additionally carry `FocusScopeData` in a `SecondaryMap`.
-/// The root scope is created on initialization and never removed.
+// ---------------------------------------------------------------------------
+// FocusManager
+// ---------------------------------------------------------------------------
+
+/// Manages the focus tree and primary focus state.
 pub struct FocusManager {
-    /// All focus nodes (leaf nodes and scope nodes).
+    /// All focus nodes, keyed by `FocusNodeId`.
     nodes: SlotMap<FocusNodeId, FocusNodeData>,
-    /// Extra data for scope nodes only. Entries exist iff the corresponding
-    /// node has `is_scope == true`.
-    scopes: SecondaryMap<FocusNodeId, FocusScopeData>,
-    /// The root scope node. Created in `FocusManager::new()`.
-    root_scope: FocusNodeId,
-    /// The node that currently has primary focus, if any.
+    /// Per-node element key, for reverse lookups.
+    element_to_node: SecondaryMap<FocusNodeId, Option<ElementKey>>,
+    /// The node that currently holds primary focus, if any.
     primary_focus: Option<FocusNodeId>,
-    /// Maps element keys to focus nodes. Used during the transition period
-    /// from the flat `Option<ElementKey>` focus model.
-    element_to_node: HashMap<ElementKey, FocusNodeId>,
-    /// Pending focus request (deferred until apply_focus_changes).
-    pending_focus_request: Option<FocusNodeId>,
-    /// Whether a focus change has been requested this frame.
-    has_pending_focus_change: bool,
+    /// The root node of the focus tree.
+    root: FocusNodeId,
+    /// Pending focus change to apply during the next `apply_focus_changes()`.
+    pending_focus_change: Option<FocusNodeId>,
 }
 
 impl FocusManager {
-    /// Create a new `FocusManager` with a root scope node.
+    /// Create a new `FocusManager` with a root node.
     ///
-    /// The root scope has no parent and no element key.
+    /// The root node is not focusable and has no element association.
     pub fn new() -> Self {
         let mut nodes = SlotMap::with_key();
-        let mut scopes = SecondaryMap::new();
+        let root = nodes.insert(FocusNodeData {
+            element_key: None,
+            parent: None,
+            children: Vec::new(),
+            can_request_focus: false,
+            skip_traversal: true,
+        });
 
-        let root_data = FocusNodeData::new_scope();
-        let root_scope = nodes.insert(root_data);
-        scopes.insert(root_scope, FocusScopeData::new());
+        let mut element_to_node = SecondaryMap::new();
+        element_to_node.insert(root, None);
 
         Self {
             nodes,
-            scopes,
-            root_scope,
+            element_to_node,
             primary_focus: None,
-            element_to_node: HashMap::new(),
-            pending_focus_request: None,
-            has_pending_focus_change: false,
+            root,
+            pending_focus_change: None,
         }
     }
 
-    /// Return the root scope node id.
-    pub fn root_scope(&self) -> FocusNodeId {
-        self.root_scope
-    }
-
-    /// Return the node that currently has primary focus, if any.
-    pub fn primary_focus(&self) -> Option<FocusNodeId> {
-        self.primary_focus
-    }
-
-    /// Return the element key of the node with primary focus, if any.
-    pub fn primary_focus_element(&self) -> Option<ElementKey> {
-        self.primary_focus.and_then(|id| {
-            self.nodes.get(id).and_then(|n| n.element_key)
-        })
-    }
-
-    /// Return `true` if `node_id` currently has primary focus.
-    pub fn has_primary_focus(&self, node_id: FocusNodeId) -> bool {
-        self.primary_focus == Some(node_id)
-    }
-
-    /// Return `true` if `node_id` or any of its descendants has primary focus.
-    pub fn has_focus(&self, node_id: FocusNodeId) -> bool {
-        let Some(focused) = self.primary_focus else {
-            return false;
-        };
-        if focused == node_id {
-            return true;
-        }
-        // Walk up from the focused node to see if we reach node_id.
-        self.is_ancestor_of(node_id, focused)
-    }
-
-    /// Create a new leaf focus node as a child of `parent_scope`.
+    /// Returns the root node id.
     ///
-    /// Returns the id of the newly created node.
-    pub fn create_node(&mut self, parent_scope: FocusNodeId) -> FocusNodeId {
-        self.create_node_internal(parent_scope, None)
+    /// This is the top-level container of the focus tree. All application
+    /// focus nodes are descendants of this root.
+    pub fn root_scope(&self) -> FocusNodeId {
+        self.root
     }
 
-    /// Create a new leaf focus node with an associated element key.
+    // -----------------------------------------------------------------------
+    // Node creation
+    // -----------------------------------------------------------------------
+
+    /// Create a plain focus node (no element association) as a child of
+    /// `parent`. If `parent` is `None`, the node is attached to the root.
+    pub fn create_node(&mut self, parent: Option<FocusNodeId>) -> FocusNodeId {
+        let parent_id = parent.unwrap_or(self.root);
+        let id = self.nodes.insert(FocusNodeData {
+            element_key: None,
+            parent: Some(parent_id),
+            children: Vec::new(),
+            can_request_focus: true,
+            skip_traversal: false,
+        });
+        self.element_to_node.insert(id, None);
+        self.nodes[parent_id].children.push(id);
+        id
+    }
+
+    /// Create a focus node associated with `element_key` as a child of
+    /// `parent`.
+    ///
+    /// This is the primary method used when inflating Focus elements.
+    /// The `parent` parameter specifies the parent node in the focus tree.
     pub fn create_node_with_element(
         &mut self,
-        parent_scope: FocusNodeId,
+        parent: FocusNodeId,
         element_key: ElementKey,
     ) -> FocusNodeId {
-        self.create_node_internal(parent_scope, Some(element_key))
-    }
-
-    fn create_node_internal(
-        &mut self,
-        parent_scope: FocusNodeId,
-        element_key: Option<ElementKey>,
-    ) -> FocusNodeId {
-        let mut data = FocusNodeData::new();
-        data.parent = Some(parent_scope);
-        data.element_key = element_key;
-        let id = self.nodes.insert(data);
-
-        // Register in parent's children list.
-        if let Some(parent) = self.nodes.get_mut(parent_scope) {
-            parent.children.push(id);
-        }
-
-        // Register element mapping if present.
-        if let Some(ek) = element_key {
-            self.element_to_node.insert(ek, id);
-        }
-
+        let id = self.nodes.insert(FocusNodeData {
+            element_key: Some(element_key),
+            parent: Some(parent),
+            children: Vec::new(),
+            can_request_focus: true,
+            skip_traversal: false,
+        });
+        self.element_to_node.insert(id, Some(element_key));
+        self.nodes[parent].children.push(id);
         id
     }
 
-    /// Create a new scope node as a child of `parent_scope`.
-    ///
-    /// Returns the id of the newly created scope.
-    pub fn create_scope(&mut self, parent_scope: FocusNodeId) -> FocusNodeId {
-        self.create_scope_internal(parent_scope, None)
+    // -----------------------------------------------------------------------
+    // Node queries
+    // -----------------------------------------------------------------------
+
+    /// Get a reference to the data for `id`.
+    pub fn get(&self, id: FocusNodeId) -> Option<&FocusNodeData> {
+        self.nodes.get(id)
     }
 
-    /// Create a new scope node with an associated element key.
-    pub fn create_scope_with_element(
-        &mut self,
-        parent_scope: FocusNodeId,
-        element_key: ElementKey,
-    ) -> FocusNodeId {
-        self.create_scope_internal(parent_scope, Some(element_key), FocusScopeData::new())
+    /// Get a mutable reference to the data for `id`.
+    pub fn get_mut(&mut self, id: FocusNodeId) -> Option<&mut FocusNodeData> {
+        self.nodes.get_mut(id)
     }
 
-    /// Create a new scope node with custom scope data.
-    pub fn create_scope_with_data(
-        &mut self,
-        parent_scope: FocusNodeId,
-        scope_data: FocusScopeData,
-    ) -> FocusNodeId {
-        self.create_scope_internal(parent_scope, None, scope_data)
-    }
-
-    /// Create a new scope node with an element key and custom scope data.
-    pub fn create_scope_with_element_and_data(
-        &mut self,
-        parent_scope: FocusNodeId,
-        element_key: ElementKey,
-        scope_data: FocusScopeData,
-    ) -> FocusNodeId {
-        self.create_scope_internal(parent_scope, Some(element_key), scope_data)
-    }
-
-    fn create_scope_internal(
-        &mut self,
-        parent_scope: FocusNodeId,
-        element_key: Option<ElementKey>,
-        scope_data: FocusScopeData,
-    ) -> FocusNodeId {
-        let mut data = FocusNodeData::new_scope();
-        data.parent = Some(parent_scope);
-        data.element_key = element_key;
-        let id = self.nodes.insert(data);
-
-        // Insert scope extension data.
-        self.scopes.insert(id, scope_data);
-
-        // Register in parent's children list.
-        if let Some(parent) = self.nodes.get_mut(parent_scope) {
-            parent.children.push(id);
-        }
-
-        // Register element mapping if present.
-        if let Some(ek) = element_key {
-            self.element_to_node.insert(ek, id);
-        }
-
-        id
-    }
-
-    /// Remove a node from the focus tree.
-    ///
-    /// If the node has primary focus, it is unfocused first.
-    /// If the node is a scope, all its children are also removed.
-    /// The root scope cannot be removed.
-    ///
-    /// Returns `true` if the node was removed, `false` if it was not found
-    /// or was the root scope.
-    pub fn remove_node(&mut self, node_id: FocusNodeId) -> bool {
-        // Cannot remove the root scope.
-        if node_id == self.root_scope {
-            return false;
-        }
-
-        let Some(node_data) = self.nodes.get(node_id) else {
-            return false;
-        };
-
-        let is_scope = node_data.is_scope;
-        let parent_id = node_data.parent;
-        let element_key = node_data.element_key;
-
-        // Collect children to remove (for scopes).
-        let children_to_remove: Vec<FocusNodeId> = if is_scope {
-            node_data.children.clone()
-        } else {
-            Vec::new()
-        };
-
-        // Clear primary focus if this node or a descendant has it.
-        if self.has_focus(node_id) {
-            self.primary_focus = None;
-        }
-
-        // Remove from parent's children list.
-        if let Some(pid) = parent_id {
-            if let Some(parent) = self.nodes.get_mut(pid) {
-                parent.children.retain(|c| *c != node_id);
-            }
-        }
-
-        // Remove from parent scope's focused_children.
-        if let Some(pid) = parent_id {
-            if let Some(scope) = self.scopes.get_mut(pid) {
-                scope.focused_children.retain(|c| *c != node_id);
-            }
-        }
-
-        // Remove element mapping.
-        if let Some(ek) = element_key {
-            self.element_to_node.remove(&ek);
-        }
-
-        // Remove scope extension data.
-        if is_scope {
-            self.scopes.remove(node_id);
-        }
-
-        // Remove the node itself.
-        self.nodes.remove(node_id);
-
-        // Recursively remove children (for scopes).
-        for child_id in children_to_remove {
-            self.remove_node_recursive(child_id);
-        }
-
-        true
-    }
-
-    fn remove_node_recursive(&mut self, node_id: FocusNodeId) {
-        let Some(node_data) = self.nodes.get(node_id) else {
-            return;
-        };
-
-        let is_scope = node_data.is_scope;
-        let element_key = node_data.element_key;
-        let children: Vec<FocusNodeId> = node_data.children.clone();
-
-        // Clear primary focus if needed.
-        if self.primary_focus == Some(node_id) {
-            self.primary_focus = None;
-        }
-
-        // Remove element mapping.
-        if let Some(ek) = element_key {
-            self.element_to_node.remove(&ek);
-        }
-
-        // Remove scope extension data.
-        if is_scope {
-            self.scopes.remove(node_id);
-        }
-
-        // Remove the node itself.
-        self.nodes.remove(node_id);
-
-        // Recursively remove children.
-        for child_id in children {
-            self.remove_node_recursive(child_id);
-        }
-    }
-
-    /// Request focus on `node_id`.
-    ///
-    /// This is a deferred focus change — the actual `primary_focus` update
-    /// happens when `apply_focus_changes()` is called (typically at the end
-    /// of event processing).
-    ///
-    /// If `can_request_focus` is `false` on the target node, this is a no-op.
-    pub fn request_focus(&mut self, node_id: FocusNodeId) {
-        if let Some(node) = self.nodes.get(node_id) {
-            if !node.can_request_focus {
-                return;
-            }
-        } else {
-            return;
-        }
-        self.pending_focus_request = Some(node_id);
-        self.has_pending_focus_change = true;
-    }
-
-    /// Request focus by element key.
-    ///
-    /// Looks up the focus node associated with `element_key` and requests
-    /// focus on it (deferred). Returns `None` if no node is associated with
-    /// the element key or if the node cannot request focus.
-    pub fn request_focus_by_element(&mut self, element_key: ElementKey) {
-        let Some(node_id) = self.element_to_node.get(&element_key).copied() else {
-            return;
-        };
-        self.request_focus(node_id);
-    }
-
-    /// Commit any pending deferred focus changes.
-    ///
-    /// This should be called at the end of event processing (by the pipeline)
-    /// so that all focus requests made during event handling are applied
-    /// atomically.
-    pub fn apply_focus_changes(&mut self) {
-        if !self.has_pending_focus_change {
-            return;
-        }
-        self.has_pending_focus_change = false;
-
-        let new_focus = self.pending_focus_request.take();
-
-        // Commit the focus change
-        self.primary_focus = new_focus;
-
-        // Update scope focused_children for the new focus
-        if let Some(new) = new_focus {
-            self.set_as_focused_child_for_scope(new);
-        }
-    }
-
-    /// Return `true` if there are pending deferred focus changes.
-    pub fn has_pending_changes(&self) -> bool {
-        self.has_pending_focus_change
-    }
-
-    /// Return the ancestor path from `id` up to the root.
-    fn ancestor_path(&self, id: FocusNodeId) -> Vec<FocusNodeId> {
-        let mut path = vec![id];
-        let mut current = id;
-        while let Some(node) = self.nodes.get(current) {
-            if let Some(parent) = node.parent {
-                path.push(parent);
-                current = parent;
-            } else {
-                break;
-            }
-        }
-        path
-    }
-
-    /// Unfocus the current primary focus.
-    ///
-    /// Equivalent to `unfocus_with_disposition(UnfocusDisposition::default())`.
-    pub fn unfocus(&mut self) -> Option<FocusNodeId> {
-        self.unfocus_with_disposition(UnfocusDisposition::default())
-    }
-
-    /// Unfocus with a specific disposition.
-    ///
-    /// - `PreviouslyFocusedChild`: Move focus to the nearest ancestor scope's
-    ///   previously focused child. If none, focus falls back to the root scope.
-    /// - `Scope`: Move focus to the nearest ancestor scope node itself.
-    pub fn unfocus_with_disposition(&mut self, disposition: UnfocusDisposition) -> Option<FocusNodeId> {
-        let previous = self.primary_focus;
-        let Some(focused_id) = previous else {
-            return None;
-        };
-
-        // Find the enclosing scope of the currently focused node.
-        let scope_id = self.enclosing_scope(focused_id);
-
-        match disposition {
-            UnfocusDisposition::RestorePrevious => {
-                // Remove the currently focused node from its enclosing scope's
-                // focused_children history.
-                if let Some(sid) = scope_id {
-                    if let Some(scope) = self.scopes.get_mut(sid) {
-                        scope.focused_children.retain(|c| *c != focused_id);
-                    }
-                }
-
-                // Get the previous focused child from the same scope.
-                let prev_child = scope_id
-                    .and_then(|sid| self.scopes.get(sid))
-                    .and_then(|s| s.focused_child());
-
-                if let Some(prev) = prev_child {
-                    // If the previous child is a scope, descend into it to
-                    // restore the leaf node it remembers.
-                    let target = self.descend_to_leaf(prev);
-                    self.primary_focus = Some(target);
-                    self.set_as_focused_child_for_scope(target);
-                } else {
-                    // No previously focused child found; clear primary focus.
-                    self.primary_focus = None;
-                }
-            }
-            UnfocusDisposition::Clear => {
-                // Focus the enclosing scope node itself.
-                if let Some(sid) = scope_id {
-                    self.primary_focus = Some(sid);
-                    self.set_as_focused_child_for_scope(sid);
-                } else {
-                    self.primary_focus = None;
-                }
-            }
-        }
-
-        previous
-    }
-
-    /// Move `node_id` from its current parent to `new_parent_scope`.
-    ///
-    /// Returns `true` if the reparent was successful.
-    pub fn reparent(&mut self, node_id: FocusNodeId, new_parent_scope: FocusNodeId) -> bool {
-        if node_id == self.root_scope {
-            return false;
-        }
-
-        let Some(node_data) = self.nodes.get(node_id) else {
-            return false;
-        };
-
-        let old_parent = node_data.parent;
-
-        // Remove from old parent's children list.
-        if let Some(old_pid) = old_parent {
-            if let Some(old_parent_node) = self.nodes.get_mut(old_pid) {
-                old_parent_node.children.retain(|c| *c != node_id);
-            }
-            // Remove from old parent scope's focused_children.
-            if let Some(scope) = self.scopes.get_mut(old_pid) {
-                scope.focused_children.retain(|c| *c != node_id);
-            }
-        }
-
-        // Update parent reference.
-        if let Some(node_data) = self.nodes.get_mut(node_id) {
-            node_data.parent = Some(new_parent_scope);
-        }
-
-        // Add to new parent's children list.
-        if let Some(new_parent_node) = self.nodes.get_mut(new_parent_scope) {
-            new_parent_node.children.push(node_id);
-        }
-
-        true
-    }
-
-    /// Return the enclosing scope of `node_id`.
-    ///
-    /// If `node_id` is itself a scope, return its parent scope.
-    /// If `node_id` is a leaf, return the nearest ancestor scope.
-    /// Returns `None` for the root scope.
-    pub fn enclosing_scope(&self, node_id: FocusNodeId) -> Option<FocusNodeId> {
-        let node_data = self.nodes.get(node_id)?;
-
-        if node_data.is_scope {
-            // A scope's enclosing scope is its parent (if the parent is a scope).
-            node_data.parent.filter(|&pid| {
-                self.nodes.get(pid).map(|n| n.is_scope).unwrap_or(false)
-            })
-        } else {
-            // A leaf's enclosing scope is its parent.
-            node_data.parent
-        }
-    }
-
-    /// Return the nearest ancestor scope (including `node_id` itself if it
-    /// is a scope).
-    pub fn nearest_parent_scope(&self, node_id: FocusNodeId) -> Option<FocusNodeId> {
-        let mut current = Some(node_id);
-        while let Some(cid) = current {
-            if let Some(data) = self.nodes.get(cid) {
-                if data.is_scope {
-                    return Some(cid);
-                }
-                current = data.parent;
-            } else {
-                return None;
+    /// Look up the focus node associated with `element_key`, if any.
+    pub fn node_for_element(&self, element_key: ElementKey) -> Option<FocusNodeId> {
+        for (id, key_opt) in &self.element_to_node {
+            if key_opt.as_ref() == Some(&element_key) {
+                return Some(id);
             }
         }
         None
     }
 
-    /// Record `node_id` as the most-recently focused child in its
-    /// enclosing scope's `focused_children` stack, then walk up ancestor
-    /// scopes and push each scope as the focused child of its parent.
+    /// Return the currently focused node id, if any.
+    pub fn primary_focus(&self) -> Option<FocusNodeId> {
+        self.primary_focus
+    }
+
+    /// Return the element key of the currently focused node, if any.
+    pub fn primary_focus_element(&self) -> Option<ElementKey> {
+        self.primary_focus
+            .and_then(|id| self.nodes.get(id))
+            .and_then(|n| n.element_key)
+    }
+
+    // -----------------------------------------------------------------------
+    // Focus operations
+    // -----------------------------------------------------------------------
+
+    /// Request that `id` become the primary focus.
     ///
-    /// This ensures that when a leaf node gains focus, every ancestor
-    /// scope remembers which of its children (including intermediate
-    /// scopes) was most recently focused, enabling `descend_to_leaf()`
-    /// to restore the correct leaf when a scope regains focus.
-    fn set_as_focused_child_for_scope(&mut self, node_id: FocusNodeId) {
-        let mut current = Some(node_id);
-
-        while let Some(cid) = current {
-            let parent_scope = self.nodes.get(cid)
-                .and_then(|n| n.parent);
-
-            let Some(scope_id) = parent_scope else {
-                return;
-            };
-
-            // Remove any previous occurrence of current node in the
-            // parent scope's focused_children stack, then push to top.
-            if let Some(scope) = self.scopes.get_mut(scope_id) {
-                scope.focused_children.retain(|c| *c != cid);
-                scope.focused_children.push(cid);
-            }
-
-            // Walk up: next iteration records the parent scope in its
-            // own parent's focused_children.
-            current = Some(scope_id);
+    /// If the node has `can_request_focus == false`, this is a no-op.
+    /// Otherwise the focus change is deferred until `apply_focus_changes()`
+    /// is called.
+    pub fn request_focus(&mut self, id: FocusNodeId) {
+        let can = self.nodes.get(id).map_or(false, |n| n.can_request_focus);
+        if !can {
+            return;
         }
+        self.pending_focus_change = Some(id);
     }
 
-    /// Descend through nested scopes' `focused_children` to find the leaf node.
+    /// Clear primary focus. Takes effect immediately.
+    pub fn unfocus(&mut self) {
+        self.primary_focus = None;
+    }
+
+    /// Apply any pending focus change.
     ///
-    /// If `id` is a leaf node, returns `id` itself. If `id` is a scope,
-    /// follows the scope's `focused_child()` chain until a leaf is reached.
-    /// If a scope has no focused child, the scope itself is returned.
-    pub fn descend_to_leaf(&self, id: FocusNodeId) -> FocusNodeId {
-        let mut current = id;
-        loop {
-            let node = match self.nodes.get(current) {
-                Some(n) => n,
-                None => return current,
-            };
-            if !node.is_scope {
-                return current;
-            }
-            match self.scopes.get(current).and_then(|s| s.focused_child()) {
-                Some(child) => current = child,
-                None => return current,
+    /// If a focus change was requested via `request_focus()` since the last
+    /// call to `apply_focus_changes()`, it is applied now. If the same node
+    /// is already focused, the pending change is discarded.
+    pub fn apply_focus_changes(&mut self) {
+        if let Some(new_id) = self.pending_focus_change.take() {
+            if self.primary_focus != Some(new_id) {
+                self.primary_focus = Some(new_id);
             }
         }
     }
 
-    /// Return a reference to the data for `node_id`, or `None` if not found.
-    pub fn get_node(&self, node_id: FocusNodeId) -> Option<&FocusNodeData> {
-        self.nodes.get(node_id)
-    }
+    // -----------------------------------------------------------------------
+    // Node removal
+    // -----------------------------------------------------------------------
 
-    /// Return a mutable reference to the data for `node_id`, or `None` if not found.
-    pub fn get_node_mut(&mut self, node_id: FocusNodeId) -> Option<&mut FocusNodeData> {
-        self.nodes.get_mut(node_id)
-    }
-
-    /// Return a reference to the scope data for `node_id`, or `None` if not
-    /// a scope or not found.
-    pub fn get_scope(&self, node_id: FocusNodeId) -> Option<&FocusScopeData> {
-        self.scopes.get(node_id)
-    }
-
-    /// Return a mutable reference to the scope data for `node_id`.
-    pub fn get_scope_mut(&mut self, node_id: FocusNodeId) -> Option<&mut FocusScopeData> {
-        self.scopes.get_mut(node_id)
-    }
-
-    /// Return `true` if `node_id` exists in the focus tree.
-    pub fn contains(&self, node_id: FocusNodeId) -> bool {
-        self.nodes.contains_key(node_id)
-    }
-
-    /// Return the focus node id associated with `element_key`, if any.
-    pub fn node_for_element(&self, element_key: ElementKey) -> Option<FocusNodeId> {
-        self.element_to_node.get(&element_key).copied()
-    }
-
-    /// Return `true` if the element with `element_key` currently has primary focus.
-    pub fn is_element_focused(&self, element_key: ElementKey) -> bool {
-        self.element_to_node.get(&element_key)
-            .map(|&nid| self.primary_focus == Some(nid))
-            .unwrap_or(false)
-    }
-
-    /// Check if `ancestor_id` is an ancestor of `descendant_id`.
-    fn is_ancestor_of(&self, ancestor_id: FocusNodeId, descendant_id: FocusNodeId) -> bool {
-        let mut current = self.nodes.get(descendant_id)
-            .and_then(|n| n.parent);
-        while let Some(pid) = current {
-            if pid == ancestor_id {
-                return true;
-            }
-            current = self.nodes.get(pid)
-                .and_then(|n| n.parent);
+    /// Remove a node from the focus tree.
+    ///
+    /// The node is detached from its parent and all children are removed
+    /// recursively. If the removed node (or a descendant) held primary
+    /// focus, primary focus is cleared.
+    pub fn remove_node(&mut self, id: FocusNodeId) {
+        if id == self.root {
+            return; // Never remove the root.
         }
-        false
+        self.remove_node_recursive(id);
+    }
+
+    fn remove_node_recursive(&mut self, id: FocusNodeId) {
+        // Collect children first so we can remove them without borrow issues.
+        let children: Vec<FocusNodeId> = self
+            .nodes
+            .get(id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+
+        for child in children {
+            self.remove_node_recursive(child);
+        }
+
+        // Detach from parent.
+        if let Some(node) = self.nodes.get(id) {
+            if let Some(parent_id) = node.parent {
+                if let Some(parent) = self.nodes.get_mut(parent_id) {
+                    parent.children.retain(|c| *c != id);
+                }
+            }
+        }
+
+        // Clear primary focus if this node held it.
+        if self.primary_focus == Some(id) {
+            self.primary_focus = None;
+        }
+
+        // Clear pending focus if this node was pending.
+        if self.pending_focus_change == Some(id) {
+            self.pending_focus_change = None;
+        }
+
+        self.nodes.remove(id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Reparent
+    // -----------------------------------------------------------------------
+
+    /// Move `id` so that it becomes a child of `new_parent`.
+    ///
+    /// If `new_parent` is `None`, the node is attached to the root.
+    pub fn reparent(&mut self, id: FocusNodeId, new_parent: Option<FocusNodeId>) {
+        let new_parent_id = new_parent.unwrap_or(self.root);
+        if id == self.root || id == new_parent_id {
+            return;
+        }
+
+        // Detach from old parent.
+        if let Some(old_parent_id) = self.nodes.get(id).and_then(|n| n.parent) {
+            if let Some(old_parent) = self.nodes.get_mut(old_parent_id) {
+                old_parent.children.retain(|c| *c != id);
+            }
+        }
+
+        // Attach to new parent.
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.parent = Some(new_parent_id);
+        }
+        if let Some(new_parent) = self.nodes.get_mut(new_parent_id) {
+            new_parent.children.push(id);
+        }
     }
 }
 
@@ -614,6 +268,10 @@ impl Default for FocusManager {
     }
 }
 
+// ===========================================================================
+// Tests
+// ===========================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,332 +279,114 @@ mod tests {
     #[test]
     fn test_focus_manager_new() {
         let mgr = FocusManager::new();
-        // Root scope exists and is a scope.
-        assert!(mgr.contains(mgr.root_scope()));
-        let root = mgr.get_node(mgr.root_scope()).unwrap();
-        assert!(root.is_scope);
-        assert!(root.parent.is_none());
-        assert!(root.children.is_empty());
-        // No primary focus initially.
+        let root = mgr.root_scope();
+        let root_data = mgr.get(root).expect("root should exist");
+        assert!(root_data.element_key.is_none());
+        assert!(root_data.parent.is_none());
+        assert!(root_data.children.is_empty());
+        assert!(!root_data.can_request_focus);
+        assert!(root_data.skip_traversal);
         assert!(mgr.primary_focus().is_none());
-        assert!(mgr.primary_focus_element().is_none());
-        // Root scope has scope data.
-        assert!(mgr.get_scope(mgr.root_scope()).is_some());
     }
 
     #[test]
     fn test_create_node() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
+        let id = mgr.create_node(None);
+        let data = mgr.get(id).expect("node should exist");
+        assert!(data.element_key.is_none());
+        assert_eq!(data.parent, Some(mgr.root_scope()));
+        assert!(data.children.is_empty());
+        assert!(data.can_request_focus);
+        assert!(!data.skip_traversal);
 
-        let node = mgr.create_node(root);
-        assert!(mgr.contains(node));
-
-        // Node is a child of root.
-        let root_data = mgr.get_node(root).unwrap();
-        assert!(root_data.children.contains(&node));
-
-        // Node defaults.
-        let node_data = mgr.get_node(node).unwrap();
-        assert!(!node_data.is_scope);
-        assert_eq!(node_data.parent, Some(root));
-        assert!(node_data.can_request_focus);
-        assert!(!node_data.skip_traversal);
-        assert!(node_data.element_key.is_none());
-    }
-
-    #[test]
-    fn test_create_scope() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let scope = mgr.create_scope(root);
-        assert!(mgr.contains(scope));
-
-        // Scope is a child of root.
-        let root_data = mgr.get_node(root).unwrap();
-        assert!(root_data.children.contains(&scope));
-
-        // Scope node data.
-        let scope_data = mgr.get_node(scope).unwrap();
-        assert!(scope_data.is_scope);
-        assert_eq!(scope_data.parent, Some(root));
-
-        // Scope extension data exists.
-        assert!(mgr.get_scope(scope).is_some());
-        assert!(mgr.get_scope(scope).unwrap().focused_children.is_empty());
+        // Should be a child of root.
+        let root_data = mgr.get(mgr.root_scope()).unwrap();
+        assert!(root_data.children.contains(&id));
     }
 
     #[test]
     fn test_request_focus() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let node_a = mgr.create_node(root);
-        let node_b = mgr.create_node(root);
-
-        // Request focus on A (deferred).
-        mgr.request_focus(node_a);
+        let id = mgr.create_node(None);
+        mgr.request_focus(id);
+        // Not applied yet.
+        assert!(mgr.primary_focus().is_none());
         mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node_a));
-        assert!(mgr.has_primary_focus(node_a));
-        assert!(!mgr.has_primary_focus(node_b));
-
-        // Request focus on B — last request wins.
-        mgr.request_focus(node_b);
-        mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node_b));
-        assert!(mgr.has_primary_focus(node_b));
+        assert_eq!(mgr.primary_focus(), Some(id));
     }
 
     #[test]
     fn test_request_focus_can_request_focus_false() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let node_a = mgr.create_node(root);
-        let node_b = mgr.create_node(root);
-
-        // Focus A first.
-        mgr.request_focus(node_a);
+        let id = mgr.create_node(None);
+        if let Some(data) = mgr.get_mut(id) {
+            data.can_request_focus = false;
+        }
+        mgr.request_focus(id);
         mgr.apply_focus_changes();
-
-        // Make B unable to request focus.
-        mgr.get_node_mut(node_b).unwrap().can_request_focus = false;
-
-        // Requesting focus on B should be a no-op.
-        mgr.request_focus(node_b);
-        mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node_a));
+        assert!(mgr.primary_focus().is_none());
     }
 
     #[test]
     fn test_unfocus() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let node = mgr.create_node(root);
-        mgr.request_focus(node);
+        let id = mgr.create_node(None);
+        mgr.request_focus(id);
         mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node));
-
-        let prev = mgr.unfocus();
-        assert_eq!(prev, Some(node));
+        assert_eq!(mgr.primary_focus(), Some(id));
+        mgr.unfocus();
         assert!(mgr.primary_focus().is_none());
     }
 
     #[test]
     fn test_remove_node() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let node = mgr.create_node(root);
-        mgr.request_focus(node);
+        let id = mgr.create_node(None);
+        mgr.request_focus(id);
         mgr.apply_focus_changes();
+        assert_eq!(mgr.primary_focus(), Some(id));
 
-        // Remove the focused node.
-        assert!(mgr.remove_node(node));
-        assert!(!mgr.contains(node));
+        mgr.remove_node(id);
         assert!(mgr.primary_focus().is_none());
+        assert!(mgr.get(id).is_none());
 
-        // Root no longer lists it as a child.
-        let root_data = mgr.get_node(root).unwrap();
-        assert!(!root_data.children.contains(&node));
-
-        // Cannot remove the root scope.
-        assert!(!mgr.remove_node(root));
-    }
-
-    #[test]
-    fn test_reparent() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let scope_a = mgr.create_scope(root);
-        let scope_b = mgr.create_scope(root);
-        let node = mgr.create_node(scope_a);
-
-        // Node is a child of scope_a.
-        assert!(mgr.get_node(scope_a).unwrap().children.contains(&node));
-        assert_eq!(mgr.get_node(node).unwrap().parent, Some(scope_a));
-
-        // Reparent to scope_b.
-        assert!(mgr.reparent(node, scope_b));
-
-        // Node is now a child of scope_b.
-        assert!(!mgr.get_node(scope_a).unwrap().children.contains(&node));
-        assert!(mgr.get_node(scope_b).unwrap().children.contains(&node));
-        assert_eq!(mgr.get_node(node).unwrap().parent, Some(scope_b));
-
-        // Cannot reparent the root scope.
-        assert!(!mgr.reparent(root, scope_a));
-    }
-
-    #[test]
-    fn test_enclosing_scope() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let scope = mgr.create_scope(root);
-        let node = mgr.create_node(scope);
-
-        // Leaf node's enclosing scope is its parent (the scope).
-        assert_eq!(mgr.enclosing_scope(node), Some(scope));
-
-        // Scope's enclosing scope is root.
-        assert_eq!(mgr.enclosing_scope(scope), Some(root));
-
-        // Root scope has no enclosing scope.
-        assert!(mgr.enclosing_scope(root).is_none());
-    }
-
-    #[test]
-    fn test_scope_focused_child_memory() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let scope = mgr.create_scope(root);
-        let node_a = mgr.create_node(scope);
-        let node_b = mgr.create_node(scope);
-
-        // Focus A — it should be recorded in scope's focused_children.
-        mgr.request_focus(node_a);
-        mgr.apply_focus_changes();
-        let scope_data = mgr.get_scope(scope).unwrap();
-        assert_eq!(scope_data.focused_child(), Some(node_a));
-
-        // Focus B — B should replace A as the focused child.
-        mgr.request_focus(node_b);
-        mgr.apply_focus_changes();
-        let scope_data = mgr.get_scope(scope).unwrap();
-        assert_eq!(scope_data.focused_child(), Some(node_b));
-        // A should still be in the stack (just not at the top).
-        assert!(scope_data.focused_children.contains(&node_a));
-    }
-
-    #[test]
-    fn test_unfocus_restore_previous() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let scope = mgr.create_scope(root);
-        let node_a = mgr.create_node(scope);
-        let node_b = mgr.create_node(scope);
-
-        // Focus A, then B.
-        mgr.request_focus(node_a);
-        mgr.apply_focus_changes();
-        mgr.request_focus(node_b);
-        mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node_b));
-
-        // Unfocus with PreviouslyFocusedChild — should restore A.
-        let prev = mgr.unfocus_with_disposition(UnfocusDisposition::RestorePrevious);
-        assert_eq!(prev, Some(node_b));
-        assert_eq!(mgr.primary_focus(), Some(node_a));
+        // Root should have no children now.
+        let root_data = mgr.get(mgr.root_scope()).unwrap();
+        assert!(!root_data.children.contains(&id));
     }
 
     #[test]
     fn test_element_to_node_mapping() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        // We need an ElementKey. Since ElementKey is a slotmap key,
-        // we create one via a temporary SlotMap.
-        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = SlotMap::with_key();
-        let ek = elem_map.insert(());
-
-        let node = mgr.create_node_with_element(root, ek);
-
-        // Mapping exists.
-        assert_eq!(mgr.node_for_element(ek), Some(node));
-        assert!(!mgr.is_element_focused(ek));
-
-        // Focus the node.
-        mgr.request_focus(node);
-        mgr.apply_focus_changes();
-        assert!(mgr.is_element_focused(ek));
-
-        // Remove the node — mapping should be gone.
-        mgr.remove_node(node);
-        assert!(mgr.node_for_element(ek).is_none());
-        assert!(!mgr.is_element_focused(ek));
+        // Create an ElementKey via a temporary SlotMap (slotmap keys are opaque).
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_with_element(mgr.root_scope(), key);
+        assert_eq!(mgr.node_for_element(key), Some(id));
+        assert_eq!(mgr.get(id).unwrap().element_key, Some(key));
     }
 
     #[test]
     fn test_deferred_focus_change() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let node1 = mgr.create_node(root);
-
-        // Request focus (deferred)
-        mgr.request_focus(node1);
-        assert!(mgr.has_pending_changes());
-        // Primary focus not yet changed
+        let id = mgr.create_node(None);
+        mgr.request_focus(id);
+        // Focus not applied yet.
         assert!(mgr.primary_focus().is_none());
-
-        // Apply changes
         mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node1));
-        assert!(!mgr.has_pending_changes());
+        assert_eq!(mgr.primary_focus(), Some(id));
     }
 
     #[test]
     fn test_deferred_coalescing() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let node1 = mgr.create_node(root);
-        let node2 = mgr.create_node(root);
-
-        // Multiple requests in one frame — only last wins
-        mgr.request_focus(node1);
-        mgr.request_focus(node2);
+        let id1 = mgr.create_node(None);
+        let id2 = mgr.create_node(None);
+        mgr.request_focus(id1);
+        mgr.request_focus(id2);
+        // Only the last request should win.
         mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node2));
-    }
-
-    #[test]
-    fn test_scope_focus_memory_nested() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let outer_scope = mgr.create_scope(root);
-        let inner_scope = mgr.create_scope(outer_scope);
-        let node1 = mgr.create_node(inner_scope);
-        let node2 = mgr.create_node(inner_scope);
-
-        // Focus node1, then node2
-        mgr.request_focus(node1);
-        mgr.apply_focus_changes();
-        mgr.request_focus(node2);
-        mgr.apply_focus_changes();
-        assert_eq!(mgr.primary_focus(), Some(node2));
-
-        // Unfocus node2 with RestorePrevious
-        mgr.unfocus_with_disposition(UnfocusDisposition::RestorePrevious);
-        assert_eq!(mgr.primary_focus(), Some(node1));
-
-        // Inner scope should remember node1
-        assert_eq!(mgr.get_scope(inner_scope).unwrap().focused_child(), Some(node1));
-    }
-
-    #[test]
-    fn test_descend_to_leaf() {
-        let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-        let scope1 = mgr.create_scope(root);
-        let scope2 = mgr.create_scope(scope1);
-        let leaf = mgr.create_node(scope2);
-
-        // Focus the leaf
-        mgr.request_focus(leaf);
-        mgr.apply_focus_changes();
-
-        // scope2 should remember leaf
-        assert_eq!(mgr.get_scope(scope2).unwrap().focused_child(), Some(leaf));
-        // scope1 should remember scope2
-        assert_eq!(mgr.get_scope(scope1).unwrap().focused_child(), Some(scope2));
-
-        // Descend from scope1 should reach leaf
-        assert_eq!(mgr.descend_to_leaf(scope1), leaf);
+        assert_eq!(mgr.primary_focus(), Some(id2));
     }
 }
