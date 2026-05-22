@@ -479,9 +479,15 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         // This unregisters global key, removes render object, and removes state
         self.unmount_render_object(context);
 
-        // Unmount child element via child_ops
+        // Unmount child element via child_ops BEFORE detaching our focus node.
+        // Children may need to reference their parent's focus node during unmount.
         if let Some(child_key) = context.children().first().copied() {
             context.unmount_child(child_key);
+        }
+
+        // Detach focus node from the focus tree after children are unmounted.
+        if let Some(mut attachment) = self.focus_attachment.take() {
+            attachment.detach(context.focus_manager());
         }
     }
 

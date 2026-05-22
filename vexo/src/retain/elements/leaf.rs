@@ -137,6 +137,12 @@ impl Element for LeafRenderObjectElement {
     fn unmount(&mut self, context: &mut ElementContext) {
         // Use RenderObjectElement's default unmount implementation
         self.unmount_render_object(context);
+
+        // Detach focus node from the focus tree.
+        // Leaf elements have no children, so no ordering concern.
+        if let Some(mut attachment) = self.focus_attachment.take() {
+            attachment.detach(context.focus_manager());
+        }
     }
 
     fn render_object(&self) -> Option<RenderObjectKey> {

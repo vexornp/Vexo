@@ -144,7 +144,13 @@ impl Element for ContainerElement {
     fn unmount(&mut self, context: &mut ElementContext) {
         // Use RenderObjectElement's default unmount for render object removal
         self.unmount_render_object(context);
-        // Children are unmounted by the registry
+
+        // Detach focus node from the focus tree AFTER render object cleanup.
+        // Children are already unmounted by the reconciler before this method
+        // is called, so their focus nodes have already been detached.
+        if let Some(mut attachment) = self.focus_attachment.take() {
+            attachment.detach(context.focus_manager());
+        }
     }
 
     fn render_object(&self) -> Option<RenderObjectKey> {
