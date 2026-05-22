@@ -363,20 +363,14 @@ impl ThreeTreePipeline {
 
     /// Set focus to an element.
     ///
-    /// If the element does not yet have a FocusNode in the focus tree,
-    /// one is created under the root scope before requesting focus.
+    /// After FocusAttachment integration, every mounted element already has
+    /// a FocusNode. This method looks it up rather than creating one on demand.
     /// Pass `None` to clear focus.
     pub fn set_focus(&mut self, element: Option<ElementKey>) {
         if let Some(element_key) = element {
-            // Ensure a FocusNode exists for this element.
-            let node_id = if let Some(existing) = self.focus_manager.node_for_element(element_key) {
-                existing
-            } else {
-                self.focus_manager.create_node_with_element(
-                    self.focus_manager.root_scope(),
-                    element_key,
-                )
-            };
+            let node_id = self.focus_manager
+                .node_for_element(element_key)
+                .expect("Focus node must exist — all mounted elements have FocusAttachments");
             self.focus_manager.request_focus(node_id);
         } else {
             self.focus_manager.unfocus();

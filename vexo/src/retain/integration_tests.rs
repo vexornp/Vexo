@@ -227,7 +227,7 @@ mod event_handling_tests {
     use crate::core::{Point, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
-    use crate::retain::{ElementKey, ThreeTreePipeline};
+    use crate::retain::{Text, ThreeTreePipeline, Widget};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -285,9 +285,11 @@ mod event_handling_tests {
         // Initially no focus
         assert!(pipeline.focused_element().is_none());
 
-        // Set focus
-        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
-        let element_id = sm.insert(());
+        // Mount a widget so elements have focus nodes via FocusAttachment
+        pipeline.update(Box::new(Text::new("Focusable")));
+        let element_id = pipeline.element_registry().root().unwrap();
+
+        // Set focus on the mounted element
         pipeline.set_focus(Some(element_id));
         assert_eq!(pipeline.focused_element(), Some(element_id));
 
