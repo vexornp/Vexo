@@ -53,6 +53,18 @@ impl FocusAttachment {
         }
     }
 
+    /// Reparent the focus node to a new parent, attaching to root if `None`.
+    ///
+    /// This is the primary variant called from element `rebuild()` methods.
+    /// When `new_parent` is `None`, the focus node is reparented to the
+    /// root of the focus tree. This is a no-op if the attachment has been
+    /// detached.
+    pub fn reparent_to(&self, new_parent: Option<FocusNodeId>, manager: &mut FocusManager) {
+        if self.is_attached {
+            manager.reparent(self.node_id, new_parent);
+        }
+    }
+
     /// Detach the focus node from the focus tree.
     ///
     /// Called during unmount. Removes the node from the focus tree and marks

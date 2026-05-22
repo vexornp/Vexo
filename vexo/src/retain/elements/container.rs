@@ -227,6 +227,12 @@ impl Element for ContainerElement {
                 context.unmount_child(old_children[i]);
             }
         }
+
+        // Reparent focus node if parent changed
+        if let Some(attachment) = self.focus_attachment.as_ref() {
+            let new_parent_id = context.parent_focus_node_id();
+            attachment.reparent_to(new_parent_id, context.focus_manager());
+        }
     }
 
     fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
