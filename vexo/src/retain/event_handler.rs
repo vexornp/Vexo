@@ -159,16 +159,11 @@ impl EventHandler {
 
                 // Handle focus requests from this element
                 if let Some(focus_element) = ctx.focus_request() {
-                    // Ensure a FocusNode exists for this element, then request focus.
-                    let node_id = if let Some(existing) = focus_manager.node_for_element(focus_element) {
-                        existing
-                    } else {
-                        focus_manager.create_node_with_element(
-                            focus_manager.root_scope(),
-                            focus_element,
-                        )
-                    };
-                    focus_manager.request_focus(node_id);
+                // Focus node must exist — all mounted elements have FocusAttachments.
+                let node_id = focus_manager
+                    .node_for_element(focus_element)
+                    .expect("Focus node must exist — all mounted elements have FocusAttachments");
+                focus_manager.request_focus(node_id);
                 } else if ctx.should_clear_focus() {
                     focus_manager.unfocus();
                 }
@@ -228,16 +223,11 @@ impl EventHandler {
 
         // Handle focus requests
         if let Some(focus_element) = ctx.focus_request() {
-            // Ensure a FocusNode exists for this element, then request focus.
-            let node_id = if let Some(existing) = focus_manager.node_for_element(focus_element) {
-                existing
-            } else {
-                focus_manager.create_node_with_element(
-                    focus_manager.root_scope(),
-                    focus_element,
-                )
-            };
-            focus_manager.request_focus(node_id);
+        // Focus node must exist — all mounted elements have FocusAttachments.
+        let node_id = focus_manager
+            .node_for_element(focus_element)
+            .expect("Focus node must exist — all mounted elements have FocusAttachments");
+        focus_manager.request_focus(node_id);
         } else if ctx.should_clear_focus() {
             focus_manager.unfocus();
         }
