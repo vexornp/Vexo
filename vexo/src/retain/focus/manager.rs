@@ -72,43 +72,6 @@ impl FocusManager {
     // Node creation
     // -----------------------------------------------------------------------
 
-    /// Create a plain focus node (no element association) as a child of
-    /// `parent`. If `parent` is `None`, the node is attached to the root.
-    pub fn create_node(&mut self, parent: Option<FocusNodeId>) -> FocusNodeId {
-        let parent_id = parent.unwrap_or(self.root);
-        let id = self.nodes.insert(FocusNodeData {
-            element_key: None,
-            parent: Some(parent_id),
-            children: Vec::new(),
-            can_request_focus: true,
-            skip_traversal: false,
-        });
-        self.nodes[parent_id].children.push(id);
-        id
-    }
-
-    /// Create a focus node associated with `element_key` as a child of
-    /// `parent`.
-    ///
-    /// This is the primary method used when inflating Focus elements.
-    /// The `parent` parameter specifies the parent node in the focus tree.
-    pub fn create_node_with_element(
-        &mut self,
-        parent: FocusNodeId,
-        element_key: ElementKey,
-    ) -> FocusNodeId {
-        let id = self.nodes.insert(FocusNodeData {
-            element_key: Some(element_key),
-            parent: Some(parent),
-            children: Vec::new(),
-            can_request_focus: true,
-            skip_traversal: false,
-        });
-        self.element_to_node.insert(element_key, id);
-        self.nodes[parent].children.push(id);
-        id
-    }
-
     /// Create a focus node associated with `element_key` as a child of
     /// `parent`, or return the existing node if one is already associated
     /// with this element.
@@ -340,11 +303,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_node() {
+    fn test_create_node_for_element_no_parent() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         let data = mgr.get(id).expect("node should exist");
-        assert!(data.element_key.is_none());
+        assert_eq!(data.element_key, Some(key));
         assert_eq!(data.parent, Some(mgr.root_scope()));
         assert!(data.children.is_empty());
         assert!(data.can_request_focus);
@@ -358,7 +323,9 @@ mod tests {
     #[test]
     fn test_request_focus() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         mgr.request_focus(id);
         // Not applied yet.
         assert!(mgr.primary_focus().is_none());
@@ -369,7 +336,9 @@ mod tests {
     #[test]
     fn test_request_focus_can_request_focus_false() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         if let Some(data) = mgr.get_mut(id) {
             data.can_request_focus = false;
         }
@@ -381,7 +350,9 @@ mod tests {
     #[test]
     fn test_unfocus() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         mgr.request_focus(id);
         mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(id));
@@ -392,7 +363,9 @@ mod tests {
     #[test]
     fn test_remove_node() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         mgr.request_focus(id);
         mgr.apply_focus_changes();
         assert_eq!(mgr.primary_focus(), Some(id));
@@ -409,10 +382,9 @@ mod tests {
     #[test]
     fn test_element_to_node_mapping() {
         let mut mgr = FocusManager::new();
-        // Create an ElementKey via a temporary SlotMap (slotmap keys are opaque).
         let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
         let key = elem_map.insert(());
-        let id = mgr.create_node_with_element(mgr.root_scope(), key);
+        let id = mgr.create_node_for_element(key, None).unwrap();
         assert_eq!(mgr.node_for_element(key), Some(id));
         assert_eq!(mgr.get(id).unwrap().element_key, Some(key));
     }
@@ -420,7 +392,9 @@ mod tests {
     #[test]
     fn test_deferred_focus_change() {
         let mut mgr = FocusManager::new();
-        let id = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
         mgr.request_focus(id);
         // Focus not applied yet.
         assert!(mgr.primary_focus().is_none());
@@ -431,8 +405,11 @@ mod tests {
     #[test]
     fn test_deferred_coalescing() {
         let mut mgr = FocusManager::new();
-        let id1 = mgr.create_node(None);
-        let id2 = mgr.create_node(None);
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key1 = elem_map.insert(());
+        let key2 = elem_map.insert(());
+        let id1 = mgr.create_node_for_element(key1, None).unwrap();
+        let id2 = mgr.create_node_for_element(key2, None).unwrap();
         mgr.request_focus(id1);
         mgr.request_focus(id2);
         // Only the last request should win.
@@ -535,7 +512,7 @@ mod tests {
         let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
         let key = elem_map.insert(());
 
-        let id = mgr.create_node_with_element(mgr.root_scope(), key);
+        let id = mgr.create_node_for_element(key, None).unwrap();
         assert_eq!(mgr.node_for_element(key), Some(id));
 
         mgr.remove_node(id);
