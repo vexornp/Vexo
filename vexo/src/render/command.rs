@@ -49,6 +49,16 @@ pub enum RenderCommand {
         max_width: Option<f32>,
     },
 
+    /// Draw a text cursor (caret) at a position.
+    Caret {
+        /// Top-left position of the cursor bar in logical coordinates.
+        position: Point<Logical>,
+        /// Height of the cursor bar (line height).
+        height: f32,
+        /// Cursor color.
+        color: Color,
+    },
+
     /// Draw an editor (text input area).
     Editor {
         /// Unique identifier for the editor.
@@ -147,6 +157,15 @@ impl RenderCommand {
             id: id.into(),
             bounds,
             color: Color::WHITE,
+        }
+    }
+
+    /// Create a caret (cursor) command.
+    pub fn caret(position: Point<Logical>, height: f32, color: Color) -> Self {
+        Self::Caret {
+            position,
+            height,
+            color,
         }
     }
 }
