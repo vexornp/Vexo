@@ -56,6 +56,18 @@ pub fn process_commands(
                 );
                 batcher.add_text(content.clone(), pos, *font_size, *color);
             }
+            RenderCommand::Caret {
+                position,
+                height,
+                color,
+            } => {
+                let pos: Point<Logical> = Point::new(
+                    position.x + current_offset.x,
+                    position.y + current_offset.y,
+                );
+                let bounds = Bounds::from_xywh(pos.x, pos.y, 2.0, *height);
+                batcher.add_rect(bounds, *color, None, 0.0);
+            }
             RenderCommand::Editor { id, bounds, .. } => {
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
@@ -352,5 +364,41 @@ mod tests {
         assert!(batcher.quad_instances.is_empty());
         assert!(batcher.text_requests.is_empty());
         assert!(batcher.editor_requests.is_empty());
+    }
+
+    #[test]
+    fn test_process_caret_command() {
+        let mut batcher = UiBatcher::new();
+        let cursor_color = Color::rgb(0.3, 0.67, 0.97);
+        let commands = vec![RenderCommand::caret(
+            Point::new(50.0, 10.0),
+            20.0,
+            cursor_color,
+        )];
+
+        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+
+        // Caret should be rendered as a 2px-wide rect
+        assert_eq!(batcher.quad_instances.len(), 1);
+        let quad = &batcher.quad_instances[0];
+        assert_eq!(quad.position, [50.0, 10.0]);
+        assert_eq!(quad.size, [2.0, 20.0]);
+        assert_eq!(quad.color, cursor_color.to_array());
+    }
+
+    #[test]
+    fn test_process_caret_with_offset() {
+        let mut batcher = UiBatcher::new();
+        let cursor_color = Color::rgb(0.3, 0.67, 0.97);
+        let commands = vec![RenderCommand::caret(
+            Point::new(10.0, 5.0),
+            20.0,
+            cursor_color,
+        )];
+
+        process_commands(&commands, &mut batcher, Point::new(100.0, 50.0));
+
+        let quad = &batcher.quad_instances[0];
+        assert_eq!(quad.position, [110.0, 55.0]);
     }
 }

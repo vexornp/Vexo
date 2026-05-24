@@ -556,6 +556,15 @@ impl<A: Application + 'static> WindowState<A> {
                     });
                     let _ = max_width; // TODO: Handle max_width for text wrapping
                 }
+                crate::render::RenderCommand::Caret {
+                    position,
+                    height,
+                    color,
+                } => {
+                    let bounds =
+                        crate::core::Bounds::from_xywh(position.x, position.y, 2.0, height);
+                    self.batcher.add_rect(bounds, color, None, 0.0);
+                }
                 crate::render::RenderCommand::Editor { id, bounds, color } => {
                     self.batcher.editor_requests.push(crate::renderer::EditorRequest {
                         id,
