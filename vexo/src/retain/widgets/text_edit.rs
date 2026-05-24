@@ -241,7 +241,7 @@ impl State for TextEditState {
 /// - TextEditState is the state (lifecycle)
 /// - TextEditingController is the controller (editing state)
 ///
-/// build() returns a DecoratedContainer wrapping a Text widget, with
+/// build() returns a DecoratedContainer wrapping a TextEditContent widget, with
 /// focus-dependent border styling.
 #[derive(Clone)]
 pub struct TextEdit {
@@ -373,7 +373,12 @@ impl StatefulWidget for TextEdit {
 
         Box::new(
             crate::retain::DecoratedContainer::new(
-                Box::new(super::Text::new(self.controller.text()).with_font_size(self.controller.font_size()))
+                Box::new(
+                    super::TextEditContent::new(self.controller.text(), self.controller.editor())
+                        .with_font_size(self.controller.font_size())
+                        .with_focused(is_focused)
+                        .with_cursor_blink_visible(false)
+                )
             )
             .style(style)
         )
@@ -599,7 +604,7 @@ mod tests {
 
         // Should have elements in the tree
         assert!(pipeline.element_registry().root().is_some());
-        // StatefulElement + DecoratedContainer + child Text element = 3 elements
+        // StatefulElement + DecoratedContainer + child TextEditContent element = 3 elements
         assert_eq!(pipeline.element_registry().len(), 3);
     }
 
