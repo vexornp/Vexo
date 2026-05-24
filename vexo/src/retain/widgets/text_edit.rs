@@ -70,6 +70,18 @@ impl TextEditingController {
             .join("\n")
     }
 
+    /// Get the cursor position in buffer-relative coordinates.
+    pub fn cursor_position(&self) -> Option<(i32, i32)> {
+        let editor = self.editor.borrow();
+        editor.cursor_position()
+    }
+
+    /// Get the line height from the editor buffer metrics.
+    pub fn line_height(&self) -> f32 {
+        let editor = self.editor.borrow();
+        editor.buffer().metrics().line_height
+    }
+
     /// Get the font size.
     pub fn font_size(&self) -> f32 {
         self.font_size
@@ -510,6 +522,25 @@ mod tests {
         let mut controller = TextEditingController::new("Hello", &mut fs);
         controller.set_font_size(24.0);
         assert_eq!(controller.font_size(), 24.0);
+    }
+
+    #[test]
+    fn test_controller_cursor_position() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let pos = controller.cursor_position();
+        assert!(
+            pos.is_some(),
+            "cursor_position should return Some after text is set"
+        );
+    }
+
+    #[test]
+    fn test_controller_line_height() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let lh = controller.line_height();
+        assert!(lh > 0.0, "line_height should be positive, got {}", lh);
     }
 
     // ========================================================================
