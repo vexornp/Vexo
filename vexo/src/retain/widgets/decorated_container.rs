@@ -301,6 +301,11 @@ impl Element for DecoratedContainerElement {
     fn unmount(&mut self, context: &mut ElementContext) {
         // Use RenderObjectElement's default unmount for render object removal
         self.unmount_render_object(context);
+
+        // Detach focus node from the focus tree
+        if let Some(mut attachment) = self.focus_attachment.take() {
+            attachment.detach(context.focus_manager());
+        }
     }
 
     fn render_object(&self) -> Option<RenderObjectKey> {
