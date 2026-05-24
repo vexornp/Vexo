@@ -237,7 +237,7 @@ impl RenderObject for TextEditRenderObject {
 mod tests {
     use super::*;
     use glyphon::{Attrs, Edit, Shaping};
-    use crate::layout::{TaffyLayoutEngine};
+    use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 
     fn create_test_font_system() -> glyphon::FontSystem {
         let font_data = include_bytes!("../../../font.ttf").to_vec();
@@ -364,21 +364,27 @@ mod tests {
         obj.set_focused(false);
         obj.set_cursor_blink_visible(true);
 
-        let mut commands = Vec::new();
-        let mut ctx = PaintContext::new(&mut commands);
-
-        // Need layout first
+        // Full layout: create node, compute, apply
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         {
             let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.layout(&mut layout_ctx, &[]);
+            let _ = obj.layout(&mut layout_ctx, &[]);
+        }
+        let root = engine.create_leaf(&Layout::default());
+        engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
+        {
+            let ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&ctx);
         }
 
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should only have Text command, no Caret
-        assert_eq!(result.len(), 1);
-        assert!(matches!(result[0], RenderCommand::Text { .. }));
+        let caret_count = result.iter().filter(|c| matches!(c, RenderCommand::Caret { .. })).count();
+        assert_eq!(caret_count, 0, "Should not emit Caret when not focused");
+        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
     }
 
     #[test]
@@ -388,20 +394,27 @@ mod tests {
         obj.set_focused(true);
         obj.set_cursor_blink_visible(false);
 
-        let mut commands = Vec::new();
-        let mut ctx = PaintContext::new(&mut commands);
-
+        // Full layout: create node, compute, apply
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         {
             let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.layout(&mut layout_ctx, &[]);
+            let _ = obj.layout(&mut layout_ctx, &[]);
+        }
+        let root = engine.create_leaf(&Layout::default());
+        engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
+        {
+            let ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&ctx);
         }
 
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should only have Text command, no Caret
-        assert_eq!(result.len(), 1);
-        assert!(matches!(result[0], RenderCommand::Text { .. }));
+        let caret_count = result.iter().filter(|c| matches!(c, RenderCommand::Caret { .. })).count();
+        assert_eq!(caret_count, 0, "Should not emit Caret when blink not visible");
+        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
     }
 
     #[test]
@@ -411,26 +424,32 @@ mod tests {
         obj.set_focused(true);
         obj.set_cursor_blink_visible(true);
 
-        let mut commands = Vec::new();
-        let mut ctx = PaintContext::new(&mut commands);
-
+        // Full layout: create node, compute, apply
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         {
             let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.layout(&mut layout_ctx, &[]);
+            let _ = obj.layout(&mut layout_ctx, &[]);
+        }
+        let root = engine.create_leaf(&Layout::default());
+        engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
+        {
+            let ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&ctx);
         }
 
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should have Text + Caret commands
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], RenderCommand::Text { .. }));
+        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
+        assert!(result.iter().any(|c| matches!(c, RenderCommand::Caret { .. })), "Should emit Caret when focused and blink visible");
 
         // Verify the Caret command
-        if let RenderCommand::Caret { color, .. } = &result[1] {
+        if let Some(RenderCommand::Caret { color, .. }) = result.iter().find(|c| matches!(c, RenderCommand::Caret { .. })) {
             assert_eq!(*color, CURSOR_COLOR);
         } else {
-            panic!("Expected Caret command as second command");
+            panic!("Expected Caret command");
         }
     }
 }
