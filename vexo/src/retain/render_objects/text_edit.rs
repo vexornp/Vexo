@@ -15,10 +15,6 @@ use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, R
 /// Accent blue cursor color.
 const CURSOR_COLOR: Color = Color::rgb(0.3, 0.67, 0.97);
 
-/// Width of the cursor bar in logical pixels.
-#[allow(dead_code)]
-const CURSOR_WIDTH: f32 = 2.0;
-
 /// RenderObject for editable text with cursor painting.
 ///
 /// This render object extends the text rendering pattern with cursor support.
@@ -191,8 +187,9 @@ impl RenderObject for TextEditRenderObject {
 
         // 2. Emit cursor render command if focused and blink visible
         if self.is_focused && self.cursor_blink_visible {
-            if let Some((cursor_x, cursor_y)) = self.editor.borrow().cursor_position() {
-                let line_height = self.editor.borrow().buffer().metrics().line_height;
+            let editor = self.editor.borrow();
+            if let Some((cursor_x, cursor_y)) = editor.cursor_position() {
+                let line_height = editor.buffer().metrics().line_height;
 
                 // Convert cursor position to absolute coordinates
                 let abs_x = cursor_x as f32 + pos.x;

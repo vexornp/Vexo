@@ -356,6 +356,11 @@ impl<A: Application + 'static> WindowState<A> {
 
         let message = pipeline.handle_event(position, &input_event, modifiers, &mut self.widget_context.font_system);
 
+        // Reset cursor blink on keyboard input so cursor becomes visible
+        if matches!(input_event, InputEvent::Keyboard { .. }) {
+            pipeline.reset_cursor_blink();
+        }
+
         if let Some(msg) = message {
             // Retain mode widgets return Box<dyn Any> as their message type.
             // For now, we don't have a way to convert this to A::Message.
@@ -483,6 +488,9 @@ impl<A: Application + 'static> WindowState<A> {
             None => return Ok(()),
         };
 
+        // 4b. Tick cursor blink (use pipeline's blink state in retain mode)
+        pipeline.tick_cursor_blink();
+
         // 5. Clear batcher
         self.batcher.clear();
 
@@ -512,6 +520,9 @@ impl<A: Application + 'static> WindowState<A> {
             self.layout_engine.as_mut(),
             &mut self.widget_context.font_system,
         );
+
+        // 8b. Inject cursor focus/blink state into render objects before paint
+        pipeline.prepare_cursor_state();
 
         // 9. Paint dirty render objects
         let commands = pipeline.paint();
