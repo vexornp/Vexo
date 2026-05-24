@@ -449,6 +449,61 @@ impl ThreeTreePipeline {
     pub fn cursor_blink_visible(&self) -> bool {
         self.cursor_blink.is_visible()
     }
+
+    /// Inject focus and cursor blink state into TextEditRenderObjects.
+    ///
+    /// Called between layout and paint. Walks the render object tree,
+    /// finds TextEditRenderObject instances, and sets their focus/blink state.
+    /// This avoids adding these fields to PaintContext (which every render
+    /// object would see).
+    pub fn prepare_cursor_state(&mut self) {
+        let focused_element = self.focus_manager.primary_focus_element();
+        let blink_visible = self.cursor_blink.is_visible();
+
+        // First pass: set all TextEditRenderObjects to unfocused with current blink state
+        for (_, ro) in self.render_objects.iter_mut() {
+            if let Some(text_edit_ro) = ro.as_any_mut().downcast_mut::<crate::retain::render_objects::TextEditRenderObject>() {
+                text_edit_ro.set_focused(false);
+                text_edit_ro.set_cursor_blink_visible(blink_visible);
+            }
+        }
+
+        // If an element is focused, find its subtree's TextEditRenderObject and set focused=true
+        if let Some(focused_key) = focused_element {
+            // Get the focused element's render object key
+            let focused_ro = self.element_registry.with_element(focused_key, &mut (), |element, _| {
+                element.render_object()
+            });
+
+            if let Some(ro_key) = focused_ro.flatten() {
+                Self::set_cursor_focus_in_subtree(&mut self.render_objects, ro_key, blink_visible);
+            }
+        }
+    }
+
+    /// Recursively walk a render object subtree to find and focus a TextEditRenderObject.
+    fn set_cursor_focus_in_subtree(
+        render_objects: &mut RenderObjectRegistry,
+        root: crate::retain::id::RenderObjectKey,
+        blink_visible: bool,
+    ) {
+        // Try to downcast the root render object
+        if let Some(ro) = render_objects.get_mut(root) {
+            if let Some(text_edit_ro) = ro.as_any_mut().downcast_mut::<crate::retain::render_objects::TextEditRenderObject>() {
+                text_edit_ro.set_focused(true);
+                text_edit_ro.set_cursor_blink_visible(blink_visible);
+                return;
+            }
+        }
+
+        // Recurse into children
+        let children: Vec<_> = render_objects.get(root)
+            .map(|r| r.children().to_vec())
+            .unwrap_or_default();
+        for child in children {
+            Self::set_cursor_focus_in_subtree(render_objects, child, blink_visible);
+        }
+    }
 }
 
 impl Default for ThreeTreePipeline {

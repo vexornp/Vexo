@@ -384,6 +384,11 @@ impl RenderObjectRegistry {
         self.objects.len()
     }
 
+    /// Iterate mutably over all render objects.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (RenderObjectKey, &mut Box<dyn RenderObject>)> {
+        self.objects.iter_mut()
+    }
+
     /// Clear all render objects.
     pub fn clear(&mut self) {
         self.objects.clear();
