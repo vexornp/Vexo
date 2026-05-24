@@ -43,6 +43,7 @@ use crate::core::{Absolute, Logical, Point, Position, Size};
 use crate::input::{InputEvent, Modifiers};
 use crate::render::RenderCommand;
 
+use crate::state::CursorBlinkState;
 use super::build_owner::BuildOwner;
 use super::child_ops::ChildOps;
 use super::dirty::DirtyTracking;
@@ -124,6 +125,9 @@ pub struct ThreeTreePipeline {
     ///
     /// True after initial mount or when root element type changes.
     needs_full_reconcile: bool,
+
+    /// Cursor blink state for text editing cursors.
+    cursor_blink: CursorBlinkState,
 }
 
 impl ThreeTreePipeline {
@@ -141,6 +145,7 @@ impl ThreeTreePipeline {
             dirty_sender,
             dirty_receiver,
             needs_full_reconcile: true,
+            cursor_blink: CursorBlinkState::new(),
         }
     }
 
@@ -428,6 +433,21 @@ impl ThreeTreePipeline {
             self.dirty.mark_needs_layout(root);
             self.dirty.mark_needs_paint(root);
         }
+    }
+
+    /// Tick the cursor blink state. Call once per frame.
+    pub fn tick_cursor_blink(&mut self) {
+        self.cursor_blink.tick();
+    }
+
+    /// Reset cursor blink to visible. Call on keyboard input.
+    pub fn reset_cursor_blink(&mut self) {
+        self.cursor_blink.reset();
+    }
+
+    /// Check if the cursor blink is currently visible.
+    pub fn cursor_blink_visible(&self) -> bool {
+        self.cursor_blink.is_visible()
     }
 }
 
