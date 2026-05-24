@@ -300,6 +300,16 @@ impl FocusManager {
             new_parent.children.push(id);
         }
     }
+
+    /// Returns the number of application focus nodes (excludes the root node).
+    pub fn app_node_count(&self) -> usize {
+        self.nodes.len().saturating_sub(1)
+    }
+
+    /// Returns whether a focus node exists for the given element.
+    pub fn has_node_for_element(&self, element_key: ElementKey) -> bool {
+        self.element_to_node.contains_key(&element_key)
+    }
 }
 
 impl Default for FocusManager {

@@ -394,6 +394,16 @@ impl ThreeTreePipeline {
         &self.build_owner
     }
 
+    /// Get the focus manager.
+    pub fn focus_manager(&self) -> &FocusManager {
+        &self.focus_manager
+    }
+
+    /// Get mutable access to the focus manager.
+    pub fn focus_manager_mut(&mut self) -> &mut FocusManager {
+        &mut self.focus_manager
+    }
+
     /// Check if any render objects need layout.
     pub fn needs_layout(&self) -> bool {
         !self.dirty.is_layout_empty()
