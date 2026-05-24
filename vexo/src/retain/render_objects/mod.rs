@@ -11,6 +11,8 @@
 
 mod text;
 mod container;
+mod text_edit;
 
 pub use text::TextRenderObject;
 pub use container::ContainerRenderObject;
+pub use text_edit::TextEditRenderObject;

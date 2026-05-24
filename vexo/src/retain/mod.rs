@@ -102,5 +102,5 @@ pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus};
 
 pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, TextEditState, TextEditingController};
 pub use elements::{LeafElement, ContainerElement};
-pub use render_objects::{TextRenderObject, ContainerRenderObject};
+pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject};
 pub use pipeline::ThreeTreePipeline;

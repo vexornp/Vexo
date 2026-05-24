@@ -1,0 +1,436 @@
+//! TextEditRenderObject implementation.
+//!
+//! Leaf render object that paints both text content and a blinking cursor,
+//! following Flutter's `RenderEditable` pattern.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
+use crate::editor::Editor;
+use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext};
+use crate::render::RenderCommand;
+use crate::retain::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
+
+/// Accent blue cursor color.
+const CURSOR_COLOR: Color = Color::rgb(0.3, 0.67, 0.97);
+
+/// Width of the cursor bar in logical pixels.
+#[allow(dead_code)]
+const CURSOR_WIDTH: f32 = 2.0;
+
+/// RenderObject for editable text with cursor painting.
+///
+/// This render object extends the text rendering pattern with cursor support.
+/// It emits both `RenderCommand::Text` for the content and
+/// `RenderCommand::Caret` for the blinking cursor (when focused and visible).
+///
+/// # Example
+///
+/// ```ignore
+/// use vexo::retain::render_objects::TextEditRenderObject;
+/// use std::rc::Rc;
+/// use std::cell::RefCell;
+///
+/// let obj = TextEditRenderObject::new("Hello", editor_rc)
+///     .with_font_size(16.0);
+/// ```
+pub struct TextEditRenderObject {
+    // Text fields (same as TextRenderObject)
+    content: String,
+    font_size: f32,
+    computed_bounds: Option<Bounds<Logical>>,
+    layout_node: Option<LayoutNodeKey>,
+
+    // Cursor fields
+    editor: Rc<RefCell<Editor>>,
+    is_focused: bool,
+    cursor_blink_visible: bool,
+}
+
+impl TextEditRenderObject {
+    /// Create a new text edit render object.
+    pub fn new(content: &str, editor: Rc<RefCell<Editor>>) -> Self {
+        Self {
+            content: content.to_string(),
+            font_size: 16.0,
+            computed_bounds: None,
+            layout_node: None,
+            editor,
+            is_focused: false,
+            cursor_blink_visible: false,
+        }
+    }
+
+    /// Set the font size (builder pattern).
+    pub fn with_font_size(mut self, size: f32) -> Self {
+        self.font_size = size;
+        self
+    }
+
+    /// Get the text content.
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    /// Get the font size.
+    pub fn font_size(&self) -> f32 {
+        self.font_size
+    }
+
+    /// Get the computed bounds.
+    pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+        self.computed_bounds
+    }
+
+    /// Whether the widget is focused.
+    pub fn is_focused(&self) -> bool {
+        self.is_focused
+    }
+
+    /// Whether the cursor blink is currently visible.
+    pub fn cursor_blink_visible(&self) -> bool {
+        self.cursor_blink_visible
+    }
+
+    /// Set the text content.
+    ///
+    /// Returns true if the content changed.
+    pub fn set_content(&mut self, content: &str) -> bool {
+        let changed = self.content != content;
+        if changed {
+            self.content = content.to_string();
+        }
+        changed
+    }
+
+    /// Set the font size.
+    ///
+    /// Returns true if the font size changed.
+    pub fn set_font_size(&mut self, size: f32) -> bool {
+        if (self.font_size - size).abs() > f32::EPSILON {
+            self.font_size = size;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set whether the widget is focused.
+    ///
+    /// Returns true if the focus state changed.
+    pub fn set_focused(&mut self, focused: bool) -> bool {
+        let changed = self.is_focused != focused;
+        if changed {
+            self.is_focused = focused;
+        }
+        changed
+    }
+
+    /// Set whether the cursor blink is currently visible.
+    ///
+    /// Returns true if the blink visibility changed.
+    pub fn set_cursor_blink_visible(&mut self, visible: bool) -> bool {
+        let changed = self.cursor_blink_visible != visible;
+        if changed {
+            self.cursor_blink_visible = visible;
+        }
+        changed
+    }
+}
+
+impl RenderObject for TextEditRenderObject {
+    fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+        // Create measure context for text (same as TextRenderObject)
+        let measure_ctx = MeasureContext::Text(TextMeasureContext {
+            content: self.content.clone(),
+            font_size: self.font_size,
+            line_height: 1.2,
+        });
+
+        // Create leaf node with text measurement
+        let node = ctx.engine().create_leaf_with_context(
+            &Layout::default(),
+            measure_ctx,
+        );
+
+        // Store node for apply_layout
+        self.layout_node = Some(node);
+
+        LayoutResult {
+            node,
+            size: Size::new(0.0, 0.0), // Will be filled by apply_layout
+        }
+    }
+
+    fn apply_layout(&mut self, ctx: &LayoutContext) {
+        if let Some(node) = self.layout_node {
+            if let Some(computed) = ctx.engine_ref().get_layout(node) {
+                self.computed_bounds = Some(computed.bounds);
+            }
+        }
+    }
+
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        let bounds = match &self.computed_bounds {
+            Some(b) => b,
+            None => return vec![],
+        };
+
+        let mut commands = Vec::new();
+
+        // 1. Emit text render command (same as TextRenderObject)
+        let pos: Position<Logical, Absolute> = ctx.absolute_position();
+        commands.push(RenderCommand::Text {
+            content: self.content.clone(),
+            position: pos.to_point(),
+            font_size: self.font_size,
+            color: Color::BLACK,
+            max_width: Some(bounds.width()),
+        });
+
+        // 2. Emit cursor render command if focused and blink visible
+        if self.is_focused && self.cursor_blink_visible {
+            if let Some((cursor_x, cursor_y)) = self.editor.borrow().cursor_position() {
+                let line_height = self.editor.borrow().buffer().metrics().line_height;
+
+                // Convert cursor position to absolute coordinates
+                let abs_x = cursor_x as f32 + pos.x;
+                let abs_y = cursor_y as f32 + pos.y;
+
+                commands.push(RenderCommand::Caret {
+                    position: Point::new(abs_x, abs_y),
+                    height: line_height,
+                    color: CURSOR_COLOR,
+                });
+            }
+        }
+
+        commands
+    }
+
+    fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+        match &self.computed_bounds {
+            Some(bounds) => bounds.contains(&position),
+            None => false,
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
+        self.layout_node
+    }
+
+    fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+        self.computed_bounds
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyphon::{Attrs, Edit, Shaping};
+    use crate::layout::{TaffyLayoutEngine};
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = include_bytes!("../../../font.ttf").to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    fn create_test_editor() -> Rc<RefCell<Editor>> {
+        let mut font_system = create_test_font_system();
+        let metrics = glyphon::Metrics::new(16.0, 20.0);
+        let mut raw_editor = glyphon::Editor::new(glyphon::Buffer::new_empty(metrics));
+        raw_editor.with_buffer_mut(|buffer| {
+            buffer.set_text(
+                &mut font_system,
+                "Hello",
+                &Attrs::new(),
+                Shaping::Advanced,
+            );
+        });
+        raw_editor.with_buffer_mut(|buffer| {
+            buffer.shape_until_scroll(&mut font_system, true);
+        });
+        Rc::new(RefCell::new(Editor::new(raw_editor)))
+    }
+
+    #[test]
+    fn test_text_edit_render_object_new() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Hello", editor);
+        assert_eq!(obj.content(), "Hello");
+        assert_eq!(obj.font_size(), 16.0); // default
+        assert!(obj.computed_bounds().is_none());
+        assert!(!obj.is_focused());
+        assert!(!obj.cursor_blink_visible());
+    }
+
+    #[test]
+    fn test_text_edit_render_object_with_font_size() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Hello", editor).with_font_size(24.0);
+        assert_eq!(obj.font_size(), 24.0);
+    }
+
+    #[test]
+    fn test_text_edit_render_object_set_content() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        assert!(obj.set_content("World"));
+        assert_eq!(obj.content(), "World");
+        assert!(!obj.set_content("World")); // No change
+    }
+
+    #[test]
+    fn test_text_edit_render_object_set_font_size() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        assert!(obj.set_font_size(32.0));
+        assert_eq!(obj.font_size(), 32.0);
+        assert!(!obj.set_font_size(32.0)); // No change
+    }
+
+    #[test]
+    fn test_text_edit_render_object_set_focused() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        assert!(obj.set_focused(true));
+        assert!(obj.is_focused());
+        assert!(!obj.set_focused(true)); // No change
+        assert!(obj.set_focused(false));
+        assert!(!obj.is_focused());
+    }
+
+    #[test]
+    fn test_text_edit_render_object_set_cursor_blink_visible() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        assert!(obj.set_cursor_blink_visible(true));
+        assert!(obj.cursor_blink_visible());
+        assert!(!obj.set_cursor_blink_visible(true)); // No change
+        assert!(obj.set_cursor_blink_visible(false));
+        assert!(!obj.cursor_blink_visible());
+    }
+
+    #[test]
+    fn test_text_edit_render_object_layout_creates_node() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello World", editor);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        let result = obj.layout(&mut ctx, &[]);
+
+        assert!(obj.layout_node.is_some());
+        assert_eq!(obj.layout_node, Some(result.node));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_hit_test_no_layout() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Test", editor);
+
+        // Without layout, computed_bounds is None, so hit test should fail
+        assert!(!obj.hit_test(Point::new(10.0, 10.0), &HitTestContext::mock()));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_paint_no_layout() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Test", editor);
+
+        // Paint returns empty without layout (computed_bounds is None)
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let result = obj.paint(&mut ctx);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_text_edit_render_object_paint_no_cursor_when_not_focused() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        obj.set_focused(false);
+        obj.set_cursor_blink_visible(true);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+
+        // Need layout first
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        {
+            let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.layout(&mut layout_ctx, &[]);
+        }
+
+        let result = obj.paint(&mut ctx);
+        // Should only have Text command, no Caret
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result[0], RenderCommand::Text { .. }));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_paint_no_cursor_when_blink_off() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        obj.set_focused(true);
+        obj.set_cursor_blink_visible(false);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        {
+            let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.layout(&mut layout_ctx, &[]);
+        }
+
+        let result = obj.paint(&mut ctx);
+        // Should only have Text command, no Caret
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result[0], RenderCommand::Text { .. }));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_paint_with_cursor() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        obj.set_focused(true);
+        obj.set_cursor_blink_visible(true);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        {
+            let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.layout(&mut layout_ctx, &[]);
+        }
+
+        let result = obj.paint(&mut ctx);
+        // Should have Text + Caret commands
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], RenderCommand::Text { .. }));
+
+        // Verify the Caret command
+        if let RenderCommand::Caret { color, .. } = &result[1] {
+            assert_eq!(*color, CURSOR_COLOR);
+        } else {
+            panic!("Expected Caret command as second command");
+        }
+    }
+}
