@@ -1,14 +1,14 @@
-use vexo::{reactive::StatefulMutable, retain, Application};
+use vexo::{reactive::StatefulMutable, Application, Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, Style, State as RetainState, StatefulWidget, BuildContext};
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
 /// This replaces the old Button widget with the Flutter-style composition:
 /// GestureDetector(DecoratedContainer(Text))
-fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> retain::GestureDetector {
-    retain::GestureDetector::new(Box::new(
-        retain::DecoratedContainer::new(Box::new(retain::Text::new(label)))
+fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector {
+    GestureDetector::new(Box::new(
+        DecoratedContainer::new(Box::new(Text::new(label)))
             .style(
-                retain::Style::new()
+                Style::new()
                     .background(vexo::Color::rgb(0.9, 0.9, 0.9))
                     .border(vexo::Color::rgb(0.6, 0.6, 0.6), 1.0)
                     .corner_radius(8.0)
@@ -33,7 +33,7 @@ struct RetainCounterState {
     count: StatefulMutable<u32>,
 }
 
-impl retain::State for RetainCounterState {
+impl RetainState for RetainCounterState {
     fn set_dirty_callback(&mut self, cb: std::sync::Arc<dyn Fn() + Send + Sync>) {
         self.count.set_dirty_callback(cb);
     }
@@ -47,14 +47,14 @@ impl Default for RetainCounterState {
     }
 }
 
-impl retain::StatefulWidget for RetainCounter {
+impl StatefulWidget for RetainCounter {
     type State = RetainCounterState;
 
     fn build(
         &self,
         state: &mut Self::State,
-        _ctx: &mut retain::BuildContext,
-    ) -> Box<dyn retain::Widget> {
+        _ctx: &mut BuildContext,
+    ) -> Box<dyn Widget> {
         let count = state.count.get();
 
         // Clone StatefulMutable for each callback so they can update the count
@@ -64,11 +64,11 @@ impl retain::StatefulWidget for RetainCounter {
         let reset_count = state.count.clone();
 
         Box::new(
-            retain::Column::new()
-                .push(retain::Text::new(&self.label))
-                .push(retain::Text::new(format!("Count: {}", count)))
+            Column::new()
+                .push(Text::new(&self.label))
+                .push(Text::new(format!("Count: {}", count)))
                 .push(
-                    retain::Row::new()
+                    Row::new()
                         .push(tap_button("-", move || {
                             let cur = dec_count.get();
                             if cur > 0 {
@@ -89,11 +89,11 @@ impl retain::StatefulWidget for RetainCounter {
 
 // --- The User's Code ---
 pub struct State {
-    text_editor_controller: Option<vexo::retain::TextEditingController>,
-    editor_a1: Option<vexo::retain::TextEditingController>,
-    editor_a2: Option<vexo::retain::TextEditingController>,
-    editor_b1: Option<vexo::retain::TextEditingController>,
-    editor_b2: Option<vexo::retain::TextEditingController>,
+    text_editor_controller: Option<vexo::TextEditingController>,
+    editor_a1: Option<vexo::TextEditingController>,
+    editor_a2: Option<vexo::TextEditingController>,
+    editor_b1: Option<vexo::TextEditingController>,
+    editor_b2: Option<vexo::TextEditingController>,
 }
 
 impl Application for State {
@@ -109,31 +109,31 @@ impl Application for State {
         }
     }
 
-    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn retain::Widget> {
+    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
         // Lazily initialize TextEdit controllers
         if state.text_editor_controller.is_none() {
             state.text_editor_controller = Some(
-                vexo::retain::TextEditingController::new("Type here...", font_system)
+                vexo::TextEditingController::new("Type here...", font_system)
             );
         }
         if state.editor_a1.is_none() {
             state.editor_a1 = Some(
-                vexo::retain::TextEditingController::new("Field A1", font_system)
+                vexo::TextEditingController::new("Field A1", font_system)
             );
         }
         if state.editor_a2.is_none() {
             state.editor_a2 = Some(
-                vexo::retain::TextEditingController::new("Field A2", font_system)
+                vexo::TextEditingController::new("Field A2", font_system)
             );
         }
         if state.editor_b1.is_none() {
             state.editor_b1 = Some(
-                vexo::retain::TextEditingController::new("Field B1", font_system)
+                vexo::TextEditingController::new("Field B1", font_system)
             );
         }
         if state.editor_b2.is_none() {
             state.editor_b2 = Some(
-                vexo::retain::TextEditingController::new("Field B2", font_system)
+                vexo::TextEditingController::new("Field B2", font_system)
             );
         }
 
@@ -144,40 +144,40 @@ impl Application for State {
         let b2 = state.editor_b2.as_ref().unwrap();
 
         Box::new(
-            retain::Column::new()
+            Column::new()
                 // Title
-                .push(retain::Text::new("Focus Demo"))
-                .push(retain::Text::new("Click a field to focus it. Click outside to unfocus."))
+                .push(Text::new("Focus Demo"))
+                .push(Text::new("Click a field to focus it. Click outside to unfocus."))
                 // Group A: Focus fields in a decorated container
-                .push(retain::DecoratedContainer::new(Box::new(
-                    retain::Column::new()
-                        .push(retain::Text::new("Group A"))
-                        .push(vexo::retain::Focus::new(retain::TextEdit::new(a1.clone())))
-                        .push(vexo::retain::Focus::new(retain::TextEdit::new(a2.clone())))
+                .push(DecoratedContainer::new(Box::new(
+                    Column::new()
+                        .push(Text::new("Group A"))
+                        .push(vexo::Focus::new(TextEdit::new(a1.clone())))
+                        .push(vexo::Focus::new(TextEdit::new(a2.clone())))
                 ))
                 .style(
-                    retain::Style::new()
+                    Style::new()
                         .background(vexo::Color::rgb(0.95, 0.95, 1.0))
                         .border(vexo::Color::rgb(0.5, 0.5, 0.8), 1.0)
                         .corner_radius(8.0)
                         .padding(8.0)
                 ))
                 // Group B: Focus fields in a decorated container
-                .push(retain::DecoratedContainer::new(Box::new(
-                    retain::Column::new()
-                        .push(retain::Text::new("Group B"))
-                        .push(vexo::retain::Focus::new(retain::TextEdit::new(b1.clone())))
-                        .push(vexo::retain::Focus::new(retain::TextEdit::new(b2.clone())))
+                .push(DecoratedContainer::new(Box::new(
+                    Column::new()
+                        .push(Text::new("Group B"))
+                        .push(vexo::Focus::new(TextEdit::new(b1.clone())))
+                        .push(vexo::Focus::new(TextEdit::new(b2.clone())))
                 ))
                 .style(
-                    retain::Style::new()
+                    Style::new()
                         .background(vexo::Color::rgb(1.0, 0.95, 0.95))
                         .border(vexo::Color::rgb(0.8, 0.5, 0.5), 1.0)
                         .corner_radius(8.0)
                         .padding(8.0)
                 ))
                 // Standalone field
-                .push(vexo::retain::Focus::new(retain::TextEdit::new(controller.clone())))
+                .push(vexo::Focus::new(TextEdit::new(controller.clone())))
         )
     }
 }

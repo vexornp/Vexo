@@ -8,11 +8,11 @@ use winit::{
 };
 
 use crate::core::{Logical, Physical, Point, Scale, Size};
-use crate::input::{CursorIcon, InputEvent, Modifiers};
+use crate::input::{InputEvent, Modifiers};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
-use crate::retain::{ThreeTreePipeline, Widget as RetainWidget};
+use crate::{ThreeTreePipeline, Widget as RetainWidget};
 use crate::state::CursorBlinkState;
 use crate::Application;
 

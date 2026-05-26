@@ -19,7 +19,6 @@ mod renderer;
 pub use renderer::UiBatcher;
 mod resource;
 pub mod reactive;
-pub mod retain;
 pub mod state;
 mod utils;
 mod window;
@@ -33,6 +32,76 @@ pub use winit::dpi::PhysicalPosition;
 
 pub use layout::AlignItems;
 
+// --- Former retain/ modules (flattened) ---
+
+mod key;
+mod id;
+mod element_state;
+mod element;
+mod element_context;
+mod event_handler;
+mod event_context;
+mod render_object;
+mod dirty;
+mod build_owner;
+mod reconcile;
+mod hit_test;
+mod pipeline;
+mod layouter;
+mod painter;
+mod reconciler;
+mod global_key_registry;
+mod style;
+mod update_result;
+mod stateful_widget;
+mod child_ops;
+
+pub mod widgets;
+pub mod elements;
+pub mod render_objects;
+pub mod focus;
+
+#[cfg(test)]
+mod key_tests;
+#[cfg(test)]
+mod reconcile_tests;
+#[cfg(test)]
+mod element_registry_tests;
+#[cfg(test)]
+mod integration_tests;
+#[cfg(test)]
+mod e2e_test;
+#[cfg(test)]
+mod window_integration_test;
+#[cfg(test)]
+mod build_owner_tests;
+#[cfg(test)]
+mod stateful_integration_test;
+
+// --- Re-exports from former retain/ ---
+
+pub use key::{Key, GlobalKey, WidgetKey};
+pub use id::{ElementKey, RenderObjectKey};
+pub use element_state::StateStorage;
+pub use element::{Element, ElementRegistry};
+pub use element_context::ElementContext;
+pub use event_context::EventContext;
+pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
+pub use dirty::DirtyTracking;
+pub use build_owner::{BuildOwner, RebuildResult};
+pub use reconcile::Reconcilable;
+pub use hit_test::HitTestResult;
+pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
+pub use style::Style;
+pub use update_result::UpdateResult;
+pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
+pub use child_ops::{ChildOp, ChildOps};
+pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus};
+pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, TextEditState, TextEditingController};
+pub use elements::{LeafElement, ContainerElement};
+pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject};
+pub use pipeline::ThreeTreePipeline;
+
 extern crate alloc;
 
 pub trait Application: Sized + 'static {
@@ -41,7 +110,7 @@ pub trait Application: Sized + 'static {
     fn new() -> Self::State;
 
     /// Returns a widget tree for the three-tree architecture.
-    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn retain::Widget>;
+    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn Widget>;
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {

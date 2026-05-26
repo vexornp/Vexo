@@ -42,7 +42,7 @@ cargo build -p vexo --release                # Build framework alone for inspect
 - **`shared_app/`**: Platform-agnostic application logic (exports via UniFFI to Swift on iOS)
 - **`desktop_demo/`**: Desktop entry point that instantiates the shared app
 
-### Retain Mode (Three-Tree) Architecture
+### Three-Tree Architecture
 
 Vexo uses Flutter's three-tree architecture for efficient UI updates:
 
@@ -59,7 +59,7 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    WIDGET LAYER (Domain)                        │
-│  retain::Widget trait (build() → Element)                      │
+│  Widget trait (build() → Element)                              │
 │  Widget primitives: Text, TextEditContent, Column, Row         │
 │  Widget combinators: DecoratedContainer, GestureDetector        │
 │  Stateful widgets: StatefulWidget, StatefulMutable              │
@@ -110,22 +110,57 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 
 ```
 vexo/src/
-├── lib.rs                      # Public API, Application trait
+├── lib.rs                      # Public API, Application trait, re-exports
 ├── core/                       # Core domain types
 │   ├── mod.rs
 │   ├── id.rs                   # WidgetId
 │   ├── geometry.rs             # Point, Size, Rect, Scale
 │   └── color.rs                # Color
-├── retain/                     # Retain mode (three-tree) architecture
+├── widgets/                    # Widget implementations
+│   ├── mod.rs                  # Widget trait definition
+│   ├── container.rs            # Column, Row
+│   ├── text.rs                 # Text
+│   ├── text_edit.rs            # TextEdit, TextEditingController
+│   ├── text_edit_content.rs    # TextEditContent
+│   ├── decorated_container.rs  # DecoratedContainer
+│   └── gesture_detector.rs     # GestureDetector
+├── elements/                   # Element implementations
 │   ├── mod.rs
-│   ├── widget.rs               # retain::Widget trait
-│   ├── element.rs              # Element trait, ElementRegistry
-│   ├── render_object.rs        # RenderObject trait, RenderObjectRegistry
-│   ├── pipeline.rs             # ThreeTreePipeline
-│   ├── elements/               # Element implementations
-│   ├── render_objects/         # RenderObject implementations
-│   ├── reactive/               # StatefulWidget, StatefulMutable
-│   └── widgets/                # Widget implementations
+│   ├── leaf.rs                 # LeafElement
+│   ├── container.rs            # ContainerElement
+│   └── render_object_element.rs
+├── render_objects/             # RenderObject implementations
+│   ├── mod.rs
+│   ├── text.rs                 # TextRenderObject
+│   ├── container.rs            # ContainerRenderObject
+│   └── text_edit.rs            # TextEditRenderObject
+├── focus/                      # Focus tree
+│   ├── mod.rs
+│   ├── node.rs                 # FocusNodeId, FocusNodeData
+│   ├── manager.rs              # FocusManager
+│   ├── attachment.rs           # FocusAttachment
+│   └── widget.rs               # Focus widget
+├── element.rs                  # Element trait, ElementRegistry
+├── render_object.rs            # RenderObject trait, RenderObjectRegistry
+├── element_context.rs          # ElementContext
+├── event_context.rs            # EventContext
+├── event_handler.rs            # EventHandler
+├── pipeline.rs                 # ThreeTreePipeline
+├── reconciler.rs               # Reconciler
+├── build_owner.rs              # BuildOwner
+├── stateful_widget.rs          # StatefulWidget, State trait
+├── element_state.rs            # StateStorage
+├── layouter.rs                 # Layouter
+├── painter.rs                  # Painter
+├── hit_test.rs                 # HitTestResult
+├── reconcile.rs                # Reconcilable
+├── dirty.rs                    # DirtyTracking
+├── key.rs                      # Key, GlobalKey, WidgetKey
+├── id.rs                       # ElementKey, RenderObjectKey
+├── style.rs                    # Style
+├── update_result.rs            # UpdateResult
+├── child_ops.rs                # ChildOp, ChildOps
+├── global_key_registry.rs      # GlobalKeyRegistry
 ├── layout/                     # Layout engine abstraction
 │   ├── mod.rs
 │   ├── engine.rs               # LayoutEngine trait
@@ -143,6 +178,8 @@ vexo/src/
 ├── state/                      # State management
 │   ├── mod.rs
 │   └── cursor_blink.rs         # CursorBlinkState
+├── reactive/                   # Reactive primitives (StatefulMutable)
+│   └── mod.rs
 ├── editor.rs                   # Editor (wraps glyphon::Editor)
 ├── renderer.rs                 # UiBatcher, RenderPipeline
 ├── text_processor.rs           # Text rendering via glyphon
@@ -156,7 +193,7 @@ vexo/src/
 1. **Application Trait** (`vexo/src/lib.rs`): Apps implement a simple architecture:
    - `State`: Persistent application state
    - `new()`: Creates initial state
-   - `view(state, font_system)`: Renders state to a retain-mode widget tree
+   - `view(state, font_system)`: Renders state to a widget tree
 
 2. **Rendering Pipeline**:
    - `Application::view()` → widget tree → `Widget::build()` → element tree → `Element::mount()` → render object tree → `RenderObject::layout()` (Taffy) → `RenderObject::paint()` (RenderCommands) → `WgpuBackend.render()`
@@ -235,20 +272,20 @@ backend.render();
 
 ## Key File Locations
 
-- Widget trait definition: `vexo/src/retain/widget.rs`
-- Element trait definition: `vexo/src/retain/element.rs`
-- Render object trait: `vexo/src/retain/render_object.rs`
-- Three-tree pipeline: `vexo/src/retain/pipeline.rs`
+- Widget trait definition: `vexo/src/widgets/mod.rs`
+- Element trait definition: `vexo/src/element.rs`
+- Render object trait: `vexo/src/render_object.rs`
+- Three-tree pipeline: `vexo/src/pipeline.rs`
 - Application trait definition: `vexo/src/lib.rs`
 - WindowState: `vexo/src/window.rs`
 - Render backend: `vexo/src/render/wgpu_backend.rs`
 - Input events: `vexo/src/input/event.rs`
-- Stateful widgets: `vexo/src/retain/reactive/`
+- Stateful widgets: `vexo/src/stateful_widget.rs`, `vexo/src/reactive/mod.rs`
 - Sample application: `shared_app/src/lib.rs`
 - iOS wrapper: `shared_app/src/lib.rs`
 - Build script: `build_for_ios.sh`
 
-## Retain Mode Architecture
+## Three-Tree Architecture
 
 Vexo implements Flutter's three-tree architecture for efficient UI updates. The key design principle is that **all elements manage their own children** through the `update_child()` method.
 
