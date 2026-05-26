@@ -33,8 +33,7 @@
 //!
 //! # Migration from Immediate Mode
 //!
-//! The retain-mode system can coexist with the immediate-mode system.
-//! Set `use_retain_mode = true` in WindowState to enable.
+//! The retain-mode system is now the sole UI architecture in Vexo.
 
 mod key;
 mod id;

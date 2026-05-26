@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) while working with code in this repository.
 
 ## First Principles Thinking Guide
 
@@ -42,9 +42,13 @@ cargo build -p vexo --release                # Build framework alone for inspect
 - **`shared_app/`**: Platform-agnostic application logic (exports via UniFFI to Swift on iOS)
 - **`desktop_demo/`**: Desktop entry point that instantiates the shared app
 
-### Layered Architecture
+### Retain Mode (Three-Tree) Architecture
 
-The framework follows Clean Architecture principles with clear separation of concerns:
+Vexo uses Flutter's three-tree architecture for efficient UI updates:
+
+1. **Widget tree** — immutable descriptions of UI (what to show)
+2. **Element tree** — mutable lifecycle managers (manages state and children)
+3. **Render object tree** — performs layout and painting (how to show it)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -55,15 +59,28 @@ The framework follows Clean Architecture principles with clear separation of con
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    WIDGET LAYER (Domain)                        │
-│  Separated traits: Identifiable, Layout, Paint, Interact       │
-│  Widget primitives: Text, Button, Container, TextEdit          │
-│  Widget combinators: Modifiers (Padding, Background, Border)   │
+│  retain::Widget trait (build() → Element)                      │
+│  Widget primitives: Text, TextEditContent, Column, Row         │
+│  Widget combinators: DecoratedContainer, GestureDetector        │
+│  Stateful widgets: StatefulWidget, StatefulMutable              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    STATE MANAGEMENT LAYER                       │
-│  WidgetStateRegistry: editor state, focus state                │
+│                    ELEMENT LAYER                                │
+│  Element trait, ElementRegistry                                │
+│  LeafElement, ContainerElement, DecoratedContainerElement      │
+│  StatefulElement, GestureDetectorElement                       │
+│  update_child() reconciles children during rebuild             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    RENDER OBJECT LAYER                          │
+│  RenderObject trait, RenderObjectRegistry                      │
+│  TextRenderObject, TextEditRenderObject                        │
+│  ContainerRenderObject, DecoratedContainerRenderObject         │
+│  CursorBlinkState for text cursor animation                    │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -79,6 +96,7 @@ The framework follows Clean Architecture principles with clear separation of con
 │  RenderCommand enum (immutable draw instructions)              │
 │  RenderBackend trait (wgpu, mock for testing)                  │
 │  WgpuBackend (production GPU rendering)                        │
+│  ThreeTreePipeline (orchestrates element/render object trees)  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -98,19 +116,16 @@ vexo/src/
 │   ├── id.rs                   # WidgetId
 │   ├── geometry.rs             # Point, Size, Rect, Scale
 │   └── color.rs                # Color
-├── testable/                    # Separated traits for unit testing
+├── retain/                     # Retain mode (three-tree) architecture
 │   ├── mod.rs
-│   ├── identifiable.rs          # Identifiable trait
-│   ├── layout.rs                # Layout trait, LayoutConstraints
-│   ├── paint.rs                 # Paint trait, PaintContext
-│   └── interact.rs              # Interact trait, InteractionContext
-├── widgets/                    # Widget implementations
-│   ├── mod.rs                  # Widget<M> trait (compatibility)
-│   ├── text.rs
-│   ├── button.rs
-│   ├── text_edit.rs
-│   ├── containers.rs           # Column, Row
-│   └── modifiers.rs            # Padding, Background, Border, etc.
+│   ├── widget.rs               # retain::Widget trait
+│   ├── element.rs              # Element trait, ElementRegistry
+│   ├── render_object.rs        # RenderObject trait, RenderObjectRegistry
+│   ├── pipeline.rs             # ThreeTreePipeline
+│   ├── elements/               # Element implementations
+│   ├── render_objects/         # RenderObject implementations
+│   ├── reactive/               # StatefulWidget, StatefulMutable
+│   └── widgets/                # Widget implementations
 ├── layout/                     # Layout engine abstraction
 │   ├── mod.rs
 │   ├── engine.rs               # LayoutEngine trait
@@ -122,42 +137,44 @@ vexo/src/
 │   ├── backend.rs              # RenderBackend trait
 │   ├── wgpu_backend.rs         # WgpuBackend
 │   └── mock_backend.rs         # MockBackend for testing
-├── state/                      # State management
-│   ├── mod.rs
-│   ├── registry.rs             # WidgetStateRegistry
-│   ├── editor.rs               # EditorState
-│   └── focus.rs                # FocusState
 ├── input/                      # Input abstraction
 │   ├── mod.rs
 │   └── event.rs                # InputEvent enum
-└── utils.rs                    # Point, Size, Rect (legacy, use core/)
+├── state/                      # State management
+│   ├── mod.rs
+│   └── cursor_blink.rs         # CursorBlinkState
+├── editor.rs                   # Editor (wraps glyphon::Editor)
+├── renderer.rs                 # UiBatcher, RenderPipeline
+├── text_processor.rs           # Text rendering via glyphon
+├── window.rs                   # WindowState, main event loop
+├── app.rs                      # VexoApp
+└── resource/                   # Embedded resources (fonts)
 ```
 
 ### Critical Data Flows
 
-1. **Application Trait** (`vexo/src/lib.rs`): Apps implement a simple MEL architecture:
-   - `Message` enum: All possible user interactions (e.g., `Message::Clicked`)
-   - `State`: Persistent application state (updated by messages)
-   - `update(state, message)`: Pure state transition function
-   - `view(state)`: Renders state to a widget tree
+1. **Application Trait** (`vexo/src/lib.rs`): Apps implement a simple architecture:
+   - `State`: Persistent application state
+   - `new()`: Creates initial state
+   - `view(state, font_system)`: Renders state to a retain-mode widget tree
 
 2. **Rendering Pipeline**:
-   - `Application::view()` → widget tree → `Widget::layout()` (Taffy) → `Widget::draw()` (UiBatcher) → `WgpuBackend.render()`
+   - `Application::view()` → widget tree → `Widget::build()` → element tree → `Element::mount()` → render object tree → `RenderObject::layout()` (Taffy) → `RenderObject::paint()` (RenderCommands) → `WgpuBackend.render()`
    - Text is handled separately via glyphon: positioned by Taffy, rendered after geometry via `TextRenderer`
 
-3. **Widget System**:
-   - All widgets implement `Widget<M>` trait: `layout()`, `draw()`, `on_event()`
-   - **New**: Separated traits for SRP: `Identifiable`, `Layout`, `Paint`, `Interact`
-   - Container widgets (Row, Column) manage children; leaf widgets (Rectangle, Text) produce geometry
-   - Widget focus tracked by `WidgetId`; input routed via `on_event()` returning `WidgetResponse<M>`
+3. **Element Child Management**:
+   - All elements manage their own children through `update_child()`
+   - `update_child()` handles all four cases: inflate, unmount, update, replace
+   - This matches Flutter's design where `updateChild()` is a core method on Element
 
 4. **Input Event Flow**:
-   - winit events → `InputEvent::from_winit()` → `Widget::on_event()` with `InputEvent`
+   - winit events → `InputEvent::from_winit()` → `ThreeTreePipeline::handle_event()` → element tree
    - Platform-independent input abstraction enables testing without winit
 
 5. **State Management**:
-   - `WidgetStateRegistry` centralizes editor state and focus state
-   - `WidgetContext` contains the registry, font system, scale, and cursor position
+   - `StatefulWidget` + `StatefulMutable` for component-local state
+   - `TextEditingController` for text editing state
+   - `CursorBlinkState` for cursor animation
 
 ### Platform-Specific Initialization
 
@@ -185,14 +202,6 @@ fn handle_event(event: &InputEvent) {
         InputEvent::Scroll { delta } => { /* ... */ }
     }
 }
-```
-
-### State Management
-Use `WidgetStateRegistry` for persistent widget state:
-```rust
-// In WidgetContext
-let editor = ctx.get_or_create_editor("my-editor", "initial text");
-ctx.state_registry.request_focus(WidgetId::from_key("my-editor"));
 ```
 
 ### Render Backend
@@ -226,13 +235,15 @@ backend.render();
 
 ## Key File Locations
 
-- Widget trait definition: `vexo/src/widgets/mod.rs`
-- Separated widget traits: `vexo/src/testable/`
+- Widget trait definition: `vexo/src/retain/widget.rs`
+- Element trait definition: `vexo/src/retain/element.rs`
+- Render object trait: `vexo/src/retain/render_object.rs`
+- Three-tree pipeline: `vexo/src/retain/pipeline.rs`
 - Application trait definition: `vexo/src/lib.rs`
-- WindowState: `vexo/src/lib.rs`
+- WindowState: `vexo/src/window.rs`
 - Render backend: `vexo/src/render/wgpu_backend.rs`
 - Input events: `vexo/src/input/event.rs`
-- State management: `vexo/src/state/registry.rs`
+- Stateful widgets: `vexo/src/retain/reactive/`
 - Sample application: `shared_app/src/lib.rs`
 - iOS wrapper: `shared_app/src/lib.rs`
 - Build script: `build_for_ios.sh`
@@ -278,12 +289,4 @@ This method handles all four cases:
 | `ContainerElement` | Multiple | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
 | `DecoratedContainerElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
 | `StatefulElement` | Single (from `build()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
-
-### Pipeline Simplification
-
-The `ThreeTreePipeline` no longer has separate child reconciliation methods. Instead:
-- `rebuild_root()` calls `element.rebuild()` - element handles its own children
-- `reconcile_element()` calls `element.rebuild()` - element handles its own children
-- `ElementRegistry::inflate_widget()` only mounts the element - element mounts its children in `mount()`
-
-This design eliminates the need for a `manages_own_children` flag and provides a uniform child management pattern across all element types.
+| `GestureDetectorElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |

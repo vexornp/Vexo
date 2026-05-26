@@ -9,8 +9,7 @@
 //! Input events flow through the system as follows:
 //! 1. Platform (winit/iOS) generates native events
 //! 2. Events are converted to `InputEvent` via `InputEvent::from_winit()`
-//! 3. Widgets receive `InputEvent` in `on_event()` method
-//! 4. Widgets return `WidgetResponse<M>` with messages/state changes
+//! 3. Events are dispatched to elements via the pipeline's `handle_event()` method
 //!
 //! # Example
 //!

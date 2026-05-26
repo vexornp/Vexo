@@ -38,9 +38,7 @@ pub struct WindowState<A: Application + 'static> {
     // Cursor blink state (global - only one focused widget at a time)
     cursor_blink: CursorBlinkState,
 
-    // Current cursor icon (for detecting changes)
-    current_cursor: CursorIcon,
-
+    
     // Render pipeline for orchestrating render stages
     render_pipeline: RenderPipeline,
 
@@ -48,21 +46,6 @@ pub struct WindowState<A: Application + 'static> {
     retain_pipeline: Option<ThreeTreePipeline>,
 }
 
-/// Convert CursorIcon to winit's Cursor type.
-fn winit_cursor_from_icon(icon: CursorIcon) -> winit::cursor::Cursor {
-    // Map our CursorIcon to winit's CursorIcon, then convert to Cursor via From trait
-    let winit_icon = match icon {
-        CursorIcon::Default => winit::cursor::CursorIcon::Default,
-        CursorIcon::Pointer => winit::cursor::CursorIcon::Pointer,
-        CursorIcon::Text => winit::cursor::CursorIcon::Text,
-        CursorIcon::Crosshair => winit::cursor::CursorIcon::Crosshair,
-        CursorIcon::Move => winit::cursor::CursorIcon::Move,
-        CursorIcon::NotAllowed => winit::cursor::CursorIcon::NotAllowed,
-        CursorIcon::ResizeHorizontal => winit::cursor::CursorIcon::EwResize,
-        CursorIcon::ResizeVertical => winit::cursor::CursorIcon::NsResize,
-    };
-    winit::cursor::Cursor::Icon(winit_icon)
-}
 
 impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
@@ -86,7 +69,6 @@ impl<A: Application + 'static> WindowState<A> {
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             cursor_blink: CursorBlinkState::new(),
-            current_cursor: CursorIcon::default(),
             render_pipeline: RenderPipeline::new(),
             retain_pipeline: Some(ThreeTreePipeline::new()),
         })
