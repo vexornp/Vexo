@@ -18,7 +18,6 @@ mod quad_instance;
 pub mod render;
 mod renderer;
 pub use renderer::UiBatcher;
-pub mod component;
 mod resource;
 pub mod reactive;
 pub mod retain;

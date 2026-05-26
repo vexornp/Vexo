@@ -4,7 +4,6 @@
 
 use glyphon::FontSystem;
 
-use crate::component::ComponentStateStorage;
 use crate::core::WidgetId;
 use crate::state::editor::{EditorRef, EditorState};
 use crate::state::focus::FocusState;
@@ -35,7 +34,6 @@ use crate::state::focus::FocusState;
 pub struct WidgetStateRegistry {
     editor_state: EditorState,
     focus_state: FocusState,
-    component_storage: ComponentStateStorage,
 }
 
 impl std::fmt::Debug for WidgetStateRegistry {
@@ -43,7 +41,6 @@ impl std::fmt::Debug for WidgetStateRegistry {
         f.debug_struct("WidgetStateRegistry")
             .field("editor_count", &self.editor_state.len())
             .field("focused_widget", &self.focus_state.focused())
-            .field("component_state_count", &self.component_storage.len())
             .finish()
     }
 }
@@ -60,7 +57,6 @@ impl WidgetStateRegistry {
         Self {
             editor_state: EditorState::new(),
             focus_state: FocusState::new(),
-            component_storage: ComponentStateStorage::new(),
         }
     }
 
@@ -142,41 +138,6 @@ impl WidgetStateRegistry {
     }
 
     // ========================================================================
-    // Component State Management
-    // ========================================================================
-
-    /// Get the component state storage.
-    pub fn component_storage(&mut self) -> &mut ComponentStateStorage {
-        &mut self.component_storage
-    }
-
-    /// Get component state by key (convenience method).
-    pub fn get_or_create_component_state<S: Default + 'static>(
-        &mut self,
-        key: &str,
-    ) -> &mut S {
-        self.component_storage.get_or_create(key)
-    }
-
-    /// Get component state by key without creating (returns None if not exists).
-    pub fn get_component_state<S: 'static + Clone>(
-        &self,
-        key: &str,
-    ) -> Option<S> {
-        self.component_storage.get::<S>(key)
-    }
-
-    /// Check if component state exists.
-    pub fn has_component_state(&self, key: &str) -> bool {
-        self.component_storage.contains(key)
-    }
-
-    /// Remove component state.
-    pub fn remove_component_state(&mut self, key: &str) {
-        self.component_storage.remove(key);
-    }
-
-    // ========================================================================
     // Bulk Operations
     // ========================================================================
 
@@ -184,7 +145,6 @@ impl WidgetStateRegistry {
     pub fn clear(&mut self) {
         self.editor_state.clear();
         self.focus_state.clear_focus();
-        self.component_storage.clear();
     }
 }
 

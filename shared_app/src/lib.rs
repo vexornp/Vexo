@@ -92,66 +92,7 @@ impl retain::StatefulWidget for RetainCounter {
 pub enum Message {
     None,
     Clicked,
-    CounterOutput(CounterOutput),
     ToggleRetainMode,
-}
-
-// --- Counter Component ---
-
-// TODO: Remove in Task 2 (component system removal)
-#[derive(Clone, Debug)]
-pub enum CounterMessage {
-    Increment,
-    Decrement,
-    Reset,
-}
-
-// TODO: Remove in Task 2 (component system removal)
-#[derive(Clone, Debug)]
-pub enum CounterOutput {
-    CountReached(u32),
-}
-
-// TODO: Remove in Task 2 (component system removal)
-#[derive(Default, Clone)]
-pub struct CounterState {
-    count: u32,
-}
-
-// TODO: Remove in Task 2 (component system removal)
-pub struct CounterComponent;
-
-// TODO: Remove in Task 2 (component system removal)
-impl vexo::component::Component for CounterComponent {
-    type Message = CounterMessage;
-    type Output = CounterOutput;
-    type State = CounterState;
-
-    fn update(state: &mut Self::State, message: Self::Message) {
-        match message {
-            CounterMessage::Increment => state.count += 1,
-            CounterMessage::Decrement => {
-                if state.count > 0 {
-                    state.count -= 1;
-                }
-            }
-            CounterMessage::Reset => state.count = 0,
-        }
-    }
-
-    fn view(
-        _state: &Self::State,
-        _ctx: &mut vexo::component::ComponentContext<'_, Self::Message>,
-    ) -> Box<dyn vexo::widgets::Widget<Self::Message>> {
-        unimplemented!("Immediate mode view removed. Use retain_view() instead.")
-    }
-
-    fn map_message(message: Self::Message, state: &Self::State) -> Option<Self::Output> {
-        match message {
-            CounterMessage::Increment if state.count == 10 => Some(CounterOutput::CountReached(10)),
-            _ => None,
-        }
-    }
 }
 
 pub struct State {
@@ -184,9 +125,6 @@ impl Application for State {
         match message {
             Message::Clicked => {
                 state.click_count += 1;
-            }
-            Message::CounterOutput(CounterOutput::CountReached(_n)) => {
-                state.milestones += 1;
             }
             Message::None => {}
             Message::ToggleRetainMode => {
