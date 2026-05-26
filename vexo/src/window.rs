@@ -199,9 +199,9 @@ impl<A: Application + 'static> WindowState<A> {
         }
     }
 
-    /// Generate a retain-mode widget tree from the application.
-    fn view_retain(&mut self) -> Option<Box<dyn RetainWidget>> {
-        A::retain_view(&mut self.user_app_state, &mut self.font_system)
+    /// Generate a widget tree from the application.
+    fn view(&mut self) -> Box<dyn RetainWidget> {
+        A::view(&mut self.user_app_state, &mut self.font_system)
     }
 
     /// Frame tick - called each frame to update timing.
@@ -217,7 +217,7 @@ impl<A: Application + 'static> WindowState<A> {
     /// Render using the three-tree retain-mode pipeline.
     ///
     /// This method implements the full retain-mode rendering flow:
-    /// 1. Generate widget tree from view_retain()
+    /// 1. Generate widget tree from view()
     /// 2. Reconcile widget tree with element tree
     /// 3. Layout dirty render objects
     /// 4. Paint dirty render objects
@@ -236,10 +236,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.cursor_blink.tick();
 
         // 3. Generate widget tree
-        let widget_tree = match self.view_retain() {
-            Some(w) => w,
-            None => return Ok(()), // No retain view, skip
-        };
+        let widget_tree = self.view();
 
         // 4. Get pipeline
         let pipeline = match &mut self.retain_pipeline {

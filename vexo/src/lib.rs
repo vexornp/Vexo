@@ -40,11 +40,8 @@ pub trait Application: Sized + 'static {
 
     fn new() -> Self::State;
 
-    /// Retain-mode view.
-    ///
-    /// Returns a retain-mode widget tree. Applications implement this
-    /// to use the three-tree architecture.
-    fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>>;
+    /// Returns a widget tree for the three-tree architecture.
+    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn retain::Widget>;
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {

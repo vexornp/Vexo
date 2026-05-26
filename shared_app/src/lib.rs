@@ -109,7 +109,7 @@ impl Application for State {
         }
     }
 
-    fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {
+    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn retain::Widget> {
         // Lazily initialize TextEdit controllers
         if state.text_editor_controller.is_none() {
             state.text_editor_controller = Some(
@@ -143,7 +143,7 @@ impl Application for State {
         let b1 = state.editor_b1.as_ref().unwrap();
         let b2 = state.editor_b2.as_ref().unwrap();
 
-        Some(Box::new(
+        Box::new(
             retain::Column::new()
                 // Title
                 .push(retain::Text::new("Focus Demo"))
