@@ -13,7 +13,6 @@ pub mod core;
 mod editor;
 pub mod input;
 pub mod layout;
-mod macros;
 mod quad_instance;
 pub mod render;
 mod renderer;
