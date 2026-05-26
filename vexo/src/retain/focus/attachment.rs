@@ -85,18 +85,25 @@ mod tests {
 
     /// Helper: create a plain focus node for testing (no element association).
     ///
-    /// Tests in this module don't need element-key semantics; they just need
-    /// nodes in the tree to exercise reparent/detach logic.
-    fn create_plain_node(mgr: &mut FocusManager) -> FocusNodeId {
+    /// Uses a shared `SlotMap` to avoid key collisions — `ElementKey` is a
+    /// slotmap key type, so separate `SlotMap` instances can generate the same
+    /// key values, causing `create_node_for_element` to return existing nodes
+    /// instead of creating new ones.
+    fn create_plain_nodes(mgr: &mut FocusManager, count: usize) -> Vec<FocusNodeId> {
         let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
-        let key = elem_map.insert(());
-        mgr.create_node_for_element(key, None).unwrap()
+        (0..count)
+            .map(|_| {
+                let key = elem_map.insert(());
+                mgr.create_node_for_element(key, None).unwrap()
+            })
+            .collect()
     }
 
     #[test]
     fn test_new_attachment_is_attached() {
         let mut mgr = FocusManager::new();
-        let node = create_plain_node(&mut mgr);
+        let nodes = create_plain_nodes(&mut mgr, 1);
+        let node = nodes[0];
 
         let attachment = FocusAttachment::new(node);
         assert!(attachment.is_attached());
@@ -106,7 +113,8 @@ mod tests {
     #[test]
     fn test_detach_removes_node_and_marks_detached() {
         let mut mgr = FocusManager::new();
-        let node = create_plain_node(&mut mgr);
+        let nodes = create_plain_nodes(&mut mgr, 1);
+        let node = nodes[0];
 
         let mut attachment = FocusAttachment::new(node);
         assert!(mgr.get(node).is_some());
@@ -120,7 +128,8 @@ mod tests {
     #[test]
     fn test_detach_is_idempotent() {
         let mut mgr = FocusManager::new();
-        let node = create_plain_node(&mut mgr);
+        let nodes = create_plain_nodes(&mut mgr, 1);
+        let node = nodes[0];
 
         let mut attachment = FocusAttachment::new(node);
         attachment.detach(&mut mgr);
@@ -133,11 +142,10 @@ mod tests {
     #[test]
     fn test_reparent_moves_node() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let parent_a = create_plain_node(&mut mgr);
-        let parent_b = create_plain_node(&mut mgr);
-        let node = create_plain_node(&mut mgr);
+        let nodes = create_plain_nodes(&mut mgr, 3);
+        let parent_a = nodes[0];
+        let parent_b = nodes[1];
+        let node = nodes[2];
 
         // Manually reparent `node` under parent_a for this test.
         mgr.reparent(node, Some(parent_a));
@@ -159,11 +167,10 @@ mod tests {
     #[test]
     fn test_reparent_is_noop_after_detach() {
         let mut mgr = FocusManager::new();
-        let root = mgr.root_scope();
-
-        let parent_a = create_plain_node(&mut mgr);
-        let parent_b = create_plain_node(&mut mgr);
-        let node = create_plain_node(&mut mgr);
+        let nodes = create_plain_nodes(&mut mgr, 3);
+        let parent_a = nodes[0];
+        let parent_b = nodes[1];
+        let node = nodes[2];
 
         // Manually reparent `node` under parent_a for this test.
         mgr.reparent(node, Some(parent_a));

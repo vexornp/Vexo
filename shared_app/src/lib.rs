@@ -178,7 +178,7 @@ impl Application for State {
                 ))
                 // Standalone field
                 .push(vexo::retain::Focus::new(retain::TextEdit::new(controller.clone())))
-        ))
+        )
     }
 }
 
