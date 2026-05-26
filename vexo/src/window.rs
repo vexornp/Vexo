@@ -8,7 +8,6 @@ use winit::{
 };
 
 use crate::core::{Logical, Physical, Point, Scale, Size, WidgetId};
-use crate::frame_context::FrameContext;
 use crate::input::{ButtonState, CursorIcon, InputEvent, Modifiers};
 use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeKey, LayoutView, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
@@ -128,102 +127,8 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // Check if we should use retain mode
-        if self.use_retain_mode && self.view_retain().is_some() {
-            return self.render_retain();
-        }
-
-        // Otherwise use immediate mode
-        self.render_immediate()
-    }
-
-    /// Render using the immediate-mode pipeline (legacy).
-    fn render_immediate(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // 1. Redraw request & backend check
-        if let Some(win) = &self.window {
-            win.request_redraw();
-        }
-        if !self.backend.is_ready() {
-            return Ok(());
-        }
-
-        // 2. Frame timing
-        self.cursor_blink.tick();
-
-        // 3. View generation
-        let mut new_root_widget = self.view();
-
-        // 4. Clear state
-        self.layout_engine.clear();
-        self.batcher.clear();
-
-        // 5. Compute layout
-        let scale = self.widget_context.scale;
-        let logical_width = self.backend.width() as f32 / scale.factor();
-        let logical_height = self.backend.height() as f32 / scale.factor();
-        let logical_size = Size::<Logical>::new(logical_width, logical_height);
-
-        self.batcher.set_screen_size(logical_size);
-
-        let layout_output = self.render_pipeline.compute_layout(
-            &mut *new_root_widget,
-            self.layout_engine.as_mut(),
-            self.root_node_id,
-            logical_size,
-            &mut self.widget_context,
-        );
-
-        self.root_widget = new_root_widget;
-        self.root_node_id = layout_output.root_node;
-
-        // 6. Build frame context
-        let physical_size =
-            Size::<Physical>::new(self.backend.width() as f32, self.backend.height() as f32);
-
-        let ctx = FrameContext {
-            scale,
-            viewport_physical: physical_size,
-            layout_view: layout_output.layout_view,
-            focused_widget_id: self.focused_widget_id,
-            cursor_blink: &self.cursor_blink,
-        };
-
-        // 7. Generate geometry
-        self.render_pipeline.generate_geometry(
-            &*self.root_widget,
-            &mut self.batcher,
-            self.root_node_id,
-            &ctx,
-            &mut self.widget_context,
-        );
-
-        // 8. Update viewport
-        self.backend.update_viewport(physical_size);
-
-        // 9. Collect text
-        let prepared_text = self.render_pipeline.collect_text(
-            &mut self.batcher,
-            &mut self.widget_context,
-            scale,
-            physical_size,
-        );
-
-        // 10. Execute render
-        self.render_pipeline
-            .execute_render(
-                &mut self.backend,
-                &self.batcher,
-                prepared_text,
-                &mut self.widget_context,
-            )
-            .map_err(|e| match e {
-                crate::render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::TextPrepareFailed(_) => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::GpuError(_) => wgpu::SurfaceError::Lost,
-            })?;
-
-        Ok(())
+        // Use retain mode rendering
+        self.render_retain()
     }
 
     fn update(&mut self, message: A::Message) {

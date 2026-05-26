@@ -1,23 +1,15 @@
 //! Render pipeline orchestration.
 //!
-//! Coordinates the render stages: layout, geometry, text, and GPU execution.
+//! Coordinates text collection and GPU execution stages.
 
 use glyphon::TextArea;
 
-use crate::core::{Logical, Physical, Point, Scale, Size};
-use crate::frame_context::FrameContext;
-use crate::layout::{LayoutContext, LayoutEngine, LayoutNodeKey, LayoutView};
+use crate::core::{Physical, Scale, Size};
 use crate::render::{RenderError, WgpuBackend};
 use crate::renderer::UiBatcher;
 use crate::text_processor::PreparedText;
 use crate::text_processor::TextProcessor;
-use crate::widgets::{Widget, WidgetContext};
-
-/// Output from layout computation stage.
-pub struct LayoutOutput<'a> {
-    pub layout_view: LayoutView<'a>,
-    pub root_node: LayoutNodeKey,
-}
+use crate::widgets::WidgetContext;
 
 /// Owned text data ready for rendering.
 ///
@@ -51,50 +43,6 @@ impl RenderPipeline {
         Self {
             text_processor: TextProcessor::new(),
         }
-    }
-
-    /// Stage 1: Compute layout for the widget tree.
-    pub fn compute_layout<'a, M: Clone + std::fmt::Debug + Send>(
-        &mut self,
-        widget: &mut dyn Widget<M>,
-        layout_engine: &'a mut dyn LayoutEngine,
-        _root_node: LayoutNodeKey,
-        viewport_logical: Size<Logical>,
-        widget_context: &mut WidgetContext,
-    ) -> LayoutOutput<'a> {
-        // Build layout tree
-        let mut layout_ctx = LayoutContext::new(layout_engine);
-        let new_root_node = widget.layout(&mut layout_ctx, widget_context);
-
-        // Compute layout
-        layout_engine.compute(new_root_node, viewport_logical, &mut widget_context.font_system);
-
-        let layout_view = LayoutView::new(&*layout_engine);
-
-        LayoutOutput {
-            layout_view,
-            root_node: new_root_node,
-        }
-    }
-
-    /// Stage 2: Generate geometry from widget tree.
-    pub fn generate_geometry<M: Clone + std::fmt::Debug + Send>(
-        &mut self,
-        widget: &dyn Widget<M>,
-        batcher: &mut UiBatcher,
-        root_node: LayoutNodeKey,
-        ctx: &FrameContext,
-        widget_context: &mut WidgetContext,
-    ) {
-        widget.draw(
-            &ctx.layout_view,
-            root_node,
-            batcher,
-            Point::new(0.0, 0.0),
-            ctx.focused_widget_id,
-            ctx.cursor_blink,
-            widget_context,
-        );
     }
 
     /// Stage 3: Collect text areas from batcher.
