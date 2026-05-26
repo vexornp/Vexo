@@ -1,14 +1,8 @@
-//! Text processing for render pipeline.
-//!
-//! Handles conversion of text requests and editor requests into
-//! glyphon TextArea instances ready for rendering.
-
 use glyphon::{Buffer, FontSystem, TextArea};
 
 use crate::core::{Bounds, Color, Physical, Scale, Size};
-use crate::renderer::{EditorRequest, TextRequest};
+use crate::renderer::TextRequest;
 use crate::text_cache::TextCache;
-use crate::widgets::WidgetContext;
 
 /// Processes text requests into TextArea instances for rendering.
 pub struct TextProcessor {
@@ -68,9 +62,6 @@ impl TextProcessor {
     }
 
     /// Create a TextAreaData from buffer and positioning info.
-    ///
-    /// This private helper extracts the common logic for creating
-    /// text area data used in rendering.
     fn create_text_area(
         buffer: Buffer,
         physical_pos: crate::core::Point<Physical>,
@@ -140,45 +131,50 @@ impl TextProcessor {
         }
     }
 
-    /// Process editor requests into prepared text.
-    pub fn process_editor_requests(
+    /// Collect text from the batcher and prepare it for rendering.
+    ///
+    /// Only processes text_requests (editor_requests have been removed;
+    /// editor text is now handled via the retain-mode TextEditRenderObject
+    /// which emits Caret commands instead).
+    pub fn collect_text(
         &mut self,
-        widget_context: &mut WidgetContext,
-        requests: Vec<EditorRequest>,
+        batcher: &mut crate::renderer::UiBatcher,
+        font_system: &mut FontSystem,
         scale: Scale,
-    ) -> PreparedText {
-        let mut buffers: Vec<Buffer> = Vec::new();
-        let mut text_area_data: Vec<TextAreaData> = Vec::new();
+        viewport_physical: Size<Physical>,
+    ) -> CombinedPreparedText {
+        let text_requests = std::mem::take(&mut batcher.text_requests);
+        let regular = self.process_text_requests(
+            font_system,
+            text_requests,
+            scale,
+            viewport_physical,
+        );
 
-        for req in &requests {
-            // Convert logical bounds to physical
-            let physical_bounds = req.bounds.to_physical(scale);
-
-            let editor_ref = widget_context.get_or_create_editor(&req.id, "initial_text");
-            let editor = editor_ref.borrow();
-            let mut buf = editor.buffer().clone();
-            buf.shape_until_scroll(&mut widget_context.font_system, true);
-
-            let (buffer, data) = Self::create_text_area(
-                buf,
-                crate::core::Point::new(physical_bounds.left, physical_bounds.top),
-                scale,
-                physical_bounds,
-                req.color,
-            );
-            buffers.push(buffer);
-            text_area_data.push(data);
-        }
-
-        PreparedText {
-            buffers,
-            text_area_data,
-        }
+        CombinedPreparedText { regular }
     }
 }
 
 impl Default for TextProcessor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Owned text data ready for rendering.
+///
+/// Combines regular text into a single owned container
+/// that can provide unified text areas for rendering.
+pub struct CombinedPreparedText {
+    regular: PreparedText,
+}
+
+impl CombinedPreparedText {
+    /// Create TextArea instances for rendering.
+    ///
+    /// The returned TextAreas borrow from the owned buffers in this struct.
+    /// Must be called immediately before rendering.
+    pub fn as_text_areas(&mut self) -> Vec<TextArea<'_>> {
+        self.regular.as_text_areas()
     }
 }

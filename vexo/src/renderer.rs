@@ -31,17 +31,10 @@ pub struct TextRequest {
 
 pub type Bounds = crate::core::Bounds<Logical>;
 
-pub struct EditorRequest {
-    pub id: String,
-    pub bounds: Bounds, // x, y, width, height
-    pub color: Color,
-}
-
 pub struct UiBatcher {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
-    pub text_requests: Vec<TextRequest>, // For normal Text widget
-    pub editor_requests: Vec<EditorRequest>, // For TextEdit widget
+    pub text_requests: Vec<TextRequest>,
     pub quad_instances: Vec<quad_instance::QuadInstance>,
 
     screen_size: Size<Logical>, // Logical size: pixel_size * scale_factor
@@ -61,7 +54,6 @@ impl UiBatcher {
             vertices: Vec::new(),
             indices: Vec::new(),
             text_requests: Vec::new(),
-            editor_requests: Vec::new(),
             quad_instances: Vec::new(),
             screen_size: Size::new(1.0, 1.0),
             corner_radius_stack: Vec::new(),
@@ -73,7 +65,6 @@ impl UiBatcher {
         self.vertices.clear();
         self.indices.clear();
         self.text_requests.clear();
-        self.editor_requests.clear();
         self.quad_instances.clear();
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
@@ -179,14 +170,6 @@ impl UiBatcher {
             size,
             color,
             clip_bounds,
-        });
-    }
-
-    pub fn add_editor_request(&mut self, id: impl Into<String>, bounds: Bounds) {
-        self.editor_requests.push(EditorRequest {
-            id: id.into(),
-            bounds,
-            color: Color::WHITE,
         });
     }
 }

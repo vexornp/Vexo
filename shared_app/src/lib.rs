@@ -1,4 +1,4 @@
-use vexo::{reactive::StatefulMutable, retain, widgets::Widget, Application};
+use vexo::{reactive::StatefulMutable, retain, Application};
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
@@ -88,16 +88,7 @@ impl retain::StatefulWidget for RetainCounter {
 }
 
 // --- The User's Code ---
-#[derive(Debug, Clone)]
-pub enum Message {
-    None,
-    Clicked,
-    ToggleRetainMode,
-}
-
 pub struct State {
-    click_count: u32,
-    milestones: u32,
     text_editor_controller: Option<vexo::retain::TextEditingController>,
     editor_a1: Option<vexo::retain::TextEditingController>,
     editor_a2: Option<vexo::retain::TextEditingController>,
@@ -106,36 +97,16 @@ pub struct State {
 }
 
 impl Application for State {
-    type Message = Message;
     type State = Self;
 
     fn new() -> Self::State {
         Self {
-            click_count: 0,
-            milestones: 0,
             text_editor_controller: None,
             editor_a1: None,
             editor_a2: None,
             editor_b1: None,
             editor_b2: None,
         }
-    }
-
-    fn update(state: &mut Self::State, message: Self::Message) {
-        match message {
-            Message::Clicked => {
-                state.click_count += 1;
-            }
-            Message::None => {}
-            Message::ToggleRetainMode => {
-                // This message is handled by WindowState, not the app state
-                // The retain mode toggle is a framework-level concern
-            }
-        }
-    }
-
-    fn view(_state: &Self::State) -> Box<dyn Widget<Self::Message>> {
-        unimplemented!("Immediate mode view removed. Use retain_view() instead.")
     }
 
     fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {

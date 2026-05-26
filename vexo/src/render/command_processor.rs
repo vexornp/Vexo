@@ -68,15 +68,6 @@ pub fn process_commands(
                 let bounds = Bounds::from_xywh(pos.x, pos.y, 2.0, *height);
                 batcher.add_rect(bounds, *color, None, 0.0);
             }
-            RenderCommand::Editor { id, bounds, .. } => {
-                let adjusted_bounds = Bounds::new(
-                    bounds.left + current_offset.x,
-                    bounds.top + current_offset.y,
-                    bounds.right + current_offset.x,
-                    bounds.bottom + current_offset.y,
-                );
-                batcher.add_editor_request(id, adjusted_bounds);
-            }
             RenderCommand::PushClip { bounds } => {
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
@@ -211,38 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn test_process_editor_command() {
-        let mut batcher = UiBatcher::new();
-        let commands = vec![RenderCommand::editor(
-            "editor-1",
-            Bounds::from_xywh(10.0, 20.0, 200.0, 30.0),
-        )];
-
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
-
-        assert_eq!(batcher.editor_requests.len(), 1);
-        let editor = &batcher.editor_requests[0];
-        assert_eq!(editor.id, "editor-1");
-        assert_eq!(editor.bounds.left, 10.0);
-        assert_eq!(editor.bounds.top, 20.0);
-    }
-
-    #[test]
-    fn test_process_editor_with_offset() {
-        let mut batcher = UiBatcher::new();
-        let commands = vec![RenderCommand::editor(
-            "editor-1",
-            Bounds::from_xywh(0.0, 0.0, 200.0, 30.0),
-        )];
-
-        process_commands(&commands, &mut batcher, Point::new(100.0, 50.0));
-
-        let editor = &batcher.editor_requests[0];
-        assert_eq!(editor.bounds.left, 100.0);
-        assert_eq!(editor.bounds.top, 50.0);
-    }
-
-    #[test]
     fn test_process_corner_radius_commands() {
         let mut batcher = UiBatcher::new();
         let commands = vec![
@@ -363,7 +322,6 @@ mod tests {
 
         assert!(batcher.quad_instances.is_empty());
         assert!(batcher.text_requests.is_empty());
-        assert!(batcher.editor_requests.is_empty());
     }
 
     #[test]

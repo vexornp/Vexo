@@ -59,16 +59,7 @@ pub enum RenderCommand {
         color: Color,
     },
 
-    /// Draw an editor (text input area).
-    Editor {
-        /// Unique identifier for the editor.
-        id: String,
-        /// Bounds in logical coordinates.
-        bounds: Bounds<Logical>,
-        /// Text color.
-        color: Color,
-    },
-
+    
     /// Push a clipping region onto the stack.
     /// All subsequent commands are clipped to this region.
     PushClip {
@@ -148,15 +139,6 @@ impl RenderCommand {
             font_size,
             color,
             max_width: None,
-        }
-    }
-
-    /// Create an editor command.
-    pub fn editor(id: impl Into<String>, bounds: Bounds<Logical>) -> Self {
-        Self::Editor {
-            id: id.into(),
-            bounds,
-            color: Color::WHITE,
         }
     }
 

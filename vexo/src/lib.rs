@@ -10,7 +10,7 @@ mod app;
 pub use app::{KeyBindingAction, VexoApp};
 
 pub mod core;
-mod editor;
+pub mod editor;
 pub mod input;
 pub mod layout;
 mod quad_instance;
@@ -22,14 +22,12 @@ pub mod reactive;
 pub mod retain;
 pub mod state;
 mod utils;
-pub mod widgets;
 mod window;
 mod text_cache;
 mod text_processor;
 mod render_pipeline;
 pub use window::WindowState;
 
-use widgets::Widget;
 pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
@@ -38,24 +36,15 @@ pub use layout::AlignItems;
 extern crate alloc;
 
 pub trait Application: Sized + 'static {
-    type Message: Clone + std::fmt::Debug + Send;
     type State;
 
     fn new() -> Self::State;
-    fn update(state: &mut Self::State, message: Self::Message);
-    fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>>;
 
-    /// Retain-mode view (optional, for migration).
+    /// Retain-mode view.
     ///
-    /// Returns a retain-mode widget tree. Applications can implement this
-    /// to migrate to the three-tree architecture incrementally.
-    ///
-    /// Default implementation returns `None`, allowing existing applications
-    /// to continue using immediate-mode rendering without changes.
-    fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {
-        let _ = (state, font_system);
-        None
-    }
+    /// Returns a retain-mode widget tree. Applications implement this
+    /// to use the three-tree architecture.
+    fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>>;
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
