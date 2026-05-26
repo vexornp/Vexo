@@ -22,7 +22,6 @@ mod resource;
 pub mod reactive;
 pub mod retain;
 pub mod state;
-pub mod testable;
 mod utils;
 pub mod widgets;
 mod window;
