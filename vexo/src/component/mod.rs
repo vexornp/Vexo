@@ -44,7 +44,7 @@ mod tests {
     use super::*;
     use crate::core::Scale;
     use crate::core::WidgetId;
-    use crate::widgets::{Column, Widget};
+    use crate::widgets::{EmptyWidget, Widget};
     use glyphon::FontSystem;
 
     #[derive(Clone, Debug)]
@@ -79,7 +79,7 @@ mod tests {
             _state: &Self::State,
             _ctx: &mut ComponentContext<'_, Self::Message>,
         ) -> Box<dyn Widget<Self::Message>> {
-            Box::new(Column::new())
+            Box::new(EmptyWidget)
         }
 
         fn map_message(message: Self::Message, state: &Self::State) -> Option<Self::Output> {

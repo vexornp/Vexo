@@ -1,4 +1,4 @@
-use vexo::{reactive::StatefulMutable, retain, widgets::Widget, Application, WidgetExt};
+use vexo::{reactive::StatefulMutable, retain, widgets::Widget, Application};
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
@@ -98,6 +98,7 @@ pub enum Message {
 
 // --- Counter Component ---
 
+// TODO: Remove in Task 2 (component system removal)
 #[derive(Clone, Debug)]
 pub enum CounterMessage {
     Increment,
@@ -105,18 +106,22 @@ pub enum CounterMessage {
     Reset,
 }
 
+// TODO: Remove in Task 2 (component system removal)
 #[derive(Clone, Debug)]
 pub enum CounterOutput {
     CountReached(u32),
 }
 
+// TODO: Remove in Task 2 (component system removal)
 #[derive(Default, Clone)]
 pub struct CounterState {
     count: u32,
 }
 
+// TODO: Remove in Task 2 (component system removal)
 pub struct CounterComponent;
 
+// TODO: Remove in Task 2 (component system removal)
 impl vexo::component::Component for CounterComponent {
     type Message = CounterMessage;
     type Output = CounterOutput;
@@ -135,30 +140,10 @@ impl vexo::component::Component for CounterComponent {
     }
 
     fn view(
-        state: &Self::State,
+        _state: &Self::State,
         _ctx: &mut vexo::component::ComponentContext<'_, Self::Message>,
     ) -> Box<dyn vexo::widgets::Widget<Self::Message>> {
-        let count_text = format!("Count: {}", state.count);
-
-        vexo::column![
-            vexo::text!(count_text).font_size(24.0),
-            vexo::row![
-                vexo::button!(vexo::text!("-"), CounterMessage::Decrement)
-                    .width(40.0)
-                    .height(40.0),
-                vexo::button!(vexo::text!("+"), CounterMessage::Increment)
-                    .width(40.0)
-                    .height(40.0),
-                vexo::button!(vexo::text!("Reset"), CounterMessage::Reset).height(40.0),
-            ]
-            .gap(8.0),
-        ]
-        .align(vexo::layout::AlignItems::Center)
-        .padding(16.0)
-        .background(vexo::Color::rgb(0.95, 0.95, 0.95))
-        .border(vexo::Color::rgb(0.8, 0.8, 0.8), 1.0)
-        .corner_radius(8.0)
-        .boxed()
+        unimplemented!("Immediate mode view removed. Use retain_view() instead.")
     }
 
     fn map_message(message: Self::Message, state: &Self::State) -> Option<Self::Output> {
@@ -211,62 +196,8 @@ impl Application for State {
         }
     }
 
-    fn view(state: &Self::State) -> Box<dyn Widget<Self::Message>> {
-        let _text_content = format!("You clicked {} times!", state.click_count);
-        let milestone_text = format!("Milestones reached: {}", state.milestones);
-
-        vexo::column![
-            // Hint for retain mode toggle
-            vexo::text!("Press R to toggle retain mode")
-                .font_size(14.0)
-                .padding(4.0),
-            // Title
-            vexo::text!("ScrollView Demo").font_size(28.0),
-            // ScrollView with many items to demonstrate scrolling
-            vexo::widgets::ScrollView::new()
-                .with_key("demo-scroll")
-                .width(350.0)
-                .height(300.0)
-                .push(vexo::text!("Scrollable Content").font_size(20.0))
-                .push(vexo::text!("─────────────────────"))
-                .push(vexo::text!("Item 1: Scroll wheel works!").padding(8.0))
-                .push(vexo::text!("Item 2: Drag to scroll").padding(8.0))
-                .push(vexo::text!("Item 3: Use arrow keys").padding(8.0))
-                .push(vexo::text!("Item 4: Page Up/Down too").padding(8.0))
-                .push(vexo::text!("─────────────────────"))
-                .push(vexo::text!("Item 5").padding(8.0))
-                .push(vexo::text!("Item 6").padding(8.0))
-                .push(vexo::text!("Item 7").padding(8.0))
-                .push(vexo::text!("Item 8").padding(8.0))
-                .push(vexo::text!("Item 9").padding(8.0))
-                .push(vexo::text!("Item 10").padding(8.0))
-                .push(vexo::text!("Item 11").padding(8.0))
-                .push(vexo::text!("Item 12").padding(8.0))
-                .push(vexo::text!("Item 13").padding(8.0))
-                .push(vexo::text!("Item 14").padding(8.0))
-                .push(vexo::text!("Item 15").padding(8.0))
-                .push(vexo::text!("Item 16").padding(8.0))
-                .push(vexo::text!("Item 17").padding(8.0))
-                .push(vexo::text!("Item 18").padding(8.0))
-                .push(vexo::text!("Item 19").padding(8.0))
-                .push(vexo::text!("Item 20 - End of list!").padding(8.0))
-                .background(vexo::Color::rgb(0.95, 0.95, 0.98))
-                .border(vexo::Color::GRAY, 1.0)
-                .corner_radius(8.0)
-                .boxed(),
-            // Counter Component with message mapping
-            vexo::component!(
-                CounterComponent,
-                "counter",
-                |output| Message::CounterOutput(output)
-            ),
-            // Milestone display
-            vexo::text!(milestone_text).font_size(18.0).padding(10.0),
-        ]
-        .align(vexo::layout::AlignItems::Center)
-        .fill()
-        .background(vexo::Color::WHITE)
-        .boxed()
+    fn view(_state: &Self::State) -> Box<dyn Widget<Self::Message>> {
+        unimplemented!("Immediate mode view removed. Use retain_view() instead.")
     }
 
     fn retain_view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Option<Box<dyn retain::Widget>> {

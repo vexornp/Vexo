@@ -263,27 +263,42 @@ pub(crate) fn propagate_pointer_moved_to_containing_child<M: Clone + std::fmt::D
     WidgetResponse::default()
 }
 
-mod button;
-mod color_widget;
-mod column;
-mod grid;
-mod map_widget;
-mod modifiers;
-mod row;
-mod scroll_view;
-mod text;
-mod text_edit;
+/// Minimal placeholder widget used as a default root when no immediate-mode
+/// widget tree is provided. Will be removed along with the immediate-mode
+/// pipeline in a later task.
+pub struct EmptyWidget;
 
-pub use button::Button;
-pub use color_widget::ColorWidget;
-pub use column::Column;
-pub use grid::Grid;
-pub use map_widget::MapWidget;
-pub use modifiers::Background;
-pub use modifiers::Border;
-pub use modifiers::CornerRadius;
-pub use modifiers::WidgetExt;
-pub use row::Row;
-pub use scroll_view::{ScrollView, ScrollState};
-pub use text::Text;
-pub use text_edit::TextEdit;
+impl<M: Clone + std::fmt::Debug + Send> Widget<M> for EmptyWidget {
+    fn layout(&mut self, layout_context: &mut LayoutContext, _widget_context: &mut WidgetContext) -> LayoutNodeKey {
+        layout_context.create_leaf(&Layout::default())
+    }
+
+    fn paint(&self, _ctx: &mut crate::testable::PaintContext) -> Vec<RenderCommand> {
+        Vec::new()
+    }
+
+    fn draw(
+        &self,
+        _layout_view: &LayoutView,
+        _node: LayoutNodeKey,
+        _renderer: &mut UiBatcher,
+        _offset: Point<Logical>,
+        _focused_id: Option<WidgetId>,
+        _cursor_blink: &crate::CursorBlinkState,
+        _widget_context: &mut WidgetContext,
+    ) {
+    }
+
+    fn on_event(
+        &mut self,
+        _layout_view: &LayoutView,
+        _node: LayoutNodeKey,
+        _offset: Point<Logical>,
+        _event: &InputEvent,
+        _focused_id: Option<WidgetId>,
+        _widget_context: &mut WidgetContext,
+    ) -> WidgetResponse<M> {
+        WidgetResponse::default()
+    }
+}
+

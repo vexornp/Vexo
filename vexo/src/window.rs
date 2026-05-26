@@ -15,7 +15,7 @@ use crate::render::{RenderBackend, WgpuBackend};
 use crate::render_pipeline::RenderPipeline;
 use crate::retain::{ThreeTreePipeline, Widget as RetainWidget};
 use crate::state::CursorBlinkState;
-use crate::widgets::{Column, Widget, WidgetContext, WidgetResponse};
+use crate::widgets::{EmptyWidget, Widget, WidgetContext, WidgetResponse};
 use crate::Application;
 
 pub struct WindowState<A: Application + 'static> {
@@ -75,7 +75,7 @@ impl<A: Application + 'static> WindowState<A> {
 
         // --- Root Node Id ---
         let mut layout_engine = Box::new(TaffyLayoutEngine::new());
-        let mut root_widget = Box::new(Column::new());
+        let mut root_widget: Box<dyn Widget<A::Message>> = Box::new(EmptyWidget);
         let mut ctx = WidgetContext::new();
         let mut layout_ctx = LayoutContext::new(layout_engine.as_mut());
         let root_node_id = root_widget.layout(&mut layout_ctx, &mut ctx);

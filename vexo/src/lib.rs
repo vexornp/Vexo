@@ -35,7 +35,6 @@ pub use window::WindowState;
 pub use frame_context::FrameContext;
 
 use widgets::Widget;
-pub use widgets::WidgetExt;
 pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
