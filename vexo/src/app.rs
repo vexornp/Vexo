@@ -120,6 +120,14 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
     ) {
     }
 
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        for state in self.windows.values_mut() {
+            if state.check_cursor_blink() {
+                state.request_frame();
+            }
+        }
+    }
+
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         println!("Ready to create surfaces");
         self.create_window(event_loop)

@@ -1,15 +1,18 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Tracks cursor blink timing for focused text inputs.
+///
+/// Follows Flutter's model: blink is driven by wall-clock time, not by
+/// frame ticks. Call `check_and_toggle()` periodically (e.g., from the
+/// event loop's `about_to_wait` callback). It returns `true` only when
+/// visibility actually toggled, so the caller knows to request a repaint.
 pub struct CursorBlinkState {
-    /// Time of last tick (frame start)
-    last_update: Instant,
-    /// Accumulated milliseconds since last blink toggle
-    accumulator_ms: f32,
-    /// Whether cursor is currently visible (blink phase)
+    /// Time when `visible` last toggled (or was reset).
+    last_toggle: Instant,
+    /// Whether cursor is currently visible (blink phase).
     visible: bool,
-    /// Blink period in milliseconds (800ms default)
-    blink_period_ms: f32,
+    /// Blink half-period — time between on/off toggles.
+    blink_period: Duration,
 }
 
 impl Default for CursorBlinkState {
@@ -21,32 +24,37 @@ impl Default for CursorBlinkState {
 impl CursorBlinkState {
     pub fn new() -> Self {
         Self {
-            last_update: Instant::now(),
-            accumulator_ms: 0.0,
+            last_toggle: Instant::now(),
             visible: true,
-            blink_period_ms: 800.0,
+            blink_period: Duration::from_millis(500),
         }
     }
 
-    /// Call each frame to update blink state based on elapsed time.
-    pub fn tick(&mut self) {
-        let now = Instant::now();
-        let elapsed_ms = (now - self.last_update).as_millis() as f32;
-        self.last_update = now;
-        self.accumulator_ms += elapsed_ms;
-
-        // Toggle visibility each time we exceed the period
-        while self.accumulator_ms >= self.blink_period_ms {
-            self.accumulator_ms -= self.blink_period_ms;
+    /// Check if enough wall-clock time has elapsed for a toggle.
+    /// Returns `true` if visibility changed (caller should request a repaint).
+    ///
+    /// This is the Flutter-style approach: `Timer.periodic` fires every
+    /// 500ms and toggles the cursor. We don't tick per-frame; instead,
+    /// we check elapsed time on each event-loop iteration and only act
+    /// when the period has actually elapsed.
+    pub fn check_and_toggle(&mut self) -> bool {
+        let elapsed = Instant::now() - self.last_toggle;
+        if elapsed >= self.blink_period {
+            self.last_toggle = Instant::now();
             self.visible = !self.visible;
+            true
+        } else {
+            false
         }
     }
 
-    /// Reset blink to visible state (call on keyboard input).
-    pub fn reset(&mut self) {
-        self.accumulator_ms = 0.0;
+    /// Reset blink to visible state (call on keyboard input or focus gain).
+    /// Returns `true` if visibility changed (caller should request a repaint).
+    pub fn reset(&mut self) -> bool {
+        let changed = !self.visible;
         self.visible = true;
-        self.last_update = Instant::now();
+        self.last_toggle = Instant::now();
+        changed
     }
 
     /// Is cursor currently visible?

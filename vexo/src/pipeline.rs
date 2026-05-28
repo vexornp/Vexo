@@ -128,6 +128,10 @@ pub struct ThreeTreePipeline {
 
     /// Cursor blink state for text editing cursors.
     cursor_blink: CursorBlinkState,
+
+    /// Cached render commands from the last paint pass.
+    /// Returned on idle frames when nothing needs repainting.
+    cached_commands: Option<Vec<RenderCommand>>,
 }
 
 impl ThreeTreePipeline {
@@ -146,6 +150,7 @@ impl ThreeTreePipeline {
             dirty_receiver,
             needs_full_reconcile: true,
             cursor_blink: CursorBlinkState::new(),
+            cached_commands: None,
         }
     }
 
@@ -253,6 +258,23 @@ impl ThreeTreePipeline {
         self.build_owner.has_pending_rebuilds()
     }
 
+    /// Take the focus-changed flag. Returns true if focus state changed
+    /// and clears the flag.
+    pub fn take_focus_changed(&mut self) -> bool {
+        self.focus_manager.take_focus_changed()
+    }
+
+    /// Returns true if a frame is needed due to dirty state changes
+    /// (mark_needs_paint/mark_needs_layout was called), and clears the flag.
+    pub fn take_frame_request_needed(&mut self) -> bool {
+        self.dirty.take_frame_request_needed()
+    }
+
+    /// Check if full reconcile is needed (initial mount or root type change).
+    pub fn needs_full_reconcile(&self) -> bool {
+        self.needs_full_reconcile
+    }
+
     /// Perform layout using Taffy layout engine.
     ///
     /// Three-phase layout:
@@ -278,6 +300,7 @@ impl ThreeTreePipeline {
         font_system: &mut glyphon::FontSystem,
     ) {
         Layouter::layout(&mut self.render_objects, &mut self.dirty, available_size, engine, font_system);
+        self.cached_commands = None;
     }
 
     /// Generate render commands from the render object tree.
@@ -299,7 +322,13 @@ impl ThreeTreePipeline {
     /// }
     /// ```
     pub fn paint(&mut self) -> Vec<RenderCommand> {
-        Painter::paint(&self.render_objects, &mut self.dirty)
+        if self.dirty.is_paint_empty() && self.cached_commands.is_some() {
+            return self.cached_commands.clone().unwrap();
+        }
+
+        let commands = Painter::paint(&self.render_objects, &mut self.dirty);
+        self.cached_commands = Some(commands.clone());
+        commands
     }
 
     /// Hit test at a given position.
@@ -419,6 +448,69 @@ impl ThreeTreePipeline {
         !self.dirty.is_paint_empty()
     }
 
+    /// Mark the focused and previously-focused render object subtrees
+    /// for paint.
+    ///
+    /// When focus changes or cursor blink toggles, we need to repaint the
+    /// TextEditRenderObject (which paints the caret). The focused element's
+    /// ProxyRenderObject paints nothing, so we walk its subtree to find the
+    /// actual TextEditRenderObject and mark it dirty.
+    ///
+    /// Also marks the previously-focused subtree so the old cursor disappears.
+    pub fn mark_focus_subtree_needs_paint(&mut self) {
+        // Mark currently focused subtree (cursor appears)
+        if let Some(focused_el) = self.focus_manager.primary_focus_element() {
+            if let Some(ro_id) = self.element_registry.with_element(focused_el, &mut (), |el, _| el.render_object()).flatten() {
+                self.dirty.mark_needs_paint(ro_id);
+                Self::mark_subtree_needs_paint(&self.render_objects, ro_id, &mut self.dirty);
+            }
+        }
+
+        // Mark previously focused subtree (cursor disappears)
+        if let Some(prev_el) = self.focus_manager.previous_primary_focus() {
+            if let Some(ro_id) = self.element_registry.with_element(prev_el, &mut (), |el, _| el.render_object()).flatten() {
+                self.dirty.mark_needs_paint(ro_id);
+                Self::mark_subtree_needs_paint(&self.render_objects, ro_id, &mut self.dirty);
+            }
+        }
+    }
+
+    /// Recursively mark all render objects in a subtree for paint.
+    fn mark_subtree_needs_paint(
+        render_objects: &RenderObjectRegistry,
+        root: crate::id::RenderObjectKey,
+        dirty: &mut DirtyTracking,
+    ) {
+        if let Some(ro) = render_objects.get(root) {
+            for child in ro.children() {
+                dirty.mark_needs_paint(*child);
+                Self::mark_subtree_needs_paint(render_objects, *child, dirty);
+            }
+        }
+    }
+
+    /// Mark focus-related elements for rebuild when focus changes.
+    ///
+    /// Focus-dependent styling (e.g., TextEdit's border color) is computed
+    /// in StatefulWidget::build() via BuildContext::is_focused(). A repaint
+    /// alone doesn't help because ProxyRenderObject.paint() returns empty
+    /// commands — the visual output comes from the child DecoratedContainer
+    /// which needs a new widget configuration from build().
+    ///
+    /// This follows Flutter's model: focus change → setState() →
+    /// markNeedsBuild() → build() → reconciliation → markNeedsPaint().
+    pub fn mark_focus_needs_build(&mut self) {
+        // Mark the currently focused element for rebuild (e.g., gain blue border)
+        if let Some(focused_el) = self.focus_manager.primary_focus_element() {
+            self.build_owner.mark_needs_build(focused_el);
+        }
+
+        // Mark the previously focused element for rebuild (e.g., lose blue border)
+        if let Some(prev_el) = self.focus_manager.previous_primary_focus() {
+            self.build_owner.mark_needs_build(prev_el);
+        }
+    }
+
     /// Clear all dirty tracking.
     pub fn clear_dirty(&mut self) {
         self.dirty.clear();
@@ -435,19 +527,27 @@ impl ThreeTreePipeline {
         }
     }
 
-    /// Tick the cursor blink state. Call once per frame.
-    pub fn tick_cursor_blink(&mut self) {
-        self.cursor_blink.tick();
+    /// Check if blink toggled and mark dirty if so.
+    /// Call from the event loop's about_to_wait callback.
+    /// Returns true if a repaint is needed due to blink toggle.
+    pub fn check_cursor_blink(&mut self) -> bool {
+        if self.cursor_blink.check_and_toggle() {
+            // Only the focused TextEditRenderObject needs repaint for blink,
+            // not its parent containers.
+            if let Some(focused_el) = self.focus_manager.primary_focus_element() {
+                if let Some(ro_id) = self.element_registry.with_element(focused_el, &mut (), |el, _| el.render_object()).flatten() {
+                    self.dirty.mark_needs_paint(ro_id);
+                }
+            }
+            return true;
+        }
+        false
     }
 
-    /// Reset cursor blink to visible. Call on keyboard input.
-    pub fn reset_cursor_blink(&mut self) {
-        self.cursor_blink.reset();
-    }
-
-    /// Check if the cursor blink is currently visible.
-    pub fn cursor_blink_visible(&self) -> bool {
-        self.cursor_blink.is_visible()
+    /// Reset cursor blink to visible. Call on keyboard input or focus gain.
+    /// Returns true if visibility changed (repaint needed).
+    pub fn reset_cursor_blink(&mut self) -> bool {
+        self.cursor_blink.reset()
     }
 
     /// Inject focus and cursor blink state into TextEditRenderObjects.
