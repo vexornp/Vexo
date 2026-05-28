@@ -433,12 +433,6 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             self.widget = *widget;
         }
 
-        // ProxyRenderObject has no properties to update from widget config
-        // Just mark it as needing layout in case child changed
-        if let Some(ro_id) = self.render_object_id {
-            context.mark_needs_layout(ro_id);
-        }
-
         let element_id = context.element_id;
 
         // Build the child widget tree using BuildContext

@@ -120,13 +120,14 @@ pub trait Widget: Any {
     ///             UpdateResult::NONE
     ///         }
     ///     } else {
-    ///         UpdateResult::ALL
+    ///         UpdateResult::NONE
     ///     }
     /// }
     /// ```
     fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
-        // Default: assume everything changed for backward compatibility
-        UpdateResult::ALL
+        // Default: assume nothing changed. Widgets with mutable properties
+        // must override this and return LAYOUT/PAINT when their properties differ.
+        UpdateResult::NONE
     }
 
     /// Clone this widget into a boxed trait object.

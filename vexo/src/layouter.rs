@@ -39,6 +39,10 @@ impl Layouter {
         engine: &mut dyn LayoutEngine,
         font_system: &mut glyphon::FontSystem,
     ) {
+        if dirty.is_layout_empty() {
+            return;
+        }
+
         let dirty_layout_count = dirty.layout_count();
         let total_objects = render_objects.len();
 

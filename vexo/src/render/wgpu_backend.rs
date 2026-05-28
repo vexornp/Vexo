@@ -381,19 +381,6 @@ impl WgpuBackend {
 
     /// Upload geometry from batcher to GPU buffers.
     pub fn upload_geometry(&mut self, batcher: &UiBatcher) {
-        if !batcher.vertices.is_empty() {
-            self.queue.write_buffer(
-                &self.vertex_buffer,
-                0,
-                bytemuck::cast_slice(&batcher.vertices),
-            );
-            self.queue.write_buffer(
-                &self.index_buffer,
-                0,
-                bytemuck::cast_slice(&batcher.indices),
-            );
-        }
-
         if !batcher.quad_instances.is_empty() {
             self.queue.write_buffer(
                 &self.instance_buffer,

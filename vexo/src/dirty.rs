@@ -6,6 +6,9 @@ use super::id::RenderObjectKey;
 pub struct DirtyTracking {
     needs_layout: HashSet<RenderObjectKey>,
     needs_paint: HashSet<RenderObjectKey>,
+    /// Set to true when mark_needs_layout/mark_needs_paint transitions
+    /// dirty set from empty to non-empty. Signals that a frame is needed.
+    frame_request_needed: bool,
 }
 
 impl DirtyTracking {
@@ -14,17 +17,26 @@ impl DirtyTracking {
         Self {
             needs_layout: HashSet::new(),
             needs_paint: HashSet::new(),
+            frame_request_needed: false,
         }
     }
 
     /// Mark a render object as needing layout.
     pub fn mark_needs_layout(&mut self, key: RenderObjectKey) {
+        let was_empty = self.needs_layout.is_empty();
         self.needs_layout.insert(key);
+        if was_empty {
+            self.frame_request_needed = true;
+        }
     }
 
     /// Mark a render object as needing paint.
     pub fn mark_needs_paint(&mut self, key: RenderObjectKey) {
+        let was_empty = self.needs_paint.is_empty();
         self.needs_paint.insert(key);
+        if was_empty {
+            self.frame_request_needed = true;
+        }
     }
 
     /// Check if a render object needs layout.
@@ -50,6 +62,14 @@ impl DirtyTracking {
     /// Check if there are any objects needing layout.
     pub fn is_layout_empty(&self) -> bool {
         self.needs_layout.is_empty()
+    }
+
+    /// Returns true if a frame is needed due to dirty state changes,
+    /// and clears the flag.
+    pub fn take_frame_request_needed(&mut self) -> bool {
+        let needed = self.frame_request_needed;
+        self.frame_request_needed = false;
+        needed
     }
 
     /// Check if there are any objects needing paint.

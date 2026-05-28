@@ -31,10 +31,14 @@ pub struct FocusManager {
     element_to_node: HashMap<ElementKey, FocusNodeId>,
     /// The node that currently holds primary focus, if any.
     primary_focus: Option<FocusNodeId>,
+    /// The node that previously held primary focus (for repaint marking).
+    previous_primary_focus: Option<FocusNodeId>,
     /// The root node of the focus tree.
     root: FocusNodeId,
     /// Pending focus change to apply during the next `apply_focus_changes()`.
     pending_focus_change: Option<FocusNodeId>,
+    /// Whether focus state changed during the last event handling cycle.
+    focus_changed: bool,
 }
 
 impl FocusManager {
@@ -55,8 +59,10 @@ impl FocusManager {
             nodes,
             element_to_node: HashMap::new(),
             primary_focus: None,
+            previous_primary_focus: None,
             root,
             pending_focus_change: None,
+            focus_changed: false,
         }
     }
 
@@ -158,11 +164,16 @@ impl FocusManager {
             return;
         }
         self.pending_focus_change = Some(id);
+        self.focus_changed = true;
     }
 
     /// Clear primary focus. Takes effect immediately.
     pub fn unfocus(&mut self) {
-        self.primary_focus = None;
+        if self.primary_focus.is_some() {
+            self.previous_primary_focus = self.primary_focus;
+            self.primary_focus = None;
+            self.focus_changed = true;
+        }
     }
 
     /// Apply any pending focus change.
@@ -173,9 +184,30 @@ impl FocusManager {
     pub fn apply_focus_changes(&mut self) {
         if let Some(new_id) = self.pending_focus_change.take() {
             if self.primary_focus != Some(new_id) {
+                self.previous_primary_focus = self.primary_focus;
                 self.primary_focus = Some(new_id);
+                self.focus_changed = true;
             }
         }
+    }
+
+    /// Check if focus state changed since the last call to `take_focus_changed()`.
+    pub fn focus_changed(&self) -> bool {
+        self.focus_changed
+    }
+
+    /// Take the focus_changed flag — returns true if focus changed and clears the flag.
+    pub fn take_focus_changed(&mut self) -> bool {
+        let changed = self.focus_changed;
+        self.focus_changed = false;
+        changed
+    }
+
+    /// Returns the element key of the node that previously held primary focus.
+    pub fn previous_primary_focus(&self) -> Option<ElementKey> {
+        self.previous_primary_focus.and_then(|id| {
+            self.nodes.get(id).and_then(|n| n.element_key)
+        })
     }
 
     // -----------------------------------------------------------------------

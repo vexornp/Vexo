@@ -130,7 +130,24 @@
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:sourcegraph.com)",
       "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/main/packages/flutter/lib/src/rendering/editable.dart\")",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/main/packages/flutter/lib/src/widgets/editable_text.dart\")"
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/main/packages/flutter/lib/src/widgets/editable_text.dart\")",
+      "Bash(xargs -I{} basename {})",
+      "Bash(RUST_LOG=vexo=debug timeout 8 cargo run -p desktop_demo)",
+      "Bash(RUST_LOG=vexo=debug timeout 5 cargo run -p desktop_demo)",
+      "Bash(curl -s \"https://api.github.com/search/code?q=CursorController+repo:flutter/flutter+path:packages/flutter/lib/src\")",
+      "Bash(curl -s -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/search/code?q=_cursorBlinkOpacity+repo:flutter/flutter+language:dart\")",
+      "Bash(curl -s \"https://api.github.com/search/code?q=_cursorBlinkOpacity+repo:flutter/flutter\")",
+      "Bash(curl -s \"https://api.github.com/search/code?q=cursorBlink+repo:flutter/flutter+path:packages/flutter\")",
+      "WebFetch(domain:blog.csdn.net)",
+      "WebFetch(domain:www.flutterclutter.dev)",
+      "Bash(RUST_LOG=vexo=debug timeout 10 cargo run -p desktop_demo)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/widgets/editable_text.dart\" -o /tmp/flutter_editable_text.dart)",
+      "Read(//tmp/**)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/editable.dart\" -o /tmp/flutter_rendering_editable.dart)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/object.dart\" -o /tmp/flutter_rendering_object.dart)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/scheduler/binding.dart\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/scheduler/ticker.dart\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/animation/animation_controller.dart\")"
     ]
   }
 }

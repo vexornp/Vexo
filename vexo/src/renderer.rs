@@ -32,8 +32,6 @@ pub struct TextRequest {
 pub type Bounds = crate::core::Bounds<Logical>;
 
 pub struct UiBatcher {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
     pub text_requests: Vec<TextRequest>,
     pub quad_instances: Vec<quad_instance::QuadInstance>,
 
@@ -51,8 +49,6 @@ impl Default for UiBatcher {
 impl UiBatcher {
     pub fn new() -> Self {
         Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
             text_requests: Vec::new(),
             quad_instances: Vec::new(),
             screen_size: Size::new(1.0, 1.0),
@@ -62,8 +58,6 @@ impl UiBatcher {
     }
 
     pub fn clear(&mut self) {
-        self.vertices.clear();
-        self.indices.clear();
         self.text_requests.clear();
         self.quad_instances.clear();
         self.corner_radius_stack.clear();
