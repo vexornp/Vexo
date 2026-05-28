@@ -20,7 +20,7 @@ pub struct WindowState<A: Application + 'static> {
     backend: WgpuBackend,
     window: Option<Arc<dyn Window>>,
 
-    batcher: crate::UiBatcher,
+    frame_builder: crate::FrameBuilder,
     layout_engine: Box<dyn LayoutEngine>,
 
     // Font system for text rendering
@@ -58,7 +58,7 @@ impl<A: Application + 'static> WindowState<A> {
         Ok(Self {
             backend,
             window: Some(window),
-            batcher: crate::UiBatcher::new(),
+            frame_builder: crate::FrameBuilder::new(),
             layout_engine,
             font_system,
             scale: Scale::new(1.0),
@@ -243,7 +243,7 @@ impl<A: Application + 'static> WindowState<A> {
     /// 2. Reconcile widget tree with element tree
     /// 3. Layout dirty render objects
     /// 4. Paint dirty render objects
-    /// 5. Process RenderCommands through batcher
+    /// 5. Process RenderCommands through frame builder
     /// 6. Submit to GPU
     pub fn render_retain(&mut self) -> Result<(), wgpu::SurfaceError> {
         // 1. Backend check
@@ -267,7 +267,7 @@ impl<A: Application + 'static> WindowState<A> {
         }
 
         self.needs_redraw = false;
-        self.batcher.clear();
+        self.frame_builder.clear();
 
         log::debug!("\n========================================");
         log::debug!("[RetainMode] === FRAME START ===");
@@ -307,26 +307,26 @@ impl<A: Application + 'static> WindowState<A> {
         );
         log::debug!("========================================\n");
 
-        // 10. Process RenderCommands through batcher
+        // 10. Process RenderCommands through frame builder
         for cmd in commands {
             match cmd {
                 crate::render::RenderCommand::Rect { bounds, fill, stroke, corner_radius } => {
-                    self.batcher.add_rect(bounds, fill, stroke, corner_radius);
+                    self.frame_builder.add_rect(bounds, fill, stroke, corner_radius);
                 }
                 crate::render::RenderCommand::PushCornerRadius { radius } => {
-                    self.batcher.push_corner_radius(radius);
+                    self.frame_builder.push_corner_radius(radius);
                 }
                 crate::render::RenderCommand::PopCornerRadius => {
-                    self.batcher.pop_corner_radius();
+                    self.frame_builder.pop_corner_radius();
                 }
                 crate::render::RenderCommand::PushClip { bounds } => {
-                    self.batcher.push_clip(bounds);
+                    self.frame_builder.push_clip(bounds);
                 }
                 crate::render::RenderCommand::PopClip => {
-                    self.batcher.pop_clip();
+                    self.frame_builder.pop_clip();
                 }
                 crate::render::RenderCommand::Text { content, position, font_size, color, max_width } => {
-                    self.batcher.add_text(content, position, font_size, color);
+                    self.frame_builder.add_text(content, position, font_size, color);
                     let _ = max_width; // TODO: Handle max_width for text wrapping
                 }
                 crate::render::RenderCommand::Caret {
@@ -336,14 +336,14 @@ impl<A: Application + 'static> WindowState<A> {
                 } => {
                     let bounds =
                         crate::core::Bounds::from_xywh(position.x, position.y, 2.0, height);
-                    self.batcher.add_rect(bounds, color, None, 0.0);
+                    self.frame_builder.add_rect(bounds, color, None, 0.0);
                 }
                 crate::render::RenderCommand::PushOffset { offset } => {
-                    // TODO: Implement offset stack in batcher
+                    // TODO: Implement offset stack in frame builder
                     let _ = offset;
                 }
                 crate::render::RenderCommand::PopOffset => {
-                    // TODO: Implement offset stack in batcher
+                    // TODO: Implement offset stack in frame builder
                 }
             }
         }
@@ -355,7 +355,7 @@ impl<A: Application + 'static> WindowState<A> {
 
         // 12. Collect text through glyphon
         let prepared_text = self.text_pipeline.collect_text(
-            &mut self.batcher,
+            &mut self.frame_builder,
             &mut self.font_system,
             scale,
             physical_size,
@@ -365,7 +365,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.text_pipeline
             .execute_render(
                 &mut self.backend,
-                &self.batcher,
+                &self.frame_builder,
                 prepared_text,
                 &mut self.font_system,
             )

@@ -10,7 +10,7 @@ use wgpu::util::DeviceExt;
 use crate::core::{Color, Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::renderer::UiBatcher;
+use crate::frame_builder::FrameBuilder;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -398,13 +398,13 @@ impl WgpuBackend {
             .unwrap();
     }
 
-    /// Upload geometry from batcher to GPU buffers.
-    pub fn upload_geometry(&mut self, batcher: &UiBatcher) {
-        if batcher.has_quads() {
+    /// Upload geometry from frame builder to GPU buffers.
+    pub fn upload_geometry(&mut self, frame_builder: &FrameBuilder) {
+        if frame_builder.has_quads() {
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(batcher.quad_instances()),
+                bytemuck::cast_slice(frame_builder.quad_instances()),
             );
         }
     }
@@ -468,7 +468,7 @@ impl WgpuBackend {
 impl RenderBackend for WgpuBackend {
     fn prepare(
         &mut self,
-        batcher: &mut UiBatcher,
+        frame_builder: &mut FrameBuilder,
         _font_system: &mut FontSystem,
         config: RenderConfig,
     ) {
@@ -483,7 +483,7 @@ impl RenderBackend for WgpuBackend {
         self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
         // Upload geometry buffers
-        self.upload_geometry(batcher);
+        self.upload_geometry(frame_builder);
 
         // Update viewport
         self.viewport.update(

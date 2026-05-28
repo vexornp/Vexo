@@ -4,7 +4,7 @@
 //! enabling unit tests to verify rendering output without a GPU.
 
 use crate::core::{Physical, Size};
-use crate::renderer::UiBatcher;
+use crate::frame_builder::FrameBuilder;
 
 /// Mock render backend that records commands for testing.
 pub struct MockBackend {
@@ -32,17 +32,17 @@ impl MockBackend {
         }
     }
 
-    pub fn prepare(&mut self, batcher: &UiBatcher) {
+    pub fn prepare(&mut self, frame_builder: &FrameBuilder) {
         self.commands.clear();
-        self.last_rect_count = batcher.quad_count();
-        self.last_text_count = batcher.text_count();
+        self.last_rect_count = frame_builder.quad_count();
+        self.last_text_count = frame_builder.text_count();
 
-        for quad in batcher.quad_instances() {
+        for quad in frame_builder.quad_instances() {
             self.commands
                 .push(format!("rect at {:?} size {:?}", quad.position, quad.size));
         }
 
-        for text in batcher.text_requests() {
+        for text in frame_builder.text_requests() {
             self.commands.push(format!(
                 "text '{}' at {:?} size {}",
                 text.content, text.position, text.size
@@ -83,16 +83,16 @@ mod tests {
     #[test]
     fn test_mock_backend_prepare() {
         let mut backend = MockBackend::new();
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
 
-        batcher.add_rect(
+        frame_builder.add_rect(
             Bounds::<Logical>::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::RED,
             None,
             0.0,
         );
 
-        backend.prepare(&batcher);
+        backend.prepare(&frame_builder);
 
         assert_eq!(backend.last_rect_count, 1);
         assert!(backend.has_command("rect"));
@@ -101,11 +101,11 @@ mod tests {
     #[test]
     fn test_mock_backend_has_command() {
         let mut backend = MockBackend::new();
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
 
-        batcher.add_text("Hello".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
+        frame_builder.add_text("Hello".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
 
-        backend.prepare(&batcher);
+        backend.prepare(&frame_builder);
 
         assert!(backend.has_command("Hello"));
         assert!(!backend.has_command("World"));
@@ -114,17 +114,17 @@ mod tests {
     #[test]
     fn test_mock_backend_render_count() {
         let mut backend = MockBackend::new();
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
 
-        batcher.add_rect(
+        frame_builder.add_rect(
             Bounds::<Logical>::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::RED,
             None,
             0.0,
         );
-        batcher.add_text("Test".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
+        frame_builder.add_text("Test".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
 
-        backend.prepare(&batcher);
+        backend.prepare(&frame_builder);
 
         assert_eq!(backend.render_count(), 2);
     }

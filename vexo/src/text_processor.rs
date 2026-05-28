@@ -1,7 +1,7 @@
 use glyphon::{Buffer, FontSystem, TextArea};
 
 use crate::core::{Bounds, Color, Physical, Scale, Size};
-use crate::renderer::TextRequest;
+use crate::frame_builder::TextRequest;
 use crate::text_cache::TextCache;
 
 /// Processes text requests into TextArea instances for rendering.
@@ -131,19 +131,19 @@ impl TextProcessor {
         }
     }
 
-    /// Collect text from the batcher and prepare it for rendering.
+    /// Collect text from the frame_builder and prepare it for rendering.
     ///
     /// Only processes text_requests (editor_requests have been removed;
     /// editor text is now handled via the retain-mode TextEditRenderObject
     /// which emits Caret commands instead).
     pub fn collect_text(
         &mut self,
-        batcher: &mut crate::renderer::UiBatcher,
+        frame_builder: &mut crate::frame_builder::FrameBuilder,
         font_system: &mut FontSystem,
         scale: Scale,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
-        let text_requests = batcher.take_text_requests();
+        let text_requests = frame_builder.take_text_requests();
         let regular = self.process_text_requests(
             font_system,
             text_requests,

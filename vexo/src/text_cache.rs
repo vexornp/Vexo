@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use glyphon::{cosmic_text, Attrs, Buffer, FontSystem, Metrics, Shaping};
 
-use crate::renderer::TextRequest;
+use crate::frame_builder::TextRequest;
 
 /// Maximum number of frames a cache entry can remain unused before eviction.
 const MAX_STALE_FRAMES: u64 = 100;

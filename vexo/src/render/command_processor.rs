@@ -1,26 +1,26 @@
-//! Process RenderCommands into UiBatcher calls.
+//! Process RenderCommands into FrameBuilder calls.
 //!
 //! This module provides the bridge between the new `RenderCommand` output from
-//! `Paint::paint()` and the existing `UiBatcher` renderer.
+//! `Paint::paint()` and the existing `FrameBuilder` renderer.
 
 use crate::core::{Bounds, Logical, Point};
 use crate::render::RenderCommand;
-use crate::renderer::UiBatcher;
+use crate::frame_builder::FrameBuilder;
 
-/// Process a list of render commands into UiBatcher calls.
+/// Process a list of render commands into FrameBuilder calls.
 ///
 /// This function iterates through the commands and translates each one
-/// into the appropriate UiBatcher method call. It handles offset stacking
+/// into the appropriate FrameBuilder method call. It handles offset stacking
 /// internally for `PushOffset`/`PopOffset` commands.
 ///
 /// # Arguments
 ///
 /// * `commands` - The render commands to process
-/// * `batcher` - The batcher to submit commands to
+/// * `frame_builder` - The frame_builder to submit commands to
 /// * `initial_offset` - An initial offset to apply to all coordinates
 pub fn process_commands(
     commands: &[RenderCommand],
-    batcher: &mut UiBatcher,
+    frame_builder: &mut FrameBuilder,
     initial_offset: Point<Logical>,
 ) {
     // Stack to track nested offsets
@@ -41,7 +41,7 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                batcher.add_rect(adjusted_bounds, *fill, *stroke, *corner_radius);
+                frame_builder.add_rect(adjusted_bounds, *fill, *stroke, *corner_radius);
             }
             RenderCommand::Text {
                 content,
@@ -54,7 +54,7 @@ pub fn process_commands(
                     position.x + current_offset.x,
                     position.y + current_offset.y,
                 );
-                batcher.add_text(content, pos, *font_size, *color);
+                frame_builder.add_text(content, pos, *font_size, *color);
             }
             RenderCommand::Caret {
                 position,
@@ -66,7 +66,7 @@ pub fn process_commands(
                     position.y + current_offset.y,
                 );
                 let bounds = Bounds::from_xywh(pos.x, pos.y, 2.0, *height);
-                batcher.add_rect(bounds, *color, None, 0.0);
+                frame_builder.add_rect(bounds, *color, None, 0.0);
             }
             RenderCommand::PushClip { bounds } => {
                 let adjusted_bounds = Bounds::new(
@@ -75,16 +75,16 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                batcher.push_clip(adjusted_bounds);
+                frame_builder.push_clip(adjusted_bounds);
             }
             RenderCommand::PopClip => {
-                batcher.pop_clip();
+                frame_builder.pop_clip();
             }
             RenderCommand::PushCornerRadius { radius } => {
-                batcher.push_corner_radius(*radius);
+                frame_builder.push_corner_radius(*radius);
             }
             RenderCommand::PopCornerRadius => {
-                batcher.pop_corner_radius();
+                frame_builder.pop_corner_radius();
             }
             RenderCommand::PushOffset { offset: off } => {
                 // Save current offset before modifying
@@ -115,16 +115,16 @@ mod tests {
 
     #[test]
     fn test_process_rect_command() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![RenderCommand::rect(
             Bounds::from_xywh(10.0, 20.0, 100.0, 50.0),
             Color::RED,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 1);
-        let quad = &batcher.quad_instances()[0];
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.position, [10.0, 20.0]);
         assert_eq!(quad.size, [100.0, 50.0]);
         assert_eq!(quad.color, Color::RED.to_array());
@@ -132,22 +132,22 @@ mod tests {
 
     #[test]
     fn test_process_rect_with_offset() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![RenderCommand::rect(
             Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::RED,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(50.0, 25.0));
+        process_commands(&commands, &mut frame_builder, Point::new(50.0, 25.0));
 
-        assert_eq!(batcher.quad_count(), 1);
-        let quad = &batcher.quad_instances()[0];
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.position, [50.0, 25.0]);
     }
 
     #[test]
     fn test_process_rect_with_border() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![RenderCommand::rect_with_border(
             Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
             Color::WHITE,
@@ -155,17 +155,17 @@ mod tests {
             2.0,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 1);
-        let quad = &batcher.quad_instances()[0];
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.border_color, Color::BLACK.to_array());
         assert_eq!(quad.border_width, 2.0);
     }
 
     #[test]
     fn test_process_text_command() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![RenderCommand::text(
             "Hello",
             Point::new(10.0, 20.0),
@@ -173,10 +173,10 @@ mod tests {
             Color::BLACK,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.text_count(), 1);
-        let text = &batcher.text_requests()[0];
+        assert_eq!(frame_builder.text_count(), 1);
+        let text = &frame_builder.text_requests()[0];
         assert_eq!(text.content, "Hello");
         assert_eq!(text.position.x, 10.0);
         assert_eq!(text.position.y, 20.0);
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_process_text_with_offset() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![RenderCommand::text(
             "Hello",
             Point::new(10.0, 20.0),
@@ -193,32 +193,32 @@ mod tests {
             Color::BLACK,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(5.0, 10.0));
+        process_commands(&commands, &mut frame_builder, Point::new(5.0, 10.0));
 
-        assert_eq!(batcher.text_count(), 1);
-        let text = &batcher.text_requests()[0];
+        assert_eq!(frame_builder.text_count(), 1);
+        let text = &frame_builder.text_requests()[0];
         assert_eq!(text.position.x, 15.0);
         assert_eq!(text.position.y, 30.0);
     }
 
     #[test]
     fn test_process_corner_radius_commands() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![
             RenderCommand::PushCornerRadius { radius: 10.0 },
             RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 100.0), Color::RED),
             RenderCommand::PopCornerRadius,
         ];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 1);
-        assert_eq!(batcher.quad_instances()[0].corner_radius, 10.0);
+        assert_eq!(frame_builder.quad_count(), 1);
+        assert_eq!(frame_builder.quad_instances()[0].corner_radius, 10.0);
     }
 
     #[test]
     fn test_process_clip_commands() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
         let commands = vec![
             RenderCommand::PushClip { bounds: clip_bounds },
@@ -226,22 +226,22 @@ mod tests {
             RenderCommand::PopClip,
         ];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
         // Clip should be popped, so current_clip should be None
-        assert!(batcher.current_clip().is_none());
+        assert!(frame_builder.current_clip().is_none());
     }
 
     #[test]
     fn test_process_clip_with_offset() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
         let commands = vec![RenderCommand::PushClip { bounds: clip_bounds }];
 
-        process_commands(&commands, &mut batcher, Point::new(50.0, 25.0));
+        process_commands(&commands, &mut frame_builder, Point::new(50.0, 25.0));
 
         // Clip bounds should be adjusted by offset
-        let current_clip = batcher.current_clip();
+        let current_clip = frame_builder.current_clip();
         assert!(current_clip.is_some());
         let clip = current_clip.unwrap();
         assert_eq!(clip.left, 50.0);
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_process_offset_commands() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![
             RenderCommand::PushOffset {
                 offset: Point::new(100.0, 50.0),
@@ -260,16 +260,16 @@ mod tests {
             RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 25.0, 25.0), Color::BLUE),
         ];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 2);
-        assert_eq!(batcher.quad_instances()[0].position, [100.0, 50.0]);
-        assert_eq!(batcher.quad_instances()[1].position, [0.0, 0.0]);
+        assert_eq!(frame_builder.quad_count(), 2);
+        assert_eq!(frame_builder.quad_instances()[0].position, [100.0, 50.0]);
+        assert_eq!(frame_builder.quad_instances()[1].position, [0.0, 0.0]);
     }
 
     #[test]
     fn test_process_nested_offsets() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![
             RenderCommand::PushOffset {
                 offset: Point::new(10.0, 10.0),
@@ -284,43 +284,43 @@ mod tests {
             RenderCommand::PopOffset,
         ];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 3);
-        assert_eq!(batcher.quad_instances()[0].position, [10.0, 10.0]);
-        assert_eq!(batcher.quad_instances()[1].position, [30.0, 30.0]);
-        assert_eq!(batcher.quad_instances()[2].position, [10.0, 10.0]);
+        assert_eq!(frame_builder.quad_count(), 3);
+        assert_eq!(frame_builder.quad_instances()[0].position, [10.0, 10.0]);
+        assert_eq!(frame_builder.quad_instances()[1].position, [30.0, 30.0]);
+        assert_eq!(frame_builder.quad_instances()[2].position, [10.0, 10.0]);
     }
 
     #[test]
     fn test_process_multiple_commands() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands = vec![
             RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
             RenderCommand::text("Hello", Point::new(10.0, 10.0), 16.0, Color::BLACK),
             RenderCommand::rect(Bounds::from_xywh(0.0, 60.0, 100.0, 50.0), Color::BLUE),
         ];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_count(), 2);
-        assert_eq!(batcher.text_count(), 1);
+        assert_eq!(frame_builder.quad_count(), 2);
+        assert_eq!(frame_builder.text_count(), 1);
     }
 
     #[test]
     fn test_process_empty_commands() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let commands: Vec<RenderCommand> = vec![];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-        assert!(batcher.quad_instances().is_empty());
-        assert!(batcher.text_requests().is_empty());
+        assert!(frame_builder.quad_instances().is_empty());
+        assert!(frame_builder.text_requests().is_empty());
     }
 
     #[test]
     fn test_process_caret_command() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let cursor_color = Color::rgb(0.3, 0.67, 0.97);
         let commands = vec![RenderCommand::caret(
             Point::new(50.0, 10.0),
@@ -328,11 +328,11 @@ mod tests {
             cursor_color,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
         // Caret should be rendered as a 2px-wide rect
-        assert_eq!(batcher.quad_count(), 1);
-        let quad = &batcher.quad_instances()[0];
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.position, [50.0, 10.0]);
         assert_eq!(quad.size, [2.0, 20.0]);
         assert_eq!(quad.color, cursor_color.to_array());
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_process_caret_with_offset() {
-        let mut batcher = UiBatcher::new();
+        let mut frame_builder = FrameBuilder::new();
         let cursor_color = Color::rgb(0.3, 0.67, 0.97);
         let commands = vec![RenderCommand::caret(
             Point::new(10.0, 5.0),
@@ -348,9 +348,9 @@ mod tests {
             cursor_color,
         )];
 
-        process_commands(&commands, &mut batcher, Point::new(100.0, 50.0));
+        process_commands(&commands, &mut frame_builder, Point::new(100.0, 50.0));
 
-        let quad = &batcher.quad_instances()[0];
+        let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.position, [110.0, 55.0]);
     }
 }

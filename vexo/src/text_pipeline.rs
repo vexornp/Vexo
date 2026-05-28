@@ -1,6 +1,6 @@
 use crate::core::{Physical, Scale, Size};
 use crate::render::{RenderError, WgpuBackend};
-use crate::renderer::UiBatcher;
+use crate::frame_builder::FrameBuilder;
 use crate::text_processor::{CombinedPreparedText, TextProcessor};
 
 /// Text preparation and GPU submission pipeline.
@@ -24,34 +24,34 @@ impl TextPipeline {
         }
     }
 
-    /// Stage 1: Collect text from the batcher and prepare for rendering.
+    /// Stage 1: Collect text from the frame_builder and prepare for rendering.
     pub fn collect_text(
         &mut self,
-        batcher: &mut UiBatcher,
+        frame_builder: &mut FrameBuilder,
         font_system: &mut glyphon::FontSystem,
         scale: Scale,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
         self.text_processor
-            .collect_text(batcher, font_system, scale, viewport_physical)
+            .collect_text(frame_builder, font_system, scale, viewport_physical)
     }
 
     /// Stage 2: Execute the render on the backend.
     pub fn execute_render(
         &mut self,
         backend: &mut WgpuBackend,
-        batcher: &UiBatcher,
+        frame_builder: &FrameBuilder,
         mut prepared_text: CombinedPreparedText,
         font_system: &mut glyphon::FontSystem,
     ) -> Result<(), RenderError> {
         // Upload geometry data to GPU
-        backend.upload_geometry(batcher);
+        backend.upload_geometry(frame_builder);
 
         // Prepare text for rendering
         backend.prepare_text(font_system, prepared_text.as_text_areas());
 
         // Execute the render pass
-        let instance_count = batcher.quad_count();
+        let instance_count = frame_builder.quad_count();
         backend.execute_render_pass(instance_count)?;
 
         Ok(())

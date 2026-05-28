@@ -6,7 +6,7 @@
 use glyphon::FontSystem;
 
 use crate::core::{Physical, Scale, Size};
-use crate::renderer::UiBatcher;
+use crate::frame_builder::FrameBuilder;
 
 /// Configuration for the render backend.
 #[derive(Debug, Clone)]
@@ -60,13 +60,13 @@ impl Default for RenderConfig {
 /// - Multiple rendering implementations (wgpu, mock, etc.)
 /// - Clear separation of concerns
 pub trait RenderBackend {
-    /// Prepare render data from the batcher.
+    /// Prepare render data from the frame_builder.
     ///
     /// This method processes the accumulated render commands and
     /// prepares them for rendering.
     fn prepare(
         &mut self,
-        batcher: &mut UiBatcher,
+        frame_builder: &mut FrameBuilder,
         font_system: &mut FontSystem,
         config: RenderConfig,
     );

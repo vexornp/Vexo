@@ -12,7 +12,7 @@ pub struct TextRequest {
 
 pub type Bounds = crate::core::Bounds<Logical>;
 
-pub struct UiBatcher {
+pub struct FrameBuilder {
     text_requests: Vec<TextRequest>,
     quad_instances: Vec<QuadInstance>,
 
@@ -20,13 +20,13 @@ pub struct UiBatcher {
     clip_stack: Vec<Bounds>,
 }
 
-impl Default for UiBatcher {
+impl Default for FrameBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl UiBatcher {
+impl FrameBuilder {
     pub fn new() -> Self {
         Self {
             text_requests: Vec::new(),
