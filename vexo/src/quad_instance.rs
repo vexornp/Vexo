@@ -1,5 +1,7 @@
 use crate::core::{Logical, Point, Size};
 
+pub const NO_CLIP_BOUNDS: [f32; 4] = [-1.0, -1.0, -1.0, -1.0];
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct QuadInstance {
@@ -31,7 +33,7 @@ impl QuadInstance {
             border_color: border_color.to_array(),
             border_width,
             corner_radius,
-            clip_bounds: [-1.0, -1.0, -1.0, -1.0], // No clipping by default
+            clip_bounds: NO_CLIP_BOUNDS, // No clipping by default
             _padding: [0.0; 2],
         }
     }

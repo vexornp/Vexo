@@ -34,15 +34,15 @@ impl MockBackend {
 
     pub fn prepare(&mut self, batcher: &UiBatcher) {
         self.commands.clear();
-        self.last_rect_count = batcher.quad_instances.len();
-        self.last_text_count = batcher.text_requests.len();
+        self.last_rect_count = batcher.quad_count();
+        self.last_text_count = batcher.text_count();
 
-        for quad in &batcher.quad_instances {
+        for quad in batcher.quad_instances() {
             self.commands
                 .push(format!("rect at {:?} size {:?}", quad.position, quad.size));
         }
 
-        for text in &batcher.text_requests {
+        for text in batcher.text_requests() {
             self.commands.push(format!(
                 "text '{}' at {:?} size {}",
                 text.content, text.position, text.size

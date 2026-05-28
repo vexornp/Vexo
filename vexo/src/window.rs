@@ -287,8 +287,6 @@ impl<A: Application + 'static> WindowState<A> {
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
-        self.batcher.set_screen_size(logical_size);
-
         // 7. Layout dirty render objects
         self.three_tree_pipeline.layout(
             logical_size,
@@ -328,14 +326,7 @@ impl<A: Application + 'static> WindowState<A> {
                     self.batcher.pop_clip();
                 }
                 crate::render::RenderCommand::Text { content, position, font_size, color, max_width } => {
-                    // Add text request for glyphon processing
-                    self.batcher.text_requests.push(crate::renderer::TextRequest {
-                        content,
-                        position,
-                        size: font_size,
-                        color,
-                        clip_bounds: self.batcher.current_clip(),
-                    });
+                    self.batcher.add_text(content, position, font_size, color);
                     let _ = max_width; // TODO: Handle max_width for text wrapping
                 }
                 crate::render::RenderCommand::Caret {

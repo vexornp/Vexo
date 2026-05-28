@@ -10,7 +10,26 @@ use wgpu::util::DeviceExt;
 use crate::core::{Color, Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::renderer::{UiBatcher, Vertex};
+use crate::renderer::UiBatcher;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    pos: [f32; 3],
+}
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
 
 /// Global uniforms passed to shaders.
 #[repr(C)]
@@ -381,11 +400,11 @@ impl WgpuBackend {
 
     /// Upload geometry from batcher to GPU buffers.
     pub fn upload_geometry(&mut self, batcher: &UiBatcher) {
-        if !batcher.quad_instances.is_empty() {
+        if batcher.has_quads() {
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(&batcher.quad_instances),
+                bytemuck::cast_slice(batcher.quad_instances()),
             );
         }
     }

@@ -143,7 +143,7 @@ impl TextProcessor {
         scale: Scale,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
-        let text_requests = std::mem::take(&mut batcher.text_requests);
+        let text_requests = batcher.take_text_requests();
         let regular = self.process_text_requests(
             font_system,
             text_requests,

@@ -54,7 +54,7 @@ pub fn process_commands(
                     position.x + current_offset.x,
                     position.y + current_offset.y,
                 );
-                batcher.add_text(content.clone(), pos, *font_size, *color);
+                batcher.add_text(content, pos, *font_size, *color);
             }
             RenderCommand::Caret {
                 position,
@@ -123,8 +123,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 1);
-        let quad = &batcher.quad_instances[0];
+        assert_eq!(batcher.quad_count(), 1);
+        let quad = &batcher.quad_instances()[0];
         assert_eq!(quad.position, [10.0, 20.0]);
         assert_eq!(quad.size, [100.0, 50.0]);
         assert_eq!(quad.color, Color::RED.to_array());
@@ -140,8 +140,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(50.0, 25.0));
 
-        assert_eq!(batcher.quad_instances.len(), 1);
-        let quad = &batcher.quad_instances[0];
+        assert_eq!(batcher.quad_count(), 1);
+        let quad = &batcher.quad_instances()[0];
         assert_eq!(quad.position, [50.0, 25.0]);
     }
 
@@ -157,8 +157,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 1);
-        let quad = &batcher.quad_instances[0];
+        assert_eq!(batcher.quad_count(), 1);
+        let quad = &batcher.quad_instances()[0];
         assert_eq!(quad.border_color, Color::BLACK.to_array());
         assert_eq!(quad.border_width, 2.0);
     }
@@ -175,8 +175,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.text_requests.len(), 1);
-        let text = &batcher.text_requests[0];
+        assert_eq!(batcher.text_count(), 1);
+        let text = &batcher.text_requests()[0];
         assert_eq!(text.content, "Hello");
         assert_eq!(text.position.x, 10.0);
         assert_eq!(text.position.y, 20.0);
@@ -195,8 +195,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(5.0, 10.0));
 
-        assert_eq!(batcher.text_requests.len(), 1);
-        let text = &batcher.text_requests[0];
+        assert_eq!(batcher.text_count(), 1);
+        let text = &batcher.text_requests()[0];
         assert_eq!(text.position.x, 15.0);
         assert_eq!(text.position.y, 30.0);
     }
@@ -212,9 +212,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 1);
-        // Corner radius should be applied from context since command radius is 0.0
-        assert_eq!(batcher.quad_instances[0].corner_radius, 10.0);
+        assert_eq!(batcher.quad_count(), 1);
+        assert_eq!(batcher.quad_instances()[0].corner_radius, 10.0);
     }
 
     #[test]
@@ -263,11 +262,9 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 2);
-        // First rect should be at (100.0, 50.0) due to push offset
-        assert_eq!(batcher.quad_instances[0].position, [100.0, 50.0]);
-        // Second rect should be at (0.0, 0.0) after pop offset
-        assert_eq!(batcher.quad_instances[1].position, [0.0, 0.0]);
+        assert_eq!(batcher.quad_count(), 2);
+        assert_eq!(batcher.quad_instances()[0].position, [100.0, 50.0]);
+        assert_eq!(batcher.quad_instances()[1].position, [0.0, 0.0]);
     }
 
     #[test]
@@ -289,13 +286,10 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 3);
-        // First rect: offset (10.0, 10.0)
-        assert_eq!(batcher.quad_instances[0].position, [10.0, 10.0]);
-        // Second rect: offset (10.0 + 20.0, 10.0 + 20.0) = (30.0, 30.0)
-        assert_eq!(batcher.quad_instances[1].position, [30.0, 30.0]);
-        // Third rect: back to offset (10.0, 10.0)
-        assert_eq!(batcher.quad_instances[2].position, [10.0, 10.0]);
+        assert_eq!(batcher.quad_count(), 3);
+        assert_eq!(batcher.quad_instances()[0].position, [10.0, 10.0]);
+        assert_eq!(batcher.quad_instances()[1].position, [30.0, 30.0]);
+        assert_eq!(batcher.quad_instances()[2].position, [10.0, 10.0]);
     }
 
     #[test]
@@ -309,8 +303,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert_eq!(batcher.quad_instances.len(), 2);
-        assert_eq!(batcher.text_requests.len(), 1);
+        assert_eq!(batcher.quad_count(), 2);
+        assert_eq!(batcher.text_count(), 1);
     }
 
     #[test]
@@ -320,8 +314,8 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
-        assert!(batcher.quad_instances.is_empty());
-        assert!(batcher.text_requests.is_empty());
+        assert!(batcher.quad_instances().is_empty());
+        assert!(batcher.text_requests().is_empty());
     }
 
     #[test]
@@ -337,8 +331,8 @@ mod tests {
         process_commands(&commands, &mut batcher, Point::new(0.0, 0.0));
 
         // Caret should be rendered as a 2px-wide rect
-        assert_eq!(batcher.quad_instances.len(), 1);
-        let quad = &batcher.quad_instances[0];
+        assert_eq!(batcher.quad_count(), 1);
+        let quad = &batcher.quad_instances()[0];
         assert_eq!(quad.position, [50.0, 10.0]);
         assert_eq!(quad.size, [2.0, 20.0]);
         assert_eq!(quad.color, cursor_color.to_array());
@@ -356,7 +350,7 @@ mod tests {
 
         process_commands(&commands, &mut batcher, Point::new(100.0, 50.0));
 
-        let quad = &batcher.quad_instances[0];
+        let quad = &batcher.quad_instances()[0];
         assert_eq!(quad.position, [110.0, 55.0]);
     }
 }

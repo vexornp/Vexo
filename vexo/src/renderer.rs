@@ -1,24 +1,5 @@
-use crate::core::{Color, Logical, Point, Size, Stroke};
-use crate::quad_instance;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub pos: [f32; 3],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
+use crate::core::{Color, Logical, Point, Stroke};
+use crate::quad_instance::{self, QuadInstance};
 
 pub struct TextRequest {
     pub content: String,
@@ -32,12 +13,11 @@ pub struct TextRequest {
 pub type Bounds = crate::core::Bounds<Logical>;
 
 pub struct UiBatcher {
-    pub text_requests: Vec<TextRequest>,
-    pub quad_instances: Vec<quad_instance::QuadInstance>,
+    text_requests: Vec<TextRequest>,
+    quad_instances: Vec<QuadInstance>,
 
-    screen_size: Size<Logical>, // Logical size: pixel_size * scale_factor
-    corner_radius_stack: Vec<f32>, // Stack for nested radius contexts
-    clip_stack: Vec<Bounds>, // Stack for clipping regions
+    corner_radius_stack: Vec<f32>,
+    clip_stack: Vec<Bounds>,
 }
 
 impl Default for UiBatcher {
@@ -51,7 +31,6 @@ impl UiBatcher {
         Self {
             text_requests: Vec::new(),
             quad_instances: Vec::new(),
-            screen_size: Size::new(1.0, 1.0),
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
         }
@@ -64,14 +43,28 @@ impl UiBatcher {
         self.clip_stack.clear();
     }
 
-    /// Set logical screen size.
-    pub fn set_screen_size(&mut self, size: Size<Logical>) {
-        self.screen_size = size;
+    pub fn quad_count(&self) -> usize {
+        self.quad_instances.len()
     }
 
-    /// Get the logical screen size.
-    pub fn screen_size(&self) -> Size<Logical> {
-        self.screen_size
+    pub fn has_quads(&self) -> bool {
+        !self.quad_instances.is_empty()
+    }
+
+    pub fn quad_instances(&self) -> &[QuadInstance] {
+        &self.quad_instances
+    }
+
+    pub fn take_text_requests(&mut self) -> Vec<TextRequest> {
+        std::mem::take(&mut self.text_requests)
+    }
+
+    pub fn text_count(&self) -> usize {
+        self.text_requests.len()
+    }
+
+    pub fn text_requests(&self) -> &[TextRequest] {
+        &self.text_requests
     }
 
     /// Push a corner radius onto the context stack.
@@ -128,13 +121,9 @@ impl UiBatcher {
             self.current_corner_radius()
         };
 
-        // Get current clip bounds, or use negative values to indicate no clipping
-        let clip_bounds = match self.current_clip() {
-            Some(b) => b.to_array_xywh(),
-            None => [-1.0, -1.0, -1.0, -1.0], // No clipping
-        };
+        let clip_bounds = self.current_clip().map_or(quad_instance::NO_CLIP_BOUNDS, |b| b.to_array_xywh());
 
-        self.quad_instances.push(quad_instance::QuadInstance {
+        self.quad_instances.push(QuadInstance {
             position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
             color: fill.to_array(),
@@ -148,7 +137,7 @@ impl UiBatcher {
 
     pub fn add_text(
         &mut self,
-        content: String,
+        content: impl Into<String>,
         position: Point<Logical>,
         size: f32,
         color: impl Into<Color>,
@@ -159,7 +148,7 @@ impl UiBatcher {
         let clip_bounds = self.current_clip();
 
         self.text_requests.push(TextRequest {
-            content,
+            content: content.into(),
             position,
             size,
             color,

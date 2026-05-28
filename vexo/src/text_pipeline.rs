@@ -51,7 +51,7 @@ impl TextPipeline {
         backend.prepare_text(font_system, prepared_text.as_text_areas());
 
         // Execute the render pass
-        let instance_count = batcher.quad_instances.len();
+        let instance_count = batcher.quad_count();
         backend.execute_render_pass(instance_count)?;
 
         Ok(())
