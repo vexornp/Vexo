@@ -27,8 +27,6 @@ pub struct WindowState<A: Application + 'static> {
     font_system: glyphon::FontSystem,
     // Scale factor for logical-to-physical conversion
     scale: Scale,
-    // Physical cursor position
-    cursor_pos: Point<Physical>,
 
     // User's application state
     user_app_state: A::State,
@@ -64,7 +62,6 @@ impl<A: Application + 'static> WindowState<A> {
             layout_engine,
             font_system,
             scale: Scale::new(1.0),
-            cursor_pos: Point::new(0.0, 0.0),
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
@@ -114,10 +111,6 @@ impl<A: Application + 'static> WindowState<A> {
 
             // User input events with special handling
             WindowEvent::PointerMoved { position, .. } => {
-                // Store physical coords for rendering
-                self.cursor_pos =
-                    Point::<Physical>::new(position.x as f32, position.y as f32);
-
                 // Pass to widget tree for hit-testing
                 if let Some(input_event) =
                     InputEvent::from_winit(event, self.scale)
