@@ -24,7 +24,7 @@ mod utils;
 mod window;
 mod text_cache;
 mod text_processor;
-mod render_pipeline;
+mod text_pipeline;
 pub use window::WindowState;
 
 pub use state::CursorBlinkState;

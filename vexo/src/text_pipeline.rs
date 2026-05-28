@@ -3,21 +3,21 @@ use crate::render::{RenderError, WgpuBackend};
 use crate::renderer::UiBatcher;
 use crate::text_processor::{CombinedPreparedText, TextProcessor};
 
-/// Rendering pipeline that orchestrates the stages of rendering.
+/// Text preparation and GPU submission pipeline.
 ///
-/// This separates the render pipeline concerns from the main window state,
-/// making each stage independently testable.
-pub struct RenderPipeline {
+/// Wraps glyphon text processing and orchestrates the final GPU
+/// render pass (geometry upload + text render + draw call).
+pub struct TextPipeline {
     text_processor: TextProcessor,
 }
 
-impl Default for RenderPipeline {
+impl Default for TextPipeline {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RenderPipeline {
+impl TextPipeline {
     pub fn new() -> Self {
         Self {
             text_processor: TextProcessor::new(),

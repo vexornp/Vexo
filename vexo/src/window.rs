@@ -11,7 +11,7 @@ use crate::core::{Logical, Physical, Point, Scale, Size};
 use crate::input::{InputEvent, Modifiers};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
-use crate::render_pipeline::RenderPipeline;
+use crate::text_pipeline::TextPipeline;
 use crate::{ThreeTreePipeline, Widget as RetainWidget};
 use crate::Application;
 
@@ -34,11 +34,11 @@ pub struct WindowState<A: Application + 'static> {
     user_app_state: A::State,
     _phantom: std::marker::PhantomData<A>,
 
-    // Render pipeline for orchestrating render stages
-    render_pipeline: RenderPipeline,
+    // Text preparation (glyphon) and GPU submission
+    text_pipeline: TextPipeline,
 
-    // Three-tree pipeline (new retain-mode system)
-    retain_pipeline: Option<ThreeTreePipeline>,
+    // Widget/element/render-object trees, reconciliation, and painting
+    three_tree_pipeline: ThreeTreePipeline,
 
     /// Whether a frame needs rendering. Set by state changes, resize,
     /// cursor blink toggle, etc. Cleared after rendering.
@@ -67,8 +67,8 @@ impl<A: Application + 'static> WindowState<A> {
             cursor_pos: Point::new(0.0, 0.0),
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
-            render_pipeline: RenderPipeline::new(),
-            retain_pipeline: Some(ThreeTreePipeline::new()),
+            text_pipeline: TextPipeline::new(),
+            three_tree_pipeline: ThreeTreePipeline::new(),
             needs_redraw: true,
         })
     }
@@ -171,10 +171,7 @@ impl<A: Application + 'static> WindowState<A> {
         let modifiers = Modifiers::default();
 
         let (frame_needed, rebuilds_pending) = {
-            let pipeline = match &mut self.retain_pipeline {
-                Some(p) => p,
-                None => return,
-            };
+            let pipeline = &mut self.three_tree_pipeline;
 
             let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system);
 
@@ -237,17 +234,13 @@ impl<A: Application + 'static> WindowState<A> {
     /// Check if cursor blink has toggled. Returns true if visibility changed
     /// (caller should request a frame).
     pub fn check_cursor_blink(&mut self) -> bool {
-        self.retain_pipeline
-            .as_mut()
-            .map_or(false, |p| p.check_cursor_blink())
+        self.three_tree_pipeline.check_cursor_blink()
     }
 
     /// Check if this window needs a redraw for cursor blink.
     /// Returns true if a TextEdit is focused (needs blink ticking).
     pub fn needs_blink_redraw(&self) -> bool {
-        self.retain_pipeline
-            .as_ref()
-            .map_or(false, |p| p.focused_element().is_some())
+        self.three_tree_pipeline.focused_element().is_some()
     }
 
     /// Render using the three-tree retain-mode pipeline.
@@ -267,10 +260,7 @@ impl<A: Application + 'static> WindowState<A> {
 
         // 2. Check if there's anything to render
         let (has_dirty, needs_reconcile) = {
-            let pipeline = match &mut self.retain_pipeline {
-                Some(p) => p,
-                None => return Ok(()),
-            };
+            let pipeline = &self.three_tree_pipeline;
 
             (
                 pipeline.needs_layout() || pipeline.needs_paint(),
@@ -290,20 +280,12 @@ impl<A: Application + 'static> WindowState<A> {
         log::debug!("[RetainMode] === FRAME START ===");
 
         // 4. Perform state-driven rebuilds
-        let pipeline = match &mut self.retain_pipeline {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-        pipeline.perform_rebuilds();
+        self.three_tree_pipeline.perform_rebuilds();
 
         // 5. Only call view() + update() when something external triggered it
         if needs_reconcile {
             let widget_tree = self.view();
-            let pipeline = match &mut self.retain_pipeline {
-                Some(p) => p,
-                None => return Ok(()),
-            };
-            pipeline.update(widget_tree);
+            self.three_tree_pipeline.update(widget_tree);
         }
 
         // 6. Compute logical size
@@ -315,26 +297,22 @@ impl<A: Application + 'static> WindowState<A> {
         self.batcher.set_screen_size(logical_size);
 
         // 7. Layout dirty render objects
-        let pipeline = match &mut self.retain_pipeline {
-            Some(p) => p,
-            None => return Ok(()),
-        };
-        pipeline.layout(
+        self.three_tree_pipeline.layout(
             logical_size,
             self.layout_engine.as_mut(),
             &mut self.font_system,
         );
 
         // 8. Inject cursor focus/blink state into render objects before paint
-        pipeline.prepare_cursor_state();
+        self.three_tree_pipeline.prepare_cursor_state();
 
         // 9. Paint dirty render objects
-        let commands = pipeline.paint();
+        let commands = self.three_tree_pipeline.paint();
 
         log::debug!("[RetainMode] === FRAME END ===");
         log::debug!(
             "[RetainMode] Summary: {} elements retained",
-            pipeline.element_registry().len()
+            self.three_tree_pipeline.element_registry().len()
         );
         log::debug!("========================================\n");
 
@@ -392,7 +370,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.backend.update_viewport(physical_size);
 
         // 12. Collect text through glyphon
-        let prepared_text = self.render_pipeline.collect_text(
+        let prepared_text = self.text_pipeline.collect_text(
             &mut self.batcher,
             &mut self.font_system,
             scale,
@@ -400,7 +378,7 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 13. Execute render
-        self.render_pipeline
+        self.text_pipeline
             .execute_render(
                 &mut self.backend,
                 &self.batcher,
@@ -418,10 +396,7 @@ impl<A: Application + 'static> WindowState<A> {
         //     about_to_wait fires and can check cursor blink timing.
         //     request_redraw() is idempotent; the next render_retain() will
         //     early-return if nothing is dirty (blink hasn't toggled yet).
-        if self.retain_pipeline
-            .as_ref()
-            .map_or(false, |p| p.focused_element().is_some())
-        {
+        if self.three_tree_pipeline.focused_element().is_some() {
             self.request_frame();
         }
 
