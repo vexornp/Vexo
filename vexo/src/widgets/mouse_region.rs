@@ -315,6 +315,7 @@ impl Element for MouseRegionElement {
         &mut self,
         _event: &crate::input::InputEvent,
         _context: &mut EventContext,
+        _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         // MouseRegion doesn't handle pointer events directly —
         // cursor resolution and hover dispatch happen in the pipeline.

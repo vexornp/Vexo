@@ -12,7 +12,6 @@ use super::element::Element;
 use super::element_context::ElementContext;
 use super::key::WidgetKey;
 use super::widgets::Widget;
-use super::widgets::TextEdit;
 use super::elements::RenderObjectElement;
 use super::EventContext;
 use super::focus::attachment::FocusAttachment;
@@ -71,6 +70,36 @@ pub trait State: 'static {
     ///
     /// The default implementation does nothing (no reactive fields).
     fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {}
+
+    /// Whether this element should request focus when clicked.
+    ///
+    /// Only widgets that accept text input (like TextEdit) should return `true`.
+    /// Most widgets (hover effects, animations, counters) should return `false`
+    /// to avoid stealing focus from descendant text fields.
+    fn requests_focus_on_click(&self) -> bool {
+        false
+    }
+
+    /// Wire up controller callbacks for widgets that manage controllers
+    /// (e.g., TextEdit with TextEditingController).
+    ///
+    /// Override this if your state needs to connect a controller's change
+    /// notifications to the element's dirty callback. The widget is passed
+    /// as `&mut dyn Any` so the state can downcast it to the concrete type.
+    ///
+    /// The default implementation does nothing.
+    fn wire_controller_callbacks(&mut self, _widget: &mut dyn Any, _dirty_callback: Arc<dyn Fn() + Send + Sync>) {}
+
+    /// Handle an input event, delegating from StatefulElement::on_event().
+    ///
+    /// Override this if your widget needs to process events (e.g., TextEdit
+    /// handling keyboard input). The widget is passed as `&dyn Any` for
+    /// downcasting. Returns `Some(..)` if the event was consumed.
+    ///
+    /// The default implementation does nothing and returns `None`.
+    fn on_event(&mut self, _widget: &dyn Any, _event: &InputEvent, _ctx: &mut crate::EventContext) -> Option<Box<dyn Any>> {
+        None
+    }
 }
 
 /// Wrapper for simple state types that don't need reactive fields.
@@ -402,13 +431,18 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         // Store state in StateStorage
         context.insert_state(element_id, state);
 
-        // Wire controller dirty callback for TextEdit widgets.
-        if let Some(text_edit) = (&mut self.widget as &mut dyn Any).downcast_mut::<TextEdit>() {
+        // Wire controller callbacks via State::wire_controller_callbacks()
+        // This replaces TextEdit-specific downcast logic — the State decides
+        // what controller callbacks to wire, following Flutter's model where
+        // StatefulElement has no widget-specific knowledge.
+        {
             let tx = context.dirty_sender.clone();
             let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
                 let _ = tx.send(element_id);
             });
-            text_edit.wire_controller_dirty_callback(dirty_callback);
+            // State was just stored in StateStorage, retrieve it to call wire_controller_callbacks
+            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
+            state_ref.wire_controller_callbacks(&mut self.widget as &mut dyn Any, dirty_callback);
         }
 
         // Build the child widget tree using BuildContext
@@ -541,34 +575,17 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         &mut self,
         event: &InputEvent,
         context: &mut EventContext,
+        state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
-        // For keyboard events, check if this element is focused
-        if let InputEvent::Keyboard { .. } = event {
-            if let Some(id) = self.id {
-                if context.is_focused(id) {
-                    // Delegate to the widget's handle_event if it's a TextEdit
-                    if let Some(text_edit) = self.widget.as_any().downcast_ref::<TextEdit>() {
-                        return text_edit.handle_event(event, context);
-                    }
-                }
-            }
-        }
-
-        // For pointer events (click to focus), check if pointer is inside
-        if let InputEvent::PointerButton {
-            state: crate::input::ButtonState::Pressed,
-            ..
-        } = event
-        {
-            if context.is_pointer_inside() {
-                if let Some(id) = self.id {
-                    context.request_focus(id);
-                    return Some(Box::new(()));
-                }
-            }
-        }
-
-        None
+        let element_id = match self.id {
+            Some(id) => id,
+            None => return None,
+        };
+        let state_ref = match state.get_mut::<W::State>(element_id) {
+            Some(s) => s,
+            None => return None,
+        };
+        state_ref.on_event(&self.widget, event, context)
     }
 
     fn focus_attachment(&self) -> &Option<FocusAttachment> {

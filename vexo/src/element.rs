@@ -41,6 +41,7 @@ pub trait Element {
         &mut self,
         _event: &crate::input::InputEvent,
         _context: &mut super::EventContext,
+        _state: &mut super::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         None
     }

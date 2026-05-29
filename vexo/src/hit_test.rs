@@ -48,8 +48,9 @@ pub struct HitTestResult {
     /// Absolute bounds of the hit target (in window coordinates).
     absolute_bounds: Option<Bounds<Logical>>,
     /// Mouse cursor annotations collected from MouseRegion render objects
-    /// in the hit path (root→deepest order, matching Flutter's annotation collection).
-    annotations: Vec<MouseTrackerAnnotation>,
+    /// in the hit path, paired with their element keys.
+    /// Root→deepest order, matching Flutter's annotation collection.
+    annotations: Vec<(ElementKey, MouseTrackerAnnotation)>,
 }
 
 impl HitTestResult {
@@ -122,17 +123,17 @@ impl HitTestResult {
         self.absolute_bounds
     }
 
-    /// Get the mouse cursor annotations collected from the hit path.
+    /// Get the mouse cursor annotations paired with their element keys.
     ///
     /// Annotations are in root→deepest order, matching how Flutter collects
     /// them during hit test. `MouseTracker::resolve_cursor()` walks these
     /// deepest-first (reversed).
-    pub fn annotations(&self) -> &[MouseTrackerAnnotation] {
+    pub fn annotations(&self) -> &[(ElementKey, MouseTrackerAnnotation)] {
         &self.annotations
     }
 
-    /// Set the annotations (used by hit test to collect from registry).
-    pub fn set_annotations(&mut self, annotations: Vec<MouseTrackerAnnotation>) {
+    /// Set the annotations paired with element keys.
+    pub fn set_annotations(&mut self, annotations: Vec<(ElementKey, MouseTrackerAnnotation)>) {
         self.annotations = annotations;
     }
 }
@@ -191,11 +192,15 @@ impl RenderObjectRegistry {
         };
 
         // Collect cursor annotations from MouseRegion render objects in the path.
-        // Annotations are in root→deepest order, matching Flutter's collection.
-        let annotations: Vec<MouseTrackerAnnotation> = result
+        // Pair each annotation with its element key. Root→deepest order.
+        let annotations: Vec<(ElementKey, MouseTrackerAnnotation)> = result
             .path()
             .iter()
-            .filter_map(|&ro_key| self.cursor_annotation(ro_key).cloned())
+            .filter_map(|&ro_key| {
+                let annotation = self.cursor_annotation(ro_key).cloned()?;
+                let element_key = self.element_for(ro_key)?;
+                Some((element_key, annotation))
+            })
             .collect();
         result.set_annotations(annotations);
 

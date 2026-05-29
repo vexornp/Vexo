@@ -161,6 +161,7 @@ impl Element for LeafRenderObjectElement {
         &mut self,
         _event: &crate::input::InputEvent,
         _context: &mut crate::EventContext,
+        _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         // Leaf elements (like Text) don't handle events by default
         None

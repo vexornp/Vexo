@@ -19,10 +19,6 @@ use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
 use super::element_state::StateStorage;
 
-// ============================================================================
-// EVENT HANDLER
-// ============================================================================
-
 /// Zero-sized struct that serves as a namespace for event handling logic.
 ///
 /// All methods are associated functions that take explicit parameters instead
@@ -134,10 +130,6 @@ impl EventHandler {
         let bounds = hit_result.absolute_bounds().unwrap_or_default();
 
         // 3. Bubble event up the element path (deepest to shallowest)
-        // This matches Flutter's event propagation: innermost element gets
-        // the event first, then it bubbles up to parent elements.
-        // Modifier elements like GestureDetector can intercept events
-        // before they reach the child.
         let element_path = hit_result.element_path();
         let mut any_message: Option<Box<dyn Any>> = None;
 
@@ -145,25 +137,24 @@ impl EventHandler {
         for &element_id in element_path.iter().rev() {
             if let Some(element) = element_registry.get_mut(element_id) {
                 let mut ctx = EventContext::with_build_owner(
+                    element_id,
                     position,
                     focus_manager.primary_focus_element(),
                     bounds,
                     modifiers,
-                    state,
                     font_system,
                     build_owner,
                     dirty_sender,
                 );
 
-                let message = element.on_event(event, &mut ctx);
+                let message = element.on_event(event, &mut ctx, state);
 
                 // Handle focus requests from this element
                 if let Some(focus_element) = ctx.focus_request() {
-                // Focus node must exist — all mounted elements have FocusAttachments.
-                let node_id = focus_manager
-                    .node_for_element(focus_element)
-                    .expect("Focus node must exist — all mounted elements have FocusAttachments");
-                focus_manager.request_focus(node_id);
+                    let node_id = focus_manager
+                        .node_for_element(focus_element)
+                        .expect("Focus node must exist — all mounted elements have FocusAttachments");
+                    focus_manager.request_focus(node_id);
                 } else if ctx.should_clear_focus() {
                     focus_manager.unfocus();
                 }
@@ -207,11 +198,11 @@ impl EventHandler {
         let bounds = Bounds::default();
 
         let mut ctx = EventContext::with_build_owner(
+            focused,
             Point::zero(),
             focus_manager.primary_focus_element(),
             bounds,
             modifiers,
-            state,
             font_system,
             build_owner,
             dirty_sender,
@@ -219,27 +210,22 @@ impl EventHandler {
 
         let any_message = element_registry
             .get_mut(focused)?
-            .on_event(event, &mut ctx);
+            .on_event(event, &mut ctx, state);
 
         // Handle focus requests
         if let Some(focus_element) = ctx.focus_request() {
-        // Focus node must exist — all mounted elements have FocusAttachments.
-        let node_id = focus_manager
-            .node_for_element(focus_element)
-            .expect("Focus node must exist — all mounted elements have FocusAttachments");
-        focus_manager.request_focus(node_id);
+            let node_id = focus_manager
+                .node_for_element(focus_element)
+                .expect("Focus node must exist — all mounted elements have FocusAttachments");
+            focus_manager.request_focus(node_id);
         } else if ctx.should_clear_focus() {
             focus_manager.unfocus();
         }
 
-        // Return the message directly (already Box<dyn Any>)
         any_message
     }
 
     /// Hit test at a given position.
-    ///
-    /// Determines which render object (if any) is at the given position.
-    /// Returns a `HitTestResult` containing the path from root to the hit target.
     pub fn hit_test(
         render_objects: &RenderObjectRegistry,
         position: Position<Logical, Absolute>,

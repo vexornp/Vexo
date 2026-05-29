@@ -291,6 +291,7 @@ impl Element for GestureDetectorElement {
         &mut self,
         event: &InputEvent,
         context: &mut EventContext,
+        _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         if let InputEvent::PointerButton { state, .. } = event {
             if context.is_pointer_inside() {
@@ -519,12 +520,16 @@ mod tests {
         let mut state = crate::StateStorage::new();
         let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
         let mut ctx = EventContext::new(
+            element_id,
             Point::new(50.0, 25.0),
             None,
             bounds,
             crate::input::Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
 
@@ -534,7 +539,7 @@ mod tests {
             state: ButtonState::Pressed,
         };
 
-        let result = elem.on_event(&event, &mut ctx);
+        let result = elem.on_event(&event, &mut ctx, &mut state);
         assert!(result.is_some());
         assert!(called.get());
     }
@@ -550,12 +555,16 @@ mod tests {
         let mut state = crate::StateStorage::new();
         let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
         let mut ctx = EventContext::new(
+            element_id,
             Point::new(50.0, 25.0),
             None,
             bounds,
             crate::input::Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
 
@@ -565,7 +574,7 @@ mod tests {
             state: ButtonState::Released,
         };
 
-        let result = elem.on_event(&event, &mut ctx);
+        let result = elem.on_event(&event, &mut ctx, &mut state);
         assert!(result.is_some());
         assert!(called.get());
     }
@@ -578,12 +587,16 @@ mod tests {
         let mut state = crate::StateStorage::new();
         let mut font_system = create_test_font_system();
         let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
         let mut ctx = EventContext::new(
+            element_id,
             Point::new(200.0, 200.0), // Outside bounds
             None,
             bounds,
             crate::input::Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
 
@@ -593,7 +606,7 @@ mod tests {
             state: ButtonState::Pressed,
         };
 
-        let result = elem.on_event(&event, &mut ctx);
+        let result = elem.on_event(&event, &mut ctx, &mut state);
         assert!(result.is_none());
     }
 

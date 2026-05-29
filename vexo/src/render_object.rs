@@ -425,6 +425,20 @@ impl RenderObjectRegistry {
         self.cursor_annotations.get(key)
     }
 
+    /// Get the cursor annotation for an element.
+    ///
+    /// Used by hover dispatch to look up on_exit callbacks for elements
+    /// leaving hover (which are no longer in the hit path).
+    pub fn cursor_annotation_for_element(&self, element_key: ElementKey) -> Option<&MouseTrackerAnnotation> {
+        // Walk the element→render-object map to find the annotation
+        for (ro_key, &e_key) in &self.element_map {
+            if e_key == element_key {
+                return self.cursor_annotations.get(ro_key);
+            }
+        }
+        None
+    }
+
     /// Remove the cursor annotation for a render object.
     ///
     /// MouseRegion elements call this during unmount.

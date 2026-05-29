@@ -87,6 +87,84 @@ impl StatefulWidget for RetainCounter {
     }
 }
 
+// --- HoverableCard StatefulWidget ---
+
+/// A card that changes border on hover. Owns its own hover state
+/// so only this element rebuilds on mouse enter/exit.
+#[derive(Clone)]
+struct HoverableCard {
+    title: String,
+    editors: Vec<vexo::TextEditingController>,
+}
+
+struct HoverableCardState {
+    hovered: StatefulMutable<bool>,
+}
+
+impl RetainState for HoverableCardState {
+    fn set_dirty_callback(&mut self, cb: std::sync::Arc<dyn Fn() + Send + Sync>) {
+        self.hovered.set_dirty_callback(cb);
+    }
+}
+
+impl Default for HoverableCardState {
+    fn default() -> Self {
+        Self {
+            hovered: StatefulMutable::new(false),
+        }
+    }
+}
+
+impl HoverableCard {
+    fn new(title: &str, editors: Vec<vexo::TextEditingController>) -> Self {
+        Self {
+            title: title.to_string(),
+            editors,
+        }
+    }
+}
+
+impl StatefulWidget for HoverableCard {
+    type State = HoverableCardState;
+
+    fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+        let hovered = state.hovered.clone();
+        let border_color = if hovered.get() {
+            vexo::Color::rgb(0.2, 0.4, 1.0)
+        } else {
+            vexo::Color::rgb(0.5, 0.5, 0.8)
+        };
+        let border_width = if hovered.get() { 2.5 } else { 1.0 };
+
+        let mut column = Column::new().push(Text::new(&self.title));
+        for editor in &self.editors {
+            column = column.push(vexo::Focus::new(TextEdit::new(editor.clone())));
+        }
+
+        Box::new(
+            vexo::MouseRegion::new(Box::new(
+                DecoratedContainer::new(Box::new(column))
+                    .style(
+                        Style::new()
+                            .background(vexo::Color::rgb(0.95, 0.95, 1.0))
+                            .border(border_color, border_width)
+                            .corner_radius(8.0)
+                            .padding(8.0)
+                    ),
+            ))
+            .cursor(vexo::input::MouseCursor::System(vexo::SystemCursorKind::Pointer))
+            .on_enter({
+                let h = hovered.clone();
+                move || h.set(true)
+            })
+            .on_exit({
+                let h = hovered.clone();
+                move || h.set(false)
+            })
+        )
+    }
+}
+
 // --- The User's Code ---
 pub struct State {
     text_editor_controller: Option<vexo::TextEditingController>,
@@ -148,19 +226,10 @@ impl Application for State {
                 // Title
                 .push(Text::new("Focus Demo"))
                 .push(Text::new("Click a field to focus it. Click outside to unfocus."))
-                // Group A: Focus fields in a decorated container
-                .push(DecoratedContainer::new(Box::new(
-                    Column::new()
-                        .push(Text::new("Group A"))
-                        .push(vexo::Focus::new(TextEdit::new(a1.clone())))
-                        .push(vexo::Focus::new(TextEdit::new(a2.clone())))
-                ))
-                .style(
-                    Style::new()
-                        .background(vexo::Color::rgb(0.95, 0.95, 1.0))
-                        .border(vexo::Color::rgb(0.5, 0.5, 0.8), 1.0)
-                        .corner_radius(8.0)
-                        .padding(8.0)
+                // Group A: Focus fields in a hoverable card
+                .push(HoverableCard::new(
+                    "Group A",
+                    vec![a1.clone(), a2.clone()],
                 ))
                 // Group B: Focus fields in a decorated container
                 .push(DecoratedContainer::new(Box::new(

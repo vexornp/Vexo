@@ -207,12 +207,18 @@ impl<A: Application + 'static> WindowState<A> {
         if matches!(input_event, InputEvent::PointerMoved { .. }) {
             let absolute_position = crate::core::Position::<Logical, Absolute>::new(position.x, position.y);
             self.three_tree_pipeline.mouse_tracker_mut().update_mouse_position(absolute_position);
-            let new_cursor = self.three_tree_pipeline.cursor_at(absolute_position);
+            let (new_cursor, hover_changed) = self.three_tree_pipeline.cursor_at(absolute_position);
             if new_cursor != self.current_cursor {
                 self.current_cursor = new_cursor;
                 if let Some(win) = &self.window {
                     win.set_cursor(winit::cursor::Cursor::Icon(self.current_cursor.to_winit()));
                 }
+            }
+            // Hover enter/exit callbacks may have changed StatefulWidget state
+            // which sends its element key through the dirty channel, so
+            // request_frame() is enough — no full reconcile needed.
+            if hover_changed {
+                self.request_frame();
             }
         }
     }

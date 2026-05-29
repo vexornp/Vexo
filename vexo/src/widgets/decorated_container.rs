@@ -324,6 +324,7 @@ impl Element for DecoratedContainerElement {
         &mut self,
         _event: &InputEvent,
         _context: &mut EventContext,
+        _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         // DecoratedContainer doesn't handle events itself
         None

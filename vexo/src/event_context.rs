@@ -1,29 +1,29 @@
 //! Event context for input event handling.
 //!
-//! Provides context during element event handling.
-
-use std::sync::mpsc;
+//! Provides context during element event handling, including pointer position,
+//! focus state, and font system access. State storage is passed separately
+//! to `Element::on_event()` rather than being embedded here, to avoid
+//! borrow conflicts when StatefulElement needs both `&mut W::State` and
+//! `&mut EventContext`.
 
 use crate::core::{Bounds, Logical, Point};
 use crate::input::Modifiers;
 
-use super::{ElementKey, StateStorage};
+use super::id::ElementKey;
 use super::build_owner::BuildOwner;
-
-// ============================================================================
-// EVENT CONTEXT
-// ============================================================================
 
 /// Context provided to elements during event handling.
 ///
 /// Contains information about the event environment:
+/// - The element's own ID (for focus requests and focus checks)
 /// - Pointer position for hit testing
 /// - Focus state for keyboard event routing
-/// - Element bounds for position calculations
-/// - State storage for element-local state
-/// - Build owner for marking elements dirty from event handlers
 /// - Font system for text editing operations
+/// - Build owner for marking elements dirty from event handlers
 pub struct EventContext<'a> {
+    /// The element receiving this event.
+    element_id: ElementKey,
+
     /// Current pointer position in logical coordinates.
     pub pointer_position: Point<Logical>,
 
@@ -36,27 +36,16 @@ pub struct EventContext<'a> {
     /// Current keyboard modifiers.
     pub modifiers: Modifiers,
 
-    /// State storage for element-local state.
-    pub state: &'a mut StateStorage,
-
     /// Font system for text editing operations.
     ///
     /// Required by TextEdit for editor actions (insert, delete, cursor movement)
-    /// which need font_system for text shaping. Follows the same pattern as
-    /// LayoutContext which also provides font_system.
+    /// which need font_system for text shaping.
     pub font_system: &'a mut glyphon::FontSystem,
 
     /// Build owner for marking elements dirty from event handlers.
     ///
-    /// When an event handler calls `setState()` or `StatefulMutable::set()`,
-    /// the dirty callback needs access to the BuildOwner. This field
-    /// provides that access.
-    ///
     /// Uses a shared reference (`&BuildOwner`) because `mark_needs_build()`
-    /// takes `&self` via RefCell interior mutability. This is critical for
-    /// event handling: the pipeline holds `&mut self` during event dispatch,
-    /// and the dirty callbacks fire from within that context. Using a shared
-    /// reference avoids aliasing UB that would occur with `&mut BuildOwner`.
+    /// takes `&self` via RefCell interior mutability.
     ///
     /// This is `Some` when the pipeline provides BuildOwner access
     /// (which is the normal case), and `None` in test contexts.
@@ -66,8 +55,7 @@ pub struct EventContext<'a> {
     ///
     /// When a `StatefulMutable::set()` fires its dirty callback from within
     /// an event handler, it sends the element ID through this channel.
-    /// The pipeline drains the channel and calls `mark_needs_build()` itself.
-    pub dirty_sender: Option<&'a mpsc::Sender<ElementKey>>,
+    pub dirty_sender: Option<&'a std::sync::mpsc::Sender<ElementKey>>,
 
     /// Focus request from the element (if any).
     /// Set by `request_focus()`.
@@ -80,19 +68,19 @@ pub struct EventContext<'a> {
 impl<'a> EventContext<'a> {
     /// Create a new event context.
     pub fn new(
+        element_id: ElementKey,
         pointer_position: Point<Logical>,
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        state: &'a mut StateStorage,
         font_system: &'a mut glyphon::FontSystem,
     ) -> Self {
         Self {
+            element_id,
             pointer_position,
             focused_element,
             bounds,
             modifiers,
-            state,
             font_system,
             build_owner: None,
             dirty_sender: None,
@@ -103,21 +91,21 @@ impl<'a> EventContext<'a> {
 
     /// Create a new event context with BuildOwner access.
     pub fn with_build_owner(
+        element_id: ElementKey,
         pointer_position: Point<Logical>,
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        state: &'a mut StateStorage,
         font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
-        dirty_sender: &'a mpsc::Sender<ElementKey>,
+        dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
     ) -> Self {
         Self {
+            element_id,
             pointer_position,
             focused_element,
             bounds,
             modifiers,
-            state,
             font_system,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
@@ -126,12 +114,23 @@ impl<'a> EventContext<'a> {
         }
     }
 
+    /// Get the element ID receiving this event.
+    pub fn element_id(&self) -> ElementKey {
+        self.element_id
+    }
+
     /// Check if the pointer is inside the element bounds.
     pub fn is_pointer_inside(&self) -> bool {
         self.bounds.contains(&self.pointer_position)
     }
 
     /// Check if this element is currently focused.
+    /// Uses the element's own ID stored in this context.
+    pub fn is_focused_self(&self) -> bool {
+        self.focused_element == Some(self.element_id)
+    }
+
+    /// Check if a specific element is currently focused.
     pub fn is_focused(&self, element: ElementKey) -> bool {
         self.focused_element == Some(element)
     }
@@ -181,19 +180,12 @@ impl<'a> EventContext<'a> {
     }
 
     /// Mark an element as needing rebuild.
-    ///
-    /// Convenience method for event handlers that need to trigger
-    /// a rebuild after modifying state.
     pub fn mark_needs_build(&self, element_id: ElementKey) {
         if let Some(bo) = self.build_owner {
             bo.mark_needs_build(element_id);
         }
     }
 }
-
-// ============================================================================
-// TESTS
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -220,102 +212,119 @@ mod tests {
     }
 
     #[test]
-    fn test_event_context_is_pointer_inside() {
-        let mut state = StateStorage::new();
+    fn test_event_context_element_id() {
+        let element = make_key();
         let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
+            element,
+            Point::zero(),
+            None,
+            Bounds::default(),
+            Modifiers::default(),
+            &mut font_system,
+        );
+        assert_eq!(ctx.element_id(), element);
+    }
+
+    #[test]
+    fn test_event_context_is_pointer_inside() {
+        let element = make_key();
+        let mut font_system = create_test_font_system();
+        let ctx = EventContext::new(
+            element,
             Point::new(50.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
-
         assert!(ctx.is_pointer_inside());
 
-        let mut state = StateStorage::new();
         let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
+            element,
             Point::new(150.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
-
         assert!(!ctx.is_pointer_inside());
     }
 
     #[test]
-    fn test_event_context_focus() {
-        let (element, other) = make_two_keys();
-        let mut state = StateStorage::new();
+    fn test_event_context_is_focused_self() {
+        let (element, _other) = make_two_keys();
         let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
+            element,
             Point::zero(),
             Some(element),
             Bounds::default(),
             Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
+        assert!(ctx.is_focused_self());
 
-        assert!(ctx.is_focused(element));
-        assert!(ctx.has_focus());
-        assert!(!ctx.is_focused(other));
-    }
-
-    #[test]
-    fn test_event_context_focus_request() {
-        let mut state = StateStorage::new();
         let mut font_system = create_test_font_system();
-        let mut ctx = EventContext::new(
+        let ctx = EventContext::new(
+            element,
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
-            &mut state,
+            &mut font_system,
+        );
+        assert!(!ctx.is_focused_self());
+    }
+
+    #[test]
+    fn test_event_context_focus_request() {
+        let element = make_key();
+        let mut font_system = create_test_font_system();
+        let mut ctx = EventContext::new(
+            element,
+            Point::zero(),
+            None,
+            Bounds::default(),
+            Modifiers::default(),
             &mut font_system,
         );
 
-        let element = make_key();
-        ctx.request_focus(element);
-
-        assert_eq!(ctx.focus_request(), Some(element));
+        let target = make_key();
+        ctx.request_focus(target);
+        assert_eq!(ctx.focus_request(), Some(target));
         assert!(!ctx.should_clear_focus());
     }
 
     #[test]
     fn test_event_context_clear_focus_request() {
-        let mut state = StateStorage::new();
+        let element = make_key();
         let mut font_system = create_test_font_system();
         let mut ctx = EventContext::new(
+            element,
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
-            &mut state,
             &mut font_system,
         );
 
         ctx.clear_focus();
-
         assert!(ctx.should_clear_focus());
         assert_eq!(ctx.focus_request(), None);
     }
 
     #[test]
     fn test_event_context_modifiers() {
-        let mut state = StateStorage::new();
+        let element = make_key();
         let mut font_system = create_test_font_system();
         let ctx = EventContext::new(
+            element,
             Point::zero(),
             None,
             Bounds::default(),
             Modifiers::control(),
-            &mut state,
             &mut font_system,
         );
 

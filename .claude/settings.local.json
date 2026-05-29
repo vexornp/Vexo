@@ -147,7 +147,16 @@
       "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/object.dart\" -o /tmp/flutter_rendering_object.dart)",
       "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/scheduler/binding.dart\")",
       "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/scheduler/ticker.dart\")",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/animation/animation_controller.dart\")"
+      "Bash(curl -sL \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/animation/animation_controller.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/object.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/proxy_box.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/rendering/mouse_tracker.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/gestures/hit_test.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/widgets/basic.dart\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/flutter/flutter/master/packages/flutter/lib/src/services/mouse_cursor.dart\")"
+    ],
+    "additionalDirectories": [
+      "/Users/peiyan_wang/Documents/GitHub/flutter"
     ]
   }
 }

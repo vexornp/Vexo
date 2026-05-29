@@ -41,7 +41,7 @@ use std::sync::mpsc;
 
 use crate::core::{Absolute, Logical, Point, Position, Size};
 use crate::mouse_tracker::MouseTracker;
-use crate::input::{InputEvent, Modifiers, SystemCursorKind};
+use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
 use crate::render::RenderCommand;
 
 use crate::state::CursorBlinkState;
@@ -364,33 +364,65 @@ impl ThreeTreePipeline {
 /// Resolve the cursor at the given position using Flutter's
     /// `firstNonDeferred()` annotation traversal.
     ///
-    /// Returns the resolved `SystemCursorKind` for the platform to display.
-    pub fn cursor_at(&mut self, position: Position<Logical, Absolute>) -> SystemCursorKind {
+    /// Also dispatches hover enter/exit callbacks for MouseRegion widgets.
+    /// Returns the resolved cursor and whether the hover set changed
+    /// (which requires a frame request to reflect visual changes from
+    /// on_enter/on_exit callbacks).
+    pub fn cursor_at(&mut self, position: Position<Logical, Absolute>) -> (SystemCursorKind, bool) {
         let hit_result = self.render_objects.hit_test(position);
 
-        if hit_result.is_hit() {
+        let (cursor, annotations) = if hit_result.is_hit() {
             let cursor = MouseTracker::resolve_cursor(hit_result.annotations());
-            self.mouse_tracker.set_current_cursor(cursor);
-            cursor
+            (cursor, hit_result.annotations().to_vec())
         } else {
-            self.mouse_tracker.set_current_cursor(SystemCursorKind::Arrow);
-            SystemCursorKind::Arrow
-        }
+            (SystemCursorKind::Arrow, Vec::new())
+        };
+
+        self.dispatch_hover(&annotations);
+
+        let hover_changed = self.mouse_tracker.hover_changed();
+        self.mouse_tracker.set_current_cursor(cursor);
+        (cursor, hover_changed)
+    }
+
+    /// Dispatch hover enter/exit callbacks.
+    ///
+    /// Compares the new hovered annotations against the last set.
+    /// Fires on_enter for entering elements, on_exit for leaving elements
+    /// (looked up from the render object registry).
+    fn dispatch_hover(&mut self, new_hovered: &[(ElementKey, MouseTrackerAnnotation)]) {
+        let exiting = self.mouse_tracker.dispatch_hover_changes(new_hovered);
+
+        // Look up on_exit callbacks from the registry for elements leaving hover
+        let exit_annotations: Vec<MouseTrackerAnnotation> = exiting
+            .iter()
+            .filter_map(|&element_key| {
+                self.render_objects
+                    .cursor_annotation_for_element(element_key)
+                    .cloned()
+            })
+            .collect();
+
+        self.mouse_tracker.dispatch_hover_exit_for(&exit_annotations);
     }
 
     /// Post-frame cursor update. Re-hit-tests at the last mouse position
     /// and returns the new cursor if it changed.
     ///
-    /// Called by WindowState after paint/render to handle cursor changes
-    /// caused by widgets moving under a stationary mouse.
+    /// Also dispatches hover enter/exit for widgets moving under a
+    /// stationary mouse.
     pub fn post_frame_cursor_update(&mut self) -> Option<SystemCursorKind> {
         if let Some(position) = self.mouse_tracker.last_mouse_position() {
             let hit_result = self.render_objects.hit_test(position);
-            let new_cursor = if hit_result.is_hit() {
-                MouseTracker::resolve_cursor(hit_result.annotations())
+            let (new_cursor, annotations) = if hit_result.is_hit() {
+                (MouseTracker::resolve_cursor(hit_result.annotations()), hit_result.annotations().to_vec())
             } else {
-                SystemCursorKind::Arrow
+                (SystemCursorKind::Arrow, Vec::new())
             };
+
+            // Dispatch hover changes (widgets may have moved under the mouse)
+            self.dispatch_hover(&annotations);
+
             self.mouse_tracker.update_cursor_post_frame(new_cursor)
         } else {
             None

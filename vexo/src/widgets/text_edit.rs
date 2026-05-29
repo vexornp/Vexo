@@ -208,12 +208,106 @@ impl Default for TextEditState {
 }
 
 impl State for TextEditState {
-    fn init(&mut self, _ctx: &mut StateContext) {
-        // Controller callback wiring happens during mount
+    fn init(&mut self, _ctx: &mut StateContext) {}
+
+    fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {}
+
+    /// Wire the TextEditingController's dirty callback so that editor
+    /// mutations trigger a rebuild of this element.
+    fn wire_controller_callbacks(
+        &mut self,
+        widget: &mut dyn Any,
+        dirty_callback: Arc<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(text_edit) = widget.downcast_mut::<TextEdit>() {
+            text_edit.wire_controller_dirty_callback(dirty_callback);
+        }
     }
 
-    fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {
-        // The controller manages its own dirty callback separately
+    /// Handle input events for TextEdit.
+    ///
+    /// - Pointer press: request focus for this element (click-to-focus),
+    ///   matching Flutter's EditableText behavior.
+    /// - Keyboard input: forward to the TextEdit controller for text editing.
+    fn on_event(
+        &mut self,
+        widget: &dyn Any,
+        event: &InputEvent,
+        ctx: &mut EventContext,
+    ) -> Option<Box<dyn Any>> {
+        let text_edit = match widget.downcast_ref::<TextEdit>() {
+            Some(te) => te,
+            None => return None,
+        };
+
+        match event {
+            InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            } => {
+                ctx.request_focus(ctx.element_id());
+                Some(Box::new(()))
+            }
+
+            InputEvent::Keyboard {
+                key,
+                state: ButtonState::Pressed,
+                text,
+                modifiers,
+            } => {
+                let ctrl_pressed = modifiers.control;
+
+                match key {
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        text_edit.controller.move_cursor(Motion::Left, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        text_edit.controller.move_cursor(Motion::Right, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        text_edit.controller.move_cursor(Motion::Up, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        text_edit.controller.move_cursor(Motion::Down, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::Home) => {
+                        text_edit.controller.move_cursor(Motion::Home, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::End) => {
+                        text_edit.controller.move_cursor(Motion::End, ctx.font_system);
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        text_edit.controller.delete_backward(ctx.font_system);
+                    }
+                    Key::Named(NamedKey::Delete) => {
+                        text_edit.controller.delete_forward(ctx.font_system);
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        text_edit.controller.insert_newline(ctx.font_system);
+                    }
+                    Key::Named(NamedKey::Escape) => {
+                        return None;
+                    }
+                    Key::Character(_ch) => {
+                        if !ctrl_pressed {
+                            if let Some(text) = text {
+                                for c in text.chars() {
+                                    if c.is_control() {
+                                        continue;
+                                    }
+                                    text_edit.controller.insert_char(c, ctx.font_system);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                Some(Box::new(()))
+            }
+
+            _ => None,
+        }
     }
 }
 
@@ -274,11 +368,11 @@ impl TextEdit {
         self.controller.set_dirty_callback(callback);
     }
 
-    /// Handle a keyboard input event.
+    /// Handle an input event.
     ///
-    /// Called by StatefulElement::on_event() when this element is focused
-    /// and receives a keyboard event. Operates on the controller to mutate
-    /// the editor state using FontSystem from EventContext for text shaping.
+    /// Called by StatefulElement::on_event() for:
+    /// - Keyboard events when this element is focused
+    /// - Pointer button press events when pointer is inside (click-to-focus)
     pub fn handle_event(
         &self,
         event: &InputEvent,
@@ -609,8 +703,8 @@ mod tests {
 
         // Should have elements in the tree
         assert!(pipeline.element_registry().root().is_some());
-        // StatefulElement + DecoratedContainer + child TextEditContent element = 3 elements
-        assert_eq!(pipeline.element_registry().len(), 3);
+        // StatefulElement + MouseRegion + DecoratedContainer + child TextEditContent element = 4 elements
+        assert_eq!(pipeline.element_registry().len(), 4);
     }
 
     #[test]

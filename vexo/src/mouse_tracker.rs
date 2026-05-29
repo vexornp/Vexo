@@ -19,7 +19,9 @@ use crate::input::{MouseCursor, MouseTrackerAnnotation, SystemCursorKind};
 pub struct MouseTracker {
     /// Currently displayed cursor icon.
     current_cursor: SystemCursorKind,
-    /// Render object keys that were hovered in the last pointer move.
+    /// Whether the hover set changed during the last dispatch.
+    hover_changed: bool,
+    /// Element keys that were hovered in the last pointer move.
     last_hovered_elements: HashSet<ElementKey>,
     /// Last known mouse position (absolute logical coordinates).
     last_mouse_position: Option<Position<Logical, Absolute>>,
@@ -30,12 +32,13 @@ impl MouseTracker {
     pub fn new() -> Self {
         Self {
             current_cursor: SystemCursorKind::Arrow,
+            hover_changed: false,
             last_hovered_elements: HashSet::new(),
             last_mouse_position: None,
         }
     }
 
-    /// Resolve the cursor icon from a list of annotations.
+    /// Resolve the cursor icon from annotation-element pairs.
     ///
     /// Walks annotations deepest-first (reverse of path order, which is
     /// root→deepest). Applies Flutter's `firstNonDeferred()` logic:
@@ -43,10 +46,10 @@ impl MouseTracker {
     /// - `Uncontrolled` blocks further traversal, returns Arrow.
     /// - `Defer` skips (falls through to next annotation).
     /// - If all annotations are `Defer`, returns Arrow (default).
-    pub fn resolve_cursor(annotations: &[MouseTrackerAnnotation]) -> SystemCursorKind {
+    pub fn resolve_cursor(annotations: &[(ElementKey, MouseTrackerAnnotation)]) -> SystemCursorKind {
         // Walk deepest-first: annotations are in root→deepest order from
         // hit test, so we reverse to get deepest→root.
-        for annotation in annotations.iter().rev() {
+        for (_, annotation) in annotations.iter().rev() {
             match annotation.cursor {
                 MouseCursor::System(kind) => return kind,
                 MouseCursor::Uncontrolled => return SystemCursorKind::Arrow,
@@ -63,28 +66,20 @@ impl MouseTracker {
 
     /// Dispatch hover enter/exit callbacks.
     ///
-    /// Compares the new set of hovered elements against the last set.
+    /// Compares the new set of hovered annotations against the last set.
     /// Fires on_exit for elements leaving hover, on_enter for elements
     /// entering hover. Updates the tracked hover set.
+    ///
+    /// Returns the element keys that left hover (so the pipeline can look
+    /// up their annotations from the registry for on_exit dispatch if needed).
     pub fn dispatch_hover_changes(
         &mut self,
         new_hovered: &[(ElementKey, MouseTrackerAnnotation)],
-    ) {
+    ) -> Vec<ElementKey> {
         let new_keys: HashSet<ElementKey> =
             new_hovered.iter().map(|(k, _)| *k).collect();
 
-        // Fire on_exit for elements leaving hover
-        for old_key in &self.last_hovered_elements {
-            if !new_keys.contains(old_key) {
-                // Find the annotation in the *old* set — but we don't store
-                // old annotations. For now, on_exit callbacks are stored in
-                // the annotation itself, so we'd need the annotation from the
-                // registry. This is called from the pipeline which has access
-                // to both the registry and the tracker.
-                // The pipeline handles this by looking up annotations from the
-                // registry for exiting elements.
-            }
-        }
+        self.hover_changed = new_keys != self.last_hovered_elements;
 
         // Fire on_enter for elements entering hover
         for (key, annotation) in new_hovered {
@@ -95,11 +90,22 @@ impl MouseTracker {
             }
         }
 
-        // Fire on_exit for elements leaving hover (using stored annotations)
-        // The pipeline provides the old annotations separately.
-        // See `dispatch_hover_exit_for` below.
+        // Collect elements leaving hover
+        let exiting: Vec<ElementKey> = self
+            .last_hovered_elements
+            .iter()
+            .filter(|k| !new_keys.contains(k))
+            .copied()
+            .collect();
 
         self.last_hovered_elements = new_keys;
+
+        exiting
+    }
+
+    /// Whether the hover set changed during the last dispatch.
+    pub fn hover_changed(&self) -> bool {
+        self.hover_changed
     }
 
     /// Fire on_exit for specific elements that are leaving hover.

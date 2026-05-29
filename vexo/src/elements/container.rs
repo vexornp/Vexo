@@ -169,6 +169,7 @@ impl Element for ContainerElement {
         &mut self,
         _event: &crate::input::InputEvent,
         _context: &mut crate::EventContext,
+        _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
         // Container elements don't handle events themselves
         // Hit testing finds the specific child element

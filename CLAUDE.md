@@ -12,6 +12,19 @@ When analyzing tasks, especially architecture or complex logic, adhere to these 
 4. **Prefer Simplicity:** If a simpler, more efficient approach exists, state it before implementing.
 5. **Ask "Why?":** Use the "5 Whys" approach to get to the root cause of issues, not just surface-level symptoms.
 
+## Core Design Philosophy: Everything Is a Widget
+
+Vexo's core design philosophy is **"Everything is a widget."** Any UI concern — visual, interactive, or behavioral — should first be expressed as a widget in the widget tree, not as global state, imperative calls, or framework-level special cases.
+
+**When adding any new feature, ask first: can this be a widget?**
+
+- **Composability over imperative APIs** — A `MouseRegion` widget that sets the cursor is better than a global `set_cursor()` call. A `GestureDetector` widget is better than an event listener registry.
+- **Declarative over imperative** — Widgets describe *what* should happen; the framework handles *how*. Prefer `MouseRegion { cursor: Cursor::Pointer, child: ... }` over `on_mouse_enter(|| set_cursor(Pointer))`.
+- **Scope over global** — Widgets naturally scope behavior to subtrees. Cursor, focus, gestures, tooltips, animations — all scoped by tree position, no global state needed.
+- **Consistency** — The same mental model applies everywhere: padding is a widget, gestures are a widget, cursors are a widget, focus is a widget.
+
+If a feature cannot be a widget (e.g., it affects infrastructure below the widget layer), justify why before implementing it imperatively.
+
 ## Think Before Coding
 
 Don't assume. Don't hide confusion. Surface tradeoffs.
