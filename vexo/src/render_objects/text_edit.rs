@@ -229,8 +229,6 @@ impl RenderObject for TextEditRenderObject {
         self.computed_bounds
     }
 }
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use glyphon::{Attrs, Edit, Shaping};

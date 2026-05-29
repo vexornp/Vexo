@@ -219,35 +219,6 @@ impl Modifiers {
 }
 
 // ============================================================================
-// CURSOR ICON
-// ============================================================================
-
-/// Mouse cursor icon types.
-///
-/// These mirror winit's cursor types but live in the platform-agnostic
-/// input module for use in widget event handling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CursorIcon {
-    /// Default arrow cursor.
-    #[default]
-    Default,
-    /// Hand pointer (for clickable elements like buttons).
-    Pointer,
-    /// I-beam text cursor (for text input).
-    Text,
-    /// Crosshair for precision selection.
-    Crosshair,
-    /// Move cursor for drag operations.
-    Move,
-    /// Not-allowed cursor for disabled actions.
-    NotAllowed,
-    /// Horizontal resize cursor.
-    ResizeHorizontal,
-    /// Vertical resize cursor.
-    ResizeVertical,
-}
-
-// ============================================================================
 // WINIT CONVERSION
 // ============================================================================
 

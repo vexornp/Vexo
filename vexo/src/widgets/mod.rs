@@ -6,6 +6,7 @@
 mod container;
 mod decorated_container;
 mod gesture_detector;
+mod mouse_region;
 mod text;
 mod text_edit;
 mod text_edit_content;
@@ -20,6 +21,7 @@ use super::UpdateResult;
 pub use container::{Column, Row};
 pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
+pub use mouse_region::MouseRegion;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use text_edit_content::TextEditContent;

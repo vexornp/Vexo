@@ -28,6 +28,7 @@
 //! ```
 
 use crate::core::{Absolute, Bounds, Logical, Position, Relative};
+use crate::input::MouseTrackerAnnotation;
 use crate::{ElementKey, RenderObjectKey, RenderObjectRegistry};
 
 // ============================================================================
@@ -46,6 +47,9 @@ pub struct HitTestResult {
     element_path: Vec<ElementKey>,
     /// Absolute bounds of the hit target (in window coordinates).
     absolute_bounds: Option<Bounds<Logical>>,
+    /// Mouse cursor annotations collected from MouseRegion render objects
+    /// in the hit path (root→deepest order, matching Flutter's annotation collection).
+    annotations: Vec<MouseTrackerAnnotation>,
 }
 
 impl HitTestResult {
@@ -55,12 +59,13 @@ impl HitTestResult {
             path: Vec::new(),
             element_path: Vec::new(),
             absolute_bounds: None,
+            annotations: Vec::new(),
         }
     }
 
     /// Create a hit result with the given path.
     pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementKey>) -> Self {
-        Self { path, element_path, absolute_bounds: None }
+        Self { path, element_path, absolute_bounds: None, annotations: Vec::new() }
     }
 
     /// Create a hit result with absolute bounds.
@@ -73,6 +78,7 @@ impl HitTestResult {
             path,
             element_path,
             absolute_bounds: Some(absolute_bounds),
+            annotations: Vec::new(),
         }
     }
 
@@ -114,6 +120,20 @@ impl HitTestResult {
     /// Returns None if nothing was hit or bounds are not available.
     pub fn absolute_bounds(&self) -> Option<Bounds<Logical>> {
         self.absolute_bounds
+    }
+
+    /// Get the mouse cursor annotations collected from the hit path.
+    ///
+    /// Annotations are in root→deepest order, matching how Flutter collects
+    /// them during hit test. `MouseTracker::resolve_cursor()` walks these
+    /// deepest-first (reversed).
+    pub fn annotations(&self) -> &[MouseTrackerAnnotation] {
+        &self.annotations
+    }
+
+    /// Set the annotations (used by hit test to collect from registry).
+    pub fn set_annotations(&mut self, annotations: Vec<MouseTrackerAnnotation>) {
+        self.annotations = annotations;
     }
 }
 
@@ -163,11 +183,23 @@ impl RenderObjectRegistry {
             );
         }
 
-        HitTestResult {
+        let mut result = HitTestResult {
             path,
             element_path,
             absolute_bounds,
-        }
+            annotations: Vec::new(),
+        };
+
+        // Collect cursor annotations from MouseRegion render objects in the path.
+        // Annotations are in root→deepest order, matching Flutter's collection.
+        let annotations: Vec<MouseTrackerAnnotation> = result
+            .path()
+            .iter()
+            .filter_map(|&ro_key| self.cursor_annotation(ro_key).cloned())
+            .collect();
+        result.set_annotations(annotations);
+
+        result
     }
 
     /// Recursive hit test implementation.

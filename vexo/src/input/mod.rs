@@ -33,11 +33,12 @@
 //! }
 //! ```
 
+pub mod cursor;
 mod event;
 
+pub use cursor::{MouseCursor, MouseTrackerAnnotation, SystemCursorKind};
 pub use event::{
     ButtonState,
-    CursorIcon,
     InputEvent,
     Key,
     Modifiers,

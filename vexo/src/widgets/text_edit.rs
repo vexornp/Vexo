@@ -11,7 +11,7 @@ use std::sync::Arc;
 use glyphon::{cosmic_text::Motion, Action, Attrs, Buffer, Edit, Metrics, Shaping};
 
 use crate::editor::Editor;
-use crate::input::{ButtonState, InputEvent, Key, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, MouseCursor, NamedKey, SystemCursorKind};
 
 use super::super::key::WidgetKey;
 use super::super::stateful_widget::{BuildContext, State, StatefulWidget, StateContext};
@@ -372,15 +372,20 @@ impl StatefulWidget for TextEdit {
             .padding(8.0);
 
         Box::new(
-            crate::DecoratedContainer::new(
+            crate::MouseRegion::new(
                 Box::new(
-                    super::TextEditContent::new(self.controller.text(), self.controller.editor())
-                        .with_font_size(self.controller.font_size())
-                        .with_focused(is_focused)
-                        .with_cursor_blink_visible(false)
+                    crate::DecoratedContainer::new(
+                        Box::new(
+                            super::TextEditContent::new(self.controller.text(), self.controller.editor())
+                                .with_font_size(self.controller.font_size())
+                                .with_focused(is_focused)
+                                .with_cursor_blink_visible(false)
+                        )
+                    )
+                    .style(style)
                 )
             )
-            .style(style)
+            .cursor(MouseCursor::System(SystemCursorKind::Text))
         )
     }
 }

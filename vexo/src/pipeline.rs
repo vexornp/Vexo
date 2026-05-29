@@ -40,7 +40,8 @@ use std::any::Any;
 use std::sync::mpsc;
 
 use crate::core::{Absolute, Logical, Point, Position, Size};
-use crate::input::{InputEvent, Modifiers};
+use crate::mouse_tracker::MouseTracker;
+use crate::input::{InputEvent, Modifiers, SystemCursorKind};
 use crate::render::RenderCommand;
 
 use crate::state::CursorBlinkState;
@@ -129,6 +130,9 @@ pub struct ThreeTreePipeline {
     /// Cursor blink state for text editing cursors.
     cursor_blink: CursorBlinkState,
 
+    /// Mouse tracker for cursor resolution and hover dispatch.
+    mouse_tracker: MouseTracker,
+
     /// Cached render commands from the last paint pass.
     /// Returned on idle frames when nothing needs repainting.
     cached_commands: Option<Vec<RenderCommand>>,
@@ -150,6 +154,7 @@ impl ThreeTreePipeline {
             dirty_receiver,
             needs_full_reconcile: true,
             cursor_blink: CursorBlinkState::new(),
+            mouse_tracker: MouseTracker::new(),
             cached_commands: None,
         }
     }
@@ -354,6 +359,47 @@ impl ThreeTreePipeline {
     /// ```
     pub fn hit_test(&self, position: Position<Logical, Absolute>) -> HitTestResult {
         EventHandler::hit_test(&self.render_objects, position)
+    }
+
+/// Resolve the cursor at the given position using Flutter's
+    /// `firstNonDeferred()` annotation traversal.
+    ///
+    /// Returns the resolved `SystemCursorKind` for the platform to display.
+    pub fn cursor_at(&mut self, position: Position<Logical, Absolute>) -> SystemCursorKind {
+        let hit_result = self.render_objects.hit_test(position);
+
+        if hit_result.is_hit() {
+            let cursor = MouseTracker::resolve_cursor(hit_result.annotations());
+            self.mouse_tracker.set_current_cursor(cursor);
+            cursor
+        } else {
+            self.mouse_tracker.set_current_cursor(SystemCursorKind::Arrow);
+            SystemCursorKind::Arrow
+        }
+    }
+
+    /// Post-frame cursor update. Re-hit-tests at the last mouse position
+    /// and returns the new cursor if it changed.
+    ///
+    /// Called by WindowState after paint/render to handle cursor changes
+    /// caused by widgets moving under a stationary mouse.
+    pub fn post_frame_cursor_update(&mut self) -> Option<SystemCursorKind> {
+        if let Some(position) = self.mouse_tracker.last_mouse_position() {
+            let hit_result = self.render_objects.hit_test(position);
+            let new_cursor = if hit_result.is_hit() {
+                MouseTracker::resolve_cursor(hit_result.annotations())
+            } else {
+                SystemCursorKind::Arrow
+            };
+            self.mouse_tracker.update_cursor_post_frame(new_cursor)
+        } else {
+            None
+        }
+    }
+
+    /// Get mutable access to the mouse tracker.
+    pub fn mouse_tracker_mut(&mut self) -> &mut MouseTracker {
+        &mut self.mouse_tracker
     }
 
     /// Handle an input event.

@@ -7,8 +7,8 @@ use winit::{
     window::Window,
 };
 
-use crate::core::{Logical, Physical, Point, Scale, Size};
-use crate::input::{InputEvent, Modifiers};
+use crate::core::{Absolute, Logical, Physical, Point, Scale, Size};
+use crate::input::{InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::text_pipeline::TextPipeline;
@@ -41,6 +41,9 @@ pub struct WindowState<A: Application + 'static> {
     /// Whether a frame needs rendering. Set by state changes, resize,
     /// cursor blink toggle, etc. Cleared after rendering.
     needs_redraw: bool,
+
+    /// Current mouse cursor icon. Updated on PointerMoved events.
+    current_cursor: SystemCursorKind,
 }
 
 
@@ -67,6 +70,7 @@ impl<A: Application + 'static> WindowState<A> {
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline: ThreeTreePipeline::new(),
             needs_redraw: true,
+            current_cursor: SystemCursorKind::Arrow,
         })
     }
 
@@ -198,6 +202,19 @@ impl<A: Application + 'static> WindowState<A> {
         if frame_needed || rebuilds_pending {
             self.request_frame();
         }
+
+        // Update cursor icon on pointer move
+        if matches!(input_event, InputEvent::PointerMoved { .. }) {
+            let absolute_position = crate::core::Position::<Logical, Absolute>::new(position.x, position.y);
+            self.three_tree_pipeline.mouse_tracker_mut().update_mouse_position(absolute_position);
+            let new_cursor = self.three_tree_pipeline.cursor_at(absolute_position);
+            if new_cursor != self.current_cursor {
+                self.current_cursor = new_cursor;
+                if let Some(win) = &self.window {
+                    win.set_cursor(winit::cursor::Cursor::Icon(self.current_cursor.to_winit()));
+                }
+            }
+        }
     }
 
     /// Request a frame to be rendered. Sets needs_redraw and
@@ -299,6 +316,15 @@ impl<A: Application + 'static> WindowState<A> {
 
         // 9. Paint dirty render objects
         let commands = self.three_tree_pipeline.paint();
+
+        // 9.5 Post-frame cursor update: re-hit-test at last mouse position
+        // to catch cursor changes from widgets moving under a still mouse.
+        if let Some(new_cursor) = self.three_tree_pipeline.post_frame_cursor_update() {
+            self.current_cursor = new_cursor;
+            if let Some(win) = &self.window {
+                win.set_cursor(winit::cursor::Cursor::Icon(self.current_cursor.to_winit()));
+            }
+        }
 
         log::debug!("[RetainMode] === FRAME END ===");
         log::debug!(

@@ -17,6 +17,7 @@
 use slotmap::{SlotMap, SecondaryMap};
 
 use crate::core::{Point, Size};
+use crate::input::MouseTrackerAnnotation;
 use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::render::RenderCommand;
 
@@ -297,6 +298,7 @@ pub trait RenderObject {
     fn computed_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
         None
     }
+
 }
 
 // ============================================================================
@@ -311,6 +313,7 @@ pub trait RenderObject {
 pub struct RenderObjectRegistry {
     objects: SlotMap<RenderObjectKey, Box<dyn RenderObject>>,
     element_map: SecondaryMap<RenderObjectKey, ElementKey>,
+    cursor_annotations: SecondaryMap<RenderObjectKey, MouseTrackerAnnotation>,
     root: Option<RenderObjectKey>,
 }
 
@@ -320,6 +323,7 @@ impl RenderObjectRegistry {
         Self {
             objects: SlotMap::with_key(),
             element_map: SecondaryMap::new(),
+            cursor_annotations: SecondaryMap::new(),
             root: None,
         }
     }
@@ -357,6 +361,7 @@ impl RenderObjectRegistry {
     pub fn remove(&mut self, key: RenderObjectKey) {
         self.objects.remove(key);
         self.element_map.remove(key);
+        self.cursor_annotations.remove(key);
     }
 
     /// Set the root render object.
@@ -393,6 +398,7 @@ impl RenderObjectRegistry {
     pub fn clear(&mut self) {
         self.objects.clear();
         self.element_map.clear();
+        self.cursor_annotations.clear();
         self.root = None;
     }
 
@@ -401,6 +407,29 @@ impl RenderObjectRegistry {
         if let Some(obj) = self.objects.get_mut(parent) {
             obj.set_child_id(child);
         }
+    }
+
+    /// Set a cursor annotation on a render object.
+    ///
+    /// MouseRegion elements call this during mount to register their
+    /// annotation (cursor intent + enter/exit callbacks).
+    pub fn set_cursor_annotation(&mut self, key: RenderObjectKey, annotation: MouseTrackerAnnotation) {
+        self.cursor_annotations.insert(key, annotation);
+    }
+
+    /// Get the cursor annotation for a render object.
+    ///
+    /// Returns None if no annotation was registered (most render objects
+    /// have no annotation — only MouseRegion render objects carry one).
+    pub fn cursor_annotation(&self, key: RenderObjectKey) -> Option<&MouseTrackerAnnotation> {
+        self.cursor_annotations.get(key)
+    }
+
+    /// Remove the cursor annotation for a render object.
+    ///
+    /// MouseRegion elements call this during unmount.
+    pub fn remove_cursor_annotation(&mut self, key: RenderObjectKey) {
+        self.cursor_annotations.remove(key);
     }
 }
 
