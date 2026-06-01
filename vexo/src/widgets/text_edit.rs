@@ -14,7 +14,7 @@ use crate::editor::Editor;
 use crate::input::{ButtonState, InputEvent, Key, MouseCursor, NamedKey, SystemCursorKind};
 
 use super::super::key::WidgetKey;
-use super::super::stateful_widget::{BuildContext, State, StatefulWidget, StateContext};
+use super::super::stateful_widget::{BuildContext, State, StateContext, StatefulWidget};
 use super::super::EventContext;
 use super::Widget;
 
@@ -30,9 +30,14 @@ use super::Widget;
 ///
 /// A dirty callback is wired to the BuildOwner during mount, so that
 /// mutations automatically trigger a rebuild of the TextEdit element.
+///
+/// The dirty callback uses `RefCell` for interior mutability, allowing
+/// it to be set/cleared through a shared reference (`&self`). This is
+/// necessary because `StateContext::widget()` returns `&dyn Any` (immutable),
+/// but controller wiring needs to modify the callback.
 pub struct TextEditingController {
     editor: Rc<RefCell<Editor>>,
-    dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
+    dirty_callback: RefCell<Option<Arc<dyn Fn() + Send + Sync>>>,
     font_size: f32,
 }
 
@@ -50,7 +55,7 @@ impl TextEditingController {
 
         Self {
             editor: Rc::new(RefCell::new(Editor::new(raw_editor))),
-            dirty_callback: None,
+            dirty_callback: RefCell::new(None),
             font_size: 16.0,
         }
     }
@@ -98,18 +103,18 @@ impl TextEditingController {
     }
 
     /// Set the dirty callback (wired to BuildOwner during mount).
-    pub fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-        self.dirty_callback = Some(callback);
+    pub fn set_dirty_callback(&self, callback: Arc<dyn Fn() + Send + Sync>) {
+        *self.dirty_callback.borrow_mut() = Some(callback);
     }
 
     /// Clear the dirty callback (called during unmount).
-    pub fn clear_dirty_callback(&mut self) {
-        self.dirty_callback = None;
+    pub fn clear_dirty_callback(&self) {
+        *self.dirty_callback.borrow_mut() = None;
     }
 
     /// Notify the BuildOwner that this controller's state has changed.
     pub fn notify(&self) {
-        if let Some(callback) = &self.dirty_callback {
+        if let Some(callback) = self.dirty_callback.borrow().as_ref() {
             callback();
         }
     }
@@ -175,7 +180,7 @@ impl Clone for TextEditingController {
     fn clone(&self) -> Self {
         Self {
             editor: self.editor.clone(),
-            dirty_callback: self.dirty_callback.clone(),
+            dirty_callback: RefCell::new(self.dirty_callback.borrow().clone()),
             font_size: self.font_size,
         }
     }
@@ -208,19 +213,40 @@ impl Default for TextEditState {
 }
 
 impl State for TextEditState {
-    fn init(&mut self, _ctx: &mut StateContext) {}
+    /// Wire the TextEditingController's dirty callback during initialization.
+    ///
+    /// Equivalent to Flutter's `initState()` where EditableTextState subscribes
+    /// to `widget.controller.addListener(_didChangeTextEditingValue)`.
+    fn init(&mut self, ctx: &mut StateContext) {
+        if let Some(text_edit) = ctx.widget().downcast_ref::<TextEdit>() {
+            text_edit
+                .controller
+                .set_dirty_callback(ctx.dirty_callback());
+        }
+    }
 
-    fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {}
+    /// Re-wire the controller when the widget configuration changes.
+    ///
+    /// Equivalent to Flutter's `didUpdateWidget()` where EditableTextState
+    /// unsubscribes from the old controller and subscribes to the new one.
+    fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+        let old_te = old_widget.downcast_ref::<TextEdit>();
+        let new_te = ctx.widget().downcast_ref::<TextEdit>();
+        if let (Some(old), Some(new)) = (old_te, new_te) {
+            if !Rc::ptr_eq(&old.controller.editor, &new.controller.editor) {
+                old.controller.clear_dirty_callback();
+                new.controller.set_dirty_callback(ctx.dirty_callback());
+            }
+        }
+    }
 
-    /// Wire the TextEditingController's dirty callback so that editor
-    /// mutations trigger a rebuild of this element.
-    fn wire_controller_callbacks(
-        &mut self,
-        widget: &mut dyn Any,
-        dirty_callback: Arc<dyn Fn() + Send + Sync>,
-    ) {
-        if let Some(text_edit) = widget.downcast_mut::<TextEdit>() {
-            text_edit.wire_controller_dirty_callback(dirty_callback);
+    /// Unwire the controller's dirty callback during unmount.
+    ///
+    /// Equivalent to Flutter's `dispose()` where EditableTextState unsubscribes
+    /// from `widget.controller.removeListener(_didChangeTextEditingValue)`.
+    fn dispose(&mut self, ctx: &mut StateContext) {
+        if let Some(text_edit) = ctx.widget().downcast_ref::<TextEdit>() {
+            text_edit.controller.clear_dirty_callback();
         }
     }
 
@@ -259,22 +285,34 @@ impl State for TextEditState {
 
                 match key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        text_edit.controller.move_cursor(Motion::Left, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::Left, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        text_edit.controller.move_cursor(Motion::Right, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::Right, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        text_edit.controller.move_cursor(Motion::Up, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::Up, ctx.font_system);
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        text_edit.controller.move_cursor(Motion::Down, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::Down, ctx.font_system);
                     }
                     Key::Named(NamedKey::Home) => {
-                        text_edit.controller.move_cursor(Motion::Home, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::Home, ctx.font_system);
                     }
                     Key::Named(NamedKey::End) => {
-                        text_edit.controller.move_cursor(Motion::End, ctx.font_system);
+                        text_edit
+                            .controller
+                            .move_cursor(Motion::End, ctx.font_system);
                     }
                     Key::Named(NamedKey::Backspace) => {
                         text_edit.controller.delete_backward(ctx.font_system);
@@ -363,21 +401,12 @@ impl TextEdit {
         &self.controller
     }
 
-    /// Wire the controller's dirty callback to trigger a rebuild.
-    pub fn wire_controller_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-        self.controller.set_dirty_callback(callback);
-    }
-
     /// Handle an input event.
     ///
     /// Called by StatefulElement::on_event() for:
     /// - Keyboard events when this element is focused
     /// - Pointer button press events when pointer is inside (click-to-focus)
-    pub fn handle_event(
-        &self,
-        event: &InputEvent,
-        ctx: &mut EventContext,
-    ) -> Option<Box<dyn Any>> {
+    pub fn handle_event(&self, event: &InputEvent, ctx: &mut EventContext) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::Keyboard {
                 key,
@@ -444,11 +473,7 @@ impl TextEdit {
 impl StatefulWidget for TextEdit {
     type State = TextEditState;
 
-    fn build(
-        &self,
-        _state: &mut TextEditState,
-        ctx: &mut BuildContext,
-    ) -> Box<dyn Widget> {
+    fn build(&self, _state: &mut TextEditState, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let is_focused = ctx.is_focused();
 
         let border_color = if is_focused {
@@ -466,20 +491,16 @@ impl StatefulWidget for TextEdit {
             .padding(8.0);
 
         Box::new(
-            crate::MouseRegion::new(
-                Box::new(
-                    crate::DecoratedContainer::new(
-                        Box::new(
-                            super::TextEditContent::new(self.controller.text(), self.controller.editor())
-                                .with_font_size(self.controller.font_size())
-                                .with_focused(is_focused)
-                                .with_cursor_blink_visible(false)
-                        )
-                    )
-                    .style(style)
-                )
-            )
-            .cursor(MouseCursor::System(SystemCursorKind::Text))
+            crate::MouseRegion::new(Box::new(
+                crate::DecoratedContainer::new(Box::new(
+                    super::TextEditContent::new(self.controller.text(), self.controller.editor())
+                        .with_font_size(self.controller.font_size())
+                        .with_focused(is_focused)
+                        .with_cursor_blink_visible(false),
+                ))
+                .style(style),
+            ))
+            .cursor(MouseCursor::System(SystemCursorKind::Text)),
         )
     }
 }
@@ -688,9 +709,9 @@ mod tests {
     // TextEdit pipeline integration tests
     // ========================================================================
 
-    use crate::ThreeTreePipeline;
     use crate::core::Size;
     use crate::layout::TaffyLayoutEngine;
+    use crate::ThreeTreePipeline;
 
     #[test]
     fn test_text_edit_reconcile_in_pipeline() {
@@ -761,8 +782,8 @@ mod tests {
     // Focus integration tests
     // ========================================================================
 
-    use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::core::{Logical, Point};
+    use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 
     #[test]
     fn test_text_edit_click_inside_focuses() {
@@ -794,11 +815,18 @@ mod tests {
 
         // The TextEdit's StatefulElement should now be focused
         let focused = pipeline.focused_element();
-        assert!(focused.is_some(), "TextEdit should be focused after clicking inside it");
+        assert!(
+            focused.is_some(),
+            "TextEdit should be focused after clicking inside it"
+        );
 
         // The focused element should be the root StatefulElement
         let root = pipeline.element_registry().root().unwrap();
-        assert_eq!(focused, Some(root), "The focused element should be the root StatefulElement");
+        assert_eq!(
+            focused,
+            Some(root),
+            "The focused element should be the root StatefulElement"
+        );
     }
 
     #[test]
@@ -827,7 +855,10 @@ mod tests {
         );
 
         // Verify TextEdit is focused
-        assert!(pipeline.focused_element().is_some(), "TextEdit should be focused after clicking inside");
+        assert!(
+            pipeline.focused_element().is_some(),
+            "TextEdit should be focused after clicking inside"
+        );
 
         // Now click far outside the TextEdit bounds
         let click_outside = InputEvent::PointerButton {
@@ -843,7 +874,10 @@ mod tests {
         );
 
         // Focus should be cleared because no element handled the click
-        assert!(pipeline.focused_element().is_none(), "Focus should be cleared after clicking outside the TextEdit");
+        assert!(
+            pipeline.focused_element().is_none(),
+            "Focus should be cleared after clicking outside the TextEdit"
+        );
     }
 
     #[test]

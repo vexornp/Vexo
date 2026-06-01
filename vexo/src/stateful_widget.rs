@@ -53,14 +53,45 @@ pub trait State: 'static {
     /// Called once when the StatefulElement is first mounted.
     ///
     /// Equivalent to Flutter's `initState()`. Use this for one-time
-    /// initialization that requires access to the StateContext.
+    /// initialization and for subscribing to controller notifications.
+    ///
+    /// Access the widget via `ctx.widget()` and the dirty callback via
+    /// `ctx.dirty_callback()` to wire up controllers:
+    /// ```ignore
+    /// fn init(&mut self, ctx: &mut StateContext) {
+    ///     let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
+    ///     text_edit.controller.set_dirty_callback(ctx.dirty_callback());
+    /// }
+    /// ```
     fn init(&mut self, _ctx: &mut StateContext) {}
+
+    /// Called when the parent widget is rebuilt with a new configuration.
+    ///
+    /// Equivalent to Flutter's `didUpdateWidget()`. The framework has already
+    /// updated the widget to the new instance before calling this method.
+    /// Access the current widget via `ctx.widget()`, and compare with
+    /// `old_widget` to detect changes.
+    ///
+    /// Use this to re-wire controller callbacks when the widget's controller
+    /// changes:
+    /// ```ignore
+    /// fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+    ///     let old_te = old_widget.downcast_ref::<TextEdit>().unwrap();
+    ///     let new_te = ctx.widget().downcast_ref::<TextEdit>().unwrap();
+    ///     if !Rc::ptr_eq(&old_te.controller.editor(), &new_te.controller.editor()) {
+    ///         old_te.controller.clear_dirty_callback();
+    ///         new_te.controller.set_dirty_callback(ctx.dirty_callback());
+    ///     }
+    /// }
+    /// ```
+    fn did_update_widget(&mut self, _old_widget: &dyn Any, _ctx: &mut StateContext) {}
 
     /// Called when the StatefulElement is removed from the tree.
     ///
     /// Equivalent to Flutter's `dispose()`. Use this for cleanup
-    /// like canceling timers or releasing resources.
-    fn dispose(&mut self) {}
+    /// like canceling timers, releasing resources, and unwiring
+    /// controller callbacks.
+    fn dispose(&mut self, _ctx: &mut StateContext) {}
 
     /// Wire up dirty callbacks for any `StatefulMutable` fields.
     ///
@@ -79,16 +110,6 @@ pub trait State: 'static {
     fn requests_focus_on_click(&self) -> bool {
         false
     }
-
-    /// Wire up controller callbacks for widgets that manage controllers
-    /// (e.g., TextEdit with TextEditingController).
-    ///
-    /// Override this if your state needs to connect a controller's change
-    /// notifications to the element's dirty callback. The widget is passed
-    /// as `&mut dyn Any` so the state can downcast it to the concrete type.
-    ///
-    /// The default implementation does nothing.
-    fn wire_controller_callbacks(&mut self, _widget: &mut dyn Any, _dirty_callback: Arc<dyn Fn() + Send + Sync>) {}
 
     /// Handle an input event, delegating from StatefulElement::on_event().
     ///
@@ -144,11 +165,18 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 // STATE CONTEXT
 // ============================================================================
 
-/// Context provided to `State::init()` and available during state mutations.
+/// Context provided to `State::init()`, `did_update_widget()`, and `dispose()`.
 ///
 /// This is the Vexo equivalent of Flutter's `State` class methods.
 /// The key method is `setState()`, which mutates state and marks the
 /// element dirty for rebuild.
+///
+/// Unlike Flutter's `State.widget` getter, Vexo provides widget access
+/// through `StateContext::widget()` since Rust's trait objects cannot
+/// be generic over the widget type. Downcast to the concrete type:
+/// ```ignore
+/// let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
+/// ```
 pub struct StateContext<'a> {
     /// The element ID of the owning StatefulElement.
     element_id: ElementKey,
@@ -158,14 +186,29 @@ pub struct StateContext<'a> {
     /// Uses a shared reference because `mark_needs_build()` takes `&self`
     /// via RefCell interior mutability.
     build_owner: &'a BuildOwner,
+
+    /// The current widget configuration, type-erased.
+    /// State implementations can downcast to their concrete widget type.
+    widget: &'a dyn Any,
+
+    /// Dirty callback for wiring controller change notifications.
+    /// Clone this to pass to controllers that need to trigger rebuilds.
+    dirty_callback: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl<'a> StateContext<'a> {
     /// Create a new StateContext. Only called by StatefulElement.
-    fn new(element_id: ElementKey, build_owner: &'a BuildOwner) -> Self {
+    fn new(
+        element_id: ElementKey,
+        build_owner: &'a BuildOwner,
+        widget: &'a dyn Any,
+        dirty_callback: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
         Self {
             element_id,
             build_owner,
+            widget,
+            dirty_callback,
         }
     }
 
@@ -201,6 +244,29 @@ impl<'a> StateContext<'a> {
     /// Get the element ID of the owning StatefulElement.
     pub fn element_id(&self) -> ElementKey {
         self.element_id
+    }
+
+    /// Get the current widget configuration as a type-erased reference.
+    ///
+    /// Downcast to the concrete widget type in your State implementation:
+    /// ```ignore
+    /// let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
+    /// ```
+    ///
+    /// This is the Vexo equivalent of Flutter's `State.widget` getter.
+    /// The widget is always the *new* (current) configuration — in
+    /// `did_update_widget()`, use the `old_widget` parameter for the
+    /// previous configuration.
+    pub fn widget(&self) -> &dyn Any {
+        self.widget
+    }
+
+    /// Get the dirty callback for this element.
+    ///
+    /// Use this to wire controller callbacks that need to trigger rebuilds.
+    /// Clone the Arc and pass it to controllers like TextEditingController.
+    pub fn dirty_callback(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.dirty_callback.clone()
     }
 }
 
@@ -422,28 +488,20 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = tx.send(element_id);
         });
-        state.set_dirty_callback(dirty_callback);
+        state.set_dirty_callback(dirty_callback.clone());
 
-        // Call State::init() lifecycle hook
-        let mut state_ctx = StateContext::new(element_id, context.build_owner);
+        // Call State::init() lifecycle hook with widget access.
+        // State can wire controller callbacks via ctx.widget() and ctx.dirty_callback().
+        let mut state_ctx = StateContext::new(
+            element_id,
+            context.build_owner,
+            &self.widget as &dyn Any,
+            dirty_callback,
+        );
         state.init(&mut state_ctx);
 
         // Store state in StateStorage
         context.insert_state(element_id, state);
-
-        // Wire controller callbacks via State::wire_controller_callbacks()
-        // This replaces TextEdit-specific downcast logic — the State decides
-        // what controller callbacks to wire, following Flutter's model where
-        // StatefulElement has no widget-specific knowledge.
-        {
-            let tx = context.dirty_sender.clone();
-            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                let _ = tx.send(element_id);
-            });
-            // State was just stored in StateStorage, retrieve it to call wire_controller_callbacks
-            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
-            state_ref.wire_controller_callbacks(&mut self.widget as &mut dyn Any, dirty_callback);
-        }
 
         // Build the child widget tree using BuildContext
         let child_widget = {
@@ -462,12 +520,33 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // Save old widget for did_update_widget before replacing
+        let old_widget: W = self.widget.clone();
+
         // Downcast to the concrete widget type
         if let Ok(widget) = new_widget.downcast::<W>() {
             self.widget = *widget;
         }
 
         let element_id = context.element_id;
+
+        // Call State::did_update_widget() lifecycle hook.
+        // The widget has already been updated to the new instance.
+        // State can compare old vs. new controllers and re-wire callbacks.
+        {
+            let tx = context.dirty_sender.clone();
+            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                let _ = tx.send(element_id);
+            });
+            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
+            let mut state_ctx = StateContext::new(
+                element_id,
+                context.build_owner,
+                &self.widget as &dyn Any,
+                dirty_callback,
+            );
+            state_ref.did_update_widget(&old_widget as &dyn Any, &mut state_ctx);
+        }
 
         // Build the child widget tree using BuildContext
         let child_widget = {
@@ -496,10 +575,21 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
-        // Call State::dispose() lifecycle hook before removing state
+        // Call State::dispose() lifecycle hook before removing state.
+        // State can unwire controller callbacks via ctx.widget() and ctx.dirty_callback().
         if let Some(id) = self.id {
             if let Some(state) = context.state.get_mut::<W::State>(id) {
-                state.dispose();
+                let tx = context.dirty_sender.clone();
+                let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                    let _ = tx.send(id);
+                });
+                let mut state_ctx = StateContext::new(
+                    id,
+                    context.build_owner,
+                    &self.widget as &dyn Any,
+                    dirty_callback,
+                );
+                state.dispose(&mut state_ctx);
             }
         }
 
