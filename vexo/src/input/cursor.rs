@@ -14,20 +14,6 @@ pub enum SystemCursorKind {
     ResizeVertical,
 }
 
-impl SystemCursorKind {
-    pub fn to_winit(self) -> winit::cursor::CursorIcon {
-        match self {
-            Self::Arrow => winit::cursor::CursorIcon::Default,
-            Self::Pointer => winit::cursor::CursorIcon::Pointer,
-            Self::Text => winit::cursor::CursorIcon::Text,
-            Self::Crosshair => winit::cursor::CursorIcon::Crosshair,
-            Self::Move => winit::cursor::CursorIcon::Move,
-            Self::NotAllowed => winit::cursor::CursorIcon::NotAllowed,
-            Self::ResizeHorizontal => winit::cursor::CursorIcon::EwResize,
-            Self::ResizeVertical => winit::cursor::CursorIcon::NsResize,
-        }
-    }
-}
 
 /// Three-state cursor intent, matching Flutter's MouseCursor design.
 ///

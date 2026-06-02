@@ -15,6 +15,19 @@ use crate::text_pipeline::TextPipeline;
 use crate::{ThreeTreePipeline, Widget as RetainWidget};
 use crate::Application;
 
+fn system_cursor_to_winit(kind: SystemCursorKind) -> winit::cursor::CursorIcon {
+    match kind {
+        SystemCursorKind::Arrow => winit::cursor::CursorIcon::Default,
+        SystemCursorKind::Pointer => winit::cursor::CursorIcon::Pointer,
+        SystemCursorKind::Text => winit::cursor::CursorIcon::Text,
+        SystemCursorKind::Crosshair => winit::cursor::CursorIcon::Crosshair,
+        SystemCursorKind::Move => winit::cursor::CursorIcon::Move,
+        SystemCursorKind::NotAllowed => winit::cursor::CursorIcon::NotAllowed,
+        SystemCursorKind::ResizeHorizontal => winit::cursor::CursorIcon::EwResize,
+        SystemCursorKind::ResizeVertical => winit::cursor::CursorIcon::NsResize,
+    }
+}
+
 pub struct WindowState<A: Application + 'static> {
     // GPU rendering backend
     backend: WgpuBackend,
@@ -211,7 +224,7 @@ impl<A: Application + 'static> WindowState<A> {
             if new_cursor != self.current_cursor {
                 self.current_cursor = new_cursor;
                 if let Some(win) = &self.window {
-                    win.set_cursor(winit::cursor::Cursor::Icon(self.current_cursor.to_winit()));
+                    win.set_cursor(winit::cursor::Cursor::Icon(system_cursor_to_winit(self.current_cursor)));
                 }
             }
             // Hover enter/exit callbacks may have changed StatefulWidget state
@@ -328,7 +341,7 @@ impl<A: Application + 'static> WindowState<A> {
         if let Some(new_cursor) = self.three_tree_pipeline.post_frame_cursor_update() {
             self.current_cursor = new_cursor;
             if let Some(win) = &self.window {
-                win.set_cursor(winit::cursor::Cursor::Icon(self.current_cursor.to_winit()));
+                win.set_cursor(winit::cursor::Cursor::Icon(system_cursor_to_winit(self.current_cursor)));
             }
         }
 
