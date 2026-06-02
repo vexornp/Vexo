@@ -608,15 +608,16 @@ mod tests {
 
     #[test]
     fn test_paint_context() {
+        use crate::core::Position;
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
 
-        assert_eq!(ctx.offset().x, 0.0);
-        assert_eq!(ctx.offset().y, 0.0);
+        assert_eq!(ctx.absolute_position().x, 0.0);
+        assert_eq!(ctx.absolute_position().y, 0.0);
 
-        ctx.set_offset(Point::new(10.0, 20.0));
-        assert_eq!(ctx.offset().x, 10.0);
-        assert_eq!(ctx.offset().y, 20.0);
+        ctx.set_absolute_position(Position::new(10.0, 20.0));
+        assert_eq!(ctx.absolute_position().x, 10.0);
+        assert_eq!(ctx.absolute_position().y, 20.0);
 
         ctx.push_command(RenderCommand::rect(
             Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),

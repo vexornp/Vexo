@@ -223,11 +223,10 @@ mod full_pipeline_tests {
 
 #[cfg(test)]
 mod event_handling_tests {
-    use super::*;
     use crate::core::{Point, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
-    use crate::{Text, ThreeTreePipeline, Widget};
+    use crate::{Text, ThreeTreePipeline};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -373,7 +372,7 @@ mod global_key_tests {
         use crate::build_owner::BuildOwner;
         use crate::ElementKey;
 
-        let mut build_owner = BuildOwner::new();
+        let build_owner = BuildOwner::new();
         let key = GlobalKey::new();
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
         let element_id = sm.insert(());

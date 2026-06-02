@@ -522,29 +522,22 @@ mod tests {
 
     #[test]
     fn test_decorated_container_creation() {
-        let container = DecoratedContainer::new(
-            Box::new(Text::new("Hello"))
-        );
-
+        let container = DecoratedContainer::new(Text::new("Hello"));
         assert!(container.key().is_none());
     }
 
     #[test]
     fn test_decorated_container_with_key() {
-        let container = DecoratedContainer::new(
-            Box::new(Text::new("Hello"))
-        ).with_key("my-container");
-
+        let container = DecoratedContainer::new(Text::new("Hello"))
+            .with_key("my-container");
         assert_eq!(container.key(), Some(WidgetKey::Local(Key::new("my-container"))));
     }
 
     #[test]
     fn test_decorated_container_with_global_key() {
         let global_key = GlobalKey::new();
-        let container = DecoratedContainer::new(
-            Box::new(Text::new("Hello"))
-        ).with_key(global_key.clone());
-
+        let container = DecoratedContainer::new(Text::new("Hello"))
+            .with_key(global_key.clone());
         assert_eq!(container.key(), Some(WidgetKey::Global(global_key)));
     }
 
@@ -554,10 +547,8 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container = DecoratedContainer::new(
-            Box::new(Text::new("Hello"))
-        ).style(style);
-
+        let container = DecoratedContainer::new(Text::new("Hello"))
+            .style(style);
         assert_eq!(container.style_ref().background, Some(Color::RED));
     }
 
@@ -567,13 +558,9 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container = DecoratedContainer::new(
-            Box::new(Text::new("Hello"))
-        ).style(style);
-
+        let container = DecoratedContainer::new(Text::new("Hello"))
+            .style(style);
         let ro = container.create_render_object();
-
-        // Should be able to downcast to DecoratedContainerRenderObject
         assert!(ro.as_any().downcast_ref::<DecoratedContainerRenderObject>().is_some());
     }
 

@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Column, Row};
+    use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Column};
     use crate::{GestureDetector, DecoratedContainer, Style};
     use crate::reactive::StatefulMutable;
     use crate::core::Size;
@@ -173,7 +173,7 @@ mod tests {
         // 4. Get the state and modify it via StatefulMutable
         // We need to find the element that owns the ReactiveCounterState
         // The root element IS the StatefulElement for ReactiveCounter
-        let stateful_element_id = root_id;
+        let _stateful_element_id = root_id;
 
         // Access the state through the pipeline's state storage
         // Unfortunately, state_storage() is not public. We'll use a different approach:
@@ -254,10 +254,9 @@ mod tests {
                 Box::new(Column::new()
                     .push(Text::new(format!("Count: {}", count)))
                     .push(GestureDetector::new(
-                        Box::new(DecoratedContainer::new(
-                            Box::new(Text::new("Click Me"))
-                        ).style(Style::new().corner_radius(4.0)))
-                    ).on_press(move || {
+                        DecoratedContainer::new(Text::new("Click Me"))
+                        .style(Style::new().corner_radius(4.0)))
+                    .on_press(move || {
                         count_clone.set(count_clone.get() + 1);
                         click_count.fetch_add(1, Ordering::SeqCst);
                     }))
@@ -495,7 +494,7 @@ mod tests {
         // after manually marking the element dirty.
 
         // Let's find the root element ID and mark it dirty.
-        let root_id = pipeline.element_registry().root().unwrap();
+        let _root_id = pipeline.element_registry().root().unwrap();
 
         // Use the pipeline's internal BuildOwner to mark the element dirty.
         // We need to access it through a method that's available.

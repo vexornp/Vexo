@@ -114,8 +114,7 @@ fn test_decorated_container_widget_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree with DecoratedContainer wrapping a Text
-    let child: Box<dyn crate::Widget> = Box::new(Text::new("Hello"));
-    let container = DecoratedContainer::new(child)
+    let container = DecoratedContainer::new(Text::new("Hello"))
         .style(crate::Style::new()
             .background(Color::RED)
             .border(Color::BLACK, 2.0)

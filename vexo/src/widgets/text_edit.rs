@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn test_controller_notify_calls_callback() {
         let mut fs = create_test_font_system();
-        let mut controller = TextEditingController::new("Hello", &mut fs);
+        let controller = TextEditingController::new("Hello", &mut fs);
         let called = Arc::new(AtomicBool::new(false));
         let called_clone = called.clone();
         controller.set_dirty_callback(Arc::new(move || {
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn test_controller_clear_dirty_callback() {
         let mut fs = create_test_font_system();
-        let mut controller = TextEditingController::new("Hello", &mut fs);
+        let controller = TextEditingController::new("Hello", &mut fs);
         let called = Arc::new(AtomicBool::new(false));
         let called_clone = called.clone();
         controller.set_dirty_callback(Arc::new(move || {

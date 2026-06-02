@@ -9,8 +9,7 @@ mod tests {
     #[test]
     fn test_retain_view_returns_widget_tree() {
         // Test that a simple retain widget tree can be created
-        let child = Box::new(Text::new("Hello"));
-        let container = DecoratedContainer::new(child)
+        let container = DecoratedContainer::new(Text::new("Hello"))
             .style(crate::Style::new().background(Color::RED));
 
         // Verify the widget tree structure
@@ -20,12 +19,10 @@ mod tests {
     #[test]
     fn test_retain_column_with_decorated_containers() {
         // Test a more complex widget tree with DecoratedContainers
-        let text1 = Box::new(Text::new("First"));
-        let dc1 = DecoratedContainer::new(text1)
+        let dc1 = DecoratedContainer::new(Text::new("First"))
             .style(crate::Style::new().background(Color::BLUE));
 
-        let text2 = Box::new(Text::new("Second"));
-        let dc2 = DecoratedContainer::new(text2)
+        let dc2 = DecoratedContainer::new(Text::new("Second"))
             .style(crate::Style::new().background(Color::GREEN));
 
         let col = Column::new()

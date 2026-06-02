@@ -25,7 +25,7 @@ fn test_build_owner_new() {
 
 #[test]
 fn test_mark_needs_build() {
-    let mut owner = BuildOwner::new();
+    let owner = BuildOwner::new();
     let element_id = make_key();
 
     owner.mark_needs_build(element_id);
@@ -37,7 +37,7 @@ fn test_mark_needs_build() {
 
 #[test]
 fn test_mark_needs_build_idempotent() {
-    let mut owner = BuildOwner::new();
+    let owner = BuildOwner::new();
     let element_id = make_key();
 
     owner.mark_needs_build(element_id);

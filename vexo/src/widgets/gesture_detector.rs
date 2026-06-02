@@ -483,13 +483,13 @@ mod tests {
 
     #[test]
     fn test_gesture_detector_creation() {
-        let gd = GestureDetector::new(Box::new(Text::new("Click Me")));
+        let gd = GestureDetector::new(Text::new("Click Me"));
         assert!(gd.key().is_none());
     }
 
     #[test]
     fn test_gesture_detector_with_key() {
-        let gd = GestureDetector::new(Box::new(Text::new("Click Me")))
+        let gd = GestureDetector::new(Text::new("Click Me"))
             .with_key("my-gesture");
         assert_eq!(gd.key(), Some(WidgetKey::Local(Key::new("my-gesture"))));
     }
@@ -501,7 +501,7 @@ mod tests {
         let press_clone = press_called.clone();
         let release_clone = release_called.clone();
 
-        let gd = GestureDetector::new(Box::new(Text::new("Click Me")))
+        let gd = GestureDetector::new(Text::new("Click Me"))
             .on_press(move || press_clone.set(true))
             .on_release(move || release_clone.set(true));
 
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn test_gesture_detector_clone() {
-        let gd = GestureDetector::new(Box::new(Text::new("Hello")))
+        let gd = GestureDetector::new(Text::new("Hello"))
             .on_press(|| {});
 
         let cloned = gd.clone();
