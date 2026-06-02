@@ -1,4 +1,9 @@
-use vexo::{reactive::StatefulMutable, Application, Widget, Text, Column, Row, DecoratedContainer, GestureDetector, TextEdit, Style, State as RetainState, StatefulWidget, BuildContext};
+use vexo::{
+    reactive::StatefulMutable, Application, Widget, Text, DecoratedContainer,
+    GestureDetector, TextEdit, Style, State as RetainState, StatefulWidget, BuildContext,
+    Color, TextEditingController, Focus, MouseRegion, input::MouseCursor, SystemCursorKind,
+    column, row, run_desktop_demo,
+};
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
@@ -7,8 +12,8 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector 
         DecoratedContainer::new(Text::new(label))
             .style(
                 Style::new()
-                    .background(vexo::Color::rgb(0.9, 0.9, 0.9))
-                    .border(vexo::Color::rgb(0.6, 0.6, 0.6), 1.0)
+                    .background(Color::rgb(0.9, 0.9, 0.9))
+                    .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
                     .corner_radius(8.0)
                     .padding(24.0),
             ),
@@ -55,10 +60,10 @@ impl StatefulWidget for RetainCounter {
         let reset_count = state.count.clone();
 
         Box::new(
-            vexo::column![
+            column![
                 Text::new(&self.label),
                 Text::new(format!("Count: {}", count)),
-                vexo::row![
+                row![
                     tap_button("-", move || {
                         let cur = dec_count.get();
                         if cur > 0 {
@@ -83,7 +88,7 @@ impl StatefulWidget for RetainCounter {
 #[derive(Clone)]
 struct HoverableCard {
     title: String,
-    editors: Vec<vexo::TextEditingController>,
+    editors: Vec<TextEditingController>,
 }
 
 struct HoverableCardState {
@@ -105,7 +110,7 @@ impl Default for HoverableCardState {
 }
 
 impl HoverableCard {
-    fn new(title: &str, editors: Vec<vexo::TextEditingController>) -> Self {
+    fn new(title: &str, editors: Vec<TextEditingController>) -> Self {
         Self {
             title: title.to_string(),
             editors,
@@ -119,29 +124,29 @@ impl StatefulWidget for HoverableCard {
     fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
         let hovered = state.hovered.clone();
         let border_color = if hovered.get() {
-            vexo::Color::rgb(0.2, 0.4, 1.0)
+            Color::rgb(0.2, 0.4, 1.0)
         } else {
-            vexo::Color::rgb(0.5, 0.5, 0.8)
+            Color::rgb(0.5, 0.5, 0.8)
         };
         let border_width = if hovered.get() { 2.5 } else { 1.0 };
 
-        let mut column = vexo::column![Text::new(&self.title)];
+        let mut column = column![Text::new(&self.title)];
         for editor in &self.editors {
-            column = column.push(vexo::Focus::new(TextEdit::new(editor.clone())));
+            column = column.push(Focus::new(TextEdit::new(editor.clone())));
         }
 
         Box::new(
-            vexo::MouseRegion::new(
+            MouseRegion::new(
                 DecoratedContainer::new(column)
                     .style(
                         Style::new()
-                            .background(vexo::Color::rgb(0.95, 0.95, 1.0))
+                            .background(Color::rgb(0.95, 0.95, 1.0))
                             .border(border_color, border_width)
                             .corner_radius(8.0)
                             .padding(8.0)
                     ),
             )
-            .cursor(vexo::input::MouseCursor::System(vexo::SystemCursorKind::Pointer))
+            .cursor(MouseCursor::System(SystemCursorKind::Pointer))
             .on_enter({
                 let h = hovered.clone();
                 move || h.set(true)
@@ -156,11 +161,11 @@ impl StatefulWidget for HoverableCard {
 
 // --- The User's Code ---
 pub struct State {
-    text_editor_controller: Option<vexo::TextEditingController>,
-    editor_a1: Option<vexo::TextEditingController>,
-    editor_a2: Option<vexo::TextEditingController>,
-    editor_b1: Option<vexo::TextEditingController>,
-    editor_b2: Option<vexo::TextEditingController>,
+    text_editor_controller: Option<TextEditingController>,
+    editor_a1: Option<TextEditingController>,
+    editor_a2: Option<TextEditingController>,
+    editor_b1: Option<TextEditingController>,
+    editor_b2: Option<TextEditingController>,
 }
 
 impl Application for State {
@@ -179,27 +184,27 @@ impl Application for State {
     fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
         if state.text_editor_controller.is_none() {
             state.text_editor_controller = Some(
-                vexo::TextEditingController::new("Type here...", font_system)
+                TextEditingController::new("Type here...", font_system)
             );
         }
         if state.editor_a1.is_none() {
             state.editor_a1 = Some(
-                vexo::TextEditingController::new("Field A1", font_system)
+                TextEditingController::new("Field A1", font_system)
             );
         }
         if state.editor_a2.is_none() {
             state.editor_a2 = Some(
-                vexo::TextEditingController::new("Field A2", font_system)
+                TextEditingController::new("Field A2", font_system)
             );
         }
         if state.editor_b1.is_none() {
             state.editor_b1 = Some(
-                vexo::TextEditingController::new("Field B1", font_system)
+                TextEditingController::new("Field B1", font_system)
             );
         }
         if state.editor_b2.is_none() {
             state.editor_b2 = Some(
-                vexo::TextEditingController::new("Field B2", font_system)
+                TextEditingController::new("Field B2", font_system)
             );
         }
 
@@ -210,25 +215,25 @@ impl Application for State {
         let b2 = state.editor_b2.as_ref().unwrap();
 
         Box::new(
-            vexo::column![
+            column![
                 Text::new("Focus Demo"),
                 Text::new("Click a field to focus it. Click outside to unfocus."),
                 HoverableCard::new("Group A", vec![a1.clone(), a2.clone()]),
                 DecoratedContainer::new(
-                    vexo::column![
+                    column![
                         Text::new("Group B"),
-                        vexo::Focus::new(TextEdit::new(b1.clone())),
-                        vexo::Focus::new(TextEdit::new(b2.clone()))
+                        Focus::new(TextEdit::new(b1.clone())),
+                        Focus::new(TextEdit::new(b2.clone()))
                     ]
                 )
                 .style(
                     Style::new()
-                        .background(vexo::Color::rgb(1.0, 0.95, 0.95))
-                        .border(vexo::Color::rgb(0.8, 0.5, 0.5), 1.0)
+                        .background(Color::rgb(1.0, 0.95, 0.95))
+                        .border(Color::rgb(0.8, 0.5, 0.5), 1.0)
                         .corner_radius(8.0)
                         .padding(8.0)
                 ),
-                vexo::Focus::new(TextEdit::new(controller.clone()))
+                Focus::new(TextEdit::new(controller.clone()))
             ]
         )
     }
@@ -245,7 +250,7 @@ impl MobileApp {
     }
 
     pub fn start_app(&self) {
-        let rt = vexo::run_desktop_demo::<State>();
+        let rt = run_desktop_demo::<State>();
         match rt {
             Ok(_) => println!("App exited normally"),
             Err(e) => println!("App exited with error: {:?}", e),
