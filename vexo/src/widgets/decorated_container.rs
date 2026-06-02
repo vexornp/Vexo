@@ -430,10 +430,10 @@ pub struct DecoratedContainer {
 
 impl DecoratedContainer {
     /// Create a new decorated container with a child.
-    pub fn new(child: Box<dyn Widget>) -> Self {
+    pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             key: None,
-            child,
+            child: Box::new(child),
             style: Style::default(),
         }
     }

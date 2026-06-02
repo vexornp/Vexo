@@ -491,15 +491,15 @@ impl StatefulWidget for TextEdit {
             .padding(8.0);
 
         Box::new(
-            crate::MouseRegion::new(Box::new(
-                crate::DecoratedContainer::new(Box::new(
+            crate::MouseRegion::new(
+                crate::DecoratedContainer::new(
                     super::TextEditContent::new(self.controller.text(), self.controller.editor())
                         .with_font_size(self.controller.font_size())
                         .with_focused(is_focused)
                         .with_cursor_blink_visible(false),
-                ))
+                )
                 .style(style),
-            ))
+            )
             .cursor(MouseCursor::System(SystemCursorKind::Text)),
         )
     }

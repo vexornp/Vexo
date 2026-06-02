@@ -59,10 +59,10 @@ pub struct MouseRegion {
 
 impl MouseRegion {
     /// Create a new MouseRegion wrapping a child widget with Defer cursor.
-    pub fn new(child: Box<dyn Widget>) -> Self {
+    pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             key: None,
-            child,
+            child: Box::new(child),
             cursor: MouseCursor::Defer,
             on_enter: None,
             on_exit: None,

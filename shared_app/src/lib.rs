@@ -2,11 +2,9 @@ use vexo::{reactive::StatefulMutable, Application, Widget, Text, Column, Row, De
 uniffi::setup_scaffolding!();
 
 /// Helper to create a tappable button-like widget using GestureDetector.
-/// This replaces the old Button widget with the Flutter-style composition:
-/// GestureDetector(DecoratedContainer(Text))
 fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector {
-    GestureDetector::new(Box::new(
-        DecoratedContainer::new(Box::new(Text::new(label)))
+    GestureDetector::new(
+        DecoratedContainer::new(Text::new(label))
             .style(
                 Style::new()
                     .background(vexo::Color::rgb(0.9, 0.9, 0.9))
@@ -14,21 +12,17 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector 
                     .corner_radius(8.0)
                     .padding(24.0),
             ),
-    ))
+    )
     .on_press(on_press)
 }
 
 // --- Retain Mode Counter StatefulWidget ---
 
-/// Counter widget configuration for retain mode.
-/// This demonstrates StatefulWidget with persistent mutable state.
 #[derive(Clone)]
 struct RetainCounter {
     label: String,
 }
 
-/// State for the RetainCounter that persists across rebuilds.
-/// Uses StatefulMutable for reactive count that triggers rebuilds on change.
 struct RetainCounterState {
     count: StatefulMutable<u32>,
 }
@@ -56,41 +50,36 @@ impl StatefulWidget for RetainCounter {
         _ctx: &mut BuildContext,
     ) -> Box<dyn Widget> {
         let count = state.count.get();
-
-        // Clone StatefulMutable for each callback so they can update the count
-        // and trigger a rebuild of this element.
         let dec_count = state.count.clone();
         let inc_count = state.count.clone();
         let reset_count = state.count.clone();
 
         Box::new(
-            Column::new()
-                .push(Text::new(&self.label))
-                .push(Text::new(format!("Count: {}", count)))
-                .push(
-                    Row::new()
-                        .push(tap_button("-", move || {
-                            let cur = dec_count.get();
-                            if cur > 0 {
-                                dec_count.set(cur - 1);
-                            }
-                        }))
-                        .push(tap_button("+", move || {
-                            let cur = inc_count.get();
-                            inc_count.set(cur + 1);
-                        }))
-                        .push(tap_button("Reset", move || {
-                            reset_count.set(0);
-                        })),
-                ),
+            vexo::column![
+                Text::new(&self.label),
+                Text::new(format!("Count: {}", count)),
+                vexo::row![
+                    tap_button("-", move || {
+                        let cur = dec_count.get();
+                        if cur > 0 {
+                            dec_count.set(cur - 1);
+                        }
+                    }),
+                    tap_button("+", move || {
+                        let cur = inc_count.get();
+                        inc_count.set(cur + 1);
+                    }),
+                    tap_button("Reset", move || {
+                        reset_count.set(0);
+                    })
+                ]
+            ]
         )
     }
 }
 
 // --- HoverableCard StatefulWidget ---
 
-/// A card that changes border on hover. Owns its own hover state
-/// so only this element rebuilds on mouse enter/exit.
 #[derive(Clone)]
 struct HoverableCard {
     title: String,
@@ -136,14 +125,14 @@ impl StatefulWidget for HoverableCard {
         };
         let border_width = if hovered.get() { 2.5 } else { 1.0 };
 
-        let mut column = Column::new().push(Text::new(&self.title));
+        let mut column = vexo::column![Text::new(&self.title)];
         for editor in &self.editors {
             column = column.push(vexo::Focus::new(TextEdit::new(editor.clone())));
         }
 
         Box::new(
-            vexo::MouseRegion::new(Box::new(
-                DecoratedContainer::new(Box::new(column))
+            vexo::MouseRegion::new(
+                DecoratedContainer::new(column)
                     .style(
                         Style::new()
                             .background(vexo::Color::rgb(0.95, 0.95, 1.0))
@@ -151,7 +140,7 @@ impl StatefulWidget for HoverableCard {
                             .corner_radius(8.0)
                             .padding(8.0)
                     ),
-            ))
+            )
             .cursor(vexo::input::MouseCursor::System(vexo::SystemCursorKind::Pointer))
             .on_enter({
                 let h = hovered.clone();
@@ -188,7 +177,6 @@ impl Application for State {
     }
 
     fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
-        // Lazily initialize TextEdit controllers
         if state.text_editor_controller.is_none() {
             state.text_editor_controller = Some(
                 vexo::TextEditingController::new("Type here...", font_system)
@@ -222,31 +210,26 @@ impl Application for State {
         let b2 = state.editor_b2.as_ref().unwrap();
 
         Box::new(
-            Column::new()
-                // Title
-                .push(Text::new("Focus Demo"))
-                .push(Text::new("Click a field to focus it. Click outside to unfocus."))
-                // Group A: Focus fields in a hoverable card
-                .push(HoverableCard::new(
-                    "Group A",
-                    vec![a1.clone(), a2.clone()],
-                ))
-                // Group B: Focus fields in a decorated container
-                .push(DecoratedContainer::new(Box::new(
-                    Column::new()
-                        .push(Text::new("Group B"))
-                        .push(vexo::Focus::new(TextEdit::new(b1.clone())))
-                        .push(vexo::Focus::new(TextEdit::new(b2.clone())))
-                ))
+            vexo::column![
+                Text::new("Focus Demo"),
+                Text::new("Click a field to focus it. Click outside to unfocus."),
+                HoverableCard::new("Group A", vec![a1.clone(), a2.clone()]),
+                DecoratedContainer::new(
+                    vexo::column![
+                        Text::new("Group B"),
+                        vexo::Focus::new(TextEdit::new(b1.clone())),
+                        vexo::Focus::new(TextEdit::new(b2.clone()))
+                    ]
+                )
                 .style(
                     Style::new()
                         .background(vexo::Color::rgb(1.0, 0.95, 0.95))
                         .border(vexo::Color::rgb(0.8, 0.5, 0.5), 1.0)
                         .corner_radius(8.0)
                         .padding(8.0)
-                ))
-                // Standalone field
-                .push(vexo::Focus::new(TextEdit::new(controller.clone())))
+                ),
+                vexo::Focus::new(TextEdit::new(controller.clone()))
+            ]
         )
     }
 }

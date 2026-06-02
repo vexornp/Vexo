@@ -68,10 +68,10 @@ pub struct GestureDetector {
 
 impl GestureDetector {
     /// Create a new GestureDetector wrapping a child widget.
-    pub fn new(child: Box<dyn Widget>) -> Self {
+    pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             key: None,
-            child,
+            child: Box::new(child),
             on_press: None,
             on_release: None,
         }

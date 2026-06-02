@@ -24,6 +24,7 @@ mod resource;
 pub mod reactive;
 pub mod state;
 mod utils;
+mod macros;
 mod window;
 mod text_cache;
 mod text_processor;
