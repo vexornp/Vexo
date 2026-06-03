@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::core::{Point, Size};
+use crate::core::{Point, Scale, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
 use crate::{Column, Focus, Text, ThreeTreePipeline};
@@ -73,6 +73,7 @@ fn test_click_outside_clears_focus() {
         &event,
         Modifiers::default(),
         &mut font_system,
+        Scale::default(),
     );
 
     // Focus should be cleared
@@ -152,6 +153,7 @@ fn test_click_inside_hit_succeeds_then_unfocuses() {
         &event,
         Modifiers::default(),
         &mut font_system,
+        Scale::default(),
     );
 
     // Focus is cleared because no element handled the event
@@ -221,6 +223,7 @@ fn test_click_to_focus_with_stateful_element() {
         &event,
         Modifiers::default(),
         &mut font_system,
+        Scale::default(),
     );
 
     // Focus should be set (TextEdit requested focus)

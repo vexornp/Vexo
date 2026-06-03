@@ -7,7 +7,7 @@
 use std::any::Any;
 use std::sync::mpsc;
 
-use crate::core::{Absolute, Bounds, Logical, Point, Position};
+use crate::core::{Absolute, Bounds, Logical, Point, Position, Scale};
 use crate::input::{ButtonState, InputEvent, Modifiers};
 
 use super::build_owner::BuildOwner;
@@ -46,6 +46,7 @@ impl EventHandler {
         _position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
+        scale: Scale,
     ) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::PointerMoved { position } => Self::handle_pointer_event(
@@ -59,6 +60,7 @@ impl EventHandler {
                 *position,
                 event,
                 modifiers,
+                scale,
             ),
             InputEvent::PointerButton { position, .. } => Self::handle_pointer_event(
                 element_registry,
@@ -71,6 +73,7 @@ impl EventHandler {
                 *position,
                 event,
                 modifiers,
+                scale,
             ),
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
@@ -81,6 +84,7 @@ impl EventHandler {
                 focus_manager,
                 event,
                 modifiers,
+                scale,
             ),
             _ => None,
         }
@@ -107,6 +111,7 @@ impl EventHandler {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
+        scale: Scale,
     ) -> Option<Box<dyn Any>> {
         // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
@@ -129,6 +134,13 @@ impl EventHandler {
         // 2. Get absolute bounds for context (from hit test result)
         let bounds = hit_result.absolute_bounds().unwrap_or_default();
 
+        // Compute local_position relative to the innermost hit target.
+        // This is equivalent to Flutter's globalToLocal().
+        let local_position = hit_result
+            .inner_bounds()
+            .map(|b| Point::new(position.x - b.position().x, position.y - b.position().y))
+            .unwrap_or(position);
+
         // 3. Bubble event up the element path (deepest to shallowest)
         let element_path = hit_result.element_path();
         let mut any_message: Option<Box<dyn Any>> = None;
@@ -139,9 +151,11 @@ impl EventHandler {
                 let mut ctx = EventContext::with_build_owner(
                     element_id,
                     position,
+                    local_position,
                     focus_manager.primary_focus_element(),
                     bounds,
                     modifiers,
+                    scale,
                     font_system,
                     build_owner,
                     dirty_sender,
@@ -190,6 +204,7 @@ impl EventHandler {
         focus_manager: &mut FocusManager,
         event: &InputEvent,
         modifiers: Modifiers,
+        scale: Scale,
     ) -> Option<Box<dyn Any>> {
         // Get focused element
         let focused = focus_manager.primary_focus_element()?;
@@ -200,9 +215,11 @@ impl EventHandler {
         let mut ctx = EventContext::with_build_owner(
             focused,
             Point::zero(),
+            Point::zero(), // no pointer position for keyboard events
             focus_manager.primary_focus_element(),
             bounds,
             modifiers,
+            scale,
             font_system,
             build_owner,
             dirty_sender,

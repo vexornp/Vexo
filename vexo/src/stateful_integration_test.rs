@@ -8,7 +8,7 @@ mod tests {
     use crate::core::Size;
     use crate::layout::TaffyLayoutEngine;
     use crate::input::{InputEvent, ButtonState, PointerButton};
-    use crate::core::Point;
+    use crate::core::{Point, Scale};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -302,7 +302,7 @@ mod tests {
         };
 
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system);
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
 
         // 4. Check if the click was handled
         let clicks = click_count.load(Ordering::SeqCst);
@@ -599,7 +599,7 @@ mod tests {
         };
 
         let mut fs = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, Modifiers::default(), &mut fs);
+        let _result = pipeline.handle_event(click_position, &event, Modifiers::default(), &mut fs, Scale::default());
 
         // After clicking, the TextEdit's StatefulElement should be focused
         // This works because ProxyRenderObject appears in the hit test path,
