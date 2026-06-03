@@ -23,7 +23,6 @@ pub use frame_builder::FrameBuilder;
 mod resource;
 pub mod reactive;
 pub mod state;
-mod utils;
 mod macros;
 mod window;
 mod text_cache;

@@ -7,17 +7,16 @@
 use std::any::Any;
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
+use crate::elements::RenderObjectElement;
+use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
-use crate::{
-    Element, ElementContext, ElementKey, EventContext,
-    HitTestContext, LayoutContext, LayoutResult, PaintContext,
-    RenderObject, RenderObjectKey, Widget, WidgetKey, UpdateResult,
-};
-use crate::elements::RenderObjectElement;
-use crate::focus::attachment::FocusAttachment;
 use crate::style::Style;
+use crate::{
+    Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
+    PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
+};
 
 // ============================================================================
 // DecoratedContainerRenderObject
@@ -275,7 +274,9 @@ impl Element for DecoratedContainerElement {
         // when it mounts, so it must exist before child mounting begins.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -330,11 +331,7 @@ impl Element for DecoratedContainerElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         // Downcast and store the new widget
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
@@ -342,7 +339,11 @@ impl Element for DecoratedContainerElement {
             // Update the render object with new properties
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self
+                        .widget
+                        .as_ref()
+                        .unwrap()
+                        .update_render_object(ro.as_mut());
 
                     // Only mark dirty based on what actually changed
                     if result.contains(UpdateResult::LAYOUT) {
@@ -380,7 +381,12 @@ impl Element for DecoratedContainerElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
@@ -497,7 +503,10 @@ impl Widget for DecoratedContainer {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<DecoratedContainerRenderObject>() {
+        if let Some(container_ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<DecoratedContainerRenderObject>()
+        {
             if container_ro.set_style(self.style.clone()) {
                 // Style changes (background, border, corner_radius) are visual-only
                 // They don't affect layout, only paint
@@ -518,7 +527,7 @@ impl Widget for DecoratedContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Text, Key, GlobalKey};
+    use crate::{GlobalKey, Key, Text};
 
     #[test]
     fn test_decorated_container_creation() {
@@ -528,16 +537,17 @@ mod tests {
 
     #[test]
     fn test_decorated_container_with_key() {
-        let container = DecoratedContainer::new(Text::new("Hello"))
-            .with_key("my-container");
-        assert_eq!(container.key(), Some(WidgetKey::Local(Key::new("my-container"))));
+        let container = DecoratedContainer::new(Text::new("Hello")).with_key("my-container");
+        assert_eq!(
+            container.key(),
+            Some(WidgetKey::Local(Key::new("my-container")))
+        );
     }
 
     #[test]
     fn test_decorated_container_with_global_key() {
         let global_key = GlobalKey::new();
-        let container = DecoratedContainer::new(Text::new("Hello"))
-            .with_key(global_key.clone());
+        let container = DecoratedContainer::new(Text::new("Hello")).with_key(global_key.clone());
         assert_eq!(container.key(), Some(WidgetKey::Global(global_key)));
     }
 
@@ -547,8 +557,7 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container = DecoratedContainer::new(Text::new("Hello"))
-            .style(style);
+        let container = DecoratedContainer::new(Text::new("Hello")).style(style);
         assert_eq!(container.style_ref().background, Some(Color::RED));
     }
 
@@ -558,10 +567,12 @@ mod tests {
             .background(Color::RED)
             .border(Color::BLACK, 2.0);
 
-        let container = DecoratedContainer::new(Text::new("Hello"))
-            .style(style);
+        let container = DecoratedContainer::new(Text::new("Hello")).style(style);
         let ro = container.create_render_object();
-        assert!(ro.as_any().downcast_ref::<DecoratedContainerRenderObject>().is_some());
+        assert!(ro
+            .as_any()
+            .downcast_ref::<DecoratedContainerRenderObject>()
+            .is_some());
     }
 
     #[test]
@@ -583,9 +594,7 @@ mod tests {
 
     #[test]
     fn test_decorated_container_render_object_paint_with_corner_radius() {
-        let style = Style::new()
-            .background(Color::RED)
-            .corner_radius(8.0);
+        let style = Style::new().background(Color::RED).corner_radius(8.0);
 
         let mut ro = DecoratedContainerRenderObject::new(style);
         ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
