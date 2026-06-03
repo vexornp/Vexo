@@ -174,6 +174,19 @@ impl TextEditingController {
         drop(editor);
         self.notify();
     }
+
+    /// Position the cursor at the given buffer-relative pixel coordinates.
+    ///
+    /// Converts the click location to a cursor position using glyphon's
+    /// `Action::Click`. The x and y are in physical pixels relative to the
+    /// text buffer's top-left corner.
+    pub fn click_at(&self, x: i32, y: i32, font_system: &mut glyphon::FontSystem) {
+        let mut editor = self.editor.borrow_mut();
+        editor.action(font_system, Action::Click { x, y });
+        editor.shape_as_needed(font_system, true);
+        drop(editor);
+        self.notify();
+    }
 }
 
 impl Clone for TextEditingController {
