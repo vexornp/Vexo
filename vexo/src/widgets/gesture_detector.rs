@@ -527,9 +527,11 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(50.0, 25.0),
+            Point::new(50.0, 25.0),
             None,
             bounds,
             crate::input::Modifiers::default(),
+            crate::core::Scale::default(),
             &mut font_system,
         );
 
@@ -562,9 +564,11 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(50.0, 25.0),
+            Point::new(50.0, 25.0),
             None,
             bounds,
             crate::input::Modifiers::default(),
+            crate::core::Scale::default(),
             &mut font_system,
         );
 
@@ -594,9 +598,11 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(200.0, 200.0), // Outside bounds
+            Point::new(200.0, 200.0),
             None,
             bounds,
             crate::input::Modifiers::default(),
+            crate::core::Scale::default(),
             &mut font_system,
         );
 

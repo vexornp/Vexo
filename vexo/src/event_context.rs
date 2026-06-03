@@ -6,7 +6,7 @@
 //! borrow conflicts when StatefulElement needs both `&mut W::State` and
 //! `&mut EventContext`.
 
-use crate::core::{Bounds, Logical, Point};
+use crate::core::{Bounds, Logical, Point, Scale};
 use crate::input::Modifiers;
 
 use super::id::ElementKey;
@@ -63,6 +63,14 @@ pub struct EventContext<'a> {
 
     /// Whether the element requested to clear focus.
     clear_focus_request: bool,
+
+    /// Pointer position in the deepest hit target's local coordinate space.
+    /// Equivalent to Flutter's `localPosition` — computed as
+    /// `pointer_position - inner_bounds.origin`.
+    local_position: Point<Logical>,
+
+    /// DPI scale factor for converting logical to physical coordinates.
+    scale: Scale,
 }
 
 impl<'a> EventContext<'a> {
@@ -70,17 +78,21 @@ impl<'a> EventContext<'a> {
     pub fn new(
         element_id: ElementKey,
         pointer_position: Point<Logical>,
+        local_position: Point<Logical>,
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
+        scale: Scale,
         font_system: &'a mut glyphon::FontSystem,
     ) -> Self {
         Self {
             element_id,
             pointer_position,
+            local_position,
             focused_element,
             bounds,
             modifiers,
+            scale,
             font_system,
             build_owner: None,
             dirty_sender: None,
@@ -93,9 +105,11 @@ impl<'a> EventContext<'a> {
     pub fn with_build_owner(
         element_id: ElementKey,
         pointer_position: Point<Logical>,
+        local_position: Point<Logical>,
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
+        scale: Scale,
         font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
         dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
@@ -103,9 +117,11 @@ impl<'a> EventContext<'a> {
         Self {
             element_id,
             pointer_position,
+            local_position,
             focused_element,
             bounds,
             modifiers,
+            scale,
             font_system,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
@@ -122,6 +138,17 @@ impl<'a> EventContext<'a> {
     /// Check if the pointer is inside the element bounds.
     pub fn is_pointer_inside(&self) -> bool {
         self.bounds.contains(&self.pointer_position)
+    }
+
+    /// Get the pointer position in the deepest hit target's local space.
+    /// Equivalent to Flutter's `localPosition`.
+    pub fn local_position(&self) -> Point<Logical> {
+        self.local_position
+    }
+
+    /// Get the DPI scale factor.
+    pub fn scale(&self) -> Scale {
+        self.scale
     }
 
     /// Check if this element is currently focused.
@@ -218,9 +245,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
         assert_eq!(ctx.element_id(), element);
@@ -233,9 +262,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::new(50.0, 50.0),
+            Point::new(50.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
         assert!(ctx.is_pointer_inside());
@@ -244,9 +275,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::new(150.0, 50.0),
+            Point::new(150.0, 50.0),
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
         assert!(!ctx.is_pointer_inside());
@@ -259,9 +292,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             Some(element),
             Bounds::default(),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
         assert!(ctx.is_focused_self());
@@ -270,9 +305,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
         assert!(!ctx.is_focused_self());
@@ -285,9 +322,11 @@ mod tests {
         let mut ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
 
@@ -304,9 +343,11 @@ mod tests {
         let mut ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             None,
             Bounds::default(),
             Modifiers::default(),
+            Scale::default(),
             &mut font_system,
         );
 
@@ -322,9 +363,11 @@ mod tests {
         let ctx = EventContext::new(
             element,
             Point::zero(),
+            Point::zero(),
             None,
             Bounds::default(),
             Modifiers::control(),
+            Scale::default(),
             &mut font_system,
         );
 
