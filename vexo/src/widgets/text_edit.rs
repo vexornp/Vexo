@@ -285,6 +285,14 @@ impl State for TextEditState {
                 ..
             } => {
                 ctx.request_focus(ctx.element_id());
+
+                // Position cursor at click location (Flutter's selectPositionAt pattern)
+                let local = ctx.local_position();
+                let scale = ctx.scale();
+                let physical_x = (local.x * scale.factor()) as i32;
+                let physical_y = (local.y * scale.factor()) as i32;
+                text_edit.controller.click_at(physical_x, physical_y, ctx.font_system);
+
                 Some(Box::new(()))
             }
 

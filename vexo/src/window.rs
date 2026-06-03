@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::core::{Absolute, Logical, Physical, Point, Scale, Size};
-use crate::input::{InputEvent, Modifiers, SystemCursorKind};
+use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::text_pipeline::TextPipeline;
@@ -187,6 +187,13 @@ impl<A: Application + 'static> WindowState<A> {
 
             // Reset cursor blink on keyboard input so cursor becomes visible
             if matches!(input_event, InputEvent::Keyboard { .. }) {
+                if pipeline.reset_cursor_blink() {
+                    pipeline.mark_focus_subtree_needs_paint();
+                }
+            }
+
+            // Reset cursor blink on pointer click so cursor is visible immediately at new position
+            if matches!(input_event, InputEvent::PointerButton { state: ButtonState::Pressed, .. }) {
                 if pipeline.reset_cursor_blink() {
                     pipeline.mark_focus_subtree_needs_paint();
                 }
