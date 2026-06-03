@@ -47,6 +47,11 @@ pub struct HitTestResult {
     element_path: Vec<ElementKey>,
     /// Absolute bounds of the hit target (in window coordinates).
     absolute_bounds: Option<Bounds<Logical>>,
+    /// Absolute bounds of the deepest (innermost) hit target in the hit path.
+    /// The deepest target's bounds exclude ancestor offsets (e.g., padding),
+    /// so `pointer_position - inner_bounds.origin` gives local coordinates
+    /// relative to the innermost render object.
+    inner_bounds: Option<Bounds<Logical>>,
     /// Mouse cursor annotations collected from MouseRegion render objects
     /// in the hit path, paired with their element keys.
     /// Root→deepest order, matching Flutter's annotation collection.
@@ -60,13 +65,14 @@ impl HitTestResult {
             path: Vec::new(),
             element_path: Vec::new(),
             absolute_bounds: None,
+            inner_bounds: None,
             annotations: Vec::new(),
         }
     }
 
     /// Create a hit result with the given path.
     pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementKey>) -> Self {
-        Self { path, element_path, absolute_bounds: None, annotations: Vec::new() }
+        Self { path, element_path, absolute_bounds: None, inner_bounds: None, annotations: Vec::new() }
     }
 
     /// Create a hit result with absolute bounds.
@@ -79,6 +85,7 @@ impl HitTestResult {
             path,
             element_path,
             absolute_bounds: Some(absolute_bounds),
+            inner_bounds: Some(absolute_bounds),
             annotations: Vec::new(),
         }
     }
@@ -121,6 +128,13 @@ impl HitTestResult {
     /// Returns None if nothing was hit or bounds are not available.
     pub fn absolute_bounds(&self) -> Option<Bounds<Logical>> {
         self.absolute_bounds
+    }
+
+    /// Get the absolute bounds of the deepest hit target.
+    ///
+    /// Returns None if nothing was hit or bounds are not available.
+    pub fn inner_bounds(&self) -> Option<Bounds<Logical>> {
+        self.inner_bounds
     }
 
     /// Get the mouse cursor annotations paired with their element keys.
@@ -170,6 +184,7 @@ impl RenderObjectRegistry {
         let mut path = Vec::new();
         let mut element_path = Vec::new();
         let mut absolute_bounds: Option<Bounds<Logical>> = None;
+        let mut inner_bounds: Option<Bounds<Logical>> = None;
 
         if let Some(root) = self.root() {
             // Root is at origin, so parent absolute position is zero
@@ -181,6 +196,7 @@ impl RenderObjectRegistry {
                 &mut path,
                 &mut element_path,
                 &mut absolute_bounds,
+                &mut inner_bounds,
             );
         }
 
@@ -188,6 +204,7 @@ impl RenderObjectRegistry {
             path,
             element_path,
             absolute_bounds,
+            inner_bounds,
             annotations: Vec::new(),
         };
 
@@ -230,6 +247,7 @@ impl RenderObjectRegistry {
         path: &mut Vec<RenderObjectKey>,
         element_path: &mut Vec<ElementKey>,
         absolute_bounds: &mut Option<Bounds<Logical>>,
+        inner_bounds: &mut Option<Bounds<Logical>>,
     ) -> bool {
         let obj = match self.get(id) {
             Some(o) => o,
@@ -275,6 +293,17 @@ impl RenderObjectRegistry {
                 size.height,
             ));
 
+            // Track the deepest hit target's bounds.
+            // On each hit, we update inner_bounds. If a deeper child also hits,
+            // it will overwrite this with its own bounds. If no child hits,
+            // this value remains — it's the deepest target.
+            *inner_bounds = Some(Bounds::from_xywh(
+                object_absolute_position.x,
+                object_absolute_position.y,
+                size.width,
+                size.height,
+            ));
+
             // Test children in reverse order (top-most first)
             // The last child is drawn on top, so it should be tested first
             for child in obj.children().iter().rev() {
@@ -285,6 +314,7 @@ impl RenderObjectRegistry {
                     path,
                     element_path,
                     absolute_bounds,
+                    inner_bounds,
                 ) {
                     return true;
                 }
