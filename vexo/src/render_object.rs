@@ -315,6 +315,9 @@ pub struct RenderObjectRegistry {
     element_map: SecondaryMap<RenderObjectKey, ElementKey>,
     cursor_annotations: SecondaryMap<RenderObjectKey, MouseTrackerAnnotation>,
     root: Option<RenderObjectKey>,
+    /// Layout node keys orphaned by removed render objects.
+    /// Drained during layout to remove nodes from the Taffy engine.
+    orphaned_layout_nodes: Vec<LayoutNodeKey>,
 }
 
 impl RenderObjectRegistry {
@@ -325,6 +328,7 @@ impl RenderObjectRegistry {
             element_map: SecondaryMap::new(),
             cursor_annotations: SecondaryMap::new(),
             root: None,
+            orphaned_layout_nodes: Vec::new(),
         }
     }
 
@@ -358,7 +362,16 @@ impl RenderObjectRegistry {
     /// After removal, the key becomes stale — any future access returns None.
     /// This provides ABA protection: a new render object at the same slot
     /// will have a different generation.
+    ///
+    /// The render object's layout node key (if any) is collected for later
+    /// cleanup during the layout pass.
     pub fn remove(&mut self, key: RenderObjectKey) {
+        // Extract layout node key before dropping the render object
+        if let Some(obj) = self.objects.get(key) {
+            if let Some(node) = obj.layout_node() {
+                self.orphaned_layout_nodes.push(node);
+            }
+        }
         self.objects.remove(key);
         self.element_map.remove(key);
         self.cursor_annotations.remove(key);
@@ -399,7 +412,16 @@ impl RenderObjectRegistry {
         self.objects.clear();
         self.element_map.clear();
         self.cursor_annotations.clear();
+        self.orphaned_layout_nodes.clear();
         self.root = None;
+    }
+
+    /// Drain all orphaned layout node keys for cleanup.
+    ///
+    /// Called by the layouter during layout to remove orphaned nodes
+    /// from the Taffy engine.
+    pub fn drain_orphaned_layout_nodes(&mut self) -> Vec<LayoutNodeKey> {
+        std::mem::take(&mut self.orphaned_layout_nodes)
     }
 
     /// Set the child render object for a parent.

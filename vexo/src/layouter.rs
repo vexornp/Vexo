@@ -39,6 +39,12 @@ impl Layouter {
         engine: &mut dyn LayoutEngine,
         font_system: &mut glyphon::FontSystem,
     ) {
+        // Clean up orphaned layout nodes from render objects removed during reconciliation
+        let orphaned_nodes = render_objects.drain_orphaned_layout_nodes();
+        for node_key in orphaned_nodes {
+            engine.remove_node(node_key);
+        }
+
         if dirty.is_layout_empty() {
             return;
         }
@@ -159,19 +165,4 @@ impl Layouter {
         }
     }
 
-    /// Remove a render object's Taffy node from the engine.
-    ///
-    /// Called when a render object is unmounted. The Taffy node is
-    /// removed from the engine to prevent memory leaks.
-    pub fn remove_layout_node(
-        render_objects: &RenderObjectRegistry,
-        id: RenderObjectKey,
-        engine: &mut dyn LayoutEngine,
-    ) {
-        if let Some(obj) = render_objects.get(id) {
-            if let Some(node) = obj.layout_node() {
-                engine.remove_node(node);
-            }
-        }
-    }
 }
