@@ -405,13 +405,22 @@ impl Default for GestureDetectorRenderObject {
 
 impl RenderObject for GestureDetectorRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        // Pass-through: create a container node wrapping the child
-        let layout = Layout::default();
-        let node = ctx.engine().create_container(&layout, child_nodes);
-        self.layout_node = Some(node);
-        LayoutResult {
-            node,
-            size: Size::zero(),
+        match self.layout_node {
+            Some(existing) => {
+                ctx.engine().set_children(existing, child_nodes);
+                LayoutResult {
+                    node: existing,
+                    size: Size::zero(),
+                }
+            }
+            None => {
+                let node = ctx.engine().create_container(&Layout::default(), child_nodes);
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: Size::zero(),
+                }
+            }
         }
     }
 

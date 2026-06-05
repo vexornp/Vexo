@@ -23,7 +23,9 @@ use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 /// Layout engine implementation using Taffy.
 ///
 /// This engine wraps the Taffy library and provides a `LayoutEngine`
-/// implementation using CSS Flexbox-style layout.
+/// implementation using CSS Flexbox-style layout. The Taffy tree persists
+/// across frames, enabling incremental updates via `set_style()`,
+/// `set_context()`, `add_child()`, etc.
 pub struct TaffyLayoutEngine {
     /// The underlying Taffy tree with measure context support.
     inner: taffy::TaffyTree<MeasureContext>,
@@ -54,6 +56,10 @@ impl Default for TaffyLayoutEngine {
 }
 
 impl LayoutEngine for TaffyLayoutEngine {
+    // ========================================================================
+    // Node creation
+    // ========================================================================
+
     fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
         let taffy_id = self.inner.new_leaf(style).unwrap();
@@ -73,7 +79,6 @@ impl LayoutEngine for TaffyLayoutEngine {
     fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeKey]) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
 
-        // Map our LayoutNodeKeys to Taffy NodeIds
         let child_taffy_ids: Vec<TaffyNodeId> = children
             .iter()
             .filter_map(|k| self.node_map.get(*k).copied())
@@ -84,6 +89,85 @@ impl LayoutEngine for TaffyLayoutEngine {
         self.children_map.insert(key, children.to_vec());
         key
     }
+
+    // ========================================================================
+    // Incremental updates
+    // ========================================================================
+
+    fn set_style(&mut self, node: LayoutNodeKey, layout: &Layout) {
+        if let Some(taffy_id) = self.node_map.get(node).copied() {
+            let style = layout.to_taffy_style();
+            let _ = self.inner.set_style(taffy_id, style);
+            // Taffy's set_style() internally calls mark_dirty
+        }
+    }
+
+    fn set_context(&mut self, node: LayoutNodeKey, context: MeasureContext) {
+        if let Some(taffy_id) = self.node_map.get(node).copied() {
+            let _ = self.inner.set_node_context(taffy_id, Some(context));
+            // Taffy's set_node_context() internally calls mark_dirty
+        }
+    }
+
+    fn add_child(&mut self, parent: LayoutNodeKey, child: LayoutNodeKey) {
+        if let (Some(parent_id), Some(child_id)) = (
+            self.node_map.get(parent).copied(),
+            self.node_map.get(child).copied(),
+        ) {
+            let _ = self.inner.add_child(parent_id, child_id);
+            if let Some(children) = self.children_map.get_mut(parent) {
+                children.push(child);
+            }
+        }
+    }
+
+    fn remove_child(&mut self, parent: LayoutNodeKey, child: LayoutNodeKey) {
+        if let (Some(parent_id), Some(child_id)) = (
+            self.node_map.get(parent).copied(),
+            self.node_map.get(child).copied(),
+        ) {
+            let _ = self.inner.remove_child(parent_id, child_id);
+            if let Some(children) = self.children_map.get_mut(parent) {
+                children.retain(|&k| k != child);
+            }
+        }
+    }
+
+    fn set_children(&mut self, parent: LayoutNodeKey, children: &[LayoutNodeKey]) {
+        if let Some(parent_id) = self.node_map.get(parent).copied() {
+            let child_taffy_ids: Vec<TaffyNodeId> = children
+                .iter()
+                .filter_map(|k| self.node_map.get(*k).copied())
+                .collect();
+            let _ = self.inner.set_children(parent_id, &child_taffy_ids);
+            self.children_map.insert(parent, children.to_vec());
+        }
+    }
+
+    fn remove_node(&mut self, node: LayoutNodeKey) {
+        if let Some(taffy_id) = self.node_map.remove(node) {
+            let _ = self.inner.remove(taffy_id);
+        }
+        self.children_map.remove(node);
+    }
+
+    fn mark_dirty(&mut self, node: LayoutNodeKey) {
+        if let Some(taffy_id) = self.node_map.get(node).copied() {
+            let _ = self.inner.mark_dirty(taffy_id);
+        }
+    }
+
+    fn is_dirty(&self, node: LayoutNodeKey) -> bool {
+        if let Some(taffy_id) = self.node_map.get(node).copied() {
+            self.inner.dirty(taffy_id).unwrap_or(true)
+        } else {
+            true
+        }
+    }
+
+    // ========================================================================
+    // Computation and readback
+    // ========================================================================
 
     fn compute(
         &mut self,
@@ -275,5 +359,212 @@ mod tests {
         assert!(layout.width() <= 100.0, "Text should wrap to fit width");
         // Height should be multiple lines
         assert!(layout.height() > 24.0 * 1.2, "Wrapped text should have multiple lines");
+    }
+
+    // ========================================================================
+    // Incremental update tests
+    // ========================================================================
+
+    #[test]
+    fn test_set_style_updates_layout() {
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a leaf with initial size
+        let node = engine.create_leaf(&Layout::default().width(100.0).height(50.0));
+        engine.compute(node, Size::new(200.0, 200.0), &mut font_system);
+
+        let computed = engine.get_layout(node).unwrap();
+        assert_eq!(computed.width(), 100.0);
+        assert_eq!(computed.height(), 50.0);
+
+        // Update style to a larger size
+        engine.set_style(node, &Layout::default().width(150.0).height(75.0));
+        assert!(engine.is_dirty(node));
+
+        // Recompute
+        engine.compute(node, Size::new(200.0, 200.0), &mut font_system);
+
+        let computed = engine.get_layout(node).unwrap();
+        assert_eq!(computed.width(), 150.0);
+        assert_eq!(computed.height(), 75.0);
+        assert!(!engine.is_dirty(node));
+    }
+
+    #[test]
+    fn test_set_context_updates_measurement() {
+        use super::super::measurement::TextMeasureContext;
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a text node
+        let ctx = MeasureContext::Text(TextMeasureContext {
+            content: "Hello".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+        });
+        let node = engine.create_leaf_with_context(&Layout::default(), ctx);
+        engine.compute(node, Size::new(800.0, 600.0), &mut font_system);
+
+        let layout1 = engine.get_layout(node).unwrap();
+        let width1 = layout1.width();
+
+        // Change text content to something longer
+        let ctx2 = MeasureContext::Text(TextMeasureContext {
+            content: "Hello World Longer Text".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+        });
+        engine.set_context(node, ctx2);
+        assert!(engine.is_dirty(node));
+
+        // Recompute
+        engine.compute(node, Size::new(800.0, 600.0), &mut font_system);
+
+        let layout2 = engine.get_layout(node).unwrap();
+        assert!(layout2.width() > width1, "Longer text should have wider layout");
+        assert!(!engine.is_dirty(node));
+    }
+
+    #[test]
+    fn test_add_child() {
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a container with one child
+        let child1 = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
+        let parent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Row),
+            &[child1],
+        );
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        let parent_layout = engine.get_layout(parent).unwrap();
+        assert_eq!(parent_layout.width(), 50.0);
+
+        // Add a second child
+        let child2 = engine.create_leaf(&Layout::default().width(75.0).height(50.0));
+        engine.add_child(parent, child2);
+        assert!(engine.is_dirty(parent));
+
+        // Recompute
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        let parent_layout = engine.get_layout(parent).unwrap();
+        assert_eq!(parent_layout.width(), 125.0); // 50 + 75
+
+        // Verify children map was updated
+        let children = engine.children(parent);
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0], child1);
+        assert_eq!(children[1], child2);
+    }
+
+    #[test]
+    fn test_remove_child() {
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Create a container with two children
+        let child1 = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
+        let child2 = engine.create_leaf(&Layout::default().width(75.0).height(50.0));
+        let parent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Row),
+            &[child1, child2],
+        );
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        // Remove one child
+        engine.remove_child(parent, child2);
+        assert!(engine.is_dirty(parent));
+
+        // Recompute
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        let parent_layout = engine.get_layout(parent).unwrap();
+        assert_eq!(parent_layout.width(), 50.0); // only child1 remains
+
+        // Verify children map was updated
+        let children = engine.children(parent);
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0], child1);
+    }
+
+    #[test]
+    fn test_remove_node() {
+        let mut engine = TaffyLayoutEngine::new();
+
+        let child = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
+        let parent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Row),
+            &[child],
+        );
+
+        // Remove the child node entirely
+        engine.remove_node(child);
+
+        // The child should no longer be accessible
+        assert!(engine.get_layout(child).is_none());
+        assert!(engine.node_map.get(child).is_none());
+
+        // Parent's children map should not contain the removed child
+        // (But note: Taffy may still hold the node in its tree until
+        //  the parent's child list is updated via remove_child/set_children)
+    }
+
+    #[test]
+    fn test_set_children_reorder() {
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child1 = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
+        let child2 = engine.create_leaf(&Layout::default().width(75.0).height(50.0));
+        let parent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Row),
+            &[child1, child2],
+        );
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        // Reverse children order
+        engine.set_children(parent, &[child2, child1]);
+        assert!(engine.is_dirty(parent));
+
+        engine.compute(parent, Size::new(200.0, 100.0), &mut font_system);
+
+        let c1_layout = engine.get_layout(child1).unwrap();
+        let c2_layout = engine.get_layout(child2).unwrap();
+
+        // Now child2 should be first (at x=0), child1 second (at x=75)
+        assert_eq!(c2_layout.x(), 0.0);
+        assert!(c1_layout.x() >= 75.0);
+    }
+
+    #[test]
+    fn test_mark_dirty_propagates() {
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child = engine.create_leaf(&Layout::default().width(50.0).height(50.0));
+        let parent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Row),
+            &[child],
+        );
+        let grandparent = engine.create_container(
+            &Layout::default().flex_direction(FlexDirection::Column),
+            &[parent],
+        );
+        engine.compute(grandparent, Size::new(200.0, 200.0), &mut font_system);
+
+        // Everything should be clean after compute
+        assert!(!engine.is_dirty(child));
+        assert!(!engine.is_dirty(parent));
+        assert!(!engine.is_dirty(grandparent));
+
+        // Mark child dirty — should propagate to parent and grandparent
+        engine.mark_dirty(child);
+        assert!(engine.is_dirty(child));
+        assert!(engine.is_dirty(parent));
+        assert!(engine.is_dirty(grandparent));
     }
 }

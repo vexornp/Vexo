@@ -72,9 +72,6 @@ impl DecoratedContainerRenderObject {
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        // DecoratedContainer needs its own layout node to have a position in the parent container.
-        // It wraps the child in a container-like node so the parent can position this container,
-        // and the child is positioned relative to this container.
         let mut layout = Layout::default();
 
         // Apply padding from style if set
@@ -82,13 +79,25 @@ impl RenderObject for DecoratedContainerRenderObject {
             layout = layout.padding(padding);
         }
 
-        // Create a container node that holds the child
-        let node = ctx.engine().create_container(&layout, child_nodes);
-        self.layout_node = Some(node);
-
-        LayoutResult {
-            node,
-            size: Size::zero(),
+        match self.layout_node {
+            Some(existing) => {
+                // Incremental: update style and children on existing node
+                ctx.engine().set_style(existing, &layout);
+                ctx.engine().set_children(existing, child_nodes);
+                LayoutResult {
+                    node: existing,
+                    size: Size::zero(),
+                }
+            }
+            None => {
+                // First frame: create new node
+                let node = ctx.engine().create_container(&layout, child_nodes);
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: Size::zero(),
+                }
+            }
         }
     }
 
@@ -507,10 +516,16 @@ impl Widget for DecoratedContainer {
             .as_any_mut()
             .downcast_mut::<DecoratedContainerRenderObject>()
         {
+            let old_padding = container_ro.style().padding;
             if container_ro.set_style(self.style.clone()) {
-                // Style changes (background, border, corner_radius) are visual-only
-                // They don't affect layout, only paint
-                UpdateResult::PAINT
+                let new_padding = container_ro.style().padding;
+                if old_padding != new_padding {
+                    // Padding changes affect Taffy layout
+                    UpdateResult::LAYOUT | UpdateResult::PAINT
+                } else {
+                    // Visual-only changes (background, border, corner_radius)
+                    UpdateResult::PAINT
+                }
             } else {
                 UpdateResult::NONE
             }

@@ -79,20 +79,31 @@ impl ContainerRenderObject {
 
 impl RenderObject for ContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        // Create container layout with flex direction
         let layout = if self.is_row {
             Layout::default().flex_direction(FlexDirection::Row)
         } else {
             Layout::default().flex_direction(FlexDirection::Column)
         };
 
-        // Create container node with children
-        let node = ctx.engine().create_container(&layout, child_nodes);
-        self.layout_node = Some(node);
-
-        LayoutResult {
-            node,
-            size: Size::new(0.0, 0.0), // Will be filled by apply_layout
+        match self.layout_node {
+            Some(existing) => {
+                // Incremental: update existing node
+                ctx.engine().set_style(existing, &layout);
+                ctx.engine().set_children(existing, child_nodes);
+                LayoutResult {
+                    node: existing,
+                    size: Size::new(0.0, 0.0),
+                }
+            }
+            None => {
+                // First frame: create new node
+                let node = ctx.engine().create_container(&layout, child_nodes);
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: Size::new(0.0, 0.0),
+                }
+            }
         }
     }
 

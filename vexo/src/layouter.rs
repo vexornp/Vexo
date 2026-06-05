@@ -1,37 +1,37 @@
-//! Layout operations extracted from ThreeTreePipeline.
+//! Layout operations for the incremental Taffy tree.
 //!
-//! This module provides the `Layouter` struct (zero-sized) that holds
-//! layout-related methods as associated functions. The pipeline delegates
-//! to these functions for the layout phase of the rendering lifecycle.
+//! The layouter persists the Taffy tree across frames. On each frame,
+//! it only updates the render objects that are dirty (marked as needing
+//! layout), then calls `engine.compute()` which leverages Taffy's
+//! per-node caching to skip clean subtrees.
+//!
+//! # Incremental Layout Protocol
+//!
+//! 1. For each dirty render object, call `layout()` which either:
+//!    - Creates a new Taffy node (first frame, `layout_node` is `None`)
+//!    - Updates the existing Taffy node in place (`layout_node` is `Some`)
+//! 2. Call `engine.compute()` — Taffy recomputes only dirty nodes
+//! 3. Apply computed layouts to all render objects whose Taffy nodes
+//!    were recomputed
 
 use crate::core::{Logical, Size};
-use crate::layout::{Layout, LayoutEngine, LayoutNodeKey};
+use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::dirty::DirtyTracking;
 use crate::id::RenderObjectKey;
-use crate::render_object::{LayoutContext, LayoutResult, RenderObjectRegistry};
+use crate::render_object::{LayoutContext, RenderObjectRegistry};
 
 /// Zero-sized struct holding layout-related associated functions.
-///
-/// This is a pure extraction from `ThreeTreePipeline` -- no state, no behavior
-/// beyond what the pipeline already implemented. Methods take explicit
-/// parameters instead of accessing `self` fields.
 pub struct Layouter;
 
 impl Layouter {
     /// Perform layout using the Taffy layout engine.
     ///
-    /// Three-phase layout:
-    /// 1. Build Taffy tree (each RenderObject creates nodes)
-    /// 2. Compute layout with Taffy
-    /// 3. Apply computed layouts back to RenderObjects
+    /// Processes render objects that are in the dirty set. For objects
+    /// that already have Taffy nodes, updates them in place. For objects
+    /// being laid out for the first time, creates new Taffy nodes.
     ///
-    /// # Arguments
-    ///
-    /// * `render_objects` - Registry of render objects (third tree)
-    /// * `dirty` - Dirty tracking for incremental updates
-    /// * `available_size` - The size available for the root render object
-    /// * `engine` - Layout engine for node creation and computation
-    /// * `font_system` - Font system for text measurement
+    /// Taffy's per-node caching ensures clean subtrees are skipped
+    /// during `compute()`.
     pub fn layout(
         render_objects: &mut RenderObjectRegistry,
         dirty: &mut DirtyTracking,
@@ -43,12 +43,12 @@ impl Layouter {
             return;
         }
 
-        let dirty_layout_count = dirty.layout_count();
+        let dirty_count = dirty.layout_count();
         let total_objects = render_objects.len();
 
         log::debug!(
-            "[RetainMode] layout() - Processing {} dirty objects out of {} total",
-            dirty_layout_count,
+            "[IncrementalLayout] layout() - Processing {} dirty objects out of {} total",
+            dirty_count,
             total_objects
         );
 
@@ -58,59 +58,76 @@ impl Layouter {
             None => return,
         };
 
-        // Phase 1: Build Taffy tree (bottom-up: children first, then parent)
-        // The pipeline traverses children first, collects their node IDs,
-        // then passes them to the parent's layout method.
+        // Phase 1: Update dirty render objects in the Taffy tree.
+        // We must process in bottom-up order because parent containers
+        // need their children's LayoutNodeKeys to exist before they can
+        // create/update their own Taffy nodes.
         {
             let mut ctx = LayoutContext::new(engine, font_system);
-            Self::layout_build_recursive(render_objects, root_id, &mut ctx);
+            let dirty_keys: Vec<RenderObjectKey> = dirty.drain_layout().collect();
+            Self::layout_dirty_recursive(render_objects, root_id, &dirty_keys, &mut ctx);
         }
 
-        // Phase 2: Compute layout with Taffy
+        // Phase 2: Compute layout with Taffy (only dirty nodes are recomputed)
         if let Some(root_node) = Self::get_layout_node(render_objects, root_id) {
             engine.compute(root_node, available_size, font_system);
         }
 
-        // Phase 3: Apply computed layouts back to render objects
+        // Phase 3: Apply computed layouts to all render objects
+        // TODO: optimize to only apply to recomputed subtrees
         {
             let ctx = LayoutContext::new(engine, font_system);
             Self::apply_layout_recursive(render_objects, root_id, &ctx);
         }
 
-        // Clear dirty flags
-        dirty.drain_layout().for_each(drop);
-
-        log::debug!("[RetainMode] layout() complete - dirty flags cleared");
+        log::debug!("[IncrementalLayout] layout() complete");
     }
 
-    /// Recursively build Taffy tree (bottom-up: children first).
-    pub(crate) fn layout_build_recursive(
+    /// Recursively layout dirty render objects in bottom-up order.
+    ///
+    /// Walks the entire render object tree but only calls `layout()`
+    /// on objects that are in the dirty set or that don't yet have
+    /// Taffy nodes. This ensures bottom-up ordering (children before
+    /// parents) which is required because parent containers need
+    /// their children's LayoutNodeKeys.
+    fn layout_dirty_recursive(
         render_objects: &mut RenderObjectRegistry,
         id: RenderObjectKey,
+        dirty_keys: &[RenderObjectKey],
         ctx: &mut LayoutContext,
-    ) -> LayoutResult {
-        // Get children
+    ) {
+        // First, collect children so we can recurse without borrowing
         let children: Vec<RenderObjectKey> = render_objects
             .get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
-        // Layout children first (bottom-up)
+        // Recurse into children first (bottom-up)
+        for child_id in &children {
+            Self::layout_dirty_recursive(render_objects, *child_id, dirty_keys, ctx);
+        }
+
+        // Check if this render object needs layout
+        let needs_layout = dirty_keys.contains(&id)
+            || render_objects
+                .get(id)
+                .map(|obj| obj.layout_node().is_none())
+                .unwrap_or(false);
+
+        if !needs_layout {
+            return;
+        }
+
+        // Collect child layout nodes (now that children have been processed)
         let child_nodes: Vec<LayoutNodeKey> = children
             .iter()
-            .map(|child_id| Self::layout_build_recursive(render_objects, *child_id, ctx).node)
+            .filter_map(|&child_key| {
+                render_objects.get(child_key).and_then(|c| c.layout_node())
+            })
             .collect();
 
-        // Now layout this object with child nodes
         if let Some(obj) = render_objects.get_mut(id) {
-            obj.layout(ctx, &child_nodes)
-        } else {
-            // Fallback: create empty node
-            let node = ctx.engine().create_leaf(&Layout::default());
-            LayoutResult {
-                node,
-                size: Size::new(0.0, 0.0),
-            }
+            obj.layout(ctx, &child_nodes);
         }
     }
 
@@ -128,20 +145,33 @@ impl Layouter {
         id: RenderObjectKey,
         ctx: &LayoutContext,
     ) {
-        // Get children first
         let children: Vec<RenderObjectKey> = render_objects
             .get(id)
             .map(|obj| obj.children().to_vec())
             .unwrap_or_default();
 
-        // Apply to this object
         if let Some(obj) = render_objects.get_mut(id) {
             obj.apply_layout(ctx);
         }
 
-        // Recursively apply to children
         for child_id in children {
             Self::apply_layout_recursive(render_objects, child_id, ctx);
+        }
+    }
+
+    /// Remove a render object's Taffy node from the engine.
+    ///
+    /// Called when a render object is unmounted. The Taffy node is
+    /// removed from the engine to prevent memory leaks.
+    pub fn remove_layout_node(
+        render_objects: &RenderObjectRegistry,
+        id: RenderObjectKey,
+        engine: &mut dyn LayoutEngine,
+    ) {
+        if let Some(obj) = render_objects.get(id) {
+            if let Some(node) = obj.layout_node() {
+                engine.remove_node(node);
+            }
         }
     }
 }

@@ -137,25 +137,33 @@ impl TextEditRenderObject {
 
 impl RenderObject for TextEditRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        // Create measure context for text (same as TextRenderObject)
         let measure_ctx = MeasureContext::Text(TextMeasureContext {
             content: self.content.clone(),
             font_size: self.font_size,
             line_height: 1.2,
         });
 
-        // Create leaf node with text measurement
-        let node = ctx.engine().create_leaf_with_context(
-            &Layout::default(),
-            measure_ctx,
-        );
-
-        // Store node for apply_layout
-        self.layout_node = Some(node);
-
-        LayoutResult {
-            node,
-            size: Size::new(0.0, 0.0), // Will be filled by apply_layout
+        match self.layout_node {
+            Some(existing) => {
+                // Incremental: update measure context on existing node
+                ctx.engine().set_context(existing, measure_ctx);
+                LayoutResult {
+                    node: existing,
+                    size: Size::new(0.0, 0.0),
+                }
+            }
+            None => {
+                // First frame: create new node
+                let node = ctx.engine().create_leaf_with_context(
+                    &Layout::default(),
+                    measure_ctx,
+                );
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: Size::new(0.0, 0.0),
+                }
+            }
         }
     }
 
