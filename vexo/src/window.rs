@@ -378,8 +378,7 @@ impl<A: Application + 'static> WindowState<A> {
                     self.frame_builder.pop_clip();
                 }
                 crate::render::RenderCommand::Text { content, position, font_size, color, max_width } => {
-                    self.frame_builder.add_text(content, position, font_size, color);
-                    let _ = max_width; // TODO: Handle max_width for text wrapping
+                    self.frame_builder.add_text(content, position, font_size, color, max_width);
                 }
                 crate::render::RenderCommand::Caret {
                     position,

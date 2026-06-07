@@ -8,6 +8,8 @@ pub struct TextRequest {
     pub color: Color,
     /// Clipping bounds. If None, no clipping is applied.
     pub clip_bounds: Option<Bounds>,
+    /// Maximum width for text wrapping. If None, no wrapping.
+    pub max_width: Option<f32>,
 }
 
 pub type Bounds = crate::core::Bounds<Logical>;
@@ -141,6 +143,7 @@ impl FrameBuilder {
         position: Point<Logical>,
         size: f32,
         color: impl Into<Color>,
+        max_width: Option<f32>,
     ) {
         let color: Color = color.into();
 
@@ -153,6 +156,7 @@ impl FrameBuilder {
             size,
             color,
             clip_bounds,
+            max_width,
         });
     }
 }

@@ -48,13 +48,13 @@ pub fn process_commands(
                 position,
                 font_size,
                 color,
-                ..
+                max_width,
             } => {
                 let pos = Point::new(
                     position.x + current_offset.x,
                     position.y + current_offset.y,
                 );
-                frame_builder.add_text(content, pos, *font_size, *color);
+                frame_builder.add_text(content, pos, *font_size, *color, *max_width);
             }
             RenderCommand::Caret {
                 position,

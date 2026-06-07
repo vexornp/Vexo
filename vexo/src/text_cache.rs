@@ -19,6 +19,7 @@ struct TextCacheKey {
     content: String,
     font_size_bits: u32,
     color_bits: [u32; 4],
+    max_width_bits: Option<u32>,
 }
 
 impl TextCacheKey {
@@ -32,6 +33,7 @@ impl TextCacheKey {
                 req.color.b.to_bits(),
                 req.color.a.to_bits(),
             ],
+            max_width_bits: req.max_width.map(|w| w.to_bits()),
         }
     }
 }
@@ -81,6 +83,11 @@ impl TextCache {
             font_system,
             Metrics::new(request.size, request.size * 1.2),
         );
+
+        // Set wrapping width before shaping so text wraps at the widget's width
+        if let Some(max_width) = request.max_width {
+            buffer.set_size(font_system, Some(max_width), None);
+        }
 
         let color_rgba_u8: cosmic_text::Color = request.color.into();
 

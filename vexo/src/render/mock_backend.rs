@@ -103,7 +103,7 @@ mod tests {
         let mut backend = MockBackend::new();
         let mut frame_builder = FrameBuilder::new();
 
-        frame_builder.add_text("Hello".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
+        frame_builder.add_text("Hello".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK, None);
 
         backend.prepare(&frame_builder);
 
@@ -122,7 +122,7 @@ mod tests {
             None,
             0.0,
         );
-        frame_builder.add_text("Test".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK);
+        frame_builder.add_text("Test".to_string(), crate::core::Point::new(10.0, 10.0), 16.0, Color::BLACK, None);
 
         backend.prepare(&frame_builder);
 
