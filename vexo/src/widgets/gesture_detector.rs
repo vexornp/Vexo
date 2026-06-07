@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::input::{ButtonState, InputEvent};
-use crate::layout::{Layout, LayoutNodeKey};
+use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
@@ -405,8 +405,12 @@ impl Default for GestureDetectorRenderObject {
 
 impl RenderObject for GestureDetectorRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+        let layout = Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch);
         match self.layout_node {
             Some(existing) => {
+                ctx.engine().set_style(existing, &layout);
                 ctx.engine().set_children(existing, child_nodes);
                 LayoutResult {
                     node: existing,
@@ -414,7 +418,7 @@ impl RenderObject for GestureDetectorRenderObject {
                 }
             }
             None => {
-                let node = ctx.engine().create_container(&Layout::default(), child_nodes);
+                let node = ctx.engine().create_container(&layout, child_nodes);
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,

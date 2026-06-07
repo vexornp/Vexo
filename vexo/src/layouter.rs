@@ -76,6 +76,8 @@ impl Layouter {
 
         // Phase 2: Compute layout with Taffy (only dirty nodes are recomputed)
         if let Some(root_node) = Self::get_layout_node(render_objects, root_id) {
+            // Set root to fill available space (CSS html { width: 100%; height: 100% })
+            engine.set_root_size(root_node);
             engine.compute(root_node, available_size, font_system);
         }
 

@@ -169,6 +169,21 @@ impl LayoutEngine for TaffyLayoutEngine {
     // Computation and readback
     // ========================================================================
 
+    fn set_root_size(&mut self, root: LayoutNodeKey) {
+        if let Some(taffy_id) = self.node_map.get(root).copied() {
+            if let Ok(existing_style) = self.inner.style(taffy_id).cloned() {
+                let root_style = taffy::Style {
+                    size: taffy::geometry::Size {
+                        width: taffy::style::LengthPercentage::percent(1.0).into(),
+                        height: taffy::style::LengthPercentage::percent(1.0).into(),
+                    },
+                    ..existing_style
+                };
+                let _ = self.inner.set_style(taffy_id, root_style);
+            }
+        }
+    }
+
     fn compute(
         &mut self,
         root: LayoutNodeKey,

@@ -725,7 +725,9 @@ impl Default for ProxyRenderObject {
 
 impl RenderObject for ProxyRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[crate::layout::LayoutNodeKey]) -> LayoutResult {
-        let layout = crate::layout::Layout::default();
+        let layout = crate::layout::Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Column)
+            .align(crate::layout::AlignItems::Stretch);
         let node = ctx.engine().create_container(&layout, child_nodes);
         self.layout_node = Some(node);
         LayoutResult {

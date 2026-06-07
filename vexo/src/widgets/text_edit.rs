@@ -883,14 +883,14 @@ mod tests {
             "TextEdit should be focused after clicking inside"
         );
 
-        // Now click far outside the TextEdit bounds
+        // Now click outside the viewport bounds (root fills 800x600 now)
         let click_outside = InputEvent::PointerButton {
-            position: Point::<Logical>::new(700.0, 500.0),
+            position: Point::<Logical>::new(900.0, 700.0),
             button: PointerButton::Primary,
             state: ButtonState::Pressed,
         };
         pipeline.handle_event(
-            Point::<Logical>::new(700.0, 500.0),
+            Point::<Logical>::new(900.0, 700.0),
             &click_outside,
             Modifiers::default(),
             &mut fs,

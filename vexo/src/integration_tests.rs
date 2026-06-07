@@ -128,12 +128,12 @@ mod full_pipeline_tests {
         assert!(result.is_hit());
         assert!(result.target().is_some());
 
-        // Hit test outside the text bounds
+        // Hit test outside the text bounds but inside the root container
+        // (root now fills the viewport, so this hits the container)
         let result_outside = pipeline.hit_test(Position::new(500.0, 500.0));
 
-        // Should miss
-        assert!(!result_outside.is_hit());
-        assert!(result_outside.target().is_none());
+        // Root container fills the viewport, so this is a hit
+        assert!(result_outside.is_hit());
     }
 
     #[test]

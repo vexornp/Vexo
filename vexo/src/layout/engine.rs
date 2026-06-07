@@ -88,6 +88,13 @@ pub trait LayoutEngine {
 
     // === Computation and readback ===
 
+    /// Set the root node's size to fill the available space (width: 100%, height: 100%).
+    ///
+    /// This mirrors CSS behavior where the root element fills the viewport.
+    /// Without it, the root sizes by content and width constraints never
+    /// propagate down, causing text to expand infinitely.
+    fn set_root_size(&mut self, root: LayoutNodeKey);
+
     /// Compute layout for all nodes.
     ///
     /// Only recomputes dirty nodes and their descendants. Clean subtrees

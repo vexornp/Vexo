@@ -10,7 +10,7 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutNodeKey};
+use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{
@@ -72,7 +72,9 @@ impl DecoratedContainerRenderObject {
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let mut layout = Layout::default();
+        let mut layout = Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch);
 
         // Apply padding from style if set
         if let Some(padding) = self.style.padding {

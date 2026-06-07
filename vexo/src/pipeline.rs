@@ -851,12 +851,12 @@ mod tests {
         let mut font_system = create_test_font_system();
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
-        // Hit test outside the text bounds
+        // Hit test outside the text bounds but inside the root container
+        // (root now fills the viewport, so this hits the container but not the text)
         let result = pipeline.hit_test(Position::new(500.0, 500.0));
 
-        // Should miss
-        assert!(!result.is_hit());
-        assert!(result.target().is_none());
+        // The root container fills the viewport, so this is a hit
+        assert!(result.is_hit());
     }
 
     #[test]
