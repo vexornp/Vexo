@@ -360,44 +360,11 @@ impl<A: Application + 'static> WindowState<A> {
         log::debug!("========================================\n");
 
         // 10. Process RenderCommands through frame builder
-        for cmd in commands {
-            match cmd {
-                crate::render::RenderCommand::Rect { bounds, fill, stroke, corner_radius } => {
-                    self.frame_builder.add_rect(bounds, fill, stroke, corner_radius);
-                }
-                crate::render::RenderCommand::PushCornerRadius { radius } => {
-                    self.frame_builder.push_corner_radius(radius);
-                }
-                crate::render::RenderCommand::PopCornerRadius => {
-                    self.frame_builder.pop_corner_radius();
-                }
-                crate::render::RenderCommand::PushClip { bounds } => {
-                    self.frame_builder.push_clip(bounds);
-                }
-                crate::render::RenderCommand::PopClip => {
-                    self.frame_builder.pop_clip();
-                }
-                crate::render::RenderCommand::Text { content, position, font_size, color, max_width } => {
-                    self.frame_builder.add_text(content, position, font_size, color, max_width);
-                }
-                crate::render::RenderCommand::Caret {
-                    position,
-                    height,
-                    color,
-                } => {
-                    let bounds =
-                        crate::core::Bounds::from_xywh(position.x, position.y, 2.0, height);
-                    self.frame_builder.add_rect(bounds, color, None, 0.0);
-                }
-                crate::render::RenderCommand::PushOffset { offset } => {
-                    // TODO: Implement offset stack in frame builder
-                    let _ = offset;
-                }
-                crate::render::RenderCommand::PopOffset => {
-                    // TODO: Implement offset stack in frame builder
-                }
-            }
-        }
+        crate::render::process_commands(
+            &commands,
+            &mut self.frame_builder,
+            Point::new(0.0, 0.0),
+        );
 
         // 11. Update viewport
         let physical_size =
