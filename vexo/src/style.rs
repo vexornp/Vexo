@@ -4,6 +4,7 @@
 //! properties in one place for efficient single-pass rendering.
 
 use crate::core::Color;
+use crate::layout::AlignItems;
 
 /// Visual decoration properties for a DecoratedContainer.
 ///
@@ -32,6 +33,14 @@ pub struct Style {
 
     /// Padding inside the container (space between border and child).
     pub padding: Option<f32>,
+
+    /// Flex shrink factor. Defaults to 1.0 (shrinks when space is tight).
+    /// Set to 0.0 to prevent shrinking below intrinsic size.
+    pub flex_shrink: Option<f32>,
+
+    /// Cross-axis alignment for children. Defaults to Stretch.
+    /// Use Start to let children keep their intrinsic width.
+    pub align_items: Option<AlignItems>,
 }
 
 /// Border decoration properties.
@@ -77,6 +86,18 @@ impl Style {
     /// Set uniform padding on all sides.
     pub fn padding(mut self, value: f32) -> Self {
         self.padding = Some(value);
+        self
+    }
+
+    /// Set flex shrink factor. Use 0.0 to prevent shrinking below intrinsic size.
+    pub fn flex_shrink(mut self, value: f32) -> Self {
+        self.flex_shrink = Some(value);
+        self
+    }
+
+    /// Set cross-axis alignment for children. Default is Stretch.
+    pub fn align_items(mut self, value: AlignItems) -> Self {
+        self.align_items = Some(value);
         self
     }
 }

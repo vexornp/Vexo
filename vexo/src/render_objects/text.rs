@@ -91,7 +91,6 @@ impl RenderObject for TextRenderObject {
 
         match self.layout_node {
             Some(existing) => {
-                // Incremental: update measure context on existing node
                 ctx.engine().set_context(existing, measure_ctx);
                 LayoutResult {
                     node: existing,
@@ -99,7 +98,6 @@ impl RenderObject for TextRenderObject {
                 }
             }
             None => {
-                // First frame: create new node
                 let node = ctx.engine().create_leaf_with_context(
                     &Layout::default(),
                     measure_ctx,
@@ -122,12 +120,8 @@ impl RenderObject for TextRenderObject {
     }
 
     fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        // Emit text render command for glyphon processing
         match &self.computed_bounds {
-            Some(bounds) => {
-                // Get the absolute position where this text should be painted.
-                // The context already calculated the absolute position from the
-                // parent chain, so we just use it directly.
+            Some(_) => {
                 let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
                 vec![RenderCommand::Text {
@@ -135,7 +129,7 @@ impl RenderObject for TextRenderObject {
                     position: pos.to_point(),
                     font_size: self.font_size,
                     color: crate::core::Color::BLACK,
-                    max_width: Some(bounds.width()),
+                    max_width: None,
                 }]
             }
             None => vec![],
