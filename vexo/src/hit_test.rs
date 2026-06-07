@@ -266,16 +266,35 @@ impl RenderObjectRegistry {
         // Convert pointer position to local coordinates relative to this object
         let local_position = pointer_position.to_relative(object_absolute_position);
 
+        // Apply inverse transform for hit testing if this object has one.
+        // This allows rotated/scaled objects to receive hit events in their
+        // transformed coordinate space.
+        let effective_local = if let Some(transform) = obj.hit_test_transform() {
+            match transform.inverse() {
+                Some(inv) => {
+                    let p = crate::core::Point::new(local_position.x, local_position.y);
+                    let transformed = inv.transform_point(p);
+                    Position::new(transformed.x, transformed.y)
+                }
+                None => {
+                    // Singular transform — nothing can be hit
+                    return false;
+                }
+            }
+        } else {
+            local_position
+        };
+
         // Get the size of this object
         let size = obj.computed_bounds()
             .map(|b| crate::core::Size::<Logical>::new(b.width(), b.height()))
             .unwrap_or(crate::core::Size::zero());
 
-        // Check if the local position is within this object's bounds (0,0 to width,height)
-        let is_inside = local_position.x >= 0.0
-            && local_position.x <= size.width
-            && local_position.y >= 0.0
-            && local_position.y <= size.height;
+        // Check if the effective local position is within this object's bounds (0,0 to width,height)
+        let is_inside = effective_local.x >= 0.0
+            && effective_local.x <= size.width
+            && effective_local.y >= 0.0
+            && effective_local.y <= size.height;
 
         if is_inside {
             // Add this node to the path

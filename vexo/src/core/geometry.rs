@@ -570,6 +570,163 @@ impl std::ops::Div<f32> for Scale {
 }
 
 // ============================================================================
+// AFFINE TRANSFORM
+// ============================================================================
+
+/// A 2D affine transform represented as 6 floats [a, b, c, d, e, f].
+///
+/// Corresponds to the 3x3 homogeneous matrix:
+/// ```text
+/// | a  c  e |     a = scaleX,   b = skewY
+/// | b  d  f |     c = skewX,    d = scaleY
+/// | 0  0  1 |     e = translateX, f = translateY
+/// ```
+///
+/// This is sufficient for all 2D transforms: rotation, scaling,
+/// translation, and skew. No 3D perspective is needed for a 2D UI.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AffineTransform {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub e: f32,
+    pub f: f32,
+}
+
+impl AffineTransform {
+    /// Identity transform (no-op).
+    pub const fn identity() -> Self {
+        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 }
+    }
+
+    /// Translation by (dx, dy).
+    pub fn translation(dx: f32, dy: f32) -> Self {
+        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: dx, f: dy }
+    }
+
+    /// Rotation by `radians` around the origin.
+    pub fn rotation(radians: f32) -> Self {
+        let cos = radians.cos();
+        let sin = radians.sin();
+        Self { a: cos, b: sin, c: -sin, d: cos, e: 0.0, f: 0.0 }
+    }
+
+    /// Uniform or non-uniform scale.
+    pub fn scale(sx: f32, sy: f32) -> Self {
+        Self { a: sx, b: 0.0, c: 0.0, d: sy, e: 0.0, f: 0.0 }
+    }
+
+    /// Skew by the given angles (in radians).
+    pub fn skew(sx: f32, sy: f32) -> Self {
+        Self { a: 1.0, b: sy.tan(), c: sx.tan(), d: 1.0, e: 0.0, f: 0.0 }
+    }
+
+    /// Create from a [a, b, c, d, e, f] array.
+    pub fn from_array(arr: [f32; 6]) -> Self {
+        Self { a: arr[0], b: arr[1], c: arr[2], d: arr[3], e: arr[4], f: arr[5] }
+    }
+
+    /// Convert to [a, b, c, d, e, f] array.
+    pub fn to_array(&self) -> [f32; 6] {
+        [self.a, self.b, self.c, self.d, self.e, self.f]
+    }
+
+    /// Compose this transform with another: `self * other`.
+    ///
+    /// The result applies `other` first, then `self`.
+    pub fn mul(&self, other: &AffineTransform) -> AffineTransform {
+        AffineTransform {
+            a: self.a * other.a + self.c * other.b,
+            b: self.b * other.a + self.d * other.b,
+            c: self.a * other.c + self.c * other.d,
+            d: self.b * other.c + self.d * other.d,
+            e: self.a * other.e + self.c * other.f + self.e,
+            f: self.b * other.e + self.d * other.f + self.f,
+        }
+    }
+
+    /// Compute the inverse transform.
+    ///
+    /// Returns `None` for singular matrices (determinant near zero).
+    pub fn inverse(&self) -> Option<AffineTransform> {
+        let det = self.a * self.d - self.b * self.c;
+        if det.abs() < 1e-10 {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+        Some(AffineTransform {
+            a: self.d * inv_det,
+            b: -self.b * inv_det,
+            c: -self.c * inv_det,
+            d: self.a * inv_det,
+            e: (self.c * self.f - self.d * self.e) * inv_det,
+            f: (self.b * self.e - self.a * self.f) * inv_det,
+        })
+    }
+
+    /// Apply the transform to a point.
+    pub fn transform_point(&self, p: Point<Logical>) -> Point<Logical> {
+        Point::new(
+            self.a * p.x + self.c * p.y + self.e,
+            self.b * p.x + self.d * p.y + self.f,
+        )
+    }
+
+    /// Check if this is approximately the identity transform.
+    pub fn is_identity(&self) -> bool {
+        let id = Self::identity();
+        (self.a - id.a).abs() < 1e-6
+            && (self.b - id.b).abs() < 1e-6
+            && (self.c - id.c).abs() < 1e-6
+            && (self.d - id.d).abs() < 1e-6
+            && (self.e - id.e).abs() < 1e-6
+            && (self.f - id.f).abs() < 1e-6
+    }
+
+    /// Check if this is a pure translation (no rotation, scale, or skew).
+    pub fn is_translation_only(&self) -> bool {
+        let id = Self::identity();
+        (self.a - id.a).abs() < 1e-6
+            && (self.b - id.b).abs() < 1e-6
+            && (self.c - id.c).abs() < 1e-6
+            && (self.d - id.d).abs() < 1e-6
+    }
+
+    /// Compute the determinant of the 2x2 linear part.
+    pub fn determinant(&self) -> f32 {
+        self.a * self.d - self.b * self.c
+    }
+}
+
+impl Default for AffineTransform {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+impl std::ops::Mul for AffineTransform {
+    type Output = AffineTransform;
+    fn mul(self, other: AffineTransform) -> AffineTransform {
+        self.mul(&other)
+    }
+}
+
+impl std::ops::Mul<&AffineTransform> for AffineTransform {
+    type Output = AffineTransform;
+    fn mul(self, other: &AffineTransform) -> AffineTransform {
+        AffineTransform {
+            a: self.a * other.a + self.c * other.b,
+            b: self.b * other.a + self.d * other.b,
+            c: self.a * other.c + self.c * other.d,
+            d: self.b * other.c + self.d * other.d,
+            e: self.a * other.e + self.c * other.f + self.e,
+            f: self.b * other.e + self.d * other.f + self.f,
+        }
+    }
+}
+
+// ============================================================================
 // ARITHMETIC OPERATORS
 // ============================================================================
 
@@ -824,5 +981,114 @@ mod tests {
 
         assert_eq!(child_physical.x, 220.0);
         assert_eq!(child_physical.y, 140.0);
+    }
+
+    // ========================================================================
+    // AffineTransform Tests
+    // ========================================================================
+
+    #[test]
+    fn test_affine_transform_identity() {
+        let t = AffineTransform::identity();
+        assert!(t.is_identity());
+        assert!(t.is_translation_only());
+
+        let p = Point::<Logical>::new(10.0, 20.0);
+        let result = t.transform_point(p);
+        assert_eq!(result.x, 10.0);
+        assert_eq!(result.y, 20.0);
+    }
+
+    #[test]
+    fn test_affine_transform_translation() {
+        let t = AffineTransform::translation(5.0, 10.0);
+        assert!(t.is_translation_only());
+        assert!(!t.is_identity());
+
+        let p = Point::<Logical>::new(10.0, 20.0);
+        let result = t.transform_point(p);
+        assert_eq!(result.x, 15.0);
+        assert_eq!(result.y, 30.0);
+    }
+
+    #[test]
+    fn test_affine_transform_rotation() {
+        let t = AffineTransform::rotation(std::f32::consts::FRAC_PI_2);
+        let p = Point::<Logical>::new(1.0, 0.0);
+        let result = t.transform_point(p);
+        assert!((result.x - 0.0).abs() < 1e-6);
+        assert!((result.y - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_affine_transform_scale() {
+        let t = AffineTransform::scale(2.0, 3.0);
+        let p = Point::<Logical>::new(10.0, 20.0);
+        let result = t.transform_point(p);
+        assert_eq!(result.x, 20.0);
+        assert_eq!(result.y, 60.0);
+    }
+
+    #[test]
+    fn test_affine_transform_composition() {
+        let t1 = AffineTransform::translation(10.0, 20.0);
+        let t2 = AffineTransform::scale(2.0, 2.0);
+        let combined = t1 * t2;
+
+        // scale first, then translate: scale(10,10) -> (20,20), then translate -> (30,40)
+        let p = Point::<Logical>::new(10.0, 10.0);
+        let result = combined.transform_point(p);
+        assert_eq!(result.x, 30.0);
+        assert_eq!(result.y, 40.0);
+    }
+
+    #[test]
+    fn test_affine_transform_inverse() {
+        let t = AffineTransform::rotation(0.5);
+        let inv = t.inverse().expect("rotation should be invertible");
+        let combined = t * inv;
+        assert!(combined.is_identity());
+    }
+
+    #[test]
+    fn test_affine_transform_inverse_singular() {
+        let t = AffineTransform::scale(0.0, 0.0);
+        assert!(t.inverse().is_none());
+    }
+
+    #[test]
+    fn test_affine_transform_inverse_translation() {
+        let t = AffineTransform::translation(5.0, 10.0);
+        let inv = t.inverse().expect("translation should be invertible");
+        let p = Point::<Logical>::new(15.0, 30.0);
+        let result = inv.transform_point(p);
+        assert!((result.x - 10.0).abs() < 1e-6);
+        assert!((result.y - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_affine_transform_to_array() {
+        let t = AffineTransform::translation(3.0, 4.0);
+        let arr = t.to_array();
+        assert_eq!(arr, [1.0, 0.0, 0.0, 1.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_affine_transform_from_array() {
+        let arr = [2.0, 0.0, 0.0, 3.0, 5.0, 6.0];
+        let t = AffineTransform::from_array(arr);
+        assert_eq!(t.a, 2.0);
+        assert_eq!(t.d, 3.0);
+        assert_eq!(t.e, 5.0);
+        assert_eq!(t.f, 6.0);
+    }
+
+    #[test]
+    fn test_affine_transform_determinant() {
+        let t = AffineTransform::scale(2.0, 3.0);
+        assert_eq!(t.determinant(), 6.0);
+
+        let singular = AffineTransform::scale(0.0, 1.0);
+        assert_eq!(singular.determinant(), 0.0);
     }
 }

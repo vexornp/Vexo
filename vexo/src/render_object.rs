@@ -299,6 +299,24 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the paint transform for this render object, if any.
+    ///
+    /// The pipeline uses this to wrap children's paint commands with
+    /// `PushTransform`/`PopTransform`. This is necessary because children
+    /// are painted separately from the parent's `paint()` method.
+    fn paint_transform(&self) -> Option<crate::core::AffineTransform> {
+        None
+    }
+
+    /// Get the transform to apply for hit testing, if any.
+    ///
+    /// When present, the inverse transform is applied to the pointer position
+    /// before testing children. This allows rotated/scaled objects to receive
+    /// hit events in their transformed coordinate space.
+    fn hit_test_transform(&self) -> Option<crate::core::AffineTransform> {
+        None
+    }
+
 }
 
 // ============================================================================

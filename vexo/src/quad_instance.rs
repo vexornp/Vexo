@@ -1,6 +1,7 @@
-use crate::core::{Logical, Point, Size};
+use crate::core::{AffineTransform, Logical, Point, Size};
 
 pub const NO_CLIP_BOUNDS: [f32; 4] = [-1.0, -1.0, -1.0, -1.0];
+pub const IDENTITY_TRANSFORM: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -13,6 +14,11 @@ pub struct QuadInstance {
     pub corner_radius: f32,
     // Clipping bounds (x, y, width, height). If width/height <= 0, no clipping.
     pub clip_bounds: [f32; 4],
+    // 2D affine transform [a, b, c, d, e, f]. Identity by default.
+    // | a  c  e |
+    // | b  d  f |
+    // | 0  0  1 |
+    pub transform: [f32; 6],
     pub _padding: [f32; 2], // Maintain 16-byte alignment for safety
 }
 
@@ -33,7 +39,31 @@ impl QuadInstance {
             border_color: border_color.to_array(),
             border_width,
             corner_radius,
-            clip_bounds: NO_CLIP_BOUNDS, // No clipping by default
+            clip_bounds: NO_CLIP_BOUNDS,
+            transform: IDENTITY_TRANSFORM,
+            _padding: [0.0; 2],
+        }
+    }
+
+    /// Create a QuadInstance with an explicit transform.
+    pub fn with_transform(
+        pos: Point<Logical>,
+        size: Size<Logical>,
+        color: crate::Color,
+        border_color: crate::Color,
+        border_width: f32,
+        corner_radius: f32,
+        transform: AffineTransform,
+    ) -> Self {
+        Self {
+            position: pos.to_array(),
+            size: size.to_array(),
+            color: color.to_array(),
+            border_color: border_color.to_array(),
+            border_width,
+            corner_radius,
+            clip_bounds: NO_CLIP_BOUNDS,
+            transform: transform.to_array(),
             _padding: [0.0; 2],
         }
     }
@@ -79,6 +109,21 @@ impl QuadInstance {
                     shader_location: 7,
                     format: wgpu::VertexFormat::Float32x4,
                 }, // clip_bounds
+                wgpu::VertexAttribute {
+                    offset: 72,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x2,
+                }, // transform [a, b]
+                wgpu::VertexAttribute {
+                    offset: 80,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x2,
+                }, // transform [c, d]
+                wgpu::VertexAttribute {
+                    offset: 88,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x2,
+                }, // transform [e, f]
             ],
         }
     }

@@ -3,7 +3,7 @@
 //! This module provides the bridge between the new `RenderCommand` output from
 //! `Paint::paint()` and the existing `FrameBuilder` renderer.
 
-use crate::core::{Bounds, Logical, Point};
+use crate::core::{AffineTransform, Bounds, Logical, Point};
 use crate::render::RenderCommand;
 use crate::frame_builder::FrameBuilder;
 
@@ -27,6 +27,14 @@ pub fn process_commands(
     let mut offset_stack: Vec<Point<Logical>> = Vec::new();
     let mut current_offset = initial_offset;
 
+    // Stack to track nested transforms and their origins.
+    // The origin is the center of the transform's subtree (in absolute logical coords).
+    // For quads, the shader handles center-relative rotation automatically.
+    // For text/carets, we need to rotate around this origin manually.
+    let mut transform_stack: Vec<(AffineTransform, Point<Logical>)> = Vec::new();
+    let mut current_transform = AffineTransform::identity();
+    let mut current_origin: Point<Logical> = Point::zero();
+
     for cmd in commands {
         match cmd {
             RenderCommand::Rect {
@@ -41,7 +49,10 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
+                // Bake current transform into the frame builder before adding this rect
+                frame_builder.push_transform(current_transform);
                 frame_builder.add_rect(adjusted_bounds, *fill, *stroke, *corner_radius);
+                frame_builder.pop_transform();
             }
             RenderCommand::Text {
                 content,
@@ -50,23 +61,46 @@ pub fn process_commands(
                 color,
                 max_width,
             } => {
-                let pos = Point::new(
+                // Apply offset to text position
+                let offset_pos = Point::new(
                     position.x + current_offset.x,
                     position.y + current_offset.y,
                 );
-                frame_builder.add_text(content, pos, *font_size, *color, *max_width);
+                // For text, apply center-relative transform: rotate around the origin,
+                // not around the text's own position or the window origin.
+                // T(origin) * transform * T(-origin) maps the position correctly.
+                let final_pos = if current_transform.is_identity() {
+                    offset_pos
+                } else {
+                    // Translate to origin, apply transform, translate back
+                    let relative = Point::new(offset_pos.x - current_origin.x, offset_pos.y - current_origin.y);
+                    let transformed = current_transform.transform_point(relative);
+                    Point::new(transformed.x + current_origin.x, transformed.y + current_origin.y)
+                };
+                frame_builder.add_text(content, final_pos, *font_size, *color, *max_width);
             }
             RenderCommand::Caret {
                 position,
                 height,
                 color,
             } => {
-                let pos: Point<Logical> = Point::new(
+                // Apply offset to caret position
+                let offset_pos: Point<Logical> = Point::new(
                     position.x + current_offset.x,
                     position.y + current_offset.y,
                 );
-                let bounds = Bounds::from_xywh(pos.x, pos.y, 2.0, *height);
+                // Same center-relative transform as text
+                let final_pos = if current_transform.is_identity() {
+                    offset_pos
+                } else {
+                    let relative = Point::new(offset_pos.x - current_origin.x, offset_pos.y - current_origin.y);
+                    let transformed = current_transform.transform_point(relative);
+                    Point::new(transformed.x + current_origin.x, transformed.y + current_origin.y)
+                };
+                let bounds = Bounds::from_xywh(final_pos.x, final_pos.y, 2.0, *height);
+                frame_builder.push_transform(current_transform);
                 frame_builder.add_rect(bounds, *color, None, 0.0);
+                frame_builder.pop_transform();
             }
             RenderCommand::PushClip { bounds } => {
                 let adjusted_bounds = Bounds::new(
@@ -87,7 +121,6 @@ pub fn process_commands(
                 frame_builder.pop_corner_radius();
             }
             RenderCommand::PushOffset { offset: off } => {
-                // Save current offset before modifying
                 offset_stack.push(current_offset);
                 current_offset = Point::new(
                     current_offset.x + off.x,
@@ -95,9 +128,19 @@ pub fn process_commands(
                 );
             }
             RenderCommand::PopOffset => {
-                // Restore previous offset
                 if let Some(prev_offset) = offset_stack.pop() {
                     current_offset = prev_offset;
+                }
+            }
+            RenderCommand::PushTransform { transform, origin } => {
+                transform_stack.push((current_transform, current_origin));
+                current_transform = current_transform * *transform;
+                current_origin = *origin;
+            }
+            RenderCommand::PopTransform => {
+                if let Some((prev_transform, prev_origin)) = transform_stack.pop() {
+                    current_transform = prev_transform;
+                    current_origin = prev_origin;
                 }
             }
         }

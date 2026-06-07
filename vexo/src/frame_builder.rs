@@ -1,4 +1,4 @@
-use crate::core::{Color, Logical, Point, Stroke};
+use crate::core::{AffineTransform, Color, Logical, Point, Stroke};
 use crate::quad_instance::{self, QuadInstance};
 
 pub struct TextRequest {
@@ -20,6 +20,8 @@ pub struct FrameBuilder {
 
     corner_radius_stack: Vec<f32>,
     clip_stack: Vec<Bounds>,
+    transform_stack: Vec<AffineTransform>,
+    current_transform: AffineTransform,
 }
 
 impl Default for FrameBuilder {
@@ -35,6 +37,8 @@ impl FrameBuilder {
             quad_instances: Vec::new(),
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
+            transform_stack: Vec::new(),
+            current_transform: AffineTransform::identity(),
         }
     }
 
@@ -43,6 +47,8 @@ impl FrameBuilder {
         self.quad_instances.clear();
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
+        self.transform_stack.clear();
+        self.current_transform = AffineTransform::identity();
     }
 
     pub fn quad_count(&self) -> usize {
@@ -104,6 +110,24 @@ impl FrameBuilder {
         self.clip_stack.last().copied()
     }
 
+    /// Push a transform onto the context stack.
+    pub fn push_transform(&mut self, transform: AffineTransform) {
+        self.transform_stack.push(self.current_transform);
+        self.current_transform = self.current_transform * transform;
+    }
+
+    /// Pop the transform from the context stack.
+    pub fn pop_transform(&mut self) {
+        if let Some(prev) = self.transform_stack.pop() {
+            self.current_transform = prev;
+        }
+    }
+
+    /// Get the current transform.
+    pub fn current_transform(&self) -> AffineTransform {
+        self.current_transform
+    }
+
     pub fn add_rect(
         &mut self,
         bounds: Bounds,
@@ -133,6 +157,7 @@ impl FrameBuilder {
             border_width,
             corner_radius: radius,
             clip_bounds,
+            transform: self.current_transform.to_array(),
             _padding: [0.0; 2],
         });
     }

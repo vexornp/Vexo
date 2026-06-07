@@ -28,13 +28,28 @@ fn vs_main(
     @location(5) inst_border_width: f32,
     @location(6) inst_corner_radius: f32,
     @location(7) inst_clip_bounds: vec4<f32>,
+    @location(8) inst_transform_ab: vec2<f32>,
+    @location(9) inst_transform_cd: vec2<f32>,
+    @location(10) inst_transform_ef: vec2<f32>,
 ) -> VertexOutput {
-    // Multiply incoming logical points by the scale factor to get physical pixels
-    let scaled_pos = inst_pos * globals.scale_factor;
-    let scaled_size = inst_size * globals.scale_factor;
+    // Get local position within the quad (0 to size)
+    let local_pos = model_pos * inst_size;
 
-    // 1. Calculate pixel position:
-    let pixel_pos = scaled_pos + (model_pos * scaled_size);
+    // Apply 2D affine transform around the quad's center.
+    // Shift origin to center, apply transform, then shift back.
+    let half_size = inst_size * 0.5;
+    let centered_x = local_pos.x - half_size.x;
+    let centered_y = local_pos.y - half_size.y;
+
+    // Apply 2D affine transform: [a c e; b d f; 0 0 1] * [x; y; 1]
+    let tx = inst_transform_ab.x * centered_x + inst_transform_cd.x * centered_y + inst_transform_ef.x;
+    let ty = inst_transform_ab.y * centered_x + inst_transform_cd.y * centered_y + inst_transform_ef.y;
+
+    // Shift back to top-left origin and add instance position
+    let logical_pos = vec2<f32>(tx + half_size.x + inst_pos.x, ty + half_size.y + inst_pos.y);
+
+    // Scale to physical pixels
+    let pixel_pos = logical_pos * globals.scale_factor;
 
     // Normalize to NDC (-1.0 to 1.0)
     let nx = (pixel_pos.x / globals.screen_size.x) * 2.0 - 1.0;
@@ -45,7 +60,7 @@ fn vs_main(
     out.uv = model_pos;
     out.color = inst_color;
     out.border_color = inst_border_color;
-    out.size = scaled_size;
+    out.size = inst_size * globals.scale_factor;
     out.border_width = inst_border_width;
     out.corner_radius = inst_corner_radius * globals.scale_factor;
     out.clip_bounds = inst_clip_bounds;

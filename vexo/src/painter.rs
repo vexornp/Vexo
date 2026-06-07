@@ -37,8 +37,6 @@ impl Painter {
         };
 
         // Check if we need to paint
-        // Note: We always need to generate render commands for the GPU,
-        // but we log whether this is a full paint or just reusing cached state.
         if dirty.is_paint_empty() {
             log::debug!(
                 "[RetainMode] paint() - No changes, regenerating commands for {} objects",
@@ -83,8 +81,6 @@ impl Painter {
         };
 
         // Get this object's position relative to its parent (from Taffy layout)
-        // For containers, this is their position within the parent container
-        // For leafs, this is their position relative to their parent container
         let position_in_parent: Position<Logical, Relative> = obj
             .computed_bounds()
             .map(|b| Position::new(b.left, b.top))
@@ -105,13 +101,28 @@ impl Painter {
             ctx.push_command(cmd);
         }
 
+        // If this object has a paint transform, push it before painting children.
+        // The origin is the center of this render object's bounds, so that
+        // rotations happen around the center (matching the shader behavior).
+        let transform = obj.paint_transform();
+        if let Some(t) = &transform {
+            let origin = obj.computed_bounds()
+                .map(|b| crate::core::Point::new(
+                    absolute_position.x + b.width() * 0.5,
+                    absolute_position.y + b.height() * 0.5,
+                ))
+                .unwrap_or(crate::core::Point::new(absolute_position.x, absolute_position.y));
+            ctx.push_command(RenderCommand::PushTransform { transform: *t, origin });
+        }
+
         // Paint children
-        // For containers, children's positions are relative to the container's origin (0, 0),
-        // not relative to the container's position in its parent.
-        // So we pass the container's absolute position as the parent position for children.
-        // This means: child_absolute = container_absolute + child_position_in_container
         for child_id in obj.children() {
             Self::paint_recursive(render_objects, *child_id, ctx, absolute_position);
+        }
+
+        // Pop transform after children
+        if transform.is_some() {
+            ctx.push_command(RenderCommand::PopTransform);
         }
     }
 }

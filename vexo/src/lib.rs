@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use winit::event_loop::EventLoop;
 
 pub use core::Color;
+pub use core::AffineTransform;
 pub use uniffi;
 
 mod app;
@@ -100,7 +101,7 @@ pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
 pub use child_ops::{ChildOp, ChildOps};
 pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus};
-pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, MouseRegion, TextEdit, TextEditState, TextEditingController};
+pub use widgets::{Widget, Text, Column, Row, DecoratedContainer, GestureDetector, MouseRegion, TextEdit, TextEditState, TextEditingController, Transform};
 pub use input::SystemCursorKind;
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject};

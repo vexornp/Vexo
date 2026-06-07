@@ -10,6 +10,7 @@ mod mouse_region;
 mod text;
 mod text_edit;
 mod text_edit_content;
+mod transform;
 
 use std::any::Any;
 
@@ -25,6 +26,7 @@ pub use mouse_region::MouseRegion;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use text_edit_content::TextEditContent;
+pub use transform::Transform;
 pub use super::{Key, GlobalKey};
 
 /// Immutable widget configuration - rebuilt each frame.

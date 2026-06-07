@@ -10,7 +10,7 @@
 //! - Support different rendering strategies (batching, culling, etc.)
 //! - Allow for render command recording and replay
 
-use crate::core::{Bounds, Color, Point, Stroke};
+use crate::core::{AffineTransform, Bounds, Color, Point, Stroke};
 use crate::core::Logical;
 
 // ============================================================================
@@ -89,6 +89,21 @@ pub enum RenderCommand {
 
     /// Pop the most recent corner radius context from the stack.
     PopCornerRadius,
+
+    /// Push a 2D affine transform onto the stack.
+    /// All subsequent commands are transformed by this matrix.
+    PushTransform {
+        /// The affine transform to apply.
+        transform: AffineTransform,
+        /// The origin point (in logical absolute coordinates) around which
+        /// the transform is applied. For quads, the shader uses the quad's
+        /// center as origin. For text/carets, the command processor uses
+        /// this origin to compute the correct rotated position.
+        origin: Point<Logical>,
+    },
+
+    /// Pop the most recent transform from the stack.
+    PopTransform,
 }
 
 // ============================================================================
