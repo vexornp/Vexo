@@ -172,16 +172,12 @@ impl RenderObject for TextEditRenderObject {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);
 
-                // Sync the editor buffer size to the computed width so that
-                // line wrapping inside the editor matches the visual layout.
-                // Without this, cursor_position() returns single-line coordinates
-                // when text wraps, causing the cursor to appear off-screen.
+                // Sync the editor buffer width to the computed layout width.
+                // Editor auto-maintains this constraint across all subsequent
+                // mutations, so cursor_position() stays correct for wrapped text.
                 let width = computed.bounds.width();
                 if width > 0.0 {
-                    let size = Size::<Logical>::new(width, computed.bounds.height());
-                    let mut editor = self.editor.borrow_mut();
-                    editor.set_size(ctx.font_system(), size);
-                    editor.shape_as_needed(ctx.font_system(), true);
+                    self.editor.borrow_mut().set_layout_width(ctx.font_system(), width);
                 }
             }
         }

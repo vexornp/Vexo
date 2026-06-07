@@ -122,10 +122,7 @@ impl TextEditingController {
     /// Replace the entire text content.
     pub fn set_text(&self, text: &str, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
-        editor.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, text, &Attrs::new(), Shaping::Advanced);
-        });
-        editor.shape_as_needed(font_system, true);
+        editor.set_text(font_system, text, &Attrs::new(), Shaping::Advanced);
         drop(editor);
         self.notify();
     }
@@ -134,7 +131,6 @@ impl TextEditingController {
     pub fn insert_char(&self, c: char, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Insert(c));
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
@@ -143,7 +139,6 @@ impl TextEditingController {
     pub fn delete_backward(&self, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Backspace);
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
@@ -152,7 +147,6 @@ impl TextEditingController {
     pub fn delete_forward(&self, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Delete);
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
@@ -161,7 +155,6 @@ impl TextEditingController {
     pub fn move_cursor(&self, motion: Motion, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Motion(motion));
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
@@ -170,7 +163,6 @@ impl TextEditingController {
     pub fn insert_newline(&self, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Enter);
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
@@ -183,7 +175,6 @@ impl TextEditingController {
     pub fn click_at(&self, x: i32, y: i32, font_system: &mut glyphon::FontSystem) {
         let mut editor = self.editor.borrow_mut();
         editor.action(font_system, Action::Click { x, y });
-        editor.shape_as_needed(font_system, true);
         drop(editor);
         self.notify();
     }
