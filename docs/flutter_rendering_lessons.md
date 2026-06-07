@@ -20,29 +20,15 @@ This document captures lessons learned from analyzing Flutter/Impeller's renderi
 
 ---
 
-## Priority 1: Fix PushOffset Bug
+## Priority 1: Fix PushOffset Bug — DONE
 
-**Status:** Bug - offsets are silently ignored
+**Status:** Fixed in commit `4f0cbb3`
 
-**Location:** `vexo/src/window.rs` lines 392-398
+**Problem:** `window.rs` had an inline command loop that silently dropped `PushOffset`/`PopOffset` commands with `// TODO` stubs. The `command_processor.rs` module already had working offset stack logic but wasn't being used.
 
-**Problem:**
-```rust
-RenderCommand::PushOffset { offset } => {
-    // TODO: Implement offset stack in frame builder
-    let _ = offset;
-}
-RenderCommand::PopOffset => {
-    // TODO: Implement offset stack in frame builder
-}
-```
+**Fix:** Replaced the 37-line inline loop with a 4-line call to `process_commands()`, which handles all command types including `PushOffset`/`PopOffset` with its existing offset stack logic.
 
-The `command_processor.rs` module has working offset stack logic, but `window.rs` doesn't use it. Offsets are dropped.
-
-**Fix:**
-Wire up the offset stack in `FrameBuilder` or use `command_processor.rs` in the render path.
-
-**Impact:** Correctness - transforms are broken without this.
+**Note:** No widget currently emits `PushOffset`/`PopOffset` — they are infrastructure for a future `Offset`/`Transform.translate` widget. The fix removes a latent bug so that when such a widget is added, it will work correctly.
 
 ---
 
@@ -298,7 +284,7 @@ Flutter draws each rect as a separate draw call. Vexo's instanced rendering (one
 
 | Priority | Change | Effort | Impact | Status |
 |----------|--------|--------|--------|--------|
-| 1 | Fix PushOffset bug | Small | Correctness | TODO |
+| 1 | Fix PushOffset bug | Small | Correctness | Done (`4f0cbb3`) |
 | 2 | Dynamic instance buffer | Small | Robustness | TODO |
 | 3 | Scissor-based clipping | Medium | GPU perf | TODO |
 | 4 | Pipeline caching | Small | Startup time | TODO |
