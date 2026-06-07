@@ -107,7 +107,7 @@ impl RenderObject for ContainerRenderObject {
         }
     }
 
-    fn apply_layout(&mut self, ctx: &LayoutContext) {
+    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
         // Container reads computed bounds from Taffy
         if let Some(node) = self.layout_node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
@@ -252,8 +252,8 @@ mod tests {
 
         // Apply layout should read computed bounds
         {
-            let ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.apply_layout(&ctx);
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
         }
 
         // After apply_layout, computed_bounds should be set (though may be zero

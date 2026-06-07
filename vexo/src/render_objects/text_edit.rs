@@ -167,10 +167,22 @@ impl RenderObject for TextEditRenderObject {
         }
     }
 
-    fn apply_layout(&mut self, ctx: &LayoutContext) {
+    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
         if let Some(node) = self.layout_node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);
+
+                // Sync the editor buffer size to the computed width so that
+                // line wrapping inside the editor matches the visual layout.
+                // Without this, cursor_position() returns single-line coordinates
+                // when text wraps, causing the cursor to appear off-screen.
+                let width = computed.bounds.width();
+                if width > 0.0 {
+                    let size = Size::<Logical>::new(width, computed.bounds.height());
+                    let mut editor = self.editor.borrow_mut();
+                    editor.set_size(ctx.font_system(), size);
+                    editor.shape_as_needed(ctx.font_system(), true);
+                }
             }
         }
     }
@@ -377,8 +389,8 @@ mod tests {
         let root = engine.create_leaf(&Layout::default());
         engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
         {
-            let ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.apply_layout(&ctx);
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
         }
 
         let mut commands = Vec::new();
@@ -407,8 +419,8 @@ mod tests {
         let root = engine.create_leaf(&Layout::default());
         engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
         {
-            let ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.apply_layout(&ctx);
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
         }
 
         let mut commands = Vec::new();
@@ -437,8 +449,8 @@ mod tests {
         let root = engine.create_leaf(&Layout::default());
         engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
         {
-            let ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.apply_layout(&ctx);
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
         }
 
         let mut commands = Vec::new();

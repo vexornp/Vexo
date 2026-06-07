@@ -228,7 +228,7 @@ pub trait RenderObject {
     ///
     /// Called after Taffy::compute() to read back computed bounds.
     /// The render object should read its layout from the engine and update computed_bounds.
-    fn apply_layout(&mut self, ctx: &LayoutContext);
+    fn apply_layout(&mut self, ctx: &mut LayoutContext);
 
     /// Generate paint commands.
     ///
@@ -498,7 +498,7 @@ mod tests {
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
         }
 
-        fn apply_layout(&mut self, _ctx: &LayoutContext) {
+        fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
             unimplemented!("MockRenderObject::apply_layout requires a real LayoutEngine")
         }
 
@@ -667,7 +667,7 @@ mod tests {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 
-            fn apply_layout(&mut self, _ctx: &LayoutContext) {
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
                 unimplemented!("MockParentObject::apply_layout requires a real LayoutEngine")
             }
 

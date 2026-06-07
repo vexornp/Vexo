@@ -103,7 +103,7 @@ impl RenderObject for DecoratedContainerRenderObject {
         }
     }
 
-    fn apply_layout(&mut self, ctx: &LayoutContext) {
+    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
         if let Some(node) = self.layout_node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);

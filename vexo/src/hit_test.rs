@@ -425,8 +425,8 @@ mod tests {
         let root = engine.create_leaf(&crate::layout::Layout::default());
         engine.compute(root, crate::core::Size::new(100.0, 50.0), &mut font_system);
         {
-            let ctx = LayoutContext::new(&mut engine, &mut font_system);
-            obj.apply_layout(&ctx);
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
         }
 
         let element_id = make_element_key();

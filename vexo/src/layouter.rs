@@ -84,8 +84,8 @@ impl Layouter {
         // Phase 3: Apply computed layouts to all render objects
         // TODO: optimize to only apply to recomputed subtrees
         {
-            let ctx = LayoutContext::new(engine, font_system);
-            Self::apply_layout_recursive(render_objects, root_id, &ctx);
+            let mut ctx = LayoutContext::new(engine, font_system);
+            Self::apply_layout_recursive(render_objects, root_id, &mut ctx);
         }
 
         log::debug!("[IncrementalLayout] layout() complete");
@@ -151,7 +151,7 @@ impl Layouter {
     pub(crate) fn apply_layout_recursive(
         render_objects: &mut RenderObjectRegistry,
         id: RenderObjectKey,
-        ctx: &LayoutContext,
+        ctx: &mut LayoutContext,
     ) {
         let children: Vec<RenderObjectKey> = render_objects
             .get(id)

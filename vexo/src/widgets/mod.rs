@@ -237,7 +237,7 @@ mod tests {
             }
         }
 
-        fn apply_layout(&mut self, _ctx: &LayoutContext) {
+        fn apply_layout(&mut self, _ctx: &mut LayoutContext) {
             // Test implementation
         }
 
