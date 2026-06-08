@@ -245,6 +245,32 @@ impl Application for State {
                     100.0,
                     100.0,
                 ),
+            ],
+            // Clip demo
+            Text::new("Clipping:"),
+            Text::new("Left: clip enabled. Right: no clip."),
+            row![
+                DecoratedContainer::new(column![
+                    Text::new("This long text is clipped by the container bounds and should not overflow"),
+                ])
+                .style(
+                    Style::new()
+                        .background(Color::rgb(1.0, 0.95, 0.9))
+                        .border(Color::rgb(0.8, 0.6, 0.4), 1.0)
+                        .corner_radius(8.0)
+                        .padding(8.0)
+                        .clip()
+                ),
+                DecoratedContainer::new(column![
+                    Text::new("This long text is not clipped and will overflow past the container"),
+                ])
+                .style(
+                    Style::new()
+                        .background(Color::rgb(0.9, 0.95, 1.0))
+                        .border(Color::rgb(0.4, 0.6, 0.8), 1.0)
+                        .corner_radius(8.0)
+                        .padding(8.0)
+                ),
             ]
         ])
     }
