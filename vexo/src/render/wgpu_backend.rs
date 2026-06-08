@@ -56,6 +56,7 @@ pub struct WgpuBackend {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
+    instance_buffer_capacity: usize,
     global_uniform_buffer: wgpu::Buffer,
     global_bind_group: wgpu::BindGroup,
 
@@ -226,9 +227,11 @@ impl WgpuBackend {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
+        const INITIAL_INSTANCE_CAPACITY: usize = 1_000;
+
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: (std::mem::size_of::<QuadInstance>() * 10000) as wgpu::BufferAddress,
+            size: (std::mem::size_of::<QuadInstance>() * INITIAL_INSTANCE_CAPACITY) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -286,6 +289,7 @@ impl WgpuBackend {
             vertex_buffer,
             index_buffer,
             instance_buffer,
+            instance_buffer_capacity: INITIAL_INSTANCE_CAPACITY,
             global_uniform_buffer,
             global_bind_group,
             atlas,
@@ -398,9 +402,29 @@ impl WgpuBackend {
             .unwrap();
     }
 
+    /// Ensure the instance buffer can hold `required` instances.
+    /// Grows the buffer by doubling capacity if needed.
+    fn ensure_instance_capacity(&mut self, required: usize) {
+        if required <= self.instance_buffer_capacity {
+            return;
+        }
+
+        let new_capacity = required.max(self.instance_buffer_capacity * 2);
+        let new_size = (std::mem::size_of::<QuadInstance>() * new_capacity) as wgpu::BufferAddress;
+
+        self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: new_size,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_buffer_capacity = new_capacity;
+    }
+
     /// Upload geometry from frame builder to GPU buffers.
     pub fn upload_geometry(&mut self, frame_builder: &FrameBuilder) {
         if frame_builder.has_quads() {
+            self.ensure_instance_capacity(frame_builder.quad_count());
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,

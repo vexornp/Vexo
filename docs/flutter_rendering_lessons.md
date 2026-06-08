@@ -34,7 +34,7 @@ This document captures lessons learned from analyzing Flutter/Impeller's renderi
 
 ## Priority 2: Dynamic Instance Buffer
 
-**Status:** Hardcoded limit, potential overflow
+**Status:** Done — grow-only dynamic buffer with `ensure_instance_capacity()`
 
 **Location:** `vexo/src/render/wgpu_backend.rs` line 231
 
@@ -285,7 +285,7 @@ Flutter draws each rect as a separate draw call. Vexo's instanced rendering (one
 | Priority | Change | Effort | Impact | Status |
 |----------|--------|--------|--------|--------|
 | 1 | Fix PushOffset bug | Small | Correctness | Done (`4f0cbb3`) |
-| 2 | Dynamic instance buffer | Small | Robustness | TODO |
+| 2 | Dynamic instance buffer | Small | Robustness | Done |
 | 3 | Scissor-based clipping | Medium | GPU perf | TODO |
 | 4 | Pipeline caching | Small | Startup time | TODO |
 | 5 | Opaque fullscreen quad skip | Small | Reduce overdraw | TODO |
