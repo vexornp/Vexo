@@ -222,7 +222,7 @@ impl GridPlacement {
 ///
 /// Maps directly to Taffy's Style type. Use builder methods to set
 /// properties, then call `to_taffy_style()` to convert.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Layout {
     // Display
     pub display: Option<Display>,

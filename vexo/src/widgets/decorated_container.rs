@@ -30,6 +30,9 @@ pub struct DecoratedContainerRenderObject {
     /// Current style configuration.
     style: Style,
 
+    /// Layout properties (width, height, flex, etc.).
+    layout: Layout,
+
     /// Child render object ID.
     child: Option<RenderObjectKey>,
 
@@ -43,8 +46,14 @@ pub struct DecoratedContainerRenderObject {
 impl DecoratedContainerRenderObject {
     /// Create a new decorated container render object with the given style.
     pub fn new(style: Style) -> Self {
+        Self::new_with_layout(style, Layout::default())
+    }
+
+    /// Create a new decorated container render object with style and layout.
+    pub fn new_with_layout(style: Style, layout: Layout) -> Self {
         Self {
             style,
+            layout,
             child: None,
             computed_bounds: None,
             layout_node: None,
@@ -63,20 +72,38 @@ impl DecoratedContainerRenderObject {
         }
     }
 
+    /// Set the layout configuration.
+    ///
+    /// Returns true if the layout changed.
+    pub fn set_layout(&mut self, layout: Layout) -> bool {
+        if self.layout != layout {
+            self.layout = layout;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Get the current style.
     #[allow(dead_code)]
     pub fn style(&self) -> &Style {
         &self.style
     }
+
+    /// Get the current layout.
+    #[allow(dead_code)]
+    pub fn layout_ref(&self) -> &Layout {
+        &self.layout
+    }
 }
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let mut layout = Layout::default()
+        let mut layout = self.layout.clone()
             .flex_direction(FlexDirection::Column)
             .align(AlignItems::Stretch);
 
-        // Apply padding from style if set
+        // Apply padding from style if set (overrides layout padding)
         if let Some(padding) = self.style.padding {
             layout = layout.padding(padding);
         }
@@ -451,6 +478,7 @@ pub struct DecoratedContainer {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
     style: Style,
+    layout: Layout,
 }
 
 impl DecoratedContainer {
@@ -460,12 +488,19 @@ impl DecoratedContainer {
             key: None,
             child: Box::new(child),
             style: Style::default(),
+            layout: Layout::default(),
         }
     }
 
     /// Set the style for this container.
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Set the layout properties for this container.
+    pub fn layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -494,6 +529,7 @@ impl Clone for DecoratedContainer {
             key: self.key.clone(),
             child: self.child.clone_boxed(),
             style: self.style.clone(),
+            layout: self.layout.clone(),
         }
     }
 }
@@ -510,7 +546,10 @@ impl Widget for DecoratedContainer {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(DecoratedContainerRenderObject::new(self.style.clone()))
+        Box::new(DecoratedContainerRenderObject::new_with_layout(
+            self.style.clone(),
+            self.layout.clone(),
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -527,10 +566,13 @@ impl Widget for DecoratedContainer {
             .downcast_mut::<DecoratedContainerRenderObject>()
         {
             let old_padding = container_ro.style().padding;
-            if container_ro.set_style(self.style.clone()) {
+            let style_changed = container_ro.set_style(self.style.clone());
+            let layout_changed = container_ro.set_layout(self.layout.clone());
+
+            if style_changed || layout_changed {
                 let new_padding = container_ro.style().padding;
-                if old_padding != new_padding {
-                    // Padding changes affect Taffy layout
+                if old_padding != new_padding || layout_changed {
+                    // Padding or layout changes affect Taffy layout
                     UpdateResult::LAYOUT | UpdateResult::PAINT
                 } else {
                     // Visual-only changes (background, border, corner_radius)

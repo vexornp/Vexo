@@ -1,6 +1,6 @@
 use vexo::{
-    column, input::MouseCursor, reactive::StatefulMutable, row, run_desktop_demo, Application,
-    BuildContext, Color, DecoratedContainer, Focus, GestureDetector, MouseRegion,
+    column, input::MouseCursor, layout::Layout, reactive::StatefulMutable, row, run_desktop_demo,
+    Application, BuildContext, Color, DecoratedContainer, Focus, GestureDetector, MouseRegion,
     State as RetainState, StatefulWidget, Style, SystemCursorKind, Text, TextEdit,
     TextEditingController, Transform, Widget,
 };
@@ -248,11 +248,16 @@ impl Application for State {
             ],
             // Clip demo
             Text::new("Clipping:"),
-            Text::new("Left: clip enabled. Right: no clip."),
+            Text::new("Left: clip enabled. Right: no clip. Both containers have fixed height."),
             row![
                 DecoratedContainer::new(column![
-                    Text::new("This long text is clipped by the container bounds and should not overflow"),
+                    Text::new("Line 1: visible"),
+                    Text::new("Line 2: visible"),
+                    Text::new("Line 3: clipped by the container"),
+                    Text::new("Line 4: clipped by the container"),
+                    Text::new("Line 5: clipped by the container"),
                 ])
+                .layout(Layout::default().width(150.0).height(60.0))
                 .style(
                     Style::new()
                         .background(Color::rgb(1.0, 0.95, 0.9))
@@ -262,8 +267,13 @@ impl Application for State {
                         .clip()
                 ),
                 DecoratedContainer::new(column![
-                    Text::new("This long text is not clipped and will overflow past the container"),
+                    Text::new("Line 1: visible"),
+                    Text::new("Line 2: visible"),
+                    Text::new("Line 3: overflows past container"),
+                    Text::new("Line 4: overflows past container"),
+                    Text::new("Line 5: overflows past container"),
                 ])
+                .layout(Layout::default().width(150.0).height(60.0))
                 .style(
                     Style::new()
                         .background(Color::rgb(0.9, 0.95, 1.0))
