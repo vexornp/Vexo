@@ -1,8 +1,9 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::{Column, Text, ThreeTreePipeline, DecoratedContainer};
+use crate::{Column, Text, ThreeTreePipeline, DecoratedContainer, Transform};
 use crate::core::{Color, Position, Size};
 use crate::layout::TaffyLayoutEngine;
+use crate::render::RenderCommand;
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -157,4 +158,67 @@ fn test_decorated_container_widget_in_pipeline() {
     // Verify the render commands include a rect command (the background fill)
     let has_rect = commands.iter().any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
     assert!(has_rect, "Commands should include a Rect command for background fill");
+}
+
+/// Test Transform::translate in the pipeline.
+///
+/// Verifies that a translate transform wraps child commands with
+/// PushTransform/PopTransform and the transform is correctly applied.
+#[test]
+fn test_translate_transform_in_pipeline() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::Point;
+
+    let child = DecoratedContainer::new(Text::new("Shifted"))
+        .style(crate::Style::new()
+            .background(Color::BLUE)
+            .padding(8.0));
+
+    let widget = Transform::translate(child, 50.0, 30.0);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    // Layout
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    // Paint
+    let commands = pipeline.paint();
+
+    // Should have PushTransform and PopTransform wrapping the child commands
+    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    let pop_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PopTransform));
+    assert!(push_idx.is_some(), "Should have PushTransform command");
+    assert!(pop_idx.is_some(), "Should have PopTransform command");
+    assert!(push_idx.unwrap() < pop_idx.unwrap(), "PushTransform should come before PopTransform");
+
+    // Verify the transform values
+    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+        assert_eq!(transform.a, 1.0);
+        assert_eq!(transform.d, 1.0);
+        assert_eq!(transform.e, 50.0);
+        assert_eq!(transform.f, 30.0);
+    }
+
+    // Process through the command processor and verify the quad instances
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    // Should have at least one quad (background rect from DecoratedContainer)
+    assert!(frame_builder.quad_count() >= 1, "Should have at least one quad");
+
+    // The translate transform should be baked into the quad instance
+    let has_translated_quad = frame_builder.quad_instances().iter().any(|q| {
+        q.transform[4] == 50.0 && q.transform[5] == 30.0 // e=50, f=30
+    });
+    assert!(has_translated_quad, "At least one quad should have the translate(50,30) transform");
+
+    // Text should be shifted by (50, 30)
+    let has_shifted_text = frame_builder.text_requests().iter().any(|t| {
+        t.content == "Shifted"
+    });
+    assert!(has_shifted_text, "Should have 'Shifted' text");
 }

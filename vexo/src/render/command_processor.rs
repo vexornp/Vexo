@@ -396,4 +396,47 @@ mod tests {
         let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.position, [110.0, 55.0]);
     }
+
+    #[test]
+    fn test_process_translate_transform_rect() {
+        let mut frame_builder = FrameBuilder::new();
+        let transform = AffineTransform::translation(10.0, 5.0);
+        let origin = Point::new(235.0, 374.5);
+        let commands = vec![
+            RenderCommand::PushTransform { transform, origin },
+            RenderCommand::rect(Bounds::from_xywh(191.0, 352.0, 88.0, 45.0), Color::BLUE),
+            RenderCommand::PopTransform,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        // The rect position should be unchanged (transform is in the quad instance)
+        assert_eq!(quad.position, [191.0, 352.0]);
+        assert_eq!(quad.size, [88.0, 45.0]);
+        // The transform should be baked into the quad instance
+        assert_eq!(quad.transform, [1.0, 0.0, 0.0, 1.0, 10.0, 5.0]);
+    }
+
+    #[test]
+    fn test_process_translate_transform_text() {
+        let mut frame_builder = FrameBuilder::new();
+        let transform = AffineTransform::translation(10.0, 5.0);
+        let origin = Point::new(235.0, 374.5);
+        let commands = vec![
+            RenderCommand::PushTransform { transform, origin },
+            RenderCommand::text("Shifted", Point::new(199.0, 360.0), 16.0, Color::BLACK),
+            RenderCommand::PopTransform,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.text_count(), 1);
+        let text = &frame_builder.text_requests()[0];
+        // Text position should be offset by (10, 5) from the original position
+        assert_eq!(text.content, "Shifted");
+        assert_eq!(text.position.x, 209.0);
+        assert_eq!(text.position.y, 365.0);
+    }
 }

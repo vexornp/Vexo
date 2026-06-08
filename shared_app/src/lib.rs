@@ -217,16 +217,13 @@ impl Application for State {
             // Transformed elements
             Text::new("Transforms:"),
             row![
-                // Rotated card (~10 degrees)
-                // Transform::rotate(
-                //     DecoratedContainer::new(Text::new("Rotated 10°"))
-                //         .style(Style::new().background(Color::rgb(0.85, 1.0, 0.85)).padding(8.0)),
-                //     0.0_f32.to_radians(),
-                // ),
-                DecoratedContainer::new(Text::new("Rotated 10°")).style(
-                    Style::new()
-                        .background(Color::rgb(0.85, 1.0, 0.85))
-                        .padding(8.0)
+                Transform::rotate(
+                    DecoratedContainer::new(Text::new("Rotated 10°")).style(
+                        Style::new()
+                            .background(Color::rgb(0.85, 1.0, 0.85))
+                            .padding(8.0)
+                    ),
+                    10.0_f32.to_radians(),
                 ),
                 // Scaled card (1.5x)
                 Transform::scale(
@@ -245,8 +242,8 @@ impl Application for State {
                             .background(Color::rgb(0.85, 0.9, 1.0))
                             .padding(8.0)
                     ),
-                    10.0,
-                    5.0,
+                    100.0,
+                    100.0,
                 ),
             ]
         ])
