@@ -317,6 +317,15 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the clip bounds for this render object's children, if any.
+    ///
+    /// When present, the painter emits `PushClip`/`PopClip` around
+    /// this object's children. The bounds should be in the object's
+    /// local coordinate space (the painter converts to absolute).
+    fn clip_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
+        None
+    }
+
 }
 
 // ============================================================================

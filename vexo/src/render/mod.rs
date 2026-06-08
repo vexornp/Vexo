@@ -33,6 +33,7 @@ pub use command::{RenderCommand, RenderCommandList};
 pub use command_processor::process_commands;
 pub use mock_backend::MockBackend;
 pub use wgpu_backend::WgpuBackend;
+pub use crate::text_processor::PreparedClipGroup;
 
 // Re-export Stroke from core for convenience
 pub use crate::core::Stroke;

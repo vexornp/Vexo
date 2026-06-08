@@ -10,7 +10,7 @@ use wgpu::util::DeviceExt;
 use crate::core::{Color, Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::frame_builder::FrameBuilder;
+use crate::frame_builder::{ClipGroup, FrameBuilder};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -382,6 +382,11 @@ impl WgpuBackend {
         self.clear_color = color.to_wgpu_color();
     }
 
+    /// Get the current render config, if available.
+    pub fn current_config(&self) -> Option<&RenderConfig> {
+        self.current_config.as_ref()
+    }
+
     /// Prepare text rendering.
     pub fn prepare_text(
         &mut self,
@@ -423,18 +428,27 @@ impl WgpuBackend {
 
     /// Upload geometry from frame builder to GPU buffers.
     pub fn upload_geometry(&mut self, frame_builder: &FrameBuilder) {
-        if frame_builder.has_quads() {
-            self.ensure_instance_capacity(frame_builder.quad_count());
+        let flattened = frame_builder.flatten_quads();
+        if !flattened.instances.is_empty() {
+            self.ensure_instance_capacity(flattened.instances.len());
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(frame_builder.quad_instances()),
+                bytemuck::cast_slice(&flattened.instances),
             );
         }
     }
 
-    /// Execute the render pass with the given instance count.
-    pub fn execute_render_pass(&mut self, instance_count: usize) -> Result<(), RenderError> {
+    /// Execute the render pass with per-clip-group scissor rects and draw calls.
+    pub fn execute_render_pass(
+        &mut self,
+        clip_groups: &[ClipGroup],
+        draw_ranges: &[(u32, u32)],
+        scale_factor: f32,
+        viewport_width: u32,
+        viewport_height: u32,
+        text_prepared_groups: &[super::PreparedClipGroup],
+    ) -> Result<(), RenderError> {
         if !self.is_configured {
             return Err(RenderError::SurfaceNotConfigured);
         }
@@ -470,15 +484,51 @@ impl WgpuBackend {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-            let instance_count = instance_count as u32;
-            if instance_count > 0 {
+            // Draw quads per clip group with appropriate scissor rect
+            for (group, &(first, count)) in clip_groups.iter().zip(draw_ranges.iter()) {
+                if count == 0 { continue; }
+
+                // Set scissor rect for this clip group
+                if let Some(clip) = &group.clip_bounds {
+                    let x = (clip.left * scale_factor).max(0.0) as u32;
+                    let y = (clip.top * scale_factor).max(0.0) as u32;
+                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
+                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
+                    let w = right.saturating_sub(x);
+                    let h = bottom.saturating_sub(y);
+                    if w == 0 || h == 0 { continue; } // Fully clipped, skip
+                    render_pass.set_scissor_rect(x, y, w, h);
+                } else {
+                    // No clip: scissor defaults to full viewport, no need to set
+                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                }
+
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..6, 0, 0..instance_count);
+                render_pass.draw_indexed(0..6, 0, first..first + count);
             }
 
-            self.text_renderer
-                .render(&self.atlas, &self.viewport, &mut render_pass)
-                .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
+            // Render text per clip group with matching scissor rects
+            for prepared in text_prepared_groups {
+                if prepared.is_empty() { continue; }
+
+                // Set scissor rect matching the clip group
+                if let Some(clip) = &prepared.clip_bounds {
+                    let x = (clip.left * scale_factor).max(0.0) as u32;
+                    let y = (clip.top * scale_factor).max(0.0) as u32;
+                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
+                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
+                    let w = right.saturating_sub(x);
+                    let h = bottom.saturating_sub(y);
+                    if w == 0 || h == 0 { continue; }
+                    render_pass.set_scissor_rect(x, y, w, h);
+                } else {
+                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                }
+
+                self.text_renderer
+                    .render(&self.atlas, &self.viewport, &mut render_pass)
+                    .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -520,8 +570,9 @@ impl RenderBackend for WgpuBackend {
     }
 
     fn render(&mut self) -> Result<(), RenderError> {
-        // Use a default instance count for the trait method
-        self.execute_render_pass(0)
+        // The trait method is not used by the clip-group-based pipeline.
+        // TextPipeline::execute_render() calls execute_render_pass() directly.
+        Ok(())
     }
 
     fn resize(&mut self, config: RenderConfig) {

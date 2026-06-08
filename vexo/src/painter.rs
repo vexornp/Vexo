@@ -115,9 +115,26 @@ impl Painter {
             ctx.push_command(RenderCommand::PushTransform { transform: *t, origin });
         }
 
+        // If this object clips its children, push clip before painting children.
+        let clip = obj.clip_bounds();
+        if let Some(local_clip) = &clip {
+            let absolute_clip = crate::core::Bounds::new(
+                absolute_position.x + local_clip.left,
+                absolute_position.y + local_clip.top,
+                absolute_position.x + local_clip.right,
+                absolute_position.y + local_clip.bottom,
+            );
+            ctx.push_command(RenderCommand::PushClip { bounds: absolute_clip });
+        }
+
         // Paint children
         for child_id in obj.children() {
             Self::paint_recursive(render_objects, *child_id, ctx, absolute_position);
+        }
+
+        // Pop clip after children
+        if clip.is_some() {
+            ctx.push_command(RenderCommand::PopClip);
         }
 
         // Pop transform after children

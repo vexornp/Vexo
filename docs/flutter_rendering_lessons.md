@@ -57,7 +57,7 @@ Fixed 10,000 instance limit. If a frame has more quads, it will overflow with no
 
 ## Priority 3: Scissor-Based Clipping
 
-**Status:** Inefficient `discard`-based clipping
+**Status:** Done — replaced `discard`-based clipping with wgpu `set_scissor_rect()`
 
 **Location:** `vexo/src/shader.wgsl` lines 59-75
 
@@ -286,7 +286,7 @@ Flutter draws each rect as a separate draw call. Vexo's instanced rendering (one
 |----------|--------|--------|--------|--------|
 | 1 | Fix PushOffset bug | Small | Correctness | Done (`4f0cbb3`) |
 | 2 | Dynamic instance buffer | Small | Robustness | Done |
-| 3 | Scissor-based clipping | Medium | GPU perf | TODO |
+| 3 | Scissor-based clipping | Medium | GPU perf | Done |
 | 4 | Pipeline caching | Small | Startup time | TODO |
 | 5 | Opaque fullscreen quad skip | Small | Reduce overdraw | TODO |
 | 6 | 2x3 transform matrix | Medium | Features | TODO |

@@ -32,6 +32,9 @@ pub struct Style {
 
     /// Padding inside the container (space between border and child).
     pub padding: Option<f32>,
+
+    /// Whether to clip children to this container's bounds.
+    pub clip: bool,
 }
 
 /// Border decoration properties.
@@ -77,6 +80,12 @@ impl Style {
     /// Set uniform padding on all sides.
     pub fn padding(mut self, value: f32) -> Self {
         self.padding = Some(value);
+        self
+    }
+
+    /// Enable clipping of children to this container's bounds.
+    pub fn clip(mut self) -> Self {
+        self.clip = true;
         self
     }
 }

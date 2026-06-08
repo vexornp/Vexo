@@ -1,22 +1,41 @@
 use crate::core::{AffineTransform, Color, Logical, Point, Stroke};
-use crate::quad_instance::{self, QuadInstance};
+use crate::quad_instance::QuadInstance;
 
+#[derive(Clone)]
 pub struct TextRequest {
     pub content: String,
     pub position: Point<Logical>,
     pub size: f32,
     pub color: Color,
-    /// Clipping bounds. If None, no clipping is applied.
-    pub clip_bounds: Option<Bounds>,
     /// Maximum width for text wrapping. If None, no wrapping.
     pub max_width: Option<f32>,
 }
 
 pub type Bounds = crate::core::Bounds<Logical>;
 
+/// A group of quads and text requests sharing the same clip region.
+pub struct ClipGroup {
+    /// The effective clip bounds for this group (logical coordinates).
+    /// None means no clipping (full viewport).
+    pub clip_bounds: Option<Bounds>,
+    /// Quad instances in this group.
+    pub quads: Vec<QuadInstance>,
+    /// Text requests in this group.
+    pub text_requests: Vec<TextRequest>,
+}
+
+/// Flattened quad instances and per-group draw ranges for GPU upload.
+pub struct FlattenedQuads {
+    /// All quad instances in draw order.
+    pub instances: Vec<QuadInstance>,
+    /// For each clip group: (first_instance, count).
+    pub draw_ranges: Vec<(u32, u32)>,
+}
+
 pub struct FrameBuilder {
-    text_requests: Vec<TextRequest>,
-    quad_instances: Vec<QuadInstance>,
+    clip_groups: Vec<ClipGroup>,
+    /// Index of the last-used clip group (for O(1) lookup when clip hasn't changed).
+    current_group_index: Option<usize>,
 
     corner_radius_stack: Vec<f32>,
     clip_stack: Vec<Bounds>,
@@ -33,8 +52,8 @@ impl Default for FrameBuilder {
 impl FrameBuilder {
     pub fn new() -> Self {
         Self {
-            text_requests: Vec::new(),
-            quad_instances: Vec::new(),
+            clip_groups: Vec::new(),
+            current_group_index: None,
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
             transform_stack: Vec::new(),
@@ -43,8 +62,8 @@ impl FrameBuilder {
     }
 
     pub fn clear(&mut self) {
-        self.text_requests.clear();
-        self.quad_instances.clear();
+        self.clip_groups.clear();
+        self.current_group_index = None;
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
         self.transform_stack.clear();
@@ -52,27 +71,80 @@ impl FrameBuilder {
     }
 
     pub fn quad_count(&self) -> usize {
-        self.quad_instances.len()
+        self.clip_groups.iter().map(|g| g.quads.len()).sum()
     }
 
     pub fn has_quads(&self) -> bool {
-        !self.quad_instances.is_empty()
+        self.clip_groups.iter().any(|g| !g.quads.is_empty())
     }
 
-    pub fn quad_instances(&self) -> &[QuadInstance] {
-        &self.quad_instances
+    pub fn clip_groups(&self) -> &[ClipGroup] {
+        &self.clip_groups
     }
 
+    /// Flatten all quad instances into a contiguous buffer with per-group draw ranges.
+    pub fn flatten_quads(&self) -> FlattenedQuads {
+        let mut instances = Vec::new();
+        let mut draw_ranges = Vec::new();
+        for group in &self.clip_groups {
+            let first = instances.len() as u32;
+            instances.extend_from_slice(&group.quads);
+            let count = group.quads.len() as u32;
+            draw_ranges.push((first, count));
+        }
+        FlattenedQuads {
+            instances,
+            draw_ranges,
+        }
+    }
+
+    /// Take all text requests from all groups.
     pub fn take_text_requests(&mut self) -> Vec<TextRequest> {
-        std::mem::take(&mut self.text_requests)
+        self.clip_groups
+            .iter_mut()
+            .flat_map(|g| std::mem::take(&mut g.text_requests))
+            .collect()
     }
 
     pub fn text_count(&self) -> usize {
-        self.text_requests.len()
+        self.clip_groups.iter().map(|g| g.text_requests.len()).sum()
     }
 
-    pub fn text_requests(&self) -> &[TextRequest] {
-        &self.text_requests
+    /// Get all quad instances flattened across all clip groups (for testing/compat).
+    pub fn quad_instances(&self) -> Vec<QuadInstance> {
+        self.clip_groups.iter().flat_map(|g| &g.quads).copied().collect()
+    }
+
+    /// Get all text requests flattened across all clip groups (for testing/compat).
+    pub fn text_requests(&self) -> Vec<TextRequest> {
+        self.clip_groups.iter().flat_map(|g| &g.text_requests).cloned().collect()
+    }
+
+    /// Get or create the ClipGroup for the current effective clip.
+    fn current_group(&mut self) -> &mut ClipGroup {
+        let clip_key = self.current_clip();
+        // Check if the last-used group still matches (common case: depth-first traversal)
+        if let Some(idx) = self.current_group_index {
+            if self.clip_groups[idx].clip_bounds == clip_key {
+                return &mut self.clip_groups[idx];
+            }
+        }
+        // Search for an existing group with the same clip key
+        for (i, group) in self.clip_groups.iter().enumerate() {
+            if group.clip_bounds == clip_key {
+                self.current_group_index = Some(i);
+                return &mut self.clip_groups[i];
+            }
+        }
+        // Create a new group
+        let idx = self.clip_groups.len();
+        self.clip_groups.push(ClipGroup {
+            clip_bounds: clip_key,
+            quads: Vec::new(),
+            text_requests: Vec::new(),
+        });
+        self.current_group_index = Some(idx);
+        &mut self.clip_groups[idx]
     }
 
     /// Push a corner radius onto the context stack.
@@ -97,17 +169,31 @@ impl FrameBuilder {
     /// All subsequent commands should be clipped to this region.
     pub fn push_clip(&mut self, bounds: Bounds) {
         self.clip_stack.push(bounds);
+        // Clip changed — next add_rect/add_text will find/create the right group
+        self.current_group_index = None;
     }
 
     /// Pop the most recent clipping region from the stack.
     pub fn pop_clip(&mut self) {
         self.clip_stack.pop();
+        self.current_group_index = None;
     }
 
-    /// Get the current clipping region from the stack.
-    /// Returns None if no clip is set.
+    /// Get the current effective clipping region.
+    /// Returns the intersection of all clips on the stack, or None if no clip is set
+    /// (or if nested clips have no overlap, meaning content is fully clipped).
     pub fn current_clip(&self) -> Option<Bounds> {
-        self.clip_stack.last().copied()
+        if self.clip_stack.is_empty() {
+            return None;
+        }
+        let mut result = self.clip_stack[0];
+        for bounds in &self.clip_stack[1..] {
+            result = match result.intersect(bounds) {
+                Some(i) => i,
+                None => return None, // Empty intersection = fully clipped
+            };
+        }
+        Some(result)
     }
 
     /// Push a transform onto the context stack.
@@ -147,19 +233,18 @@ impl FrameBuilder {
             self.current_corner_radius()
         };
 
-        let clip_bounds = self.current_clip().map_or(quad_instance::NO_CLIP_BOUNDS, |b| b.to_array_xywh());
-
-        self.quad_instances.push(QuadInstance {
+        let instance = QuadInstance {
             position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
             color: fill.to_array(),
             border_color: border_color.to_array(),
             border_width,
             corner_radius: radius,
-            clip_bounds,
             transform: self.current_transform.to_array(),
             _padding: [0.0; 2],
-        });
+        };
+
+        self.current_group().quads.push(instance);
     }
 
     pub fn add_text(
@@ -172,15 +257,11 @@ impl FrameBuilder {
     ) {
         let color: Color = color.into();
 
-        // Get current clip bounds, or None to indicate no clipping
-        let clip_bounds = self.current_clip();
-
-        self.text_requests.push(TextRequest {
+        self.current_group().text_requests.push(TextRequest {
             content: content.into(),
             position,
             size,
             color,
-            clip_bounds,
             max_width,
         });
     }

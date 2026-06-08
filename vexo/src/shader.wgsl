@@ -7,8 +7,6 @@ struct VertexOutput {
     @location(3) border_width: f32,
     @location(4) size: vec2<f32>,
     @location(5) corner_radius: f32,
-    @location(6) clip_bounds: vec4<f32>, // x, y, width, height in logical coords
-    @location(7) inst_pos: vec2<f32>, // Instance position for clipping calculation
 };
 
 struct GlobalUniforms {
@@ -27,10 +25,9 @@ fn vs_main(
     @location(4) inst_border_color: vec4<f32>,
     @location(5) inst_border_width: f32,
     @location(6) inst_corner_radius: f32,
-    @location(7) inst_clip_bounds: vec4<f32>,
-    @location(8) inst_transform_ab: vec2<f32>,
-    @location(9) inst_transform_cd: vec2<f32>,
-    @location(10) inst_transform_ef: vec2<f32>,
+    @location(7) inst_transform_ab: vec2<f32>,
+    @location(8) inst_transform_cd: vec2<f32>,
+    @location(9) inst_transform_ef: vec2<f32>,
 ) -> VertexOutput {
     // Get local position within the quad (0 to size)
     let local_pos = model_pos * inst_size;
@@ -63,32 +60,12 @@ fn vs_main(
     out.size = inst_size * globals.scale_factor;
     out.border_width = inst_border_width;
     out.corner_radius = inst_corner_radius * globals.scale_factor;
-    out.clip_bounds = inst_clip_bounds;
-    out.inst_pos = inst_pos;
     return out;
 }
 
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Clipping: discard pixels outside clip bounds
-    // clip_bounds is (x, y, width, height) in logical coordinates
-    // If width <= 0 or height <= 0, no clipping is applied
-    if (in.clip_bounds.z > 0.0 && in.clip_bounds.w > 0.0) {
-        // Calculate the fragment position in logical coordinates
-        // inst_pos is the top-left corner, uv is [0,1] across the quad
-        let frag_x = in.inst_pos.x + in.uv.x * (in.size.x / globals.scale_factor);
-        let frag_y = in.inst_pos.y + in.uv.y * (in.size.y / globals.scale_factor);
-
-        // Check if outside clip bounds
-        if (frag_x < in.clip_bounds.x ||
-            frag_y < in.clip_bounds.y ||
-            frag_x > in.clip_bounds.x + in.clip_bounds.z ||
-            frag_y > in.clip_bounds.y + in.clip_bounds.w) {
-            discard;
-        }
-    }
-
     // Clamp radius to at most half the smallest dimension
     let radius = min(in.corner_radius, min(in.size.x, in.size.y) * 0.5);
 

@@ -44,15 +44,36 @@ impl TextPipeline {
         mut prepared_text: CombinedPreparedText,
         font_system: &mut glyphon::FontSystem,
     ) -> Result<(), RenderError> {
-        // Upload geometry data to GPU
+        // Upload geometry data to GPU (flattened instances + draw ranges)
         backend.upload_geometry(frame_builder);
 
-        // Prepare text for rendering
-        backend.prepare_text(font_system, prepared_text.as_text_areas());
+        let flattened = frame_builder.flatten_quads();
+        let clip_groups = frame_builder.clip_groups();
 
-        // Execute the render pass
-        let instance_count = frame_builder.quad_count();
-        backend.execute_render_pass(instance_count)?;
+        // Prepare text for each clip group
+        let mut prepared_groups: Vec<crate::text_processor::PreparedClipGroup> =
+            std::mem::take(&mut prepared_text.groups_mut());
+
+        for group in &mut prepared_groups {
+            if group.is_empty() { continue; }
+            backend.prepare_text(font_system, group.as_text_areas());
+        }
+
+        // Execute the render pass with per-clip-group scissor rects
+        let scale_factor = backend.current_config()
+            .map(|c| c.scale_factor())
+            .unwrap_or(1.0);
+        let viewport_width = backend.width();
+        let viewport_height = backend.height();
+
+        backend.execute_render_pass(
+            clip_groups,
+            &flattened.draw_ranges,
+            scale_factor,
+            viewport_width,
+            viewport_height,
+            &prepared_groups,
+        )?;
 
         Ok(())
     }

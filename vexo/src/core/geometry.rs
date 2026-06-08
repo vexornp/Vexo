@@ -442,6 +442,20 @@ impl<T> Bounds<T> {
     pub fn is_valid(&self) -> bool {
         self.left <= self.right && self.top <= self.bottom
     }
+
+    /// Intersect this bounds with another. Returns the overlapping region,
+    /// or None if they do not overlap.
+    pub fn intersect(&self, other: &Bounds<T>) -> Option<Bounds<T>> {
+        let left = self.left.max(other.left);
+        let top = self.top.max(other.top);
+        let right = self.right.min(other.right);
+        let bottom = self.bottom.min(other.bottom);
+        if left < right && top < bottom {
+            Some(Bounds::new(left, top, right, bottom))
+        } else {
+            None
+        }
+    }
 }
 
 impl Bounds<Logical> {

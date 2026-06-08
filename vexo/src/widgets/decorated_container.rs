@@ -188,6 +188,14 @@ impl RenderObject for DecoratedContainerRenderObject {
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
     }
+
+    fn clip_bounds(&self) -> Option<Bounds<Logical>> {
+        if self.style.clip {
+            self.computed_bounds
+        } else {
+            None
+        }
+    }
 }
 
 // ============================================================================
