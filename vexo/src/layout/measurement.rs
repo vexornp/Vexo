@@ -205,8 +205,7 @@ pub fn measure_text_node(
             let available_width = match available_space.width {
                 AvailableSpace::Definite(w) if w > 0.0 => Some(w),
                 AvailableSpace::Definite(_) => Some(1.0), // Minimum width
-                AvailableSpace::MinContent => None,
-                AvailableSpace::MaxContent => None,
+                _ => None,
             };
             let available_height = match available_space.height {
                 AvailableSpace::Definite(h) => Some(h),

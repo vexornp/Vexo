@@ -72,19 +72,13 @@ impl DecoratedContainerRenderObject {
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let align = self.style.align_items.unwrap_or(AlignItems::Stretch);
         let mut layout = Layout::default()
             .flex_direction(FlexDirection::Column)
-            .align(align);
+            .align(AlignItems::Stretch);
 
         // Apply padding from style if set
         if let Some(padding) = self.style.padding {
             layout = layout.padding(padding);
-        }
-
-        // Apply flex_shrink from style if set
-        if let Some(flex_shrink) = self.style.flex_shrink {
-            layout = layout.flex_shrink(flex_shrink);
         }
 
         match self.layout_node {
@@ -524,15 +518,14 @@ impl Widget for DecoratedContainer {
             .as_any_mut()
             .downcast_mut::<DecoratedContainerRenderObject>()
         {
-            let old_style = container_ro.style().clone();
+            let old_padding = container_ro.style().padding;
             if container_ro.set_style(self.style.clone()) {
-                let new_style = container_ro.style();
-                let layout_changed = old_style.padding != new_style.padding
-                    || old_style.flex_shrink != new_style.flex_shrink
-                    || old_style.align_items != new_style.align_items;
-                if layout_changed {
+                let new_padding = container_ro.style().padding;
+                if old_padding != new_padding {
+                    // Padding changes affect Taffy layout
                     UpdateResult::LAYOUT | UpdateResult::PAINT
                 } else {
+                    // Visual-only changes (background, border, corner_radius)
                     UpdateResult::PAINT
                 }
             } else {
