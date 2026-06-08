@@ -50,16 +50,13 @@ impl TextPipeline {
         let flattened = frame_builder.flatten_quads();
         let clip_groups = frame_builder.clip_groups();
 
-        // Prepare text for each clip group
-        let mut prepared_groups: Vec<crate::text_processor::PreparedClipGroup> =
-            std::mem::take(&mut prepared_text.groups_mut());
+        // Prepare all text together (glyphon's prepare() replaces vertex buffer
+        // contents each call, so per-clip-group prepare would lose previous groups).
+        // Text clipping is handled by glyphon's TextArea.bounds per-request.
+        backend.prepare_text(font_system, prepared_text.as_text_areas());
 
-        for group in &mut prepared_groups {
-            if group.is_empty() { continue; }
-            backend.prepare_text(font_system, group.as_text_areas());
-        }
-
-        // Execute the render pass with per-clip-group scissor rects
+        // Execute the render pass with per-clip-group scissor rects for quads,
+        // then render all text with full-viewport scissor.
         let scale_factor = backend.current_config()
             .map(|c| c.scale_factor())
             .unwrap_or(1.0);
@@ -72,7 +69,6 @@ impl TextPipeline {
             scale_factor,
             viewport_width,
             viewport_height,
-            &prepared_groups,
         )?;
 
         Ok(())

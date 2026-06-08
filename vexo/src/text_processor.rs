@@ -1,7 +1,7 @@
 use glyphon::{Buffer, FontSystem, TextArea};
 
-use crate::core::{Bounds, Color, Logical, Physical, Scale, Size};
-use crate::frame_builder::{ClipGroup, TextRequest};
+use crate::core::{Bounds, Color, Physical, Scale, Size};
+use crate::frame_builder::ClipGroup;
 use crate::text_cache::TextCache;
 
 /// Processes text requests into TextArea instances for rendering.
@@ -51,31 +51,6 @@ impl PreparedText {
             })
             .collect()
     }
-
-    /// Check if there are any text areas.
-    pub fn is_empty(&self) -> bool {
-        self.buffers.is_empty()
-    }
-}
-
-/// Prepared text for a single clip group, ready for rendering.
-pub struct PreparedClipGroup {
-    /// The clip bounds for this group (logical coordinates).
-    pub clip_bounds: Option<Bounds<Logical>>,
-    /// Prepared text areas (owned buffers + metadata).
-    pub prepared: PreparedText,
-}
-
-impl PreparedClipGroup {
-    /// Convert to glyphon TextArea instances for rendering.
-    pub fn as_text_areas(&mut self) -> Vec<TextArea<'_>> {
-        self.prepared.as_text_areas()
-    }
-
-    /// Check if this group has any text to render.
-    pub fn is_empty(&self) -> bool {
-        self.prepared.is_empty()
-    }
 }
 
 impl TextProcessor {
@@ -105,47 +80,47 @@ impl TextProcessor {
         (buffer, data)
     }
 
-    /// Process text requests into prepared text for a single clip group.
+    /// Process text requests from clip groups into a single PreparedText.
     fn process_text_requests(
         &mut self,
         font_system: &mut FontSystem,
-        requests: &[TextRequest],
+        clip_groups: &[ClipGroup],
         scale: Scale,
         viewport_physical: Size<Physical>,
-        clip_bounds: Option<Bounds<Logical>>,
     ) -> PreparedText {
         let mut buffers: Vec<Buffer> = Vec::new();
         let mut text_area_data: Vec<TextAreaData> = Vec::new();
 
-        for req in requests {
-            let buffer = self.cache.get_or_create(font_system, req);
+        for group in clip_groups {
+            for req in &group.text_requests {
+                let buffer = self.cache.get_or_create(font_system, req);
 
-            // Convert logical position to physical
-            let physical_pos = req.position.to_physical(scale);
+                // Convert logical position to physical
+                let physical_pos = req.position.to_physical(scale);
 
-            // Use clip bounds if set, otherwise use screen bounds
-            let bounds = if let Some(clip) = &clip_bounds {
-                // Clip bounds are in logical coordinates - convert to physical
-                clip.to_physical(scale)
-            } else {
-                // No clipping - use full screen
-                Bounds::<Physical>::from_xywh(
-                    physical_pos.x,
-                    physical_pos.y,
-                    viewport_physical.width,
-                    viewport_physical.height,
-                )
-            };
+                // Use the clip group's bounds for text clipping (via glyphon TextArea.bounds),
+                // or fall back to full screen if no clip is active.
+                let bounds = if let Some(clip) = &group.clip_bounds {
+                    clip.to_physical(scale)
+                } else {
+                    Bounds::<Physical>::from_xywh(
+                        physical_pos.x,
+                        physical_pos.y,
+                        viewport_physical.width,
+                        viewport_physical.height,
+                    )
+                };
 
-            let (buf, data) = Self::create_text_area(
-                buffer,
-                physical_pos,
-                scale,
-                bounds,
-                req.color,
-            );
-            buffers.push(buf);
-            text_area_data.push(data);
+                let (buf, data) = Self::create_text_area(
+                    buffer,
+                    physical_pos,
+                    scale,
+                    bounds,
+                    req.color,
+                );
+                buffers.push(buf);
+                text_area_data.push(data);
+            }
         }
 
         // Periodically evict stale cache entries
@@ -155,32 +130,6 @@ impl TextProcessor {
             buffers,
             text_area_data,
         }
-    }
-
-    /// Process all clip groups and produce per-group prepared text.
-    pub fn collect_clip_groups(
-        &mut self,
-        clip_groups: &[ClipGroup],
-        font_system: &mut FontSystem,
-        scale: Scale,
-        viewport_physical: Size<Physical>,
-    ) -> Vec<PreparedClipGroup> {
-        let mut result = Vec::new();
-        for group in clip_groups {
-            if group.text_requests.is_empty() { continue; }
-            let prepared = self.process_text_requests(
-                font_system,
-                &group.text_requests,
-                scale,
-                viewport_physical,
-                group.clip_bounds,
-            );
-            result.push(PreparedClipGroup {
-                clip_bounds: group.clip_bounds,
-                prepared,
-            });
-        }
-        result
     }
 
     /// Collect text from the frame_builder and prepare it for rendering.
@@ -196,8 +145,14 @@ impl TextProcessor {
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
         let clip_groups = frame_builder.clip_groups();
-        let groups = self.collect_clip_groups(clip_groups, font_system, scale, viewport_physical);
-        CombinedPreparedText { groups }
+        let regular = self.process_text_requests(
+            font_system,
+            clip_groups,
+            scale,
+            viewport_physical,
+        );
+
+        CombinedPreparedText { regular }
     }
 }
 
@@ -212,28 +167,15 @@ impl Default for TextProcessor {
 /// Combines regular text into a single owned container
 /// that can provide unified text areas for rendering.
 pub struct CombinedPreparedText {
-    groups: Vec<PreparedClipGroup>,
+    regular: PreparedText,
 }
 
 impl CombinedPreparedText {
-    /// Get the prepared clip groups mutably.
-    pub fn groups_mut(&mut self) -> &mut Vec<PreparedClipGroup> {
-        &mut self.groups
-    }
-
-    /// Get the prepared clip groups.
-    pub fn groups(&mut self) -> &mut [PreparedClipGroup] {
-        &mut self.groups
-    }
-
-    /// Create TextArea instances for all groups (flattened).
+    /// Create TextArea instances for rendering.
     ///
     /// The returned TextAreas borrow from the owned buffers in this struct.
     /// Must be called immediately before rendering.
     pub fn as_text_areas(&mut self) -> Vec<TextArea<'_>> {
-        self.groups
-            .iter_mut()
-            .flat_map(|g| g.prepared.as_text_areas())
-            .collect()
+        self.regular.as_text_areas()
     }
 }

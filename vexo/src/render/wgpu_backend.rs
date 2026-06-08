@@ -447,7 +447,6 @@ impl WgpuBackend {
         scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
-        text_prepared_groups: &[super::PreparedClipGroup],
     ) -> Result<(), RenderError> {
         if !self.is_configured {
             return Err(RenderError::SurfaceNotConfigured);
@@ -499,7 +498,7 @@ impl WgpuBackend {
                     if w == 0 || h == 0 { continue; } // Fully clipped, skip
                     render_pass.set_scissor_rect(x, y, w, h);
                 } else {
-                    // No clip: scissor defaults to full viewport, no need to set
+                    // No clip: scissor defaults to full viewport
                     render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
                 }
 
@@ -507,28 +506,15 @@ impl WgpuBackend {
                 render_pass.draw_indexed(0..6, 0, first..first + count);
             }
 
-            // Render text per clip group with matching scissor rects
-            for prepared in text_prepared_groups {
-                if prepared.is_empty() { continue; }
-
-                // Set scissor rect matching the clip group
-                if let Some(clip) = &prepared.clip_bounds {
-                    let x = (clip.left * scale_factor).max(0.0) as u32;
-                    let y = (clip.top * scale_factor).max(0.0) as u32;
-                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
-                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
-                    let w = right.saturating_sub(x);
-                    let h = bottom.saturating_sub(y);
-                    if w == 0 || h == 0 { continue; }
-                    render_pass.set_scissor_rect(x, y, w, h);
-                } else {
-                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
-                }
-
-                self.text_renderer
-                    .render(&self.atlas, &self.viewport, &mut render_pass)
-                    .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
-            }
+            // Render all text with full-viewport scissor.
+            // Text clipping is handled by glyphon's TextArea.bounds per-request,
+            // not by GPU scissor rects (glyphon's prepare() replaces its vertex
+            // buffer on each call, so per-clip-group prepare+render is not possible
+            // within a single render pass).
+            render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+            self.text_renderer
+                .render(&self.atlas, &self.viewport, &mut render_pass)
+                .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
