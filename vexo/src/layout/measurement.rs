@@ -201,43 +201,73 @@ pub fn measure_text_node(
                 };
             }
 
-            // Convert AvailableSpace to Option<f32>
-            let available_width = match available_space.width {
+            // First, look up the natural (unwrapped) size in the cache.
+            // This avoids re-shaping text every time the measure function
+            // is called with a different available width.
+            let natural_key = MeasureCacheKey::new(
+                &text_ctx.content,
+                text_ctx.font_size,
+                text_ctx.line_height,
+                None,
+                None,
+            );
+
+            let mut measurer = TextMeasurer::new(font_system);
+
+            let (natural_w, natural_h) = if let Some(cached) = cache.get(&natural_key) {
+                cached
+            } else {
+                let size = measurer.measure(
+                    &text_ctx.content,
+                    text_ctx.font_size,
+                    text_ctx.line_height,
+                    None,
+                    None,
+                );
+                cache.insert(natural_key, size);
+                size
+            };
+
+            // Determine if we need to constrain and remeasure for wrapping
+            let definite_width = match available_space.width {
                 AvailableSpace::Definite(w) if w > 0.0 => Some(w),
                 AvailableSpace::Definite(_) => Some(1.0), // Minimum width
                 _ => None,
             };
-            let available_height = match available_space.height {
-                AvailableSpace::Definite(h) => Some(h),
-                _ => None,
+
+            let (w, h) = if let Some(max_w) = definite_width {
+                if natural_w <= max_w {
+                    // Natural width fits — no wrapping needed
+                    (natural_w, natural_h)
+                } else {
+                    // Natural width exceeds available space — remeasure with constraint
+                    let available_height = match available_space.height {
+                        AvailableSpace::Definite(h) => Some(h),
+                        _ => None,
+                    };
+                    let (wrapped_w, wrapped_h) = measurer.measure(
+                        &text_ctx.content,
+                        text_ctx.font_size,
+                        text_ctx.line_height,
+                        Some(max_w),
+                        available_height,
+                    );
+                    (wrapped_w, wrapped_h)
+                }
+            } else {
+                // No width constraint (MaxContent/MinContent) — use natural size
+                (natural_w, natural_h)
             };
 
-            // Check cache
-            let key = MeasureCacheKey::new(
+            // Cache with the effective constraint key
+            let cache_key = MeasureCacheKey::new(
                 &text_ctx.content,
                 text_ctx.font_size,
                 text_ctx.line_height,
-                available_width,
-                available_height,
+                if w < natural_w { definite_width } else { None },
+                None,
             );
-
-            if let Some((w, h)) = cache.get(&key) {
-                return Size {
-                    width: known_dimensions.width.unwrap_or(w),
-                    height: known_dimensions.height.unwrap_or(h),
-                };
-            }
-
-            // Measure and cache
-            let mut measurer = TextMeasurer::new(font_system);
-            let (w, h) = measurer.measure(
-                &text_ctx.content,
-                text_ctx.font_size,
-                text_ctx.line_height,
-                available_width,
-                available_height,
-            );
-            cache.insert(key, (w, h));
+            cache.insert(cache_key, (w, h));
 
             Size {
                 width: known_dimensions.width.unwrap_or(w),

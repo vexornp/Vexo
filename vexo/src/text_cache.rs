@@ -84,9 +84,12 @@ impl TextCache {
             Metrics::new(request.size, request.size * 1.2),
         );
 
-        // Set wrapping width before shaping so text wraps at the widget's width
+        // Set wrapping width before shaping so text wraps at the widget's width.
+        // Add a small tolerance to avoid spurious wrapping caused by subpixel
+        // rounding discrepancies between Taffy's layout width and glyphon's
+        // measured natural width.
         if let Some(max_width) = request.max_width {
-            buffer.set_size(font_system, Some(max_width), None);
+            buffer.set_size(font_system, Some(max_width + 0.5), None);
         }
 
         let color_rgba_u8: cosmic_text::Color = request.color.into();
