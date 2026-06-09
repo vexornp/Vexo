@@ -2,7 +2,12 @@
 
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
-use super::super::layout::{Display, Layout};
+use super::super::layout::{
+    AlignContent, AlignItems, AlignSelf, Dimension, Display, EdgeInsets, FlexDirection, FlexWrap,
+    GridAutoFlow, GridPlacement, Inset, JustifyContent, Layout, Overflow, Position, TrackSizing,
+};
+use super::super::core::{Logical, Size};
+use crate::layout_builder_methods;
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
 
@@ -54,6 +59,46 @@ impl Grid {
     /// Get the children.
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
+    }
+}
+
+impl Grid {
+    layout_builder_methods!();
+
+    // Grid-specific layout methods (not in the macro since only Grid uses them)
+    pub fn columns(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.layout = self.layout.columns(sizes);
+        self
+    }
+
+    pub fn rows(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.layout = self.layout.rows(sizes);
+        self
+    }
+
+    pub fn grid_column(mut self, placement: GridPlacement) -> Self {
+        self.layout = self.layout.grid_column(placement);
+        self
+    }
+
+    pub fn grid_row(mut self, placement: GridPlacement) -> Self {
+        self.layout = self.layout.grid_row(placement);
+        self
+    }
+
+    pub fn grid_auto_flow(mut self, value: GridAutoFlow) -> Self {
+        self.layout = self.layout.grid_auto_flow(value);
+        self
+    }
+
+    pub fn auto_rows(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.layout = self.layout.auto_rows(sizes);
+        self
+    }
+
+    pub fn auto_columns(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.layout = self.layout.auto_columns(sizes);
+        self
     }
 }
 
@@ -113,5 +158,35 @@ impl Widget for Grid {
 
     fn clone_boxed(&self) -> Box<dyn Widget> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grid_gap_preserves_display() {
+        let grid = Grid::new().gap(12.0);
+        assert_eq!(grid.layout.display, Some(Display::Grid));
+        assert!(grid.layout.gap.is_some());
+    }
+
+    #[test]
+    fn test_grid_columns_method() {
+        let grid = Grid::new()
+            .columns(vec![TrackSizing::Auto; 3])
+            .gap(8.0);
+        assert_eq!(grid.layout.display, Some(Display::Grid));
+        assert!(grid.layout.grid_template_columns.is_some());
+        assert!(grid.layout.gap.is_some());
+    }
+
+    #[test]
+    fn test_grid_padding_and_gap() {
+        let grid = Grid::new().padding(16.0).gap(4.0);
+        assert_eq!(grid.layout.display, Some(Display::Grid));
+        assert!(grid.layout.padding.is_some());
+        assert!(grid.layout.gap.is_some());
     }
 }
