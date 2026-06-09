@@ -34,7 +34,7 @@ pub use window::WindowState;
 pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
-pub use layout::AlignItems;
+pub use layout::{AlignItems, AlignSelf, GridAutoFlow, Overflow};
 
 // --- Former retain/ modules (flattened) ---
 

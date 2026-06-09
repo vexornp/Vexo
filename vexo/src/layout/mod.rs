@@ -58,15 +58,18 @@ pub use node::{
 pub use style::{
     AlignContent,
     AlignItems,
+    AlignSelf,
     Dimension,
     Display,
     EdgeInsets,
     FlexDirection,
     FlexWrap,
+    GridAutoFlow,
     GridPlacement,
     Inset,
     JustifyContent,
     Layout,
+    Overflow,
     Position,
     TrackSizing,
 };
