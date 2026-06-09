@@ -7,11 +7,15 @@
 
 use std::any::Any;
 
-use crate::core::{Bounds, Logical, Point};
+use crate::core::{Bounds, Logical, Point, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutNodeKey};
+use crate::layout::{
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
+    Inset, JustifyContent, Layout, LayoutNodeKey, Overflow, Position,
+};
+use crate::layout_builder_methods;
 use crate::render::RenderCommand;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
@@ -378,6 +382,10 @@ impl WithLayout {
         self.key = Some(key.into());
         self
     }
+}
+
+impl WithLayout {
+    layout_builder_methods!();
 }
 
 impl Clone for WithLayout {
