@@ -101,7 +101,7 @@ impl RenderObject for TextRenderObject {
             None => {
                 // First frame: create new node
                 let node = ctx.engine().create_leaf_with_context(
-                    &Layout::default(),
+                    &Layout::default().flex_shrink(0.0),
                     measure_ctx,
                 );
                 self.layout_node = Some(node);

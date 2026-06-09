@@ -251,11 +251,11 @@ impl Application for State {
             Text::new("Left: clip enabled. Right: no clip. Both containers have fixed height."),
             row![
                 DecoratedContainer::new(column![
-                    Text::new("Line 1: visible"),
-                    Text::new("Line 2: visible"),
-                    Text::new("Line 3: clipped by the container"),
-                    Text::new("Line 4: clipped by the container"),
-                    Text::new("Line 5: clipped by the container"),
+                    Text::new("Line 1"),
+                    Text::new("Line 2"),
+                    Text::new("Line 3"),
+                    Text::new("Line 4"),
+                    Text::new("Line 5"),
                 ])
                 .layout(Layout::default().width(150.0).height(60.0))
                 .style(
@@ -267,11 +267,11 @@ impl Application for State {
                         .clip()
                 ),
                 DecoratedContainer::new(column![
-                    Text::new("Line 1: visible"),
-                    Text::new("Line 2: visible"),
-                    Text::new("Line 3: overflows past container"),
-                    Text::new("Line 4: overflows past container"),
-                    Text::new("Line 5: overflows past container"),
+                    Text::new("Line 1"),
+                    Text::new("Line 2"),
+                    Text::new("Line 3"),
+                    Text::new("Line 4"),
+                    Text::new("Line 5"),
                 ])
                 .layout(Layout::default().width(150.0).height(60.0))
                 .style(

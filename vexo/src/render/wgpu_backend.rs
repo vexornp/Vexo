@@ -10,7 +10,7 @@ use wgpu::util::DeviceExt;
 use crate::core::{Color, Physical, Scale, Size};
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::frame_builder::{ClipGroup, FrameBuilder};
+use crate::frame_builder::{ClipGroup, DrawRange, FrameBuilder};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -443,7 +443,7 @@ impl WgpuBackend {
     pub fn execute_render_pass(
         &mut self,
         clip_groups: &[ClipGroup],
-        draw_ranges: &[(u32, u32)],
+        draw_ranges: &[DrawRange],
         scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
@@ -484,8 +484,8 @@ impl WgpuBackend {
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
             // Draw quads per clip group with appropriate scissor rect
-            for (group, &(first, count)) in clip_groups.iter().zip(draw_ranges.iter()) {
-                if count == 0 { continue; }
+            for (group, range) in clip_groups.iter().zip(draw_ranges.iter()) {
+                if range.count == 0 { continue; }
 
                 // Set scissor rect for this clip group
                 if let Some(clip) = &group.clip_bounds {
@@ -503,7 +503,7 @@ impl WgpuBackend {
                 }
 
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..6, 0, first..first + count);
+                render_pass.draw_indexed(0..6, 0, range.first_instance..range.first_instance + range.count);
             }
 
             // Render all text with full-viewport scissor.

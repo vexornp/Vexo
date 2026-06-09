@@ -24,12 +24,17 @@ pub struct ClipGroup {
     pub text_requests: Vec<TextRequest>,
 }
 
+pub struct DrawRange {
+    pub first_instance: u32,
+    pub count: u32,
+}
+
 /// Flattened quad instances and per-group draw ranges for GPU upload.
 pub struct FlattenedQuads {
     /// All quad instances in draw order.
     pub instances: Vec<QuadInstance>,
-    /// For each clip group: (first_instance, count).
-    pub draw_ranges: Vec<(u32, u32)>,
+    /// For each clip group, which instances to draw.
+    pub draw_ranges: Vec<DrawRange>,
 }
 
 pub struct FrameBuilder {
@@ -87,10 +92,10 @@ impl FrameBuilder {
         let mut instances = Vec::new();
         let mut draw_ranges = Vec::new();
         for group in &self.clip_groups {
-            let first = instances.len() as u32;
+            let first_instance = instances.len() as u32;
             instances.extend_from_slice(&group.quads);
             let count = group.quads.len() as u32;
-            draw_ranges.push((first, count));
+            draw_ranges.push(DrawRange { first_instance, count });
         }
         FlattenedQuads {
             instances,
