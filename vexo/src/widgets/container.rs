@@ -2,7 +2,12 @@
 
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
-use super::super::layout::{AlignItems, FlexDirection, Layout};
+use crate::layout_builder_methods;
+use super::super::layout::{
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
+    Inset, JustifyContent, Layout, Overflow, Position,
+};
+use super::super::core::{Logical, Size};
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
 
@@ -81,6 +86,10 @@ impl Flex {
     pub fn children(&self) -> &[Box<dyn Widget>] {
         &self.children
     }
+}
+
+impl Flex {
+    layout_builder_methods!();
 }
 
 impl Default for Flex {
@@ -190,5 +199,43 @@ mod tests {
             .push(Text::new("Hello"));
 
         assert_eq!(col.key(), Some(WidgetKey::Global(global_key)));
+    }
+
+    #[test]
+    fn test_flex_gap_preserves_direction() {
+        let col = Flex::column().gap(4.0);
+        assert_eq!(col.layout.flex_direction, Some(FlexDirection::Column));
+        assert!(col.layout.gap.is_some());
+    }
+
+    #[test]
+    fn test_flex_padding_preserves_direction() {
+        let col = Flex::column().padding(8.0);
+        assert_eq!(col.layout.flex_direction, Some(FlexDirection::Column));
+        assert!(col.layout.padding.is_some());
+    }
+
+    #[test]
+    fn test_flex_gap_then_align() {
+        let col = Flex::column().gap(4.0).align(AlignItems::Center);
+        assert_eq!(col.layout.flex_direction, Some(FlexDirection::Column));
+        assert!(col.layout.gap.is_some());
+        assert_eq!(col.layout.align_items, Some(AlignItems::Center));
+    }
+
+    #[test]
+    fn test_flex_layout_replaces_everything() {
+        let col = Flex::column().layout(Layout::default().gap(4.0));
+        // .layout() replaces the entire Layout, so flex_direction is lost
+        assert_eq!(col.layout.flex_direction, None);
+        assert!(col.layout.gap.is_some());
+    }
+
+    #[test]
+    fn test_flex_width_height() {
+        let row = Flex::row().width(200.0).height(100.0);
+        assert_eq!(row.layout.width, Some(Dimension::Length(200.0)));
+        assert_eq!(row.layout.height, Some(Dimension::Length(100.0)));
+        assert_eq!(row.layout.flex_direction, Some(FlexDirection::Row));
     }
 }
