@@ -222,3 +222,202 @@ fn test_translate_transform_in_pipeline() {
     });
     assert!(has_shifted_text, "Should have 'Shifted' text");
 }
+
+/// Test Transform::rotate in the pipeline.
+///
+/// Verifies that a rotation transform wraps child commands with
+/// PushTransform/PopTransform and the rotation matrix is correct.
+#[test]
+fn test_rotate_transform_in_pipeline() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::{AffineTransform, Point};
+
+    let child = DecoratedContainer::new(Text::new("Rotated"))
+        .style(crate::Style::new()
+            .background(Color::BLUE)
+            .padding(8.0));
+
+    let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
+    let widget = Transform::rotate(child, angle);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    let pop_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PopTransform));
+    assert!(push_idx.is_some(), "Should have PushTransform command");
+    assert!(pop_idx.is_some(), "Should have PopTransform command");
+    assert!(push_idx.unwrap() < pop_idx.unwrap(), "Push should come before Pop");
+
+    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+        let cos_45 = angle.cos();
+        let sin_45 = angle.sin();
+        assert!((transform.a - cos_45).abs() < 1e-6, "a should be cos(45)");
+        assert!((transform.b - sin_45).abs() < 1e-6, "b should be sin(45)");
+        assert!((transform.c - (-sin_45)).abs() < 1e-6, "c should be -sin(45)");
+        assert!((transform.d - cos_45).abs() < 1e-6, "d should be cos(45)");
+        assert!(transform.e.abs() < 1e-6, "e should be 0 for pure rotation");
+        assert!(transform.f.abs() < 1e-6, "f should be 0 for pure rotation");
+    }
+
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    assert!(frame_builder.quad_count() >= 1, "Should have at least one quad");
+
+    let has_rotated_quad = frame_builder.quad_instances().iter().any(|q| {
+        let t = AffineTransform::from_array(q.transform);
+        !t.is_translation_only()
+    });
+    assert!(has_rotated_quad, "At least one quad should have a rotation transform");
+}
+
+/// Test Transform::scale in the pipeline.
+#[test]
+fn test_scale_transform_in_pipeline() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::Point;
+
+    let child = DecoratedContainer::new(Text::new("Scaled"))
+        .style(crate::Style::new()
+            .background(Color::GREEN)
+            .padding(8.0));
+
+    let widget = Transform::scale(child, 2.0, 3.0);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    assert!(push_idx.is_some(), "Should have PushTransform command");
+
+    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+        assert!((transform.a - 2.0).abs() < 1e-6, "a should be 2.0 (scaleX)");
+        assert!(transform.b.abs() < 1e-6, "b should be 0");
+        assert!(transform.c.abs() < 1e-6, "c should be 0");
+        assert!((transform.d - 3.0).abs() < 1e-6, "d should be 3.0 (scaleY)");
+        assert!(transform.e.abs() < 1e-6, "e should be 0");
+        assert!(transform.f.abs() < 1e-6, "f should be 0");
+    }
+
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    assert!(frame_builder.quad_count() >= 1);
+
+    let has_scaled_quad = frame_builder.quad_instances().iter().any(|q| {
+        (q.transform[0] - 2.0).abs() < 1e-6 && (q.transform[3] - 3.0).abs() < 1e-6
+    });
+    assert!(has_scaled_quad, "At least one quad should have the scale transform");
+}
+
+/// Test that clip bounds are expanded to AABB when inside a rotation transform.
+#[test]
+fn test_clip_bounds_expanded_for_rotated_content() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::{AffineTransform, Bounds, Point};
+
+    let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
+    let transform = AffineTransform::rotation(angle);
+
+    let commands = vec![
+        RenderCommand::PushTransform { transform, origin: Point::new(200.0, 200.0) },
+        RenderCommand::PushClip { bounds: Bounds::from_xywh(150.0, 150.0, 100.0, 100.0) },
+        RenderCommand::rect(Bounds::from_xywh(150.0, 150.0, 100.0, 100.0), Color::RED),
+        RenderCommand::PopClip,
+        RenderCommand::PopTransform,
+    ];
+
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    let groups = frame_builder.clip_groups();
+    let group_with_clip = groups.iter().find(|g| g.clip_bounds.is_some());
+    assert!(group_with_clip.is_some(), "Should have a clip group with bounds");
+
+    let clip_bounds = group_with_clip.unwrap().clip_bounds.unwrap();
+    let width = clip_bounds.right - clip_bounds.left;
+    let height = clip_bounds.bottom - clip_bounds.top;
+    // Original clip was 100x100. After 45deg rotation, AABB should be ~141x141.
+    assert!(width > 100.0, "Clip width should expand beyond 100 for rotated content, got {width}");
+    assert!(height > 100.0, "Clip height should expand beyond 100 for rotated content, got {height}");
+}
+
+/// Test that translation-only transforms do not expand clip bounds.
+#[test]
+fn test_clip_bounds_unchanged_for_translate_only() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::{AffineTransform, Bounds, Point};
+
+    let transform = AffineTransform::translation(50.0, 30.0);
+
+    let commands = vec![
+        RenderCommand::PushTransform { transform, origin: Point::new(200.0, 200.0) },
+        RenderCommand::PushClip { bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 100.0) },
+        RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 100.0), Color::RED),
+        RenderCommand::PopClip,
+        RenderCommand::PopTransform,
+    ];
+
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    let groups = frame_builder.clip_groups();
+    let group_with_clip = groups.iter().find(|g| g.clip_bounds.is_some());
+    assert!(group_with_clip.is_some());
+
+    let clip_bounds = group_with_clip.unwrap().clip_bounds.unwrap();
+    let width = clip_bounds.right - clip_bounds.left;
+    let height = clip_bounds.bottom - clip_bounds.top;
+    assert!((width - 100.0).abs() < 1.0, "Clip width should remain ~100 for translate-only, got {width}");
+    assert!((height - 100.0).abs() < 1.0, "Clip height should remain ~100 for translate-only, got {height}");
+}
+
+/// Test that a rotation transform with a rounded rect produces correct quad instances.
+#[test]
+fn test_rotate_transform_with_rounded_rect() {
+    use crate::frame_builder::FrameBuilder;
+    use crate::render::process_commands;
+    use crate::core::{AffineTransform, Point};
+
+    let child = DecoratedContainer::new(Text::new("Rounded"))
+        .style(crate::Style::new()
+            .background(Color::BLUE)
+            .corner_radius(12.0)
+            .padding(8.0));
+
+    let widget = Transform::rotate(child, 0.3);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    let mut frame_builder = FrameBuilder::new();
+    process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+    let has_rotated_rounded_quad = frame_builder.quad_instances().iter().any(|q| {
+        q.corner_radius > 0.0 && !AffineTransform::from_array(q.transform).is_translation_only()
+    });
+    assert!(has_rotated_rounded_quad, "Should have a quad with both rotation and corner_radius");
+}

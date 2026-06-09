@@ -218,12 +218,14 @@ impl Application for State {
             Text::new("Transforms:"),
             row![
                 Transform::rotate(
-                    DecoratedContainer::new(Text::new("Rotated 10°")).style(
+                    DecoratedContainer::new(Text::new("Rotated 15\u{00b0}")).style(
                         Style::new()
                             .background(Color::rgb(0.85, 1.0, 0.85))
+                            .border(Color::rgb(0.3, 0.6, 0.3), 2.0)
+                            .corner_radius(12.0)
                             .padding(8.0)
                     ),
-                    10.0_f32.to_radians(),
+                    15.0_f32.to_radians(),
                 ),
                 // Scaled card (1.5x)
                 Transform::scale(
@@ -246,6 +248,17 @@ impl Application for State {
                     100.0,
                 ),
             ],
+            // Large rotation with rounded rect
+            row![Transform::rotate(
+                DecoratedContainer::new(Text::new("45\u{00b0} rounded")).style(
+                    Style::new()
+                        .background(Color::rgb(1.0, 0.85, 0.85))
+                        .border(Color::rgb(0.8, 0.3, 0.3), 2.0)
+                        .corner_radius(16.0)
+                        .padding(12.0)
+                ),
+                45.0_f32.to_radians(),
+            ),],
             // Clip demo
             Text::new("Clipping:"),
             Text::new("Left: clip enabled. Right: no clip. Both containers have fixed height."),

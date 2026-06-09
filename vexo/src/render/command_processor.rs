@@ -109,7 +109,15 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                frame_builder.push_clip(adjusted_bounds);
+                // If inside a transform, expand the clip bounds to the AABB of
+                // the transformed clip rect. This ensures the GPU scissor rect
+                // doesn't clip off visible portions of rotated content.
+                let effective_bounds = if current_transform.is_identity() {
+                    adjusted_bounds
+                } else {
+                    current_transform.transform_bounds(&adjusted_bounds)
+                };
+                frame_builder.push_clip(effective_bounds);
             }
             RenderCommand::PopClip => {
                 frame_builder.pop_clip();

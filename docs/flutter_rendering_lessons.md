@@ -195,60 +195,24 @@ for (i, instance) in quad_instances.iter().enumerate() {
 
 ## Priority 6: 2x3 Transform Matrix
 
-**Status:** Translation only, no rotation or skew
+**Status:** Done — full 2D affine transforms with clip expansion
 
-**Location:** `vexo/src/quad_instance.rs`
+**Implementation:**
+1. `AffineTransform` type with identity, translation, rotation, scale, skew, composition, inverse
+2. `Transform` widget with `rotate`, `scale`, `translate`, `new` constructors
+3. `QuadInstance.transform: [f32; 6]` field baked per-instance by `FrameBuilder`
+4. Vertex shader applies center-relative 2D affine transform
+5. Fragment shader SDF works correctly with rotation without modification — rasterizer-interpolated UVs already preserve local-space coordinates under affine transforms
+6. Scissor-rect clips expanded to AABB of transformed bounds via `AffineTransform::transform_bounds()`
 
-**Current implementation:**
-```rust
-pub struct QuadInstance {
-    pub position: [f32; 2],  // Translation only
-    pub size: [f32; 2],      // Scale via size
-    // ...
-}
-```
+**Key insight: SDF doesn't need inverse transform correction**
+The vertex shader passes `out.uv = model_pos` (0-1 range). The rasterizer interpolates UVs linearly across the screen-space triangle. For affine transforms (rotation, scale, skew), barycentric interpolation preserves the mapping — so the interpolated UV at any screen pixel already gives the correct local-space coordinate. The SDF formula `center_pos = uv * size - half_size` was already computing in local space. No inverse transform or additional varyings are needed.
 
-**Problem:**
-Elements cannot be rotated or skewed. Limits UI effects like spinning indicators, rotated labels, perspective transforms.
+**Clip bounds expansion:** When `PushClip` is inside a `PushTransform`, `transform_bounds()` transforms all 4 corners of the clip rect and returns the enclosing AABB. This ensures the GPU scissor rect doesn't clip off visible portions of rotated content.
 
-**Flutter's approach:**
-Each entity has a 3x3 transform matrix enabling arbitrary 2D transforms.
-
-**Fix for Vexo:**
-Add a 2x3 matrix (6 floats) to `QuadInstance`:
-
-```rust
-pub struct QuadInstance {
-    pub transform: [f32; 6],  // 2x3: [sx, shy, shx, sy, tx, ty]
-    pub size: [f32; 2],
-    pub color: [f32; 4],
-    pub border_color: [f32; 4],
-    pub border_width: f32,
-    pub corner_radius: f32,
-    pub clip_bounds: [f32; 4],
-    pub _padding: [f32; 2],
-}
-```
-
-**Vertex shader change:**
-```wgsl
-// Current:
-let pixel_pos = scaled_pos + (model_pos * scaled_size);
-
-// With transform:
-let local_pos = model_pos * scaled_size;
-let pixel_pos = vec2f(
-    transform[0] * local_pos.x + transform[2] * local_pos.y + transform[4],
-    transform[1] * local_pos.x + transform[3] * local_pos.y + transform[5]
-);
-```
-
-**Fragment shader change:**
-SDF distance calculations need the inverse transform to compute distance in un-rotated space. Either:
-1. Precompute inverse on CPU, add 6 more floats to instance data
-2. Compute inverse in vertex shader, pass to fragment shader
-
-**Impact:** Feature completeness - enables rotation and skew transforms.
+**Known limitations:**
+- Text remains axis-aligned under rotation (glyphon does not support rotated text)
+- Scissor-rect expansion is a conservative approximation (AABB may be slightly larger than the rotated clip)
 
 ---
 
@@ -289,7 +253,7 @@ Flutter draws each rect as a separate draw call. Vexo's instanced rendering (one
 | 3 | Scissor-based clipping | Medium | GPU perf | Done |
 | 4 | Pipeline caching | Small | Startup time | TODO |
 | 5 | Opaque fullscreen quad skip | Small | Reduce overdraw | TODO |
-| 6 | 2x3 transform matrix | Medium | Features | TODO |
+| 6 | 2x3 transform matrix | Medium | Features | Done |
 
 ---
 

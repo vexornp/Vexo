@@ -711,6 +711,23 @@ impl AffineTransform {
     pub fn determinant(&self) -> f32 {
         self.a * self.d - self.b * self.c
     }
+
+    /// Transform a bounding box and return the axis-aligned bounding box of the result.
+    ///
+    /// Transforms all 4 corners and returns the AABB that encloses them.
+    pub fn transform_bounds(&self, bounds: &Bounds<Logical>) -> Bounds<Logical> {
+        let tl = self.transform_point(Point::new(bounds.left, bounds.top));
+        let tr = self.transform_point(Point::new(bounds.right, bounds.top));
+        let bl = self.transform_point(Point::new(bounds.left, bounds.bottom));
+        let br = self.transform_point(Point::new(bounds.right, bounds.bottom));
+
+        Bounds::new(
+            tl.x.min(tr.x).min(bl.x).min(br.x),
+            tl.y.min(tr.y).min(bl.y).min(br.y),
+            tl.x.max(tr.x).max(bl.x).max(br.x),
+            tl.y.max(tr.y).max(bl.y).max(br.y),
+        )
+    }
 }
 
 impl Default for AffineTransform {
@@ -1104,5 +1121,39 @@ mod tests {
 
         let singular = AffineTransform::scale(0.0, 1.0);
         assert_eq!(singular.determinant(), 0.0);
+    }
+
+    #[test]
+    fn test_transform_bounds_identity() {
+        let t = AffineTransform::identity();
+        let b = Bounds::<Logical>::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let result = t.transform_bounds(&b);
+        assert!((result.left - 10.0).abs() < 1e-6);
+        assert!((result.top - 20.0).abs() < 1e-6);
+        assert!((result.width() - 100.0).abs() < 1e-6);
+        assert!((result.height() - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_transform_bounds_rotation() {
+        let t = AffineTransform::rotation(std::f32::consts::FRAC_PI_4);
+        let b = Bounds::<Logical>::from_xywh(-50.0, -50.0, 100.0, 100.0);
+        let result = t.transform_bounds(&b);
+        let width = result.width();
+        let height = result.height();
+        let expected = 100.0 * std::f32::consts::SQRT_2;
+        assert!((width - expected).abs() < 1.0, "width should be ~{expected}, got {width}");
+        assert!((height - expected).abs() < 1.0, "height should be ~{expected}, got {height}");
+    }
+
+    #[test]
+    fn test_transform_bounds_translation() {
+        let t = AffineTransform::translation(10.0, 20.0);
+        let b = Bounds::<Logical>::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let result = t.transform_bounds(&b);
+        assert!((result.left - 10.0).abs() < 1e-6);
+        assert!((result.top - 20.0).abs() < 1e-6);
+        assert!((result.width() - 100.0).abs() < 1e-6);
+        assert!((result.height() - 50.0).abs() < 1e-6);
     }
 }
