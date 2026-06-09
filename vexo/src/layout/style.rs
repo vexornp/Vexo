@@ -215,6 +215,50 @@ impl GridPlacement {
 }
 
 // ============================================================================
+// ALIGN SELF
+// ============================================================================
+
+/// Per-item cross-axis alignment (CSS `align-self`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum AlignSelf {
+    #[default]
+    Auto,
+    Start,
+    End,
+    Center,
+    Stretch,
+    Baseline,
+}
+
+// ============================================================================
+// OVERFLOW
+// ============================================================================
+
+/// How to handle overflow (CSS `overflow`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Overflow {
+    #[default]
+    Visible,
+    Hidden,
+    Clip,
+    Scroll,
+}
+
+// ============================================================================
+// GRID AUTO FLOW
+// ============================================================================
+
+/// Grid auto-placement direction (CSS `grid-auto-flow`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GridAutoFlow {
+    #[default]
+    Row,
+    Column,
+    RowDense,
+    ColumnDense,
+}
+
+// ============================================================================
 // LAYOUT STRUCT
 // ============================================================================
 
@@ -257,6 +301,21 @@ pub struct Layout {
     // Positioning
     pub position: Option<Position>,
     pub inset: Option<Inset>,
+
+    // Per-item alignment
+    pub align_self: Option<AlignSelf>,
+
+    // Sizing
+    pub aspect_ratio: Option<f32>,
+
+    // Overflow
+    pub overflow_x: Option<Overflow>,
+    pub overflow_y: Option<Overflow>,
+
+    // Grid auto
+    pub grid_auto_flow: Option<GridAutoFlow>,
+    pub grid_auto_rows: Option<Vec<TrackSizing>>,
+    pub grid_auto_columns: Option<Vec<TrackSizing>>,
 }
 
 impl Layout {
@@ -495,6 +554,71 @@ impl Layout {
     }
 
     // ========================================================================
+    // Per-Item Alignment Builders
+    // ========================================================================
+
+    /// Set align-self (per-item cross-axis alignment).
+    pub fn align_self(mut self, value: AlignSelf) -> Self {
+        self.align_self = Some(value);
+        self
+    }
+
+    // ========================================================================
+    // Sizing Builders
+    // ========================================================================
+
+    /// Set aspect ratio (width / height).
+    pub fn aspect_ratio(mut self, value: f32) -> Self {
+        self.aspect_ratio = Some(value);
+        self
+    }
+
+    // ========================================================================
+    // Overflow Builders
+    // ========================================================================
+
+    /// Set overflow for both axes.
+    pub fn overflow(mut self, value: Overflow) -> Self {
+        self.overflow_x = Some(value);
+        self.overflow_y = Some(value);
+        self
+    }
+
+    /// Set overflow for x-axis only.
+    pub fn overflow_x(mut self, value: Overflow) -> Self {
+        self.overflow_x = Some(value);
+        self
+    }
+
+    /// Set overflow for y-axis only.
+    pub fn overflow_y(mut self, value: Overflow) -> Self {
+        self.overflow_y = Some(value);
+        self
+    }
+
+    // ========================================================================
+    // Grid Auto Builders
+    // ========================================================================
+
+    /// Set grid auto-flow direction.
+    pub fn grid_auto_flow(mut self, value: GridAutoFlow) -> Self {
+        self.grid_auto_flow = Some(value);
+        self
+    }
+
+    /// Set grid auto-rows sizing.
+    pub fn auto_rows(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.grid_auto_rows = Some(sizes);
+        self
+    }
+
+    /// Set grid auto-columns sizing.
+    pub fn auto_columns(mut self, sizes: Vec<TrackSizing>) -> Self {
+        self.grid_auto_columns = Some(sizes);
+        self
+    }
+
+    // ========================================================================
     // Convenience Methods
     // ========================================================================
 
@@ -583,6 +707,27 @@ impl Layout {
             // Positioning
             position: self.position.map(|p| p.to_taffy()).unwrap_or_default(),
             inset: self.inset.map(|i| i.to_taffy()).unwrap_or_else(Rect::auto),
+
+            // Per-item alignment
+            align_self: self.align_self.map(|a| a.to_taffy()),
+
+            // Sizing
+            aspect_ratio: self.aspect_ratio,
+
+            // Overflow
+            overflow: taffy::geometry::Point {
+                x: self.overflow_x.map(|o| o.to_taffy()).unwrap_or(taffy::style::Overflow::Visible),
+                y: self.overflow_y.map(|o| o.to_taffy()).unwrap_or(taffy::style::Overflow::Visible),
+            },
+
+            // Grid auto
+            grid_auto_flow: self.grid_auto_flow.map(|f| f.to_taffy()).unwrap_or_default(),
+            grid_auto_rows: self.grid_auto_rows.as_ref()
+                .map(|v| v.iter().map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max())).collect())
+                .unwrap_or_default(),
+            grid_auto_columns: self.grid_auto_columns.as_ref()
+                .map(|v| v.iter().map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max())).collect())
+                .unwrap_or_default(),
 
             ..Default::default()
         }
@@ -755,6 +900,42 @@ impl GridPlacement {
                     GridPlacement::Auto
                 },
             }
+        }
+    }
+}
+
+impl AlignSelf {
+    fn to_taffy(self) -> taffy::prelude::AlignSelf {
+        use taffy::prelude::AlignItems as TaffyAlign;
+        match self {
+            AlignSelf::Auto => TaffyAlign::Stretch,
+            AlignSelf::Start => TaffyAlign::Start,
+            AlignSelf::End => TaffyAlign::End,
+            AlignSelf::Center => TaffyAlign::Center,
+            AlignSelf::Stretch => TaffyAlign::Stretch,
+            AlignSelf::Baseline => TaffyAlign::Baseline,
+        }
+    }
+}
+
+impl Overflow {
+    fn to_taffy(self) -> taffy::style::Overflow {
+        match self {
+            Overflow::Visible => taffy::style::Overflow::Visible,
+            Overflow::Hidden => taffy::style::Overflow::Hidden,
+            Overflow::Clip => taffy::style::Overflow::Clip,
+            Overflow::Scroll => taffy::style::Overflow::Scroll,
+        }
+    }
+}
+
+impl GridAutoFlow {
+    fn to_taffy(self) -> taffy::style::GridAutoFlow {
+        match self {
+            GridAutoFlow::Row => taffy::style::GridAutoFlow::Row,
+            GridAutoFlow::Column => taffy::style::GridAutoFlow::Column,
+            GridAutoFlow::RowDense => taffy::style::GridAutoFlow::RowDense,
+            GridAutoFlow::ColumnDense => taffy::style::GridAutoFlow::ColumnDense,
         }
     }
 }
@@ -1142,5 +1323,53 @@ mod tests {
     fn test_position_default() {
         let p = Position::default();
         assert!(matches!(p, Position::Relative));
+    }
+
+    #[test]
+    fn test_layout_align_self() {
+        let layout = Layout::default().align_self(AlignSelf::Center);
+        assert_eq!(layout.align_self, Some(AlignSelf::Center));
+    }
+
+    #[test]
+    fn test_layout_aspect_ratio() {
+        let layout = Layout::default().aspect_ratio(1.5);
+        assert_eq!(layout.aspect_ratio, Some(1.5));
+    }
+
+    #[test]
+    fn test_layout_overflow() {
+        let layout = Layout::default().overflow(Overflow::Hidden);
+        assert_eq!(layout.overflow_x, Some(Overflow::Hidden));
+        assert_eq!(layout.overflow_y, Some(Overflow::Hidden));
+    }
+
+    #[test]
+    fn test_layout_overflow_each() {
+        let layout = Layout::default().overflow_x(Overflow::Hidden).overflow_y(Overflow::Scroll);
+        assert_eq!(layout.overflow_x, Some(Overflow::Hidden));
+        assert_eq!(layout.overflow_y, Some(Overflow::Scroll));
+    }
+
+    #[test]
+    fn test_layout_grid_auto_flow() {
+        let layout = Layout::default().grid_auto_flow(GridAutoFlow::Column);
+        assert_eq!(layout.grid_auto_flow, Some(GridAutoFlow::Column));
+    }
+
+    #[test]
+    fn test_layout_auto_rows() {
+        let layout = Layout::default().auto_rows(vec![TrackSizing::Px(100.0)]);
+        assert!(layout.grid_auto_rows.is_some());
+        let rows = layout.grid_auto_rows.unwrap();
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn test_layout_auto_columns() {
+        let layout = Layout::default().auto_columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)]);
+        assert!(layout.grid_auto_columns.is_some());
+        let cols = layout.grid_auto_columns.unwrap();
+        assert_eq!(cols.len(), 2);
     }
 }
