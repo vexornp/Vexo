@@ -11,6 +11,7 @@ mod text;
 mod text_edit;
 mod text_edit_content;
 mod transform;
+mod with_layout;
 
 use std::any::Any;
 
@@ -27,7 +28,9 @@ pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use text_edit_content::TextEditContent;
 pub use transform::Transform;
+pub use with_layout::WithLayout;
 pub use super::{Key, GlobalKey};
+use crate::layout::Layout;
 
 /// Immutable widget configuration - rebuilt each frame.
 ///
@@ -140,6 +143,16 @@ pub trait Widget: Any {
     /// even when `Widget: Clone`. Each widget implementation must provide this method
     /// to enable cloning of widget trees stored as trait objects.
     fn clone_boxed(&self) -> Box<dyn Widget>;
+
+    /// Wrap this widget with layout properties.
+    ///
+    /// The Vexo equivalent of inline styles on a child element in CSS.
+    fn with_layout(self, layout: Layout) -> WithLayout
+    where
+        Self: Sized + 'static,
+    {
+        WithLayout::new(self, layout)
+    }
 }
 
 #[cfg(test)]

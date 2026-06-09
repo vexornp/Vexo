@@ -1,0 +1,541 @@
+//! WithLayout widget - a single-child wrapper that applies layout properties.
+//!
+//! This widget is purely for layout -- no visual decoration, no painting.
+//! It applies a `Layout` to its child and creates a Taffy layout node.
+//!
+//! This is the Vexo equivalent of inline styles on a child element in CSS.
+
+use std::any::Any;
+
+use crate::core::{Bounds, Logical, Point};
+use crate::elements::RenderObjectElement;
+use crate::focus::attachment::FocusAttachment;
+use crate::input::InputEvent;
+use crate::layout::{Layout, LayoutNodeKey};
+use crate::render::RenderCommand;
+use crate::{
+    Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
+    PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
+};
+
+// ============================================================================
+// WithLayoutRenderObject
+// ============================================================================
+
+/// Render object for WithLayout -- applies layout properties without painting.
+///
+/// This render object creates a Taffy layout node from the provided `Layout`
+/// but produces no visual output. It exists purely to inject layout
+/// constraints (padding, margin, flex, sizing, etc.) into the tree.
+pub struct WithLayoutRenderObject {
+    /// Layout properties (width, height, padding, margin, flex, etc.).
+    layout: Layout,
+
+    /// Child render object ID.
+    child: Option<RenderObjectKey>,
+
+    /// Computed bounds from layout.
+    computed_bounds: Option<Bounds<Logical>>,
+
+    /// Layout node in Taffy.
+    layout_node: Option<LayoutNodeKey>,
+}
+
+impl WithLayoutRenderObject {
+    /// Create a new WithLayout render object with the given layout.
+    pub fn new(layout: Layout) -> Self {
+        Self {
+            layout,
+            child: None,
+            computed_bounds: None,
+            layout_node: None,
+        }
+    }
+
+    /// Set the layout configuration.
+    ///
+    /// Returns true if the layout changed.
+    pub fn set_layout(&mut self, layout: Layout) -> bool {
+        if self.layout != layout {
+            self.layout = layout;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl RenderObject for WithLayoutRenderObject {
+    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+        let layout = self.layout.clone();
+
+        match self.layout_node {
+            Some(existing) => {
+                ctx.engine().set_style(existing, &layout);
+                ctx.engine().set_children(existing, child_nodes);
+                LayoutResult {
+                    node: existing,
+                    size: crate::core::Size::zero(),
+                }
+            }
+            None => {
+                let node = ctx.engine().create_container(&layout, child_nodes);
+                self.layout_node = Some(node);
+                LayoutResult {
+                    node,
+                    size: crate::core::Size::zero(),
+                }
+            }
+        }
+    }
+
+    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
+        if let Some(node) = self.layout_node {
+            if let Some(computed) = ctx.engine_ref().get_layout(node) {
+                self.computed_bounds = Some(computed.bounds);
+            }
+        }
+    }
+
+    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        // No visual output -- layout only.
+        vec![]
+    }
+
+    fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+        match &self.computed_bounds {
+            Some(bounds) => bounds.contains(&position),
+            None => false,
+        }
+    }
+
+    fn children(&self) -> &[RenderObjectKey] {
+        match &self.child {
+            Some(child) => std::slice::from_ref(child),
+            None => &[],
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn set_child_id(&mut self, child: RenderObjectKey) {
+        self.child = Some(child);
+    }
+
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
+        self.layout_node
+    }
+
+    fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+        self.computed_bounds
+    }
+}
+
+// ============================================================================
+// WithLayoutElement
+// ============================================================================
+
+/// Element for WithLayout widget.
+///
+/// Manages a single child element and updates the render object
+/// when layout properties change.
+pub struct WithLayoutElement {
+    id: Option<ElementKey>,
+    key: Option<WidgetKey>,
+    render_object: Option<RenderObjectKey>,
+    widget: Option<Box<dyn Widget>>,
+    focus_attachment: Option<FocusAttachment>,
+}
+
+impl WithLayoutElement {
+    /// Create a new WithLayout element.
+    pub fn new() -> Self {
+        Self {
+            id: None,
+            key: None,
+            render_object: None,
+            widget: None,
+            focus_attachment: None,
+        }
+    }
+
+    /// Set the widget for this element.
+    pub fn set_widget(&mut self, widget: &dyn Widget) {
+        self.widget = Some(widget.clone_boxed());
+        self.key = widget.key();
+    }
+
+    /// Get the child widget from the stored widget.
+    fn get_child_widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_ref()?.child()
+    }
+}
+
+impl Default for WithLayoutElement {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RenderObjectElement for WithLayoutElement {
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
+
+    fn set_widget(&mut self, widget: Box<dyn Widget>) {
+        self.widget = Some(widget);
+    }
+
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
+
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
+        self.render_object = id;
+    }
+
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+
+    fn element_id(&self) -> Option<ElementKey> {
+        self.id
+    }
+
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
+        self.id = id;
+    }
+}
+
+impl Element for WithLayoutElement {
+    fn mount(&mut self, context: &mut ElementContext) {
+        let element_key = context.element_id;
+        let parent_id = context.parent_focus_node_id();
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
+        if let Some(node_id) = node_id {
+            self.focus_attachment = Some(FocusAttachment::new(node_id));
+        }
+
+        self.mount_render_object(context);
+
+        if let Some(widget) = &self.widget {
+            if let Some(child_widget) = widget.child() {
+                context.inflate_child(None, child_widget.clone_boxed());
+            }
+        }
+    }
+
+    fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        self.update_render_object(new_widget, context);
+    }
+
+    fn unmount(&mut self, context: &mut ElementContext) {
+        self.unmount_render_object(context);
+        if let Some(mut attachment) = self.focus_attachment.take() {
+            attachment.detach(context.focus_manager());
+        }
+    }
+
+    fn render_object(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
+
+    fn widget_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn can_update(&self, _widget: &dyn Any) -> bool {
+        true
+    }
+
+    fn on_event(
+        &mut self,
+        _event: &InputEvent,
+        _context: &mut EventContext,
+        _state: &mut crate::element_state::StateStorage,
+    ) -> Option<Box<dyn Any>> {
+        None
+    }
+
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
+            self.widget = Some(*widget);
+
+            if let Some(ro_id) = self.render_object {
+                if let Some(ro) = context.get_render_object_mut(ro_id) {
+                    let result = self
+                        .widget
+                        .as_ref()
+                        .unwrap()
+                        .update_render_object(ro.as_mut());
+
+                    if result.contains(UpdateResult::LAYOUT) {
+                        context.mark_needs_layout(ro_id);
+                    }
+                    if result.contains(UpdateResult::PAINT) {
+                        context.mark_needs_paint(ro_id);
+                    }
+                }
+            }
+
+            let old_child = context.children().first().copied();
+            if let Some(child_widget) = self.get_child_widget() {
+                match old_child {
+                    Some(old_child_key) => {
+                        context.update_child(old_child_key, child_widget.clone_boxed());
+                    }
+                    None => {
+                        context.inflate_child(None, child_widget.clone_boxed());
+                    }
+                }
+            } else if let Some(old_child_key) = old_child {
+                context.unmount_child(old_child_key);
+            }
+        }
+
+        if let Some(attachment) = self.focus_attachment.as_ref() {
+            let new_parent_id = context.parent_focus_node_id();
+            attachment.reparent_to(new_parent_id, context.focus_manager());
+        }
+    }
+
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
+        if let Some(child_ro_key) = child_ro {
+            self.insert_child_render_object(child_ro_key, context);
+        }
+    }
+
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
+    }
+}
+
+// ============================================================================
+// WithLayout Widget
+// ============================================================================
+
+/// A widget that applies layout properties to a child without visual decoration.
+///
+/// This is the Vexo equivalent of inline styles on a child element in CSS.
+/// Use it to add padding, margin, sizing, flex, or positioning to any widget
+/// without introducing visual elements.
+///
+/// # Example
+///
+/// ```ignore
+/// // Add padding and center a text widget
+/// Text::new("Hello").with_layout(
+///     Layout::default()
+///         .padding(16.0)
+///         .align_self(AlignSelf::Center)
+/// )
+///
+/// // Fixed-size container
+/// WithLayout::new(
+///     Text::new("Fixed"),
+///     Layout::fixed(200.0, 100.0),
+/// )
+/// ```
+pub struct WithLayout {
+    key: Option<WidgetKey>,
+    child: Box<dyn Widget>,
+    layout: Layout,
+}
+
+impl WithLayout {
+    /// Create a new WithLayout wrapper with a child and layout properties.
+    pub fn new(child: impl Widget + 'static, layout: Layout) -> Self {
+        Self {
+            key: None,
+            child: Box::new(child),
+            layout,
+        }
+    }
+
+    /// Set the widget key.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+impl Clone for WithLayout {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            child: self.child.clone_boxed(),
+            layout: self.layout.clone(),
+        }
+    }
+}
+
+impl Widget for WithLayout {
+    fn key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn create_element(&self) -> Box<dyn Element> {
+        let mut elem = WithLayoutElement::new();
+        elem.set_widget(self);
+        Box::new(elem)
+    }
+
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(WithLayoutRenderObject::new(self.layout.clone()))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn child(&self) -> Option<&dyn Widget> {
+        Some(self.child.as_ref())
+    }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
+        if let Some(ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<WithLayoutRenderObject>()
+        {
+            if ro.set_layout(self.layout.clone()) {
+                UpdateResult::LAYOUT | UpdateResult::PAINT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
+        }
+    }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GlobalKey, Key, Text};
+    use crate::layout::{FlexDirection, AlignItems};
+
+    #[test]
+    fn test_with_layout_creation() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default());
+        assert!(w.key().is_none());
+    }
+
+    #[test]
+    fn test_with_layout_with_key() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default()).with_key("my-layout");
+        assert_eq!(w.key(), Some(WidgetKey::Local(Key::new("my-layout"))));
+    }
+
+    #[test]
+    fn test_with_layout_with_global_key() {
+        let global_key = GlobalKey::new();
+        let w = WithLayout::new(Text::new("Hello"), Layout::default()).with_key(global_key.clone());
+        assert_eq!(w.key(), Some(WidgetKey::Global(global_key)));
+    }
+
+    #[test]
+    fn test_with_layout_render_object_creation() {
+        let layout = Layout::default().padding(10.0).flex_grow(1.0);
+        let w = WithLayout::new(Text::new("Hello"), layout);
+        let ro = w.create_render_object();
+        assert!(ro
+            .as_any()
+            .downcast_ref::<WithLayoutRenderObject>()
+            .is_some());
+    }
+
+    #[test]
+    fn test_with_layout_render_object_set_layout() {
+        let layout1 = Layout::default().padding(10.0);
+        let mut ro = WithLayoutRenderObject::new(layout1);
+
+        // Same layout = no change
+        assert!(!ro.set_layout(Layout::default().padding(10.0)));
+
+        // Different layout = change
+        assert!(ro.set_layout(Layout::default().padding(20.0)));
+    }
+
+    #[test]
+    fn test_with_layout_render_object_paint_empty() {
+        let mut ro = WithLayoutRenderObject::new(Layout::default());
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        // No visual output
+        assert_eq!(cmds.len(), 0);
+    }
+
+    #[test]
+    fn test_with_layout_update_render_object() {
+        let layout1 = Layout::default().padding(10.0);
+        let layout2 = Layout::default().padding(20.0);
+
+        let widget1 = WithLayout::new(Text::new("Hello"), layout1);
+        let widget2 = WithLayout::new(Text::new("Hello"), layout2);
+        let mut ro = WithLayoutRenderObject::new(Layout::default().padding(10.0));
+
+        // Same layout = NONE
+        let result = widget1.update_render_object(&mut ro);
+        assert_eq!(result, UpdateResult::NONE);
+
+        // Different layout = LAYOUT | PAINT
+        let result = widget2.update_render_object(&mut ro);
+        assert!(result.contains(UpdateResult::LAYOUT));
+        assert!(result.contains(UpdateResult::PAINT));
+    }
+
+    #[test]
+    fn test_with_layout_child() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default());
+        assert!(w.child().is_some());
+    }
+
+    #[test]
+    fn test_with_layout_clone() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0));
+        let cloned = w.clone();
+        assert!(cloned.child().is_some());
+    }
+
+    #[test]
+    fn test_with_layout_method_on_widget() {
+        let w = Text::new("Hello").with_layout(Layout::default().padding(10.0));
+        assert!(w.child().is_some());
+    }
+
+    #[test]
+    fn test_with_layout_element_default() {
+        let element = WithLayoutElement::default();
+        assert!(element.element_id().is_none());
+        assert!(element.render_object_id().is_none());
+    }
+}
