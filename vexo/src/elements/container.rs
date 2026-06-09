@@ -1,7 +1,7 @@
 //! ContainerElement implementation for multi-child widgets.
 //!
 //! ContainerElement is an element with multiple children.
-//! Used by container widgets like Column, Row, etc.
+//! Used by container widgets like Flex, etc.
 //!
 //! This element owns a render object and manages its lifecycle through
 //! the RenderObjectElement trait.

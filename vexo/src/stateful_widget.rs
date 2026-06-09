@@ -343,7 +343,7 @@ impl<'a> BuildContext<'a> {
 ///     type State = CounterState;
 ///
 ///     fn build(&self, state: &mut CounterState, ctx: &mut BuildContext) -> Box<dyn Widget> {
-///         Column::new()
+///         Flex::column()
 ///             .push(Text::new(format!("{}: {}", self.label, state.count)))
 ///             .push(Button::new("Increment", || {
 ///                 state.count += 1;

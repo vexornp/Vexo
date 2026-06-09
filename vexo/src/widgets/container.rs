@@ -139,11 +139,6 @@ impl Widget for Flex {
     }
 }
 
-/// Type alias for backward compatibility. Use `Flex::column()` instead.
-pub type Column = Flex;
-
-/// Type alias for backward compatibility. Use `Flex::row()` instead.
-pub type Row = Flex;
 
 #[cfg(test)]
 mod tests {

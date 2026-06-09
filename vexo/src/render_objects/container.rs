@@ -1,11 +1,11 @@
-//! ContainerRenderObject implementation for Column and Row.
+//! ContainerRenderObject implementation for Flex.
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
 
-/// RenderObject for container widgets (Column, Row).
+/// RenderObject for container widgets (Flex).
 ///
 /// Container render objects hold references to child render objects
 /// and participate in layout but do not paint themselves.

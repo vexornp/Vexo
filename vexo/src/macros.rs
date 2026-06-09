@@ -1,36 +1,36 @@
 //! Declarative macros for widget composition.
 
-/// Create a `Column` widget with children.
+/// Create a column (vertical Flex) widget with children.
 ///
 /// ```ignore
 /// column![Text::new("Hello"), Text::new("World")]
 /// ```
 /// expands to:
 /// ```ignore
-/// Column::new().push(Text::new("Hello")).push(Text::new("World"))
+/// Flex::column().push(Text::new("Hello")).push(Text::new("World"))
 /// ```
 #[macro_export]
 macro_rules! column {
     ($($child:expr),* $(,)?) => {{
-        let mut col = $crate::Column::new();
+        let mut col = $crate::Flex::column();
         $(col = col.push($child);)*
         col
     }};
 }
 
-/// Create a `Row` widget with children.
+/// Create a row (horizontal Flex) widget with children.
 ///
 /// ```ignore
 /// row![Text::new("Left"), Text::new("Right")]
 /// ```
 /// expands to:
 /// ```ignore
-/// Row::new().push(Text::new("Left")).push(Text::new("Right"))
+/// Flex::row().push(Text::new("Left")).push(Text::new("Right"))
 /// ```
 #[macro_export]
 macro_rules! row {
     ($($child:expr),* $(,)?) => {{
-        let mut row = $crate::Row::new();
+        let mut row = $crate::Flex::row();
         $(row = row.push($child);)*
         row
     }};

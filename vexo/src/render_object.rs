@@ -218,7 +218,7 @@ pub trait RenderObject {
     ///
     /// - For leaf nodes (Text): `child_nodes` is empty, create a leaf node
     /// - For modifiers (Background, Border): `child_nodes` has one element, pass through
-    /// - For containers (Column, Row): `child_nodes` has multiple elements, create container
+    /// - For containers (Flex): `child_nodes` has multiple elements, create container
     ///
     /// Returns a LayoutResult containing the node ID and size.
     /// The render object should store the node ID for later use in apply_layout().
@@ -268,7 +268,7 @@ pub trait RenderObject {
 
     /// Add a child render object ID.
     ///
-    /// Only relevant for container render objects (e.g., Column, Row).
+    /// Only relevant for container render objects (e.g., Flex).
     /// Default implementation does nothing. This enables linking the render tree
     /// so that paint_recursive() can traverse to children.
     fn add_child(&mut self, _child: RenderObjectKey) {
@@ -277,7 +277,7 @@ pub trait RenderObject {
 
     /// Clear all children.
     ///
-    /// Only relevant for container render objects (e.g., Column, Row).
+    /// Only relevant for container render objects (e.g., Flex).
     /// Default implementation does nothing.
     fn clear_children(&mut self) {
         // Default: no-op (leaf nodes and single-child modifiers don't use this)

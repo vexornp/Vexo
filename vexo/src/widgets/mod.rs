@@ -21,7 +21,7 @@ use super::key::WidgetKey;
 use super::RenderObject;
 use super::UpdateResult;
 
-pub use container::{Flex, Column, Row};
+pub use container::Flex;
 pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
 pub use grid::Grid;
@@ -95,7 +95,7 @@ pub trait Widget: Any {
     /// Get the children widgets for container widgets.
     ///
     /// Returns an empty slice for leaf widgets and single-child modifiers.
-    /// Returns the children for multi-child containers like Column, Row.
+    /// Returns the children for multi-child containers like Flex.
     fn children(&self) -> &[Box<dyn Widget>] {
         &[]
     }

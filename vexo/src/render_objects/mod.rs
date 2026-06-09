@@ -7,7 +7,7 @@
 //! # Available RenderObjects
 //!
 //! - [`TextRenderObject`]: Renders text content
-//! - [`ContainerRenderObject`]: Container for child render objects (Column/Row)
+//! - [`ContainerRenderObject`]: Container for child render objects (Flex)
 
 mod text;
 mod container;

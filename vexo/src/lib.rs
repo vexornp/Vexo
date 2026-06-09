@@ -34,7 +34,7 @@ pub use window::WindowState;
 pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
-pub use layout::{AlignItems, AlignSelf, Display, GridAutoFlow, Overflow};
+pub use layout::{AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Overflow};
 
 // --- Former retain/ modules (flattened) ---
 
@@ -101,7 +101,7 @@ pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
 pub use child_ops::{ChildOp, ChildOps};
 pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus};
-pub use widgets::{Widget, Text, Flex, Column, Row, Grid, DecoratedContainer, GestureDetector, MouseRegion, TextEdit, TextEditState, TextEditingController, Transform, WithLayout};
+pub use widgets::{Widget, Text, Flex, Grid, DecoratedContainer, GestureDetector, MouseRegion, TextEdit, TextEditState, TextEditingController, Transform, WithLayout};
 pub use input::SystemCursorKind;
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject};
