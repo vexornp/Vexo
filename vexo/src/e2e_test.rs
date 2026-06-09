@@ -1,8 +1,8 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::{Column, Text, ThreeTreePipeline, DecoratedContainer, Transform};
+use crate::{Column, Row, Grid, Text, ThreeTreePipeline, DecoratedContainer, Transform, Widget};
 use crate::core::{Color, Position, Size};
-use crate::layout::TaffyLayoutEngine;
+use crate::layout::{Layout, TaffyLayoutEngine, AlignItems, JustifyContent, TrackSizing, GridPlacement};
 use crate::render::RenderCommand;
 use std::sync::Arc;
 
@@ -420,4 +420,112 @@ fn test_rotate_transform_with_rounded_rect() {
         q.corner_radius > 0.0 && !AffineTransform::from_array(q.transform).is_translation_only()
     });
     assert!(has_rotated_rounded_quad, "Should have a quad with both rotation and corner_radius");
+}
+
+/// Test Column with CSS-like layout properties (padding, gap, justify, align).
+#[test]
+fn test_column_with_layout() {
+    let widget = Column::new()
+        .push(Text::new("First"))
+        .push(Text::new("Second"))
+        .push(Text::new("Third"))
+        .layout(
+            Layout::default()
+                .flex_direction(crate::layout::FlexDirection::Column)
+                .padding(12.0)
+                .gap(8.0)
+                .justify(JustifyContent::Center)
+                .align(AlignItems::Center),
+        );
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
+    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+    // Layout should produce a valid tree; commands may be empty since text is handled by glyphon
+    let _ = commands;
+}
+
+/// Test Row with gap on container and flex_grow/width on children via .with_layout().
+#[test]
+fn test_with_layout_on_children() {
+    let widget = Row::new()
+        .push(
+            Text::new("Left")
+                .with_layout(Layout::default().flex_grow(1.0)),
+        )
+        .push(
+            Text::new("Center")
+                .with_layout(Layout::default().width(100.0)),
+        )
+        .push(
+            Text::new("Right")
+                .with_layout(Layout::default().flex_grow(2.0)),
+        )
+        .layout(
+            Layout::default()
+                .flex_direction(crate::layout::FlexDirection::Row)
+                .gap(10.0),
+        );
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
+    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+    let _ = commands;
+}
+
+/// Test Grid widget with columns/rows template and gap.
+#[test]
+fn test_grid_widget() {
+    let widget = Grid::new()
+        .push(
+            Text::new("A")
+                .with_layout(Layout::default().grid_column(GridPlacement::start(1)).grid_row(GridPlacement::start(1))),
+        )
+        .push(
+            Text::new("B")
+                .with_layout(Layout::default().grid_column(GridPlacement::start(2)).grid_row(GridPlacement::start(1))),
+        )
+        .push(
+            Text::new("C")
+                .with_layout(Layout::default().grid_column(GridPlacement::start(1)).grid_row(GridPlacement::start(2))),
+        )
+        .push(
+            Text::new("D")
+                .with_layout(Layout::default().grid_column(GridPlacement::start(2)).grid_row(GridPlacement::start(2))),
+        )
+        .layout(
+            Layout::default()
+                .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])
+                .rows(vec![TrackSizing::Auto, TrackSizing::Auto])
+                .gap(4.0),
+        );
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    pipeline.reconcile(Box::new(widget));
+
+    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
+    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+    let _ = commands;
 }

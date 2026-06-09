@@ -209,7 +209,7 @@ impl Application for State {
                     .background(Color::rgb(1.0, 0.95, 0.95))
                     .border(Color::rgb(0.8, 0.5, 0.5), 1.0)
                     .corner_radius(8.0)
-            ).layout(Layout::default().padding(8.0)),
+            ).layout(Layout::default().padding(8.0).gap(4.0)),
             Focus::new(TextEdit::new(controller.clone())),
             // Transformed elements
             Text::new("Transforms:"),
