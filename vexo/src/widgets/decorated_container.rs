@@ -10,7 +10,11 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-use crate::layout::{Layout, LayoutNodeKey};
+use crate::layout::{
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
+    Inset, JustifyContent, Layout, LayoutNodeKey, Overflow,
+};
+use crate::layout_builder_methods;
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{
@@ -514,6 +518,10 @@ impl DecoratedContainer {
     pub fn style_ref(&self) -> &Style {
         &self.style
     }
+}
+
+impl DecoratedContainer {
+    layout_builder_methods!();
 }
 
 impl Clone for DecoratedContainer {
