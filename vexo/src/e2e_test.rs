@@ -1,6 +1,6 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::{Column, Row, Grid, Text, ThreeTreePipeline, DecoratedContainer, Transform, Widget};
+use crate::{Flex, Grid, Text, ThreeTreePipeline, DecoratedContainer, Transform, Widget};
 use crate::core::{Color, Position, Size};
 use crate::layout::{Layout, TaffyLayoutEngine, AlignItems, JustifyContent, TrackSizing, GridPlacement};
 use crate::render::RenderCommand;
@@ -24,7 +24,7 @@ fn create_test_font_system() -> glyphon::FontSystem {
 #[test]
 fn test_retain_pipeline_e2e() {
     // === Step 1: Create widget tree ===
-    let widget: Column = Column::new()
+    let widget: Flex = Flex::column()
         .push(Text::new("Hello"))
         .push(Text::new("World"));
 
@@ -422,10 +422,10 @@ fn test_rotate_transform_with_rounded_rect() {
     assert!(has_rotated_rounded_quad, "Should have a quad with both rotation and corner_radius");
 }
 
-/// Test Column with CSS-like layout properties (padding, gap, justify, align).
+/// Test Flex::column() with CSS-like layout properties (padding, gap, justify, align).
 #[test]
 fn test_column_with_layout() {
-    let widget = Column::new()
+    let widget = Flex::column()
         .push(Text::new("First"))
         .push(Text::new("Second"))
         .push(Text::new("Third"))
@@ -453,10 +453,10 @@ fn test_column_with_layout() {
     let _ = commands;
 }
 
-/// Test Row with gap on container and flex_grow/width on children via .with_layout().
+/// Test Flex::row() with gap on container and flex_grow/width on children via .with_layout().
 #[test]
 fn test_with_layout_on_children() {
-    let widget = Row::new()
+    let widget = Flex::row()
         .push(
             Text::new("Left")
                 .with_layout(Layout::default().flex_grow(1.0)),

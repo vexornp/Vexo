@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Column};
+    use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Flex};
     use crate::{GestureDetector, DecoratedContainer, Style};
     use crate::reactive::StatefulMutable;
     use crate::core::Size;
@@ -129,7 +129,7 @@ mod tests {
 
         fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
             let count = state.count.get();
-            Box::new(Column::new()
+            Box::new(Flex::column()
                 .push(Text::new(format!("Count: {}", count)))
             )
         }
@@ -166,8 +166,8 @@ mod tests {
         let root_children = pipeline.element_registry().children(root_id).to_vec();
 
         // The root should be a StatefulElement (for ReactiveCounter)
-        // Its child should be a ContainerElement (for Column)
-        // The Column's child should be a LeafElement (for Text)
+        // Its child should be a ContainerElement (for Flex)
+        // The Flex::column()'s child should be a LeafElement (for Text)
         assert!(!root_children.is_empty(), "Root should have children");
 
         // 4. Get the state and modify it via StatefulMutable
@@ -187,7 +187,7 @@ mod tests {
         // checking the element tree structure.
         let child_id = root_children[0];
         let child_children = pipeline.element_registry().children(child_id).to_vec();
-        assert!(!child_children.is_empty(), "Column should have children");
+        assert!(!child_children.is_empty(), "Flex should have children");
 
         // 5. Now test the state update flow:
         // We can't directly access StateStorage from the pipeline (it's private).
@@ -251,7 +251,7 @@ mod tests {
                 let count_clone = state.count.clone();
                 let click_count = self.click_count.clone();
 
-                Box::new(Column::new()
+                Box::new(Flex::column()
                     .push(Text::new(format!("Count: {}", count)))
                     .push(GestureDetector::new(
                         DecoratedContainer::new(Text::new("Click Me"))

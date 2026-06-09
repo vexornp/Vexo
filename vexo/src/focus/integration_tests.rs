@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::core::{Point, Scale, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
-use crate::{Column, Focus, Text, ThreeTreePipeline};
+use crate::{Flex, Focus, Text, ThreeTreePipeline};
 
 fn create_test_font_system() -> glyphon::FontSystem {
     let font_data = crate::resource::file::FONT.to_vec();
@@ -180,9 +180,9 @@ fn test_set_focus_creates_node_on_demand() {
 fn test_multiple_focus_requests_last_wins() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Reconcile a Column with two Text children
+    // Reconcile a Flex::column() with two Text children
     pipeline.reconcile(Box::new(
-        Column::new()
+        Flex::column()
             .push(Text::new("First"))
             .push(Text::new("Second")),
     ));
@@ -253,8 +253,8 @@ fn test_focus_wrapper_inflates_child() {
 fn test_mount_creates_focus_node_for_every_element() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column + 2 Texts = 3 application focus nodes
-    let widget = Column::new()
+    // Flex::column() + 2 Texts = 3 application focus nodes
+    let widget = Flex::column()
         .push(Text::new("first"))
         .push(Text::new("second"));
     pipeline.reconcile(Box::new(widget));
@@ -262,7 +262,7 @@ fn test_mount_creates_focus_node_for_every_element() {
     assert_eq!(
         pipeline.focus_manager().app_node_count(),
         3,
-        "Expected 3 focus nodes (Column + 2 Texts)"
+        "Expected 3 focus nodes (Flex::column() + 2 Texts)"
     );
 }
 
@@ -271,13 +271,13 @@ fn test_mount_creates_focus_node_for_every_element() {
 fn test_unmount_removes_all_focus_nodes() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    let widget = Column::new()
+    let widget = Flex::column()
         .push(Text::new("a"))
         .push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
-    // Reconcile a leaf widget — the old Column subtree is unmounted
+    // Reconcile a leaf widget — the old Flex::column() subtree is unmounted
     pipeline.reconcile(Box::new(Text::new("replacement")));
 
     assert!(
@@ -291,12 +291,12 @@ fn test_unmount_removes_all_focus_nodes() {
 fn test_rebuild_replaces_focus_nodes() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column [ Text("old") ]
-    let widget = Column::new().push(Text::new("old"));
+    // Flex::column() [ Text("old") ]
+    let widget = Flex::column().push(Text::new("old"));
     pipeline.reconcile(Box::new(widget));
 
-    // Column [ Text("new") ]
-    let updated = Column::new().push(Text::new("new"));
+    // Flex::column() [ Text("new") ]
+    let updated = Flex::column().push(Text::new("new"));
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -311,13 +311,13 @@ fn test_rebuild_replaces_focus_nodes() {
 fn test_rebuild_adds_focus_node_for_new_child() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column [ Text("a") ]
-    let widget = Column::new().push(Text::new("a"));
+    // Flex::column() [ Text("a") ]
+    let widget = Flex::column().push(Text::new("a"));
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 2);
 
-    // Column [ Text("a"), Text("b") ]
-    let updated = Column::new()
+    // Flex::column() [ Text("a"), Text("b") ]
+    let updated = Flex::column()
         .push(Text::new("a"))
         .push(Text::new("b"));
     pipeline.update(Box::new(updated));
@@ -334,15 +334,15 @@ fn test_rebuild_adds_focus_node_for_new_child() {
 fn test_rebuild_removes_focus_node_for_removed_child() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column [ Text("a"), Text("b") ]
-    let widget = Column::new()
+    // Flex::column() [ Text("a"), Text("b") ]
+    let widget = Flex::column()
         .push(Text::new("a"))
         .push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
-    // Column [ Text("a") ]
-    let updated = Column::new().push(Text::new("a"));
+    // Flex::column() [ Text("a") ]
+    let updated = Flex::column().push(Text::new("a"));
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -357,22 +357,22 @@ fn test_rebuild_removes_focus_node_for_removed_child() {
 fn test_focus_tree_mirrors_element_tree_structure() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column [ Text("a"), Text("b") ]
-    let widget = Column::new()
+    // Flex::column() [ Text("a"), Text("b") ]
+    let widget = Flex::column()
         .push(Text::new("a"))
         .push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
 
     let fm = pipeline.focus_manager();
 
-    // Root should have one child (Column)
+    // Root should have one child (Flex)
     let root_node = fm.get(fm.root_scope()).unwrap();
-    assert_eq!(root_node.children.len(), 1, "Root should have one child (Column)");
+    assert_eq!(root_node.children.len(), 1, "Root should have one child (Flex)");
 
-    // Column's node should have 2 children (Texts)
+    // Flex's node should have 2 children (Texts)
     let column_id = root_node.children[0];
     let column_node = fm.get(column_id).unwrap();
-    assert_eq!(column_node.children.len(), 2, "Column's focus node should have 2 children");
+    assert_eq!(column_node.children.len(), 2, "Flex focus node should have 2 children");
 }
 
 /// A focused element that gets unmounted should not leave a dangling focus reference.
@@ -380,8 +380,8 @@ fn test_focus_tree_mirrors_element_tree_structure() {
 fn test_unmount_focused_element_clears_focus() {
     let mut pipeline = ThreeTreePipeline::new();
 
-    // Column [ Focus(Text("a")), Text("b") ]
-    let widget = Column::new()
+    // Flex::column() [ Focus(Text("a")), Text("b") ]
+    let widget = Flex::column()
         .push(Focus::new(Text::new("a")))
         .push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
@@ -412,10 +412,10 @@ fn test_unmount_focused_element_clears_focus() {
     }
 
     // Rebuild with a completely different root type to force full unmount/remount.
-    // This unmounts the entire Column subtree (including the focused Focus element).
+    // This unmounts the entire Flex::column() subtree (including the focused Focus element).
     pipeline.reconcile(Box::new(Text::new("replacement")));
 
-    // Focus node count should decrease (Column subtree unmounted)
+    // Focus node count should decrease (Flex::column() subtree unmounted)
     let new_node_count = pipeline.focus_manager().app_node_count();
     assert!(
         new_node_count < initial_node_count,
@@ -438,7 +438,7 @@ fn test_repeated_reconcile_no_leaks() {
     let mut pipeline = ThreeTreePipeline::new();
 
     for i in 0..5 {
-        let widget = Column::new()
+        let widget = Flex::column()
             .push(Text::new(format!("cycle-{i}-a")))
             .push(Text::new(format!("cycle-{i}-b")));
         pipeline.reconcile(Box::new(widget));

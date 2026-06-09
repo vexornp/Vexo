@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{Column, Text, Widget, DecoratedContainer};
+    use crate::{Flex, Text, Widget, DecoratedContainer};
     use crate::core::Color;
 
     #[test]
@@ -25,12 +25,12 @@ mod tests {
         let dc2 = DecoratedContainer::new(Text::new("Second"))
             .style(crate::Style::new().background(Color::GREEN));
 
-        let col = Column::new()
+        let col = Flex::column()
             .push(dc1)
             .push(dc2);
 
         // Verify column has children
         let col_any = col.as_any();
-        assert!(col_any.downcast_ref::<Column>().is_some());
+        assert!(col_any.downcast_ref::<Flex>().is_some());
     }
 }

@@ -11,7 +11,7 @@ fn test_full_reconciliation_flow() {
     let dirty = DirtyTracking::new();
 
     // 2. Mount initial widget tree
-    let root_widget: Column = Column::new()
+    let root_widget: Flex = Flex::column()
         .push(Text::new("First"))
         .push(Text::new("Second"));
 
@@ -23,7 +23,7 @@ fn test_full_reconciliation_flow() {
     assert_eq!(element_registry.len(), 1);
 
     // 3. Reconcile with updated tree
-    let _new_widget: Column = Column::new()
+    let _new_widget: Flex = Flex::column()
         .push(Text::new("First Updated"))
         .push(Text::new("Second"));
 
@@ -71,7 +71,7 @@ fn test_key_preserves_identity() {
 mod full_pipeline_tests {
     use crate::core::{Position, Size};
     use crate::layout::TaffyLayoutEngine;
-    use crate::{Row, Text, ThreeTreePipeline};
+    use crate::{Flex, Text, ThreeTreePipeline};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -186,9 +186,9 @@ mod full_pipeline_tests {
         pipeline.reconcile(Box::new(Text::new("Text content")));
         let root_after_first = pipeline.element_registry().root();
 
-        // Second frame with Row (different type)
+        // Second frame with Flex::row() (different type)
         // This would cause a remount since the types don't match
-        pipeline.reconcile(Box::new(Row::new()));
+        pipeline.reconcile(Box::new(Flex::row()));
 
         // Root element should be different after remount
         // Note: Current implementation unmounts and remounts for different types
