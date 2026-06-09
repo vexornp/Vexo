@@ -30,7 +30,7 @@ child.with_layout(Layout::new().flex_grow(1).margin(10))
 
 **Implementation:**
 - `WithLayout` struct: holds `child: Box<dyn Widget>` and `layout: Layout`
-- Uses `ContainerElement` (single-child variant) or a lightweight element that delegates to ContainerRenderObject
+- Uses `DecoratedContainerElement` (single-child element that owns a render object) — same pattern as DecoratedContainer but with no Style
 - Render object: `ContainerRenderObject` with the user-provided Layout — no painting, just layout
 - Widget trait gets a default method:
 
