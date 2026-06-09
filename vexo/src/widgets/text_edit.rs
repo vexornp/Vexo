@@ -499,8 +499,9 @@ impl StatefulWidget for TextEdit {
         let style = crate::Style::new()
             .background(crate::core::Color::WHITE)
             .border(border_color, border_width)
-            .corner_radius(4.0)
-            .padding(8.0);
+            .corner_radius(4.0);
+
+        let layout = crate::layout::Layout::default().padding(8.0);
 
         Box::new(
             crate::MouseRegion::new(
@@ -510,7 +511,8 @@ impl StatefulWidget for TextEdit {
                         .with_focused(is_focused)
                         .with_cursor_blink_visible(false),
                 )
-                .style(style),
+                .style(style)
+                .layout(layout),
             )
             .cursor(MouseCursor::System(SystemCursorKind::Text)),
         )

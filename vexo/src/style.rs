@@ -30,9 +30,6 @@ pub struct Style {
     /// Corner radius for rounded rectangles.
     pub corner_radius: Option<CornerRadius>,
 
-    /// Padding inside the container (space between border and child).
-    pub padding: Option<f32>,
-
     /// Whether to clip children to this container's bounds.
     pub clip: bool,
 }
@@ -74,12 +71,6 @@ impl Style {
     /// Set uniform corner radius for all corners.
     pub fn corner_radius(mut self, radius: f32) -> Self {
         self.corner_radius = Some(CornerRadius { radius });
-        self
-    }
-
-    /// Set uniform padding on all sides.
-    pub fn padding(mut self, value: f32) -> Self {
-        self.padding = Some(value);
         self
     }
 

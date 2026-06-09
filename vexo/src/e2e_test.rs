@@ -172,8 +172,8 @@ fn test_translate_transform_in_pipeline() {
 
     let child = DecoratedContainer::new(Text::new("Shifted"))
         .style(crate::Style::new()
-            .background(Color::BLUE)
-            .padding(8.0));
+            .background(Color::BLUE))
+        .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::translate(child, 50.0, 30.0);
 
@@ -235,8 +235,8 @@ fn test_rotate_transform_in_pipeline() {
 
     let child = DecoratedContainer::new(Text::new("Rotated"))
         .style(crate::Style::new()
-            .background(Color::BLUE)
-            .padding(8.0));
+            .background(Color::BLUE))
+        .layout(crate::layout::Layout::default().padding(8.0));
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let widget = Transform::rotate(child, angle);
@@ -288,8 +288,8 @@ fn test_scale_transform_in_pipeline() {
 
     let child = DecoratedContainer::new(Text::new("Scaled"))
         .style(crate::Style::new()
-            .background(Color::GREEN)
-            .padding(8.0));
+            .background(Color::GREEN))
+        .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::scale(child, 2.0, 3.0);
 
@@ -399,8 +399,8 @@ fn test_rotate_transform_with_rounded_rect() {
     let child = DecoratedContainer::new(Text::new("Rounded"))
         .style(crate::Style::new()
             .background(Color::BLUE)
-            .corner_radius(12.0)
-            .padding(8.0));
+            .corner_radius(12.0))
+        .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::rotate(child, 0.3);
 

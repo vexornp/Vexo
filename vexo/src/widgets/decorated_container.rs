@@ -10,7 +10,7 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
+use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{
@@ -99,14 +99,7 @@ impl DecoratedContainerRenderObject {
 
 impl RenderObject for DecoratedContainerRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let mut layout = self.layout.clone()
-            .flex_direction(FlexDirection::Column)
-            .align(AlignItems::Stretch);
-
-        // Apply padding from style if set (overrides layout padding)
-        if let Some(padding) = self.style.padding {
-            layout = layout.padding(padding);
-        }
+        let layout = self.layout.clone();
 
         match self.layout_node {
             Some(existing) => {
@@ -565,19 +558,13 @@ impl Widget for DecoratedContainer {
             .as_any_mut()
             .downcast_mut::<DecoratedContainerRenderObject>()
         {
-            let old_padding = container_ro.style().padding;
             let style_changed = container_ro.set_style(self.style.clone());
             let layout_changed = container_ro.set_layout(self.layout.clone());
 
-            if style_changed || layout_changed {
-                let new_padding = container_ro.style().padding;
-                if old_padding != new_padding || layout_changed {
-                    // Padding or layout changes affect Taffy layout
-                    UpdateResult::LAYOUT | UpdateResult::PAINT
-                } else {
-                    // Visual-only changes (background, border, corner_radius)
-                    UpdateResult::PAINT
-                }
+            if layout_changed {
+                UpdateResult::LAYOUT | UpdateResult::PAINT
+            } else if style_changed {
+                UpdateResult::PAINT
             } else {
                 UpdateResult::NONE
             }
