@@ -4,13 +4,25 @@
 
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
+use super::super::layout::{AlignItems, FlexDirection, Layout};
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
+
+/// Default layout for a Column: vertical flex with stretch alignment.
+fn column_layout() -> Layout {
+    Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch)
+}
+
+/// Default layout for a Row: horizontal flex with stretch alignment.
+fn row_layout() -> Layout {
+    Layout::default().flex_direction(FlexDirection::Row).align(AlignItems::Stretch)
+}
 
 /// Column widget - arranges children vertically.
 pub struct Column {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,
+    layout: Layout,
 }
 
 impl Column {
@@ -19,6 +31,7 @@ impl Column {
         Self {
             key: None,
             children: Vec::new(),
+            layout: column_layout(),
         }
     }
 
@@ -33,6 +46,15 @@ impl Column {
     /// Add a child widget.
     pub fn push(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
+        self
+    }
+
+    /// Set the layout properties for this column.
+    ///
+    /// Overrides the default column layout. Use this to customize
+    /// alignment, spacing, padding, and other CSS-like properties.
+    pub fn layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -54,6 +76,7 @@ impl Clone for Column {
             key: self.key.clone(),
             // Clone each child widget using clone_boxed() method
             children: self.children.iter().map(|c| c.clone_boxed()).collect(),
+            layout: self.layout.clone(),
         }
     }
 }
@@ -70,7 +93,7 @@ impl Widget for Column {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_column())
+        Box::new(ContainerRenderObject::new(self.layout.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -81,11 +104,16 @@ impl Widget for Column {
         &self.children
     }
 
-    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
-        // Column has no mutable properties - its structure is determined by children,
-        // which are handled by reconciliation, not by property updates.
-        // Return NONE to avoid unnecessary dirty marking.
-        UpdateResult::NONE
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
+        if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<ContainerRenderObject>() {
+            if container_ro.set_layout(self.layout.clone()) {
+                UpdateResult::LAYOUT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
+        }
     }
 
     fn clone_boxed(&self) -> Box<dyn Widget> {
@@ -97,6 +125,7 @@ impl Widget for Column {
 pub struct Row {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,
+    layout: Layout,
 }
 
 impl Row {
@@ -105,6 +134,7 @@ impl Row {
         Self {
             key: None,
             children: Vec::new(),
+            layout: row_layout(),
         }
     }
 
@@ -119,6 +149,15 @@ impl Row {
     /// Add a child widget.
     pub fn push(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(Box::new(child));
+        self
+    }
+
+    /// Set the layout properties for this row.
+    ///
+    /// Overrides the default row layout. Use this to customize
+    /// alignment, spacing, padding, and other CSS-like properties.
+    pub fn layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -139,6 +178,7 @@ impl Clone for Row {
         Self {
             key: self.key.clone(),
             children: self.children.iter().map(|c| c.clone_boxed()).collect(),
+            layout: self.layout.clone(),
         }
     }
 }
@@ -155,7 +195,7 @@ impl Widget for Row {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_row())
+        Box::new(ContainerRenderObject::new(self.layout.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -166,11 +206,16 @@ impl Widget for Row {
         &self.children
     }
 
-    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
-        // Row has no mutable properties - its structure is determined by children,
-        // which are handled by reconciliation, not by property updates.
-        // Return NONE to avoid unnecessary dirty marking.
-        UpdateResult::NONE
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
+        if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<ContainerRenderObject>() {
+            if container_ro.set_layout(self.layout.clone()) {
+                UpdateResult::LAYOUT
+            } else {
+                UpdateResult::NONE
+            }
+        } else {
+            UpdateResult::ALL
+        }
     }
 
     fn clone_boxed(&self) -> Box<dyn Widget> {

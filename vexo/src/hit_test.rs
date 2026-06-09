@@ -495,11 +495,13 @@ mod tests {
     #[test]
     fn test_hit_test_with_children() {
         use crate::{ContainerRenderObject, RenderObject};
+        use crate::layout::{FlexDirection, AlignItems, Layout};
 
         let mut registry = RenderObjectRegistry::new();
 
         // Create parent container with layout
-        let mut parent = ContainerRenderObject::new_column();
+        let column_layout = Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch);
+        let mut parent = ContainerRenderObject::new(column_layout);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
