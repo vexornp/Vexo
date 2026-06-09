@@ -35,3 +35,21 @@ macro_rules! row {
         row
     }};
 }
+
+/// Create a `Grid` widget with children.
+///
+/// ```ignore
+/// grid![child1, child2]
+/// ```
+/// expands to:
+/// ```ignore
+/// Grid::new().push(child1).push(child2)
+/// ```
+#[macro_export]
+macro_rules! grid {
+    ($($child:expr),* $(,)?) => {{
+        let mut grid = $crate::Grid::new();
+        $(grid = grid.push($child);)*
+        grid
+    }};
+}
