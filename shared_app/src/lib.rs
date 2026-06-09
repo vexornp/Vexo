@@ -1,5 +1,5 @@
 use vexo::{
-    column, input::MouseCursor, layout::Layout, reactive::StatefulMutable, row, run_desktop_demo,
+    column, input::MouseCursor, reactive::StatefulMutable, row, run_desktop_demo,
     Application, BuildContext, Color, DecoratedContainer, Focus, GestureDetector, MouseRegion,
     State as RetainState, StatefulWidget, Style, SystemCursorKind, Text, TextEdit,
     TextEditingController, Transform, Widget,
@@ -14,7 +14,7 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector 
                 .background(Color::rgb(0.9, 0.9, 0.9))
                 .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
                 .corner_radius(8.0),
-        ).layout(Layout::default().padding(24.0)),
+        ).padding(24.0),
     )
     .on_press(on_press)
 }
@@ -134,7 +134,7 @@ impl StatefulWidget for HoverableCard {
                         .background(Color::rgb(0.95, 0.95, 1.0))
                         .border(border_color, border_width)
                         .corner_radius(8.0),
-                ).layout(Layout::default().padding(8.0)),
+                ).padding(8.0),
             )
             .cursor(MouseCursor::System(SystemCursorKind::Pointer))
             .on_enter({
@@ -199,17 +199,19 @@ impl Application for State {
             Text::new("Focus Demo"),
             Text::new("Click a field to focus it. Click outside to unfocus."),
             HoverableCard::new("Group A", vec![a1.clone(), a2.clone()]),
-            DecoratedContainer::new(column![
-                Text::new("Group B"),
-                Focus::new(TextEdit::new(b1.clone())),
-                Focus::new(TextEdit::new(b2.clone()))
-            ])
+            DecoratedContainer::new(
+                column![
+                    Text::new("Group B"),
+                    Focus::new(TextEdit::new(b1.clone())),
+                    Focus::new(TextEdit::new(b2.clone()))
+                ].gap(4.0)
+            )
             .style(
                 Style::new()
                     .background(Color::rgb(1.0, 0.95, 0.95))
                     .border(Color::rgb(0.8, 0.5, 0.5), 1.0)
                     .corner_radius(8.0)
-            ).layout(Layout::default().padding(8.0).gap(4.0)),
+            ).padding(8.0),
             Focus::new(TextEdit::new(controller.clone())),
             // Transformed elements
             Text::new("Transforms:"),
@@ -220,7 +222,7 @@ impl Application for State {
                             .background(Color::rgb(0.85, 1.0, 0.85))
                             .border(Color::rgb(0.3, 0.6, 0.3), 2.0)
                             .corner_radius(12.0)
-                    ).layout(Layout::default().padding(8.0)),
+                    ).padding(8.0),
                     15.0_f32.to_radians(),
                 ),
                 // Scaled card (1.5x)
@@ -228,7 +230,7 @@ impl Application for State {
                     DecoratedContainer::new(Text::new("1.5x")).style(
                         Style::new()
                             .background(Color::rgb(1.0, 0.9, 0.85))
-                    ).layout(Layout::default().padding(8.0)),
+                    ).padding(8.0),
                     1.5,
                     1.5,
                 ),
@@ -237,7 +239,7 @@ impl Application for State {
                     DecoratedContainer::new(Text::new("Shifted")).style(
                         Style::new()
                             .background(Color::rgb(0.85, 0.9, 1.0))
-                    ).layout(Layout::default().padding(8.0)),
+                    ).padding(8.0),
                     100.0,
                     100.0,
                 ),
@@ -249,7 +251,7 @@ impl Application for State {
                         .background(Color::rgb(1.0, 0.85, 0.85))
                         .border(Color::rgb(0.8, 0.3, 0.3), 2.0)
                         .corner_radius(16.0)
-                ).layout(Layout::default().padding(12.0)),
+                ).padding(12.0),
                 45.0_f32.to_radians(),
             ),],
             // Clip demo
@@ -263,7 +265,7 @@ impl Application for State {
                     Text::new("Line 4"),
                     Text::new("Line 5"),
                 ])
-                .layout(Layout::default().width(150.0).height(60.0).padding(8.0))
+                .width(150.0).height(60.0).padding(8.0)
                 .style(
                     Style::new()
                         .background(Color::rgb(1.0, 0.95, 0.9))
@@ -278,7 +280,7 @@ impl Application for State {
                     Text::new("Line 4"),
                     Text::new("Line 5"),
                 ])
-                .layout(Layout::default().width(150.0).height(60.0).padding(8.0))
+                .width(150.0).height(60.0).padding(8.0)
                 .style(
                     Style::new()
                         .background(Color::rgb(0.9, 0.95, 1.0))
