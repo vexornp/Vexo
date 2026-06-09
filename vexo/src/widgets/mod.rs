@@ -21,7 +21,7 @@ use super::key::WidgetKey;
 use super::RenderObject;
 use super::UpdateResult;
 
-pub use container::{Column, Row};
+pub use container::{Flex, Column, Row};
 pub use decorated_container::DecoratedContainer;
 pub use gesture_detector::GestureDetector;
 pub use grid::Grid;

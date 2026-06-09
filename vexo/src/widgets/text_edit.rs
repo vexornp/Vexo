@@ -904,7 +904,7 @@ mod tests {
         let text_edit = TextEdit::new(controller.clone());
 
         // Put TextEdit inside a Column, like the real app does
-        let column = crate::Column::new()
+        let column = crate::Flex::column()
             .push(crate::Text::new("Title"))
             .push(text_edit);
 
