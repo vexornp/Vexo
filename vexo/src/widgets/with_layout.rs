@@ -419,7 +419,7 @@ impl Widget for WithLayout {
             .downcast_mut::<WithLayoutRenderObject>()
         {
             if ro.set_layout(self.layout.clone()) {
-                UpdateResult::LAYOUT | UpdateResult::PAINT
+                UpdateResult::LAYOUT
             } else {
                 UpdateResult::NONE
             }
@@ -507,10 +507,9 @@ mod tests {
         let result = widget1.update_render_object(&mut ro);
         assert_eq!(result, UpdateResult::NONE);
 
-        // Different layout = LAYOUT | PAINT
+        // Different layout = LAYOUT (framework cascades to paint automatically)
         let result = widget2.update_render_object(&mut ro);
         assert!(result.contains(UpdateResult::LAYOUT));
-        assert!(result.contains(UpdateResult::PAINT));
     }
 
     #[test]

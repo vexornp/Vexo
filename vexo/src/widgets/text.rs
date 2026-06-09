@@ -79,10 +79,10 @@ impl Widget for Text {
         if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
             let mut result = UpdateResult::NONE;
             if text_ro.set_content(&self.content) {
-                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
+                result |= UpdateResult::LAYOUT;
             }
             if text_ro.set_font_size(self.font_size) {
-                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
+                result |= UpdateResult::LAYOUT;
             }
             result
         } else {

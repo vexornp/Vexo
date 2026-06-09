@@ -37,11 +37,12 @@ bitflags::bitflags! {
         const NONE = 0b000;
 
         /// A layout-affecting property changed (e.g., size, constraints, text content).
-        /// This triggers both layout and paint.
+        /// The framework automatically marks both layout and paint dirty when layout
+        /// is needed, so returning `LAYOUT` alone is sufficient.
         const LAYOUT = 0b001;
 
-        /// A visual-only property changed (e.g., color, opacity).
-        /// This triggers paint only, not layout.
+        /// A visual-only property changed (e.g., color, opacity) that does not
+        /// affect layout. This triggers paint only.
         const PAINT = 0b010;
 
         /// Convenience: both layout and paint changed.

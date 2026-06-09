@@ -22,7 +22,22 @@ impl DirtyTracking {
     }
 
     /// Mark a render object as needing layout.
+    ///
+    /// This also marks the object as needing paint, since layout changes
+    /// always require repaint (the painter bakes computed positions into
+    /// render commands).
     pub fn mark_needs_layout(&mut self, key: RenderObjectKey) {
+        let was_empty = self.needs_layout.is_empty();
+        self.needs_layout.insert(key);
+        self.needs_paint.insert(key);
+        if was_empty {
+            self.frame_request_needed = true;
+        }
+    }
+
+    /// Mark a render object as needing layout without implying paint.
+    /// Use only in test contexts where you want to verify layout-only behavior.
+    pub fn mark_needs_layout_only(&mut self, key: RenderObjectKey) {
         let was_empty = self.needs_layout.is_empty();
         self.needs_layout.insert(key);
         if was_empty {

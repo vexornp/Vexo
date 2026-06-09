@@ -127,10 +127,10 @@ impl Widget for TextEditContent {
             let mut result = UpdateResult::NONE;
 
             if ro.set_content(&self.content) {
-                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
+                result |= UpdateResult::LAYOUT;
             }
             if ro.set_font_size(self.font_size) {
-                result |= UpdateResult::LAYOUT | UpdateResult::PAINT;
+                result |= UpdateResult::LAYOUT;
             }
             if ro.set_focused(self.is_focused) {
                 result |= UpdateResult::PAINT;
@@ -261,7 +261,6 @@ mod tests {
 
         let result = widget.update_render_object(&mut ro);
         assert!(result.contains(UpdateResult::LAYOUT));
-        assert!(result.contains(UpdateResult::PAINT));
     }
 
     #[test]

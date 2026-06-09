@@ -562,7 +562,7 @@ impl Widget for DecoratedContainer {
             let layout_changed = container_ro.set_layout(self.layout.clone());
 
             if layout_changed {
-                UpdateResult::LAYOUT | UpdateResult::PAINT
+                UpdateResult::LAYOUT
             } else if style_changed {
                 UpdateResult::PAINT
             } else {

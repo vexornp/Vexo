@@ -124,7 +124,7 @@ pub trait Widget: Any {
     /// fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
     ///     if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
     ///         if text_ro.set_content(&self.content) {
-    ///             UpdateResult::LAYOUT | UpdateResult::PAINT
+    ///             UpdateResult::LAYOUT
     ///         } else {
     ///             UpdateResult::NONE
     ///         }
