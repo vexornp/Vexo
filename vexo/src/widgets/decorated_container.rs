@@ -705,4 +705,11 @@ mod tests {
         assert!(element.id().is_none());
         assert!(element.render_object_id().is_none());
     }
+
+    #[test]
+    fn test_decorated_container_padding_preserves_default() {
+        let dc = DecoratedContainer::new(Text::new("Hello"))
+            .padding(8.0);
+        assert!(dc.layout.padding.is_some());
+    }
 }

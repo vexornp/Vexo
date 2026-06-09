@@ -546,4 +546,12 @@ mod tests {
         assert!(element.element_id().is_none());
         assert!(element.render_object_id().is_none());
     }
+
+    #[test]
+    fn test_with_layout_gap_preserves_padding() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0))
+            .gap(4.0);
+        assert!(w.layout.padding.is_some());
+        assert!(w.layout.gap.is_some());
+    }
 }
