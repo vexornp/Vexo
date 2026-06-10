@@ -1,7 +1,7 @@
 use vexo::{
-    column, input::MouseCursor, reactive::StatefulMutable, row, run_desktop_demo,
-    Application, BuildContext, Color, DecoratedContainer, Focus, GestureDetector, MouseRegion,
-    State as RetainState, StatefulWidget, Style, SystemCursorKind, Text, TextEdit,
+    column, input::MouseCursor, reactive::StatefulMutable, row, run_desktop_demo, Application,
+    BuildContext, Color, DecoratedContainer, Focus, GestureDetector, MouseRegion,
+    State as RetainState, StatefulWidget, SystemCursorKind, Text, TextEdit,
     TextEditingController, Transform, Widget,
 };
 uniffi::setup_scaffolding!();
@@ -9,12 +9,11 @@ uniffi::setup_scaffolding!();
 /// Helper to create a tappable button-like widget using GestureDetector.
 fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> GestureDetector {
     GestureDetector::new(
-        DecoratedContainer::new(Text::new(label)).style(
-            Style::new()
-                .background(Color::rgb(0.9, 0.9, 0.9))
-                .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
-                .corner_radius(8.0),
-        ).padding(24.0),
+        DecoratedContainer::new(Text::new(label))
+            .background(Color::rgb(0.9, 0.9, 0.9))
+            .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
+            .corner_radius(8.0)
+            .padding(24.0),
     )
     .on_press(on_press)
 }
@@ -129,12 +128,11 @@ impl StatefulWidget for HoverableCard {
 
         Box::new(
             MouseRegion::new(
-                DecoratedContainer::new(column).style(
-                    Style::new()
-                        .background(Color::rgb(0.95, 0.95, 1.0))
-                        .border(border_color, border_width)
-                        .corner_radius(8.0),
-                ).padding(8.0),
+                DecoratedContainer::new(column)
+                    .background(Color::rgb(0.95, 0.95, 1.0))
+                    .border(border_color, border_width)
+                    .corner_radius(8.0)
+                    .padding(8.0),
             )
             .cursor(MouseCursor::System(SystemCursorKind::Pointer))
             .on_enter({
@@ -204,54 +202,49 @@ impl Application for State {
                     Text::new("Group B"),
                     Focus::new(TextEdit::new(b1.clone())),
                     Focus::new(TextEdit::new(b2.clone()))
-                ].gap(4.0)
+                ]
+                .gap(10.0)
             )
-            .style(
-                Style::new()
-                    .background(Color::rgb(1.0, 0.95, 0.95))
-                    .border(Color::rgb(0.8, 0.5, 0.5), 1.0)
-                    .corner_radius(8.0)
-            ).padding(8.0),
+            .background(Color::rgb(1.0, 0.95, 0.95))
+            .border(Color::rgb(0.8, 0.5, 0.5), 1.0)
+            .corner_radius(8.0)
+            .padding(8.0),
             Focus::new(TextEdit::new(controller.clone())),
             // Transformed elements
             Text::new("Transforms:"),
             row![
                 Transform::rotate(
-                    DecoratedContainer::new(Text::new("Rotated 15\u{00b0}")).style(
-                        Style::new()
-                            .background(Color::rgb(0.85, 1.0, 0.85))
-                            .border(Color::rgb(0.3, 0.6, 0.3), 2.0)
-                            .corner_radius(12.0)
-                    ).padding(8.0),
+                    DecoratedContainer::new(Text::new("Rotated 15\u{00b0}"))
+                        .background(Color::rgb(0.85, 1.0, 0.85))
+                        .border(Color::rgb(0.3, 0.6, 0.3), 2.0)
+                        .corner_radius(12.0)
+                        .padding(8.0),
                     15.0_f32.to_radians(),
                 ),
                 // Scaled card (1.5x)
                 Transform::scale(
-                    DecoratedContainer::new(Text::new("1.5x")).style(
-                        Style::new()
-                            .background(Color::rgb(1.0, 0.9, 0.85))
-                    ).padding(8.0),
+                    DecoratedContainer::new(Text::new("1.5x"))
+                        .background(Color::rgb(1.0, 0.9, 0.85))
+                        .padding(8.0),
                     1.5,
                     1.5,
                 ),
                 // Translated card
                 Transform::translate(
-                    DecoratedContainer::new(Text::new("Shifted")).style(
-                        Style::new()
-                            .background(Color::rgb(0.85, 0.9, 1.0))
-                    ).padding(8.0),
+                    DecoratedContainer::new(Text::new("Shifted"))
+                        .background(Color::rgb(0.85, 0.9, 1.0))
+                        .padding(8.0),
                     100.0,
                     100.0,
                 ),
             ],
             // Large rotation with rounded rect
             row![Transform::rotate(
-                DecoratedContainer::new(Text::new("45\u{00b0} rounded")).style(
-                    Style::new()
-                        .background(Color::rgb(1.0, 0.85, 0.85))
-                        .border(Color::rgb(0.8, 0.3, 0.3), 2.0)
-                        .corner_radius(16.0)
-                ).padding(12.0),
+                DecoratedContainer::new(Text::new("45\u{00b0} rounded"))
+                    .background(Color::rgb(1.0, 0.85, 0.85))
+                    .border(Color::rgb(0.8, 0.3, 0.3), 2.0)
+                    .corner_radius(16.0)
+                    .padding(12.0),
                 45.0_f32.to_radians(),
             ),],
             // Clip demo
@@ -265,14 +258,13 @@ impl Application for State {
                     Text::new("Line 4"),
                     Text::new("Line 5"),
                 ])
-                .width(150.0).height(60.0).padding(8.0)
-                .style(
-                    Style::new()
-                        .background(Color::rgb(1.0, 0.95, 0.9))
-                        .border(Color::rgb(0.8, 0.6, 0.4), 1.0)
-                        .corner_radius(8.0)
-                        .clip()
-                ),
+                .width(150.0)
+                .height(60.0)
+                .padding(8.0)
+                .background(Color::rgb(1.0, 0.95, 0.9))
+                .border(Color::rgb(0.8, 0.6, 0.4), 1.0)
+                .corner_radius(8.0)
+                .clip(),
                 DecoratedContainer::new(column![
                     Text::new("Line 1"),
                     Text::new("Line 2"),
@@ -280,13 +272,12 @@ impl Application for State {
                     Text::new("Line 4"),
                     Text::new("Line 5"),
                 ])
-                .width(150.0).height(60.0).padding(8.0)
-                .style(
-                    Style::new()
-                        .background(Color::rgb(0.9, 0.95, 1.0))
-                        .border(Color::rgb(0.4, 0.6, 0.8), 1.0)
-                        .corner_radius(8.0)
-                ),
+                .width(150.0)
+                .height(60.0)
+                .padding(8.0)
+                .background(Color::rgb(0.9, 0.95, 1.0))
+                .border(Color::rgb(0.4, 0.6, 0.8), 1.0)
+                .corner_radius(8.0),
             ]
         ])
     }

@@ -523,6 +523,27 @@ impl DecoratedContainer {
 
 impl DecoratedContainer {
     layout_builder_methods!();
+
+    // Style property builder methods (set individual style properties, preserving others)
+    pub fn background(mut self, color: Color) -> Self {
+        self.style = self.style.background(color);
+        self
+    }
+
+    pub fn border(mut self, color: Color, width: f32) -> Self {
+        self.style = self.style.border(color, width);
+        self
+    }
+
+    pub fn corner_radius(mut self, radius: f32) -> Self {
+        self.style = self.style.corner_radius(radius);
+        self
+    }
+
+    pub fn clip(mut self) -> Self {
+        self.style = self.style.clip();
+        self
+    }
 }
 
 impl Clone for DecoratedContainer {
@@ -711,5 +732,37 @@ mod tests {
         let dc = DecoratedContainer::new(Text::new("Hello"))
             .padding(8.0);
         assert!(dc.layout.padding.is_some());
+    }
+
+    #[test]
+    fn test_decorated_container_background_preserves_padding() {
+        let dc = DecoratedContainer::new(Text::new("Hello"))
+            .padding(8.0)
+            .background(Color::RED);
+        assert!(dc.layout.padding.is_some());
+        assert_eq!(dc.style.background, Some(Color::RED));
+    }
+
+    #[test]
+    fn test_decorated_container_style_properties_chain() {
+        let dc = DecoratedContainer::new(Text::new("Hello"))
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0)
+            .clip();
+        assert_eq!(dc.style.background, Some(Color::RED));
+        assert_eq!(dc.style.border.as_ref().unwrap().width, 2.0);
+        assert_eq!(dc.style.corner_radius.as_ref().unwrap().radius, 8.0);
+        assert!(dc.style.clip);
+    }
+
+    #[test]
+    fn test_decorated_container_style_replaces_everything() {
+        let dc = DecoratedContainer::new(Text::new("Hello"))
+            .background(Color::RED)
+            .style(Style::new().border(Color::BLACK, 1.0));
+        // .style() replaces the entire Style, so background is lost
+        assert_eq!(dc.style.background, None);
+        assert!(dc.style.border.is_some());
     }
 }
