@@ -79,8 +79,10 @@ impl Widget for Text {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        // TODO: Add .with_style() and .with_layout() once TextRenderObject supports them (Task 3)
-        Box::new(TextRenderObject::new(&self.content).with_font_size(self.font_size))
+        Box::new(TextRenderObject::new(&self.content)
+            .with_font_size(self.font_size)
+            .with_style(self.style.clone())
+            .with_layout(self.layout.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -96,13 +98,12 @@ impl Widget for Text {
             if text_ro.set_font_size(self.font_size) {
                 result |= UpdateResult::LAYOUT;
             }
-            // TODO: Add set_style() and set_layout() checks once TextRenderObject supports them (Task 3)
-            // if text_ro.set_style(self.style.clone()) {
-            //     result |= UpdateResult::PAINT;
-            // }
-            // if text_ro.set_layout(self.layout.clone()) {
-            //     result |= UpdateResult::LAYOUT;
-            // }
+            if text_ro.set_style(self.style.clone()) {
+                result |= UpdateResult::PAINT;
+            }
+            if text_ro.set_layout(self.layout.clone()) {
+                result |= UpdateResult::LAYOUT;
+            }
             result
         } else {
             UpdateResult::ALL
