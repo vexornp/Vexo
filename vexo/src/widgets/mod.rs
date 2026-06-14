@@ -32,6 +32,8 @@ pub use text_edit_content::TextEditContent;
 pub use transform::Transform;
 pub use with_layout::WithLayout;
 pub use super::{Key, GlobalKey};
+use crate::core::Color;
+use crate::input::MouseCursor;
 use crate::layout::Layout;
 
 /// Immutable widget configuration - rebuilt each frame.
@@ -155,6 +157,155 @@ pub trait Widget: Any {
     {
         WithLayout::new(self, layout)
     }
+
+    /// Box this widget into a `Box<dyn Widget>`.
+    fn boxed(self) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
+
+    // Decoration modifiers (fallback: wrap in DecoratedContainer)
+
+    fn background(self, color: Color) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(DecoratedContainer::new(self).background(color))
+    }
+
+    fn border(self, color: Color, width: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(DecoratedContainer::new(self).border(color, width))
+    }
+
+    fn corner_radius(self, radius: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(DecoratedContainer::new(self).corner_radius(radius))
+    }
+
+    fn clip(self) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(DecoratedContainer::new(self).clip())
+    }
+
+    // Layout modifiers (fallback: wrap in WithLayout)
+
+    fn padding(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().padding(value)))
+    }
+
+    fn margin(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().margin(value)))
+    }
+
+    fn width(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().width(value)))
+    }
+
+    fn height(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().height(value)))
+    }
+
+    fn flex_grow(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().flex_grow(value)))
+    }
+
+    fn align_self(self, value: crate::layout::AlignSelf) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().align_self(value)))
+    }
+
+    fn absolute(self) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(self, Layout::default().absolute()))
+    }
+
+    // Behavioral modifiers (always wrap)
+
+    fn on_press(self, callback: impl FnMut() + 'static) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(GestureDetector::new(self).on_press(callback))
+    }
+
+    fn on_release(self, callback: impl FnMut() + 'static) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(GestureDetector::new(self).on_release(callback))
+    }
+
+    fn cursor(self, cursor: MouseCursor) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(MouseRegion::new(self).cursor(cursor))
+    }
+
+    fn on_enter(self, callback: impl FnMut() + 'static) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(MouseRegion::new(self).on_enter(callback))
+    }
+
+    fn on_exit(self, callback: impl FnMut() + 'static) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(MouseRegion::new(self).on_exit(callback))
+    }
+
+    // Transform modifiers (always wrap)
+
+    fn translate(self, dx: f32, dy: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(Transform::translate(self, dx, dy))
+    }
+
+    fn rotate(self, radians: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(Transform::rotate(self, radians))
+    }
+
+    fn scale(self, sx: f32, sy: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(Transform::scale(self, sx, sy))
+    }
 }
 
 #[cfg(test)]
@@ -165,6 +316,7 @@ mod tests {
     use crate::{LayoutContext, RenderObject};
     use crate::layout::TaffyLayoutEngine;
     use crate::core::Logical;
+    use crate::input::SystemCursorKind;
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -311,5 +463,39 @@ mod tests {
         // Should have created a layout node (node ID is valid)
         // Just verify no panic during layout
         let _ = result;
+    }
+
+    #[test]
+    fn test_widget_trait_on_press_wraps() {
+        let widget = Text::new("Click").on_press(|| {});
+        assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
+    }
+
+    #[test]
+    fn test_widget_trait_cursor_wraps() {
+        let widget = Text::new("Hover").cursor(MouseCursor::System(SystemCursorKind::Pointer));
+        assert!(widget.as_any().downcast_ref::<MouseRegion>().is_some());
+    }
+
+    #[test]
+    fn test_widget_trait_translate_wraps() {
+        let widget = Text::new("Shift").translate(10.0, 20.0);
+        assert!(widget.as_any().downcast_ref::<Transform>().is_some());
+    }
+
+    #[test]
+    fn test_widget_trait_on_press_chain() {
+        let widget = Text::new("Click")
+            .background(Color::RED)
+            .padding(8.0)
+            .on_press(|| {});
+        // Text with style/layout set, then wrapped in GestureDetector
+        assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
+    }
+
+    #[test]
+    fn test_widget_trait_boxed() {
+        let widget = Text::new("Hello").boxed();
+        assert!(widget.as_any().downcast_ref::<Text>().is_some());
     }
 }
