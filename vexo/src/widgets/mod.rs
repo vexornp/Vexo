@@ -21,17 +21,20 @@ use super::key::WidgetKey;
 use super::RenderObject;
 use super::UpdateResult;
 
+// Public API - leaf and container widgets
 pub use container::Flex;
-pub use decorated_container::DecoratedContainer;
-pub use gesture_detector::GestureDetector;
 pub use grid::Grid;
-pub use mouse_region::MouseRegion;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
-pub use text_edit_content::TextEditContent;
-pub use transform::Transform;
-pub use with_layout::WithLayout;
 pub use super::{Key, GlobalKey};
+
+// Crate-internal modifier widgets (not part of public API)
+pub(crate) use decorated_container::DecoratedContainer;
+pub(crate) use gesture_detector::GestureDetector;
+pub(crate) use mouse_region::MouseRegion;
+pub(crate) use text_edit_content::TextEditContent;
+pub(crate) use transform::Transform;
+pub(crate) use with_layout::WithLayout;
 use crate::core::Color;
 use crate::input::MouseCursor;
 use crate::layout::Layout;

@@ -3,7 +3,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{Flex, Text, Widget, DecoratedContainer};
+    use crate::{Flex, Text, Widget};
+    use crate::widgets::DecoratedContainer;
     use crate::core::Color;
 
     #[test]

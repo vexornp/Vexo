@@ -3,7 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Flex};
-    use crate::{GestureDetector, DecoratedContainer, Style};
+    use crate::widgets::{GestureDetector, DecoratedContainer};
+    use crate::Style;
     use crate::reactive::StatefulMutable;
     use crate::core::Size;
     use crate::layout::TaffyLayoutEngine;

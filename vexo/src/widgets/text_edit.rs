@@ -504,8 +504,8 @@ impl StatefulWidget for TextEdit {
         let layout = crate::layout::Layout::default().padding(8.0);
 
         Box::new(
-            crate::MouseRegion::new(
-                crate::DecoratedContainer::new(
+            crate::widgets::MouseRegion::new(
+                crate::widgets::DecoratedContainer::new(
                     super::TextEditContent::new(self.controller.text(), self.controller.editor())
                         .with_font_size(self.controller.font_size())
                         .with_focused(is_focused)

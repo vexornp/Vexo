@@ -1,6 +1,7 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::{Flex, Grid, Text, ThreeTreePipeline, DecoratedContainer, Transform, Widget};
+use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
+use crate::widgets::{DecoratedContainer, Transform};
 use crate::core::{Color, Position, Size};
 use crate::layout::{Layout, TaffyLayoutEngine, AlignItems, JustifyContent, TrackSizing, GridPlacement};
 use crate::render::RenderCommand;
