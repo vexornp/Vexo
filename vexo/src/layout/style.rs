@@ -515,6 +515,12 @@ impl Layout {
         self
     }
 
+    /// Set positioning mode explicitly.
+    pub fn position(mut self, value: Position) -> Self {
+        self.position = Some(value);
+        self
+    }
+
     /// Set all insets (top, right, bottom, left).
     pub fn inset(mut self, value: f32) -> Self {
         self.inset = Some(Inset::all(value));
