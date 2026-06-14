@@ -489,33 +489,22 @@ impl StatefulWidget for TextEdit {
         let is_focused = ctx.is_focused();
 
         let border_color = if is_focused {
-            crate::core::Color::rgb(0.2, 0.4, 0.8) // Blue border when focused
+            crate::core::Color::rgb(0.2, 0.4, 0.8)
         } else {
-            crate::core::Color::rgb(0.6, 0.6, 0.6) // Gray border when unfocused
+            crate::core::Color::rgb(0.6, 0.6, 0.6)
         };
 
         let border_width = if is_focused { 2.0 } else { 1.0 };
 
-        let style = crate::Style::new()
+        super::TextEditContent::new(self.controller.text(), self.controller.editor())
+            .with_font_size(self.controller.font_size())
+            .with_focused(is_focused)
+            .with_cursor_blink_visible(false)
             .background(crate::core::Color::WHITE)
             .border(border_color, border_width)
-            .corner_radius(4.0);
-
-        let layout = crate::layout::Layout::default().padding(8.0);
-
-        Box::new(
-            crate::widgets::MouseRegion::new(
-                crate::widgets::DecoratedContainer::new(
-                    super::TextEditContent::new(self.controller.text(), self.controller.editor())
-                        .with_font_size(self.controller.font_size())
-                        .with_focused(is_focused)
-                        .with_cursor_blink_visible(false),
-                )
-                .style(style)
-                .layout(layout),
-            )
-            .cursor(MouseCursor::System(SystemCursorKind::Text)),
-        )
+            .corner_radius(4.0)
+            .padding(8.0)
+            .cursor(MouseCursor::System(SystemCursorKind::Text))
     }
 }
 
@@ -738,8 +727,8 @@ mod tests {
 
         // Should have elements in the tree
         assert!(pipeline.element_registry().root().is_some());
-        // StatefulElement + MouseRegion + DecoratedContainer + child TextEditContent element = 4 elements
-        assert_eq!(pipeline.element_registry().len(), 4);
+        // StatefulElement + MouseRegion + TextEditContent = 3 elements
+        assert_eq!(pipeline.element_registry().len(), 3);
     }
 
     #[test]
