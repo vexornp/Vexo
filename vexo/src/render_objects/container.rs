@@ -1,38 +1,50 @@
-//! ContainerRenderObject implementation for Flex.
+//! ContainerRenderObject implementation for Flex, Grid, and DecoratedContainer.
 
-use crate::core::{Bounds, Logical, Point, Size};
+use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
+use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
 
-/// RenderObject for container widgets (Flex).
+/// RenderObject for container widgets (Flex, Grid, DecoratedContainer).
 ///
-/// Container render objects hold references to child render objects
-/// and participate in layout but do not paint themselves.
+/// Container render objects hold references to child render objects,
+/// participate in layout, and optionally paint decorations (background,
+/// border, corner radius, clip).
 ///
 /// # Example
 ///
 /// ```ignore
 /// use vexo::render_objects::ContainerRenderObject;
 /// use vexo::layout::{Layout, FlexDirection, AlignItems};
+/// use vexo::style::Style;
+/// use vexo::core::Color;
 ///
 /// let layout = Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch);
-/// let mut container = ContainerRenderObject::new(layout);
+/// let style = Style::new().background(Color::RED).border(Color::BLACK, 2.0);
+/// let mut container = ContainerRenderObject::new_with_style(layout, style);
 /// container.add_child(child_id);
 /// ```
 pub struct ContainerRenderObject {
     children: Vec<RenderObjectKey>,
     layout: Layout,
+    style: Style,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeKey>,
 }
 
 impl ContainerRenderObject {
-    /// Create a new container with the given layout.
+    /// Create a new container with the given layout and default style.
     pub fn new(layout: Layout) -> Self {
+        Self::new_with_style(layout, Style::default())
+    }
+
+    /// Create a new container with the given layout and style.
+    pub fn new_with_style(layout: Layout, style: Style) -> Self {
         Self {
             children: Vec::new(),
             layout,
+            style,
             computed_bounds: None,
             layout_node: None,
         }
@@ -58,9 +70,25 @@ impl ContainerRenderObject {
         }
     }
 
+    /// Set the style, returning true if it changed.
+    pub fn set_style(&mut self, style: Style) -> bool {
+        if self.style != style {
+            self.style = style;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Get the computed bounds.
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    /// Set the computed bounds directly (for testing).
+    #[cfg(test)]
+    pub fn set_computed_bounds(&mut self, bounds: Option<Bounds<Logical>>) {
+        self.computed_bounds = bounds;
     }
 
     /// Clear all children.
@@ -107,9 +135,48 @@ impl RenderObject for ContainerRenderObject {
         }
     }
 
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        // Containers don't paint themselves, children do
-        vec![]
+    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        let bounds = match &self.computed_bounds {
+            Some(b) => b,
+            None => return vec![],
+        };
+
+        let mut commands = Vec::new();
+        let pos: Position<Logical, Absolute> = ctx.absolute_position();
+
+        let absolute_bounds = Bounds::new(
+            pos.x,
+            pos.y,
+            pos.x + bounds.width(),
+            pos.y + bounds.height(),
+        );
+
+        // 1. Push corner radius if set (affects all subsequent rects)
+        if let Some(ref cr) = self.style.corner_radius {
+            commands.push(RenderCommand::PushCornerRadius { radius: cr.radius });
+        }
+
+        // 2. Draw background first (behind child)
+        if let Some(bg_color) = self.style.background {
+            commands.push(RenderCommand::rect(absolute_bounds, bg_color));
+        }
+
+        // 3. Draw border on top (after background)
+        if let Some(ref border) = self.style.border {
+            commands.push(RenderCommand::rect_with_border(
+                absolute_bounds,
+                Color::TRANSPARENT,
+                border.color,
+                border.width,
+            ));
+        }
+
+        // 4. Pop corner radius
+        if self.style.corner_radius.is_some() {
+            commands.push(RenderCommand::PopCornerRadius);
+        }
+
+        commands
     }
 
     fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
@@ -141,6 +208,14 @@ impl RenderObject for ContainerRenderObject {
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+
+    fn clip_bounds(&self) -> Option<Bounds<Logical>> {
+        if self.style.clip {
+            self.computed_bounds
+        } else {
+            None
+        }
     }
 }
 
@@ -267,15 +342,139 @@ mod tests {
     }
 
     #[test]
-    fn test_container_paint() {
+    fn test_container_paint_no_style() {
         let obj = ContainerRenderObject::new(column_layout());
 
-        // Paint returns empty (containers don't paint)
+        // Paint returns empty when no style decorations
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
 
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_container_paint_no_bounds() {
+        let style = Style::new().background(Color::RED);
+        let obj = ContainerRenderObject::new_with_style(column_layout(), style);
+
+        // Paint returns empty when no computed bounds
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let result = obj.paint(&mut ctx);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_container_paint_with_background() {
+        let style = Style::new().background(Color::RED);
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Should have 1 command (background)
+        assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn test_container_paint_with_border() {
+        let style = Style::new().border(Color::BLACK, 2.0);
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Should have 1 command (border)
+        assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn test_container_paint_with_background_and_border() {
+        let style = Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0);
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Should have 2 commands (background + border)
+        assert_eq!(cmds.len(), 2);
+    }
+
+    #[test]
+    fn test_container_paint_with_corner_radius() {
+        let style = Style::new().background(Color::RED).corner_radius(8.0);
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Should have 3 commands (push radius + background + pop radius)
+        assert_eq!(cmds.len(), 3);
+    }
+
+    #[test]
+    fn test_container_paint_empty_style() {
+        let style = Style::new(); // No decorations
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Should have 0 commands (no decorations)
+        assert_eq!(cmds.len(), 0);
+    }
+
+    #[test]
+    fn test_container_set_style_change_detection() {
+        let mut obj = ContainerRenderObject::new(column_layout());
+
+        // Setting the same default style should return false (no change)
+        assert!(!obj.set_style(Style::default()));
+
+        // Setting a different style should return true (changed)
+        let style = Style::new().background(Color::RED);
+        assert!(obj.set_style(style.clone()));
+
+        // Setting the same style again should return false
+        assert!(!obj.set_style(style));
+    }
+
+    #[test]
+    fn test_container_clip_bounds_no_clip() {
+        let obj = ContainerRenderObject::new(column_layout());
+        // Default style has clip = false
+        assert!(obj.clip_bounds().is_none());
+    }
+
+    #[test]
+    fn test_container_clip_bounds_with_clip_no_bounds() {
+        let style = Style::new().clip();
+        let obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        // clip is true but no computed bounds
+        assert!(obj.clip_bounds().is_none());
+    }
+
+    #[test]
+    fn test_container_clip_bounds_with_clip_and_bounds() {
+        let style = Style::new().clip();
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        // clip is true and bounds exist
+        assert_eq!(obj.clip_bounds(), Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0)));
     }
 
     #[test]

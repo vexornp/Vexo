@@ -151,8 +151,7 @@ impl Widget for Flex {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        // TODO: After Task 5, use ContainerRenderObject::new_with_style(self.layout.clone(), self.style.clone())
-        Box::new(ContainerRenderObject::new(self.layout.clone()))
+        Box::new(ContainerRenderObject::new_with_style(self.layout.clone(), self.style.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -165,9 +164,12 @@ impl Widget for Flex {
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<ContainerRenderObject>() {
-            // TODO: After Task 5, also detect style changes and return appropriate UpdateResult
-            if container_ro.set_layout(self.layout.clone()) {
+            let layout_changed = container_ro.set_layout(self.layout.clone());
+            let style_changed = container_ro.set_style(self.style.clone());
+            if layout_changed {
                 UpdateResult::LAYOUT
+            } else if style_changed {
+                UpdateResult::PAINT
             } else {
                 UpdateResult::NONE
             }
