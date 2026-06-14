@@ -3,6 +3,9 @@
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
 use crate::layout_builder_methods;
+use crate::style::Style;
+#[allow(unused_imports)]
+use crate::core::Color;
 #[allow(unused_imports)]
 use super::super::layout::{
     AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
@@ -31,6 +34,7 @@ pub struct Flex {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,
     layout: Layout,
+    style: Style,
 }
 
 impl Flex {
@@ -42,6 +46,7 @@ impl Flex {
             key: None,
             children: Vec::new(),
             layout: row_layout(),
+            style: Style::default(),
         }
     }
 
@@ -51,6 +56,7 @@ impl Flex {
             key: None,
             children: Vec::new(),
             layout: column_layout(),
+            style: Style::default(),
         }
     }
 
@@ -60,6 +66,7 @@ impl Flex {
             key: None,
             children: Vec::new(),
             layout: row_layout(),
+            style: Style::default(),
         }
     }
 
@@ -92,6 +99,27 @@ impl Flex {
 
 impl Flex {
     layout_builder_methods!();
+
+    // Decoration modifier methods (style-based, not layout-based)
+    pub fn background(mut self, color: Color) -> Self {
+        self.style = self.style.background(color);
+        self
+    }
+
+    pub fn border(mut self, color: Color, width: f32) -> Self {
+        self.style = self.style.border(color, width);
+        self
+    }
+
+    pub fn corner_radius(mut self, radius: f32) -> Self {
+        self.style = self.style.corner_radius(radius);
+        self
+    }
+
+    pub fn clip(mut self) -> Self {
+        self.style = self.style.clip();
+        self
+    }
 }
 
 impl Default for Flex {
@@ -106,6 +134,7 @@ impl Clone for Flex {
             key: self.key.clone(),
             children: self.children.iter().map(|c| c.clone_boxed()).collect(),
             layout: self.layout.clone(),
+            style: self.style.clone(),
         }
     }
 }
@@ -122,6 +151,7 @@ impl Widget for Flex {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
+        // TODO: After Task 5, use ContainerRenderObject::new_with_style(self.layout.clone(), self.style.clone())
         Box::new(ContainerRenderObject::new(self.layout.clone()))
     }
 
@@ -135,6 +165,7 @@ impl Widget for Flex {
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<ContainerRenderObject>() {
+            // TODO: After Task 5, also detect style changes and return appropriate UpdateResult
             if container_ro.set_layout(self.layout.clone()) {
                 UpdateResult::LAYOUT
             } else {
@@ -239,5 +270,26 @@ mod tests {
         assert_eq!(row.layout.width, Some(Dimension::Length(200.0)));
         assert_eq!(row.layout.height, Some(Dimension::Length(100.0)));
         assert_eq!(row.layout.flex_direction, Some(FlexDirection::Row));
+    }
+
+    #[test]
+    fn test_flex_modifier_background_returns_self() {
+        let w = Flex::column().background(Color::RED);
+        assert_eq!(w.style.background, Some(Color::RED));
+    }
+
+    #[test]
+    fn test_flex_modifier_chain() {
+        let w = Flex::column()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0)
+            .clip()
+            .padding(8.0);
+        assert_eq!(w.style.background, Some(Color::RED));
+        assert!(w.style.border.is_some());
+        assert!(w.style.corner_radius.is_some());
+        assert!(w.style.clip);
+        assert!(w.layout.padding.is_some());
     }
 }
