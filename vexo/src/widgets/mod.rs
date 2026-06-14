@@ -311,6 +311,49 @@ pub trait Widget: Any {
     }
 }
 
+/// Delegate Widget implementation for `Box<dyn Widget>`.
+///
+/// This enables modifier chaining on boxed widgets: after a behavioral or
+/// transform modifier returns `Box<dyn Widget>`, further trait methods can
+/// still be called because `Box<dyn Widget>` itself implements `Widget`.
+impl Widget for Box<dyn Widget> {
+    fn key(&self) -> Option<WidgetKey> {
+        (**self).key()
+    }
+
+    fn create_element(&self) -> Box<dyn Element> {
+        (**self).create_element()
+    }
+
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        (**self).create_render_object()
+    }
+
+    fn can_update(&self, other: &dyn Widget) -> bool {
+        (**self).can_update(other)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        (**self).as_any()
+    }
+
+    fn child(&self) -> Option<&dyn Widget> {
+        (**self).child()
+    }
+
+    fn children(&self) -> &[Box<dyn Widget>] {
+        (**self).children()
+    }
+
+    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
+        (**self).update_render_object(render_object)
+    }
+
+    fn clone_boxed(&self) -> Box<dyn Widget> {
+        (**self).clone_boxed()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
