@@ -7,140 +7,21 @@
 
 use std::any::Any;
 
-use crate::core::{Bounds, Logical, Point, Size};
-use crate::elements::RenderObjectElement;
-use crate::focus::attachment::FocusAttachment;
-use crate::input::InputEvent;
 #[allow(unused_imports)]
 use crate::layout::{
     AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
     Inset, JustifyContent, Layout, LayoutNodeKey, Overflow, Position,
 };
 use crate::layout_builder_methods;
-use crate::render::RenderCommand;
+use crate::render_objects::ContainerRenderObject;
+use crate::elements::RenderObjectElement;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
 };
-
-// ============================================================================
-// WithLayoutRenderObject
-// ============================================================================
-
-/// Render object for WithLayout -- applies layout properties without painting.
-///
-/// This render object creates a Taffy layout node from the provided `Layout`
-/// but produces no visual output. It exists purely to inject layout
-/// constraints (padding, margin, flex, sizing, etc.) into the tree.
-pub struct WithLayoutRenderObject {
-    /// Layout properties (width, height, padding, margin, flex, etc.).
-    layout: Layout,
-
-    /// Child render object ID.
-    child: Option<RenderObjectKey>,
-
-    /// Computed bounds from layout.
-    computed_bounds: Option<Bounds<Logical>>,
-
-    /// Layout node in Taffy.
-    layout_node: Option<LayoutNodeKey>,
-}
-
-impl WithLayoutRenderObject {
-    /// Create a new WithLayout render object with the given layout.
-    pub fn new(layout: Layout) -> Self {
-        Self {
-            layout,
-            child: None,
-            computed_bounds: None,
-            layout_node: None,
-        }
-    }
-
-    /// Set the layout configuration.
-    ///
-    /// Returns true if the layout changed.
-    pub fn set_layout(&mut self, layout: Layout) -> bool {
-        if self.layout != layout {
-            self.layout = layout;
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl RenderObject for WithLayoutRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let layout = self.layout.clone();
-
-        match self.layout_node {
-            Some(existing) => {
-                ctx.engine().set_style(existing, &layout);
-                ctx.engine().set_children(existing, child_nodes);
-                LayoutResult {
-                    node: existing,
-                    size: crate::core::Size::zero(),
-                }
-            }
-            None => {
-                let node = ctx.engine().create_container(&layout, child_nodes);
-                self.layout_node = Some(node);
-                LayoutResult {
-                    node,
-                    size: crate::core::Size::zero(),
-                }
-            }
-        }
-    }
-
-    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
-        if let Some(node) = self.layout_node {
-            if let Some(computed) = ctx.engine_ref().get_layout(node) {
-                self.computed_bounds = Some(computed.bounds);
-            }
-        }
-    }
-
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        // No visual output -- layout only.
-        vec![]
-    }
-
-    fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
-        match &self.computed_bounds {
-            Some(bounds) => bounds.contains(&position),
-            None => false,
-        }
-    }
-
-    fn children(&self) -> &[RenderObjectKey] {
-        match &self.child {
-            Some(child) => std::slice::from_ref(child),
-            None => &[],
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn set_child_id(&mut self, child: RenderObjectKey) {
-        self.child = Some(child);
-    }
-
-    fn layout_node(&self) -> Option<LayoutNodeKey> {
-        self.layout_node
-    }
-
-    fn computed_bounds(&self) -> Option<Bounds<Logical>> {
-        self.computed_bounds
-    }
-}
+use crate::core::{Bounds, Logical, Size};
+use crate::input::InputEvent;
+use crate::focus::attachment::FocusAttachment;
 
 // ============================================================================
 // WithLayoutElement
@@ -411,7 +292,7 @@ impl Widget for WithLayout {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(WithLayoutRenderObject::new(self.layout.clone()))
+        Box::new(ContainerRenderObject::new(self.layout.clone()))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -425,7 +306,7 @@ impl Widget for WithLayout {
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
         if let Some(ro) = render_object
             .as_any_mut()
-            .downcast_mut::<WithLayoutRenderObject>()
+            .downcast_mut::<ContainerRenderObject>()
         {
             if ro.set_layout(self.layout.clone()) {
                 UpdateResult::LAYOUT
@@ -474,14 +355,14 @@ mod tests {
         let ro = w.create_render_object();
         assert!(ro
             .as_any()
-            .downcast_ref::<WithLayoutRenderObject>()
+            .downcast_ref::<ContainerRenderObject>()
             .is_some());
     }
 
     #[test]
     fn test_with_layout_render_object_set_layout() {
         let layout1 = Layout::default().padding(10.0);
-        let mut ro = WithLayoutRenderObject::new(layout1);
+        let mut ro = ContainerRenderObject::new(layout1);
 
         // Same layout = no change
         assert!(!ro.set_layout(Layout::default().padding(10.0)));
@@ -492,14 +373,14 @@ mod tests {
 
     #[test]
     fn test_with_layout_render_object_paint_empty() {
-        let mut ro = WithLayoutRenderObject::new(Layout::default());
-        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        let mut ro = ContainerRenderObject::new(Layout::default());
+        ro.set_computed_bounds(Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0)));
 
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
         let cmds = ro.paint(&mut ctx);
 
-        // No visual output
+        // No visual output (default style has no decorations)
         assert_eq!(cmds.len(), 0);
     }
 
@@ -510,7 +391,7 @@ mod tests {
 
         let widget1 = WithLayout::new(Text::new("Hello"), layout1);
         let widget2 = WithLayout::new(Text::new("Hello"), layout2);
-        let mut ro = WithLayoutRenderObject::new(Layout::default().padding(10.0));
+        let mut ro = ContainerRenderObject::new(Layout::default().padding(10.0));
 
         // Same layout = NONE
         let result = widget1.update_render_object(&mut ro);

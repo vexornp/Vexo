@@ -60,6 +60,11 @@ impl ContainerRenderObject {
         self.children = children;
     }
 
+    /// Set a single child render object (for single-child modifier widgets).
+    pub fn set_child_id(&mut self, child: RenderObjectKey) {
+        self.children = vec![child];
+    }
+
     /// Set the layout, returning true if it changed.
     pub fn set_layout(&mut self, layout: Layout) -> bool {
         if self.layout != layout {
@@ -506,5 +511,24 @@ mod tests {
 
         // Setting the same new layout again should return false
         assert!(!obj.set_layout(row_layout()));
+    }
+
+    #[test]
+    fn test_container_set_child_id() {
+        let mut obj = ContainerRenderObject::new(column_layout());
+        let mut sm: slotmap::SlotMap<RenderObjectKey, ()> = slotmap::SlotMap::with_key();
+
+        // Add two children via add_child
+        let child1 = sm.insert(());
+        let child2 = sm.insert(());
+        obj.add_child(child1);
+        obj.add_child(child2);
+        assert_eq!(obj.child_count(), 2);
+
+        // set_child_id replaces all children with a single child
+        let child3 = sm.insert(());
+        obj.set_child_id(child3);
+        assert_eq!(obj.child_count(), 1);
+        assert_eq!(obj.children()[0], child3);
     }
 }
