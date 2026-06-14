@@ -5,12 +5,17 @@ use super::super::key::WidgetKey;
 use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
 use super::super::UpdateResult;
+use crate::layout::Layout;
+use crate::modifier_methods;
+use crate::style::Style;
 
 /// Text widget - displays a string.
 pub struct Text {
     key: Option<WidgetKey>,
     content: String,
     font_size: f32,
+    style: Style,
+    layout: Layout,
 }
 
 impl Text {
@@ -20,6 +25,8 @@ impl Text {
             key: None,
             content: content.into(),
             font_size: 24.0,
+            style: Style::default(),
+            layout: Layout::default(),
         }
     }
 
@@ -44,6 +51,8 @@ impl Text {
     pub fn font_size(&self) -> f32 {
         self.font_size
     }
+
+    modifier_methods!();
 }
 
 impl Clone for Text {
@@ -52,6 +61,8 @@ impl Clone for Text {
             key: self.key.clone(),
             content: self.content.clone(),
             font_size: self.font_size,
+            style: self.style.clone(),
+            layout: self.layout.clone(),
         }
     }
 }
@@ -68,6 +79,7 @@ impl Widget for Text {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
+        // TODO: Add .with_style() and .with_layout() once TextRenderObject supports them (Task 3)
         Box::new(TextRenderObject::new(&self.content).with_font_size(self.font_size))
     }
 
@@ -84,6 +96,13 @@ impl Widget for Text {
             if text_ro.set_font_size(self.font_size) {
                 result |= UpdateResult::LAYOUT;
             }
+            // TODO: Add set_style() and set_layout() checks once TextRenderObject supports them (Task 3)
+            // if text_ro.set_style(self.style.clone()) {
+            //     result |= UpdateResult::PAINT;
+            // }
+            // if text_ro.set_layout(self.layout.clone()) {
+            //     result |= UpdateResult::LAYOUT;
+            // }
             result
         } else {
             UpdateResult::ALL
@@ -126,5 +145,43 @@ mod tests {
 
         assert_eq!(widget.content(), cloned.content());
         assert_eq!(widget.key(), cloned.key());
+    }
+
+    #[test]
+    fn test_text_modifier_background_returns_self() {
+        let w = Text::new("Hello").background(crate::core::Color::RED);
+        assert_eq!(w.style.background, Some(crate::core::Color::RED));
+        assert_eq!(w.content(), "Hello");
+    }
+
+    #[test]
+    fn test_text_modifier_padding_returns_self() {
+        let w = Text::new("Hello").padding(8.0);
+        assert!(w.layout.padding.is_some());
+        assert_eq!(w.content(), "Hello");
+    }
+
+    #[test]
+    fn test_text_modifier_chain_preserves_all() {
+        let w = Text::new("Hello")
+            .background(crate::core::Color::RED)
+            .padding(8.0)
+            .margin(4.0)
+            .border(crate::core::Color::BLACK, 2.0)
+            .corner_radius(8.0)
+            .clip();
+        assert_eq!(w.style.background, Some(crate::core::Color::RED));
+        assert!(w.style.border.is_some());
+        assert!(w.style.corner_radius.is_some());
+        assert!(w.style.clip);
+        assert!(w.layout.padding.is_some());
+        assert!(w.layout.margin.is_some());
+        assert_eq!(w.content(), "Hello");
+    }
+
+    #[test]
+    fn test_text_modifier_preserves_font_size() {
+        let w = Text::new("Hello").with_font_size(32.0).padding(8.0);
+        assert_eq!(w.font_size(), 32.0);
     }
 }
