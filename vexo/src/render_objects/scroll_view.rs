@@ -142,3 +142,48 @@ impl RenderObject for ScrollViewRenderObject {
         Some(AffineTransform::translation(0.0, self.scroll_offset.get()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_defaults() {
+        let ro = ScrollViewRenderObject::new();
+        assert_eq!(ro.scroll_offset_value(), 0.0);
+        assert_eq!(ro.max_scroll(), 0.0);
+    }
+
+    #[test]
+    fn test_set_scroll_offset_via_cell() {
+        let ro = ScrollViewRenderObject::new();
+        ro.set_scroll_offset(42.0);
+        assert_eq!(ro.scroll_offset_value(), 42.0);
+    }
+
+    #[test]
+    fn test_scroll_offset_trait_method() {
+        let ro = ScrollViewRenderObject::new();
+        ro.set_scroll_offset(100.0);
+        let offset = ro.scroll_offset().unwrap();
+        assert_eq!(offset.x, 0.0);
+        assert_eq!(offset.y, -100.0);
+    }
+
+    #[test]
+    fn test_hit_test_transform() {
+        let ro = ScrollViewRenderObject::new();
+        ro.set_scroll_offset(50.0);
+        let transform = ro.hit_test_transform().unwrap();
+        let point = transform.transform_point(Point::new(0.0, 0.0));
+        assert_eq!(point.y, 50.0);
+    }
+
+    #[test]
+    fn test_clip_bounds_returns_computed_bounds() {
+        let mut ro = ScrollViewRenderObject::new();
+        assert!(ro.clip_bounds().is_none());
+        ro.computed_bounds = Some(Bounds::from_xywh(10.0, 20.0, 200.0, 100.0));
+        assert!(ro.clip_bounds().is_some());
+    }
+}

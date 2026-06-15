@@ -234,3 +234,31 @@ impl Element for ScrollViewElement {
     fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
     fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clamp_offset_at_zero() {
+        let elem = ScrollViewElement::new();
+        assert_eq!(elem.clamp_offset(-10.0), 0.0);
+    }
+
+    #[test]
+    fn test_clamp_offset_at_max() {
+        let mut elem = ScrollViewElement::new();
+        elem.content_height = 500.0;
+        elem.viewport_height = 100.0;
+        assert_eq!(elem.clamp_offset(450.0), 400.0);
+    }
+
+    #[test]
+    fn test_no_scroll_when_content_fits() {
+        let mut elem = ScrollViewElement::new();
+        elem.content_height = 300.0;
+        elem.viewport_height = 500.0;
+        assert_eq!(elem.max_scroll(), 0.0);
+        assert_eq!(elem.clamp_offset(100.0), 0.0);
+    }
+}
