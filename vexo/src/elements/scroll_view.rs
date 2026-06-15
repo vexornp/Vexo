@@ -2,8 +2,7 @@
 
 use std::any::Any;
 
-use crate::core::{Logical, Point};
-use crate::input::{ButtonState, InputEvent, Key, NamedKey};
+use crate::input::{InputEvent, Key, NamedKey};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
@@ -26,9 +25,6 @@ pub struct ScrollViewElement {
     scroll_offset: f32,
     content_height: f32,
     viewport_height: f32,
-    drag_active: bool,
-    drag_start_position: Point<Logical>,
-    drag_start_offset: f32,
 }
 
 impl ScrollViewElement {
@@ -37,7 +33,6 @@ impl ScrollViewElement {
             id: None, key: None, render_object: None, widget: None,
             focus_attachment: None,
             scroll_offset: 0.0, content_height: 0.0, viewport_height: 0.0,
-            drag_active: false, drag_start_position: Point::zero(), drag_start_offset: 0.0,
         }
     }
 
@@ -154,30 +149,6 @@ impl Element for ScrollViewElement {
                 return Some(Box::new(()));
             }
 
-            InputEvent::PointerButton { state: ButtonState::Pressed, position, .. } => {
-                if context.is_pointer_inside() {
-                    self.drag_active = true;
-                    self.drag_start_position = *position;
-                    self.drag_start_offset = self.scroll_offset;
-                    context.request_focus(context.element_id());
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerButton { state: ButtonState::Released, .. } => {
-                if self.drag_active {
-                    self.drag_active = false;
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerMoved { position } => {
-                if self.drag_active {
-                    let delta_y = self.drag_start_position.y - position.y;
-                    let new_offset = self.drag_start_offset + delta_y;
-                    self.apply_scroll_offset(new_offset, context);
-                    return Some(Box::new(()));
-                }
-            }
-
             InputEvent::Keyboard { key, .. } => {
                 if context.is_focused_self() {
                     let delta = match key {
@@ -239,7 +210,6 @@ impl Element for ScrollViewElement {
     fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
-        // Scroll offset was updated in on_event; mark the render object for paint.
         if let Some(ro_key) = self.render_object {
             context.mark_needs_paint(ro_key);
         }

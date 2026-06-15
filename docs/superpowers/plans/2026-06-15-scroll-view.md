@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a vertical ScrollView widget that clips its child to a viewport and allows scrolling via mouse wheel, keyboard, and drag.
+**Goal:** Add a vertical ScrollView widget that clips its child to a viewport and allows scrolling via mouse wheel and keyboard.
 
-**Architecture:** Dedicated `ScrollViewRenderObject` with `Cell<f32>` for scroll offset (interior mutability). New `scroll_offset()` on the `RenderObject` trait. Painter emits `PushOffset`/`PopOffset`. EventHandler dispatches `Scroll` events. `ScrollViewElement` manages drag/keyboard scrolling and updates the render object via `Cell`. `EventContext` gains an optional `&RenderObjectRegistry` reference for element-to-render-object communication.
+**Architecture:** Dedicated `ScrollViewRenderObject` with `Cell<f32>` for scroll offset (interior mutability). New `scroll_offset()` on the `RenderObject` trait. Painter emits `PushOffset`/`PopOffset`. EventHandler dispatches `Scroll` events. `ScrollViewElement` manages keyboard scrolling and updates the render object via `Cell`. `EventContext` gains an optional `&RenderObjectRegistry` reference for element-to-render-object communication. Drag scrolling is not implemented — it requires pointer capture infrastructure that doesn't exist yet.
 
 **Tech Stack:** Rust, Taffy layout (overflow_y: Scroll), Cell<f32> interior mutability, existing PushOffset/PopOffset render commands
 
@@ -383,7 +383,7 @@ Create `vexo/src/render_objects/scroll_view.rs`:
 use std::any::Any;
 use std::cell::Cell;
 
-use crate::core::{AffineTransform, Bounds, Logical, Point, Size};
+use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{FlexDirection, AlignItems, Layout, LayoutNodeKey, Overflow};
 use crate::render::RenderCommand;
 use crate::render_object::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -521,10 +521,6 @@ impl RenderObject for ScrollViewRenderObject {
     fn scroll_offset(&self) -> Option<Point<Logical>> {
         Some(Point::new(0.0, -self.scroll_offset.get()))
     }
-
-    fn hit_test_transform(&self) -> Option<AffineTransform> {
-        Some(AffineTransform::translation(0.0, self.scroll_offset.get()))
-    }
 }
 ```
 
@@ -590,9 +586,6 @@ pub struct ScrollViewElement {
     scroll_offset: f32,
     content_height: f32,
     viewport_height: f32,
-    drag_active: bool,
-    drag_start_position: Point<Logical>,
-    drag_start_offset: f32,
 }
 
 impl ScrollViewElement {
@@ -601,7 +594,6 @@ impl ScrollViewElement {
             id: None, key: None, render_object: None, widget: None,
             focus_attachment: None,
             scroll_offset: 0.0, content_height: 0.0, viewport_height: 0.0,
-            drag_active: false, drag_start_position: Point::zero(), drag_start_offset: 0.0,
         }
     }
 
@@ -715,30 +707,6 @@ impl Element for ScrollViewElement {
                 return Some(Box::new(()));
             }
 
-            InputEvent::PointerButton { state: ButtonState::Pressed, position, .. } => {
-                if context.is_pointer_inside() {
-                    self.drag_active = true;
-                    self.drag_start_position = *position;
-                    self.drag_start_offset = self.scroll_offset;
-                    context.request_focus(context.element_id());
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerButton { state: ButtonState::Released, .. } => {
-                if self.drag_active {
-                    self.drag_active = false;
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerMoved { position } => {
-                if self.drag_active {
-                    let delta_y = self.drag_start_position.y - position.y;
-                    let new_offset = self.drag_start_offset + delta_y;
-                    self.apply_scroll_offset(new_offset, context);
-                    return Some(Box::new(()));
-                }
-            }
-
             InputEvent::Keyboard { key, .. } => {
                 if context.is_focused_self() {
                     let delta = match key {
@@ -849,7 +817,7 @@ Expected: compiles (may need adjustments to `apply_scroll_offset` — fix any bo
 
 ```bash
 git add vexo/src/elements/scroll_view.rs vexo/src/elements/mod.rs
-git commit -m "feat: add ScrollViewElement with scroll, drag, and keyboard event handling"
+git commit -m "feat: add ScrollViewElement with scroll and keyboard event handling"
 ```
 
 ---
@@ -1055,12 +1023,11 @@ mod tests {
     }
 
     #[test]
-    fn test_hit_test_transform() {
+    fn test_hit_test_transform_is_none() {
         let ro = ScrollViewRenderObject::new();
         ro.set_scroll_offset(50.0);
-        let transform = ro.hit_test_transform().unwrap();
-        let point = transform.transform_point(Point::new(0.0, 0.0));
-        assert_eq!(point.y, 50.0);
+        // ScrollView uses scroll_offset for child pointer adjustment, not hit_test_transform.
+        assert!(ro.hit_test_transform().is_none());
     }
 
     #[test]
@@ -1144,7 +1111,6 @@ Expected: app runs with a scrollable section visible
 Verify:
 - Mouse wheel scrolling works
 - Keyboard scrolling (arrow keys, PageUp/Down, Home/End) works after clicking inside
-- Drag scrolling works (click and drag inside)
 - Content is clipped to the viewport
 - Scroll offset is clamped
 

@@ -8,7 +8,7 @@ Vexo lacks a scrollable container. Content that overflows its parent is either c
 
 - Vertical-only scrolling
 - No visible scrollbar (scroll via input events only)
-- Input methods: mouse wheel/trackpad, keyboard (arrows, PageUp/Down, Home/End), drag-to-scroll
+- Input methods: mouse wheel/trackpad, keyboard (arrows, PageUp/Down, Home/End)
 - Immediate/clamped physics (no momentum, no bouncing, no overscroll)
 - ScrollView as a dedicated widget with modifier methods
 - Internal scroll offset state (no external ScrollController)
@@ -45,13 +45,9 @@ impl ScrollView {
   - `content_height: f32` — total content height from child layout
   - `viewport_height: f32` — ScrollView's own height
   - `max_scroll: f32` — `(content_height - viewport_height).max(0.0)`
-- Drag state:
-  - `drag_active: bool`
-  - `drag_start_position: Point<Logical>`
-  - `drag_start_offset: f32`
 - On `mount()`: mounts child, creates ScrollViewRenderObject
 - On `rebuild()`: uses `update_child()` to reconcile child
-- On `on_event()`: handles scroll, pointer, and keyboard events (see Event Handling section)
+- On `on_event()`: handles scroll and keyboard events (see Event Handling section)
 - Does NOT pass scroll-consumed events to children; passes non-scroll events through
 - Wraps its child in a `Focus` widget (via the widget's `build()` method) so the ScrollView can receive keyboard events when focused
 
@@ -114,13 +110,6 @@ Currently `InputEvent::Scroll` is dropped. Add `handle_scroll_event()`:
 4. Dispatch the `Scroll` event to the corresponding element
 5. If no ScrollView in the path, drop the event
 
-### Drag scrolling
-
-ScrollViewElement tracks drag state and handles:
-- `PointerButton { state: Pressed }` inside viewport: set `drag_active = true`, record start position and offset
-- `PointerMoved` while `drag_active`: compute delta from start, update offset
-- `PointerButton { state: Released }`: clear drag state
-
 ### Keyboard scrolling
 
 ScrollViewElement handles keyboard events when focused:
@@ -130,14 +119,11 @@ ScrollViewElement handles keyboard events when focused:
 
 ### Hit testing (`hit_test.rs`)
 
-`ScrollViewRenderObject` overrides `hit_test_transform()`:
-```rust
-fn hit_test_transform(&self) -> Option<AffineTransform<Logical>> {
-    Some(AffineTransform::translate(0.0, -self.scroll_offset))
-}
-```
-
-This adjusts pointer positions by the scroll offset so hit testing targets the visually-correct child. Combined with `clip_bounds()`, the hit test naturally constrains to the viewport.
+`ScrollViewRenderObject` does NOT override `hit_test_transform()`. The `scroll_offset()` method
+handles child pointer adjustment during hit testing — it shifts the child pointer position by the
+scroll offset so children are tested at the correct content-space coordinates. Using
+`hit_test_transform()` would break the `is_inside` check on the ScrollView itself by shifting the
+local pointer position outside the viewport bounds.
 
 ## Layout Integration
 
@@ -180,8 +166,7 @@ When scroll offset changes (from any input), the element marks itself dirty to t
 
 ## Testing
 
-- Unit tests for ScrollViewElement scroll offset clamping logic
-- Unit tests for drag scrolling state transitions
+- Unit tests for scroll offset clamping logic
 - Unit tests for keyboard scroll amounts
 - Integration test: ScrollView with overflowing child, verify PushClip + PushOffset + PopOffset + PopClip in render commands
 - Integration test: hit testing with scroll offset adjusts pointer positions
