@@ -9,7 +9,9 @@
 mod render_object_element;
 mod leaf;
 mod container;
+mod scroll_view;
 
 pub use render_object_element::RenderObjectElement;
 pub use leaf::{LeafRenderObjectElement, LeafElement};
 pub use container::ContainerElement;
+pub use scroll_view::ScrollViewElement;
