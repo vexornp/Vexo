@@ -326,6 +326,15 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the scroll offset for this render object's children, if any.
+    ///
+    /// When present, the painter emits `PushOffset`/`PopOffset` around
+    /// this object's children. The offset is in the object's local
+    /// coordinate space.
+    fn scroll_offset(&self) -> Option<crate::core::Point<crate::core::Logical>> {
+        None
+    }
+
 }
 
 // ============================================================================
