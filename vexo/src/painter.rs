@@ -127,9 +127,20 @@ impl Painter {
             ctx.push_command(RenderCommand::PushClip { bounds: absolute_clip });
         }
 
+        // If this object has a scroll offset, push it before painting children.
+        let scroll = obj.scroll_offset();
+        if let Some(offset) = &scroll {
+            ctx.push_command(RenderCommand::PushOffset { offset: *offset });
+        }
+
         // Paint children
         for child_id in obj.children() {
             Self::paint_recursive(render_objects, *child_id, ctx, absolute_position);
+        }
+
+        // Pop scroll offset after children
+        if scroll.is_some() {
+            ctx.push_command(RenderCommand::PopOffset);
         }
 
         // Pop clip after children
