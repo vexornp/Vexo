@@ -55,7 +55,12 @@ impl Widget for ScrollView {
     }
 
     fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
-        UpdateResult::default()
+        // Always request paint because the scroll offset may have changed
+        // via Cell::set in apply_scroll_offset, which bypasses the normal
+        // dirty-tracking path. Returning PAINT ensures that when
+        // mark_needs_build triggers a rebuild, the render object is
+        // marked as needing paint so the painter re-traverses it.
+        UpdateResult::PAINT
     }
 
     fn clone_boxed(&self) -> Box<dyn Widget> { Box::new(self.clone()) }

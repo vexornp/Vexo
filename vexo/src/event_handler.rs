@@ -90,6 +90,7 @@ impl EventHandler {
             ),
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
+                render_objects,
                 state,
                 font_system,
                 build_owner,
@@ -211,6 +212,7 @@ impl EventHandler {
     /// Handle a keyboard event.
     pub(crate) fn handle_keyboard_event(
         element_registry: &mut ElementRegistry,
+        render_objects: &RenderObjectRegistry,
         state: &mut StateStorage,
         font_system: &mut glyphon::FontSystem,
         build_owner: &BuildOwner,
@@ -237,7 +239,7 @@ impl EventHandler {
             font_system,
             build_owner,
             dirty_sender,
-            None,
+            Some(render_objects),
         );
 
         let any_message = element_registry

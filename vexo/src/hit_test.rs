@@ -323,12 +323,40 @@ impl RenderObjectRegistry {
                 size.height,
             ));
 
+            // Compute the pointer position to pass to children.
+            // When this object has a scroll offset, children are visually shifted
+            // (the painter emits PushOffset), so the pointer must be adjusted in
+            // the opposite direction. When this object has a hit_test_transform
+            // (e.g., rotation/scale) but no scroll offset, effective_local gives
+            // the pointer in the child's coordinate space, so we convert it to
+            // absolute coordinates.
+            let child_pointer = if let Some(scroll_offset) = obj.scroll_offset() {
+                // The painter shifts children by scroll_offset (e.g., PushOffset).
+                // For hit testing, we reverse the shift: subtract the scroll offset
+                // from the pointer position so children are tested at the correct
+                // content-space coordinates.
+                Position::new(
+                    pointer_position.x - scroll_offset.x,
+                    pointer_position.y - scroll_offset.y,
+                )
+            } else if obj.hit_test_transform().is_some() {
+                // For non-scroll transforms (rotation/scale), effective_local is
+                // the pointer position in the child's coordinate space. Convert
+                // it back to absolute coordinates for child recursion.
+                Position::new(
+                    object_absolute_position.x + effective_local.x,
+                    object_absolute_position.y + effective_local.y,
+                )
+            } else {
+                pointer_position
+            };
+
             // Test children in reverse order (top-most first)
             // The last child is drawn on top, so it should be tested first
             for child in obj.children().iter().rev() {
                 if self.hit_test_recursive(
                     *child,
-                    pointer_position,
+                    child_pointer,
                     object_absolute_position,
                     path,
                     element_path,
