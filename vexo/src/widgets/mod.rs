@@ -8,6 +8,7 @@ mod decorated_container;
 mod gesture_detector;
 mod grid;
 mod mouse_region;
+pub(crate) mod scroll_view;
 mod text;
 mod text_edit;
 mod text_edit_content;
@@ -26,6 +27,7 @@ pub use container::Flex;
 pub use grid::Grid;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
+pub use scroll_view::ScrollView;
 pub use super::{Key, GlobalKey};
 
 // Crate-internal modifier widgets (not part of public API)
