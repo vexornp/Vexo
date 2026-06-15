@@ -172,6 +172,11 @@ impl RenderObject for TextRenderObject {
                 let mut commands = Vec::new();
                 let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
+                // Compute vertical centering offset when the layout box is taller
+                // than the text's intrinsic height (font_size * line_height multiplier).
+                let text_height = self.font_size * 1.2;
+                let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
+
                 let absolute_bounds = Bounds::new(
                     pos.x,
                     pos.y,
@@ -204,10 +209,11 @@ impl RenderObject for TextRenderObject {
                     commands.push(RenderCommand::PopCornerRadius);
                 }
 
-                // 5. Draw text on top of decorations
+                // 5. Draw text on top of decorations (vertically centered)
+                let text_pos = Point::new(pos.x, pos.y + vertical_offset);
                 commands.push(RenderCommand::Text {
                     content: self.content.clone(),
-                    position: pos.to_point(),
+                    position: text_pos,
                     font_size: self.font_size,
                     color: Color::BLACK,
                     max_width: Some(bounds.width()),

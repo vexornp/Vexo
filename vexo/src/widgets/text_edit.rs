@@ -278,10 +278,27 @@ impl State for TextEditState {
                 ctx.request_focus(ctx.element_id());
 
                 // Position cursor at click location (Flutter's selectPositionAt pattern)
+                // Account for vertical centering offset: the editor's coordinate system
+                // starts at the text origin, not the box top-left.
                 let local = ctx.local_position();
                 let scale = ctx.scale();
+                let text_height = {
+                    let editor = text_edit.controller.editor();
+                    let editor = editor.borrow();
+                    let mut h = 0.0f32;
+                    for run in editor.buffer().layout_runs() {
+                        h = h.max(run.line_top + run.line_height);
+                    }
+                    if h == 0.0 {
+                        text_edit.controller.font_size() * 1.2
+                    } else {
+                        h
+                    }
+                };
+                let vertical_offset = ((ctx.bounds.height() - text_height) / 2.0).max(0.0);
+                let adjusted_y = local.y - vertical_offset;
                 let physical_x = (local.x * scale.factor()) as i32;
-                let physical_y = (local.y * scale.factor()) as i32;
+                let physical_y = (adjusted_y * scale.factor()) as i32;
                 text_edit.controller.click_at(physical_x, physical_y, ctx.font_system);
 
                 Some(Box::new(()))

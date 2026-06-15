@@ -237,6 +237,22 @@ impl RenderObject for TextEditRenderObject {
 
         let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
+        // Compute vertical centering offset when the layout box is taller
+        // than the text's intrinsic height.
+        let text_height = {
+            let editor = self.editor.borrow();
+            let mut h = 0.0f32;
+            for run in editor.buffer().layout_runs() {
+                h = h.max(run.line_top + run.line_height);
+            }
+            if h == 0.0 {
+                self.font_size * 1.2
+            } else {
+                h
+            }
+        };
+        let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
+
         let absolute_bounds = Bounds::new(
             pos.x,
             pos.y,
@@ -269,10 +285,11 @@ impl RenderObject for TextEditRenderObject {
             commands.push(RenderCommand::PopCornerRadius);
         }
 
-        // 5. Emit text render command
+        // 5. Emit text render command (vertically centered)
+        let text_pos = Point::new(pos.x, pos.y + vertical_offset);
         commands.push(RenderCommand::Text {
             content: self.content.clone(),
-            position: pos.to_point(),
+            position: text_pos,
             font_size: self.font_size,
             color: Color::BLACK,
             max_width: Some(bounds.width()),
@@ -284,9 +301,9 @@ impl RenderObject for TextEditRenderObject {
             if let Some((cursor_x, cursor_y)) = editor.cursor_position() {
                 let line_height = editor.buffer().metrics().line_height;
 
-                // Convert cursor position to absolute coordinates
+                // Convert cursor position to absolute coordinates (with vertical centering)
                 let abs_x = cursor_x as f32 + pos.x;
-                let abs_y = cursor_y as f32 + pos.y;
+                let abs_y = cursor_y as f32 + pos.y + vertical_offset;
 
                 commands.push(RenderCommand::Caret {
                     position: Point::new(abs_x, abs_y),
