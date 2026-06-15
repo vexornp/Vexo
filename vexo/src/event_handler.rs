@@ -75,6 +75,19 @@ impl EventHandler {
                 modifiers,
                 scale,
             ),
+            InputEvent::Scroll { .. } => Self::handle_scroll_event(
+                element_registry,
+                render_objects,
+                state,
+                font_system,
+                build_owner,
+                dirty_sender,
+                focus_manager,
+                _position,
+                event,
+                modifiers,
+                scale,
+            ),
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
                 state,
@@ -159,6 +172,7 @@ impl EventHandler {
                     font_system,
                     build_owner,
                     dirty_sender,
+                    Some(render_objects),
                 );
 
                 let message = element.on_event(event, &mut ctx, state);
@@ -223,6 +237,7 @@ impl EventHandler {
             font_system,
             build_owner,
             dirty_sender,
+            None,
         );
 
         let any_message = element_registry
@@ -240,6 +255,67 @@ impl EventHandler {
         }
 
         any_message
+    }
+
+    /// Handle a scroll event by dispatching to the nearest scrollable ancestor.
+    ///
+    /// Walks the hit path from deepest to shallowest, looking for the first
+    /// render object with a scroll offset. When found, dispatches the scroll
+    /// event to the corresponding element.
+    pub(crate) fn handle_scroll_event(
+        element_registry: &mut ElementRegistry,
+        render_objects: &RenderObjectRegistry,
+        state: &mut StateStorage,
+        font_system: &mut glyphon::FontSystem,
+        build_owner: &BuildOwner,
+        dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
+        position: Point<Logical>,
+        event: &InputEvent,
+        modifiers: Modifiers,
+        scale: Scale,
+    ) -> Option<Box<dyn Any>> {
+        let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
+        let hit_result = render_objects.hit_test(absolute_position);
+
+        if !hit_result.is_hit() {
+            return None;
+        }
+
+        let element_path = hit_result.element_path();
+        let ro_path = hit_result.path();
+
+        for (&ro_key, &element_id) in ro_path.iter().zip(element_path.iter()).rev() {
+            if let Some(ro) = render_objects.get(ro_key) {
+                if ro.scroll_offset().is_some() {
+                    let bounds = hit_result.absolute_bounds().unwrap_or_default();
+                    let local_position = hit_result
+                        .inner_bounds()
+                        .map(|b| Point::new(position.x - b.position().x, position.y - b.position().y))
+                        .unwrap_or(position);
+
+                    if let Some(element) = element_registry.get_mut(element_id) {
+                        let mut ctx = EventContext::with_build_owner(
+                            element_id,
+                            position,
+                            local_position,
+                            focus_manager.primary_focus_element(),
+                            bounds,
+                            modifiers,
+                            scale,
+                            font_system,
+                            build_owner,
+                            dirty_sender,
+                            Some(render_objects),
+                        );
+
+                        return element.on_event(event, &mut ctx, state);
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// Hit test at a given position.
