@@ -11,6 +11,7 @@ use crate::input::Modifiers;
 
 use super::id::ElementKey;
 use super::build_owner::BuildOwner;
+use super::render_object::RenderObjectRegistry;
 
 /// Context provided to elements during event handling.
 ///
@@ -57,6 +58,12 @@ pub struct EventContext<'a> {
     /// an event handler, it sends the element ID through this channel.
     pub dirty_sender: Option<&'a std::sync::mpsc::Sender<ElementKey>>,
 
+    /// Render object registry for element-to-render-object communication.
+    ///
+    /// Available when the event handler provides render object access.
+    /// Used by scroll-aware elements to query render object state.
+    render_objects: Option<&'a RenderObjectRegistry>,
+
     /// Focus request from the element (if any).
     /// Set by `request_focus()`.
     focus_request: Option<ElementKey>,
@@ -84,6 +91,7 @@ impl<'a> EventContext<'a> {
         modifiers: Modifiers,
         scale: Scale,
         font_system: &'a mut glyphon::FontSystem,
+        render_objects: Option<&'a RenderObjectRegistry>,
     ) -> Self {
         Self {
             element_id,
@@ -96,6 +104,7 @@ impl<'a> EventContext<'a> {
             font_system,
             build_owner: None,
             dirty_sender: None,
+            render_objects,
             focus_request: None,
             clear_focus_request: false,
         }
@@ -113,6 +122,7 @@ impl<'a> EventContext<'a> {
         font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
         dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
+        render_objects: Option<&'a RenderObjectRegistry>,
     ) -> Self {
         Self {
             element_id,
@@ -125,6 +135,7 @@ impl<'a> EventContext<'a> {
             font_system,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
+            render_objects,
             focus_request: None,
             clear_focus_request: false,
         }
@@ -212,6 +223,11 @@ impl<'a> EventContext<'a> {
             bo.mark_needs_build(element_id);
         }
     }
+
+    /// Get the render object registry, if available.
+    pub fn render_objects(&self) -> Option<&RenderObjectRegistry> {
+        self.render_objects
+    }
 }
 
 #[cfg(test)]
@@ -251,6 +267,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
         assert_eq!(ctx.element_id(), element);
     }
@@ -268,6 +285,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
         assert!(ctx.is_pointer_inside());
 
@@ -281,6 +299,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
         assert!(!ctx.is_pointer_inside());
     }
@@ -298,6 +317,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
         assert!(ctx.is_focused_self());
 
@@ -311,6 +331,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
         assert!(!ctx.is_focused_self());
     }
@@ -328,6 +349,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
 
         let target = make_key();
@@ -349,6 +371,7 @@ mod tests {
             Modifiers::default(),
             Scale::default(),
             &mut font_system,
+            None,
         );
 
         ctx.clear_focus();
@@ -369,6 +392,7 @@ mod tests {
             Modifiers::control(),
             Scale::default(),
             &mut font_system,
+            None,
         );
 
         assert!(ctx.is_control_pressed());

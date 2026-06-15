@@ -546,6 +546,7 @@ mod tests {
             crate::input::Modifiers::default(),
             crate::core::Scale::default(),
             &mut font_system,
+            None,
         );
 
         let event = InputEvent::PointerButton {
@@ -583,6 +584,7 @@ mod tests {
             crate::input::Modifiers::default(),
             crate::core::Scale::default(),
             &mut font_system,
+            None,
         );
 
         let event = InputEvent::PointerButton {
@@ -617,6 +619,7 @@ mod tests {
             crate::input::Modifiers::default(),
             crate::core::Scale::default(),
             &mut font_system,
+            None,
         );
 
         let event = InputEvent::PointerButton {
