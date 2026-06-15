@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::Cell;
 
-use crate::core::{AffineTransform, Bounds, Logical, Point, Size};
+use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{FlexDirection, AlignItems, Layout, LayoutNodeKey, Overflow};
 use crate::render::RenderCommand;
 use crate::render_object::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -137,10 +137,6 @@ impl RenderObject for ScrollViewRenderObject {
     fn scroll_offset(&self) -> Option<Point<Logical>> {
         Some(Point::new(0.0, -self.scroll_offset.get()))
     }
-
-    fn hit_test_transform(&self) -> Option<AffineTransform> {
-        Some(AffineTransform::translation(0.0, self.scroll_offset.get()))
-    }
 }
 
 #[cfg(test)]
@@ -171,12 +167,12 @@ mod tests {
     }
 
     #[test]
-    fn test_hit_test_transform() {
+    fn test_hit_test_transform_is_none() {
         let ro = ScrollViewRenderObject::new();
         ro.set_scroll_offset(50.0);
-        let transform = ro.hit_test_transform().unwrap();
-        let point = transform.transform_point(Point::new(0.0, 0.0));
-        assert_eq!(point.y, 50.0);
+        // ScrollView uses scroll_offset for child pointer adjustment, not hit_test_transform.
+        // hit_test_transform would break the is_inside check by shifting local coords.
+        assert!(ro.hit_test_transform().is_none());
     }
 
     #[test]

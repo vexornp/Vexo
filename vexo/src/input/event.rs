@@ -52,6 +52,8 @@ pub enum InputEvent {
 
     /// Scroll wheel input.
     Scroll {
+        /// Position of the pointer in logical coordinates when the scroll occurred.
+        position: Point<Logical>,
         /// Scroll delta in logical coordinates.
         delta: Point<Logical>,
     },
@@ -230,6 +232,7 @@ impl InputEvent {
     pub fn from_winit(
         event: &winit::event::WindowEvent,
         scale: Scale,
+        pointer_position: Point<Logical>,
     ) -> Option<Self> {
         use winit::event::ElementState;
 
@@ -347,6 +350,7 @@ impl InputEvent {
                     }
                 };
                 Some(InputEvent::Scroll {
+                    position: pointer_position,
                     delta: Point::new(dx, dy),
                 })
             }

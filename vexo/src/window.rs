@@ -57,6 +57,10 @@ pub struct WindowState<A: Application + 'static> {
 
     /// Current mouse cursor icon. Updated on PointerMoved events.
     current_cursor: SystemCursorKind,
+
+    /// Last known pointer position in logical coordinates.
+    /// Used to provide position for scroll events (winit MouseWheel doesn't include position).
+    last_pointer_position: Point<Logical>,
 }
 
 
@@ -84,6 +88,7 @@ impl<A: Application + 'static> WindowState<A> {
             three_tree_pipeline: ThreeTreePipeline::new(),
             needs_redraw: true,
             current_cursor: SystemCursorKind::Arrow,
+            last_pointer_position: Point::new(0.0, 0.0),
         })
     }
 
@@ -128,9 +133,12 @@ impl<A: Application + 'static> WindowState<A> {
 
             // User input events with special handling
             WindowEvent::PointerMoved { position, .. } => {
+                // Track pointer position for scroll events
+                let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
+                self.last_pointer_position = physical.to_logical(self.scale);
                 // Pass to widget tree for hit-testing
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale)
+                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -152,7 +160,7 @@ impl<A: Application + 'static> WindowState<A> {
 
                 // Other keyboard input goes to widgets
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale)
+                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -161,7 +169,7 @@ impl<A: Application + 'static> WindowState<A> {
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale)
+                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -174,6 +182,7 @@ impl<A: Application + 'static> WindowState<A> {
         let position = match &input_event {
             InputEvent::PointerMoved { position } => *position,
             InputEvent::PointerButton { position, .. } => *position,
+            InputEvent::Scroll { position, .. } => *position,
             _ => Point::new(0.0, 0.0),
         };
 

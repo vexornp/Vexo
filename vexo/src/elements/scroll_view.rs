@@ -148,7 +148,7 @@ impl Element for ScrollViewElement {
         _state: &mut StateStorage,
     ) -> Option<Box<dyn Any>> {
         match event {
-            InputEvent::Scroll { delta } => {
+            InputEvent::Scroll { delta, .. } => {
                 let new_offset = self.scroll_offset - delta.y;
                 self.apply_scroll_offset(new_offset, context);
                 return Some(Box::new(()));
@@ -237,6 +237,13 @@ impl Element for ScrollViewElement {
 
     fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
     fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
+
+    fn rebuild_from_state(&mut self, context: &mut ElementContext) {
+        // Scroll offset was updated in on_event; mark the render object for paint.
+        if let Some(ro_key) = self.render_object {
+            context.mark_needs_paint(ro_key);
+        }
+    }
 }
 
 #[cfg(test)]
