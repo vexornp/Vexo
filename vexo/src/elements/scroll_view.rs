@@ -135,7 +135,11 @@ impl Element for ScrollViewElement {
 
     fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
     fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
-    fn can_update(&self, _widget: &dyn Any) -> bool { true }
+    fn can_update(&self, widget: &dyn Any) -> bool {
+        widget.downcast_ref::<Box<dyn Widget>>()
+            .and_then(|w| w.as_any().downcast_ref::<crate::widgets::scroll_view::ScrollView>())
+            .is_some()
+    }
 
     fn on_event(
         &mut self,
