@@ -1,6 +1,6 @@
 use vexo::{
-    column, row, run_desktop_demo, Application, BuildContext, Color, Focus,
-    State as RetainState, StatefulWidget, SystemCursorKind, Text, TextEdit,
+    column, row, run_desktop_demo, Application, BuildContext, Color, Flex, Focus,
+    ScrollView, State as RetainState, StatefulWidget, SystemCursorKind, Text, TextEdit,
     TextEditingController, Widget, input::MouseCursor, reactive::StatefulMutable,
 };
 uniffi::setup_scaffolding!();
@@ -13,6 +13,28 @@ fn tap_button(label: &str, on_press: impl FnMut() + 'static) -> Box<dyn Widget> 
         .corner_radius(8.0)
         .padding(24.0)
         .on_press(on_press)
+}
+
+/// Helper to create a ScrollView demo with 20 items.
+fn scroll_demo() -> Box<dyn Widget> {
+    let mut column = Flex::column().gap(0.0);
+    for i in 0..20 {
+        let label = format!("Item {}", i + 1);
+        column = column.push(
+            Text::new(&label)
+                .padding(16.0)
+                .background(if i % 2 == 0 {
+                    Color::rgb(0.95, 0.95, 0.95)
+                } else {
+                    Color::WHITE
+                })
+        );
+    }
+    ScrollView::new(column)
+        .width(200.0)
+        .height(300.0)
+        .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
+        .boxed()
 }
 
 // --- Retain Mode Counter StatefulWidget ---
@@ -259,7 +281,10 @@ impl Application for State {
                 .background(Color::rgb(0.9, 0.95, 1.0))
                 .border(Color::rgb(0.4, 0.6, 0.8), 1.0)
                 .corner_radius(8.0),
-            ]
+            ],
+            // ScrollView demo
+            Text::new("ScrollView Demo:"),
+            scroll_demo(),
         ])
     }
 }
