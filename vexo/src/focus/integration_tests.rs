@@ -579,4 +579,196 @@ mod on_focus_change_tests {
             "on_focus_change(false) should have fired when clicking outside to unfocus"
         );
     }
+
+    /// Test that a StatefulWidget wrapping Focus+ScrollView properly
+    /// updates its visual state when focus is lost by clicking outside.
+    /// This mirrors the FocusableScrollList pattern from shared_app.
+    #[test]
+    fn test_stateful_widget_focus_loss_updates_state() {
+        use crate::reactive::StatefulMutable;
+        use crate::StatefulWidget;
+        use crate::State as VexoState;
+        use crate::ScrollView;
+        use crate::widgets::Widget;
+        use std::sync::atomic::{AtomicI32, Ordering};
+
+        // Use a thread-local to observe focus changes from inside the state
+        use std::cell::RefCell;
+        thread_local! {
+            static FOCUS_STATE: RefCell<Arc<AtomicI32>> = RefCell::new(Arc::new(AtomicI32::new(0)));
+        }
+
+        // --- FocusableScrollList equivalent ---
+        #[derive(Clone)]
+        struct FocusableScrollList;
+
+        struct FocusableScrollListState {
+            is_focused: StatefulMutable<bool>,
+            focus_state: Arc<AtomicI32>,
+        }
+
+        impl Default for FocusableScrollListState {
+            fn default() -> Self {
+                let fs = Arc::new(AtomicI32::new(0));
+                FOCUS_STATE.with(|cell| *cell.borrow_mut() = fs.clone());
+                Self {
+                    is_focused: StatefulMutable::new(false),
+                    focus_state: fs,
+                }
+            }
+        }
+
+        impl VexoState for FocusableScrollListState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.is_focused.set_dirty_callback(callback);
+            }
+        }
+
+        impl StatefulWidget for FocusableScrollList {
+            type State = FocusableScrollListState;
+
+            fn build(&self, state: &mut Self::State, _ctx: &mut crate::BuildContext) -> Box<dyn Widget> {
+                let is_focused_clone = state.is_focused.clone();
+                let fs = state.focus_state.clone();
+                Focus::new(
+                    ScrollView::new(
+                        Flex::column()
+                            .push(Text::new("Line 1"))
+                            .push(Text::new("Line 2"))
+                    )
+                    .width(200.0)
+                    .height(100.0)
+                )
+                .on_focus_change(move |focused| {
+                    is_focused_clone.set(focused);
+                    fs.store(if focused { 1 } else { -1 }, Ordering::Relaxed);
+                })
+                .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut font_system = create_test_font_system();
+
+        // Reconcile the FocusableScrollList widget
+        let widget: Box<dyn Widget> = FocusableScrollList.boxed();
+        pipeline.reconcile(widget);
+        layout_pipeline(&mut pipeline, &mut font_system);
+
+        let focus_state = FOCUS_STATE.with(|cell| cell.borrow().clone());
+
+        // Click inside the scroll view to focus it
+        let event = pointer_press(10.0, 10.0);
+        pipeline.handle_event(
+            Point::new(10.0, 10.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        assert!(
+            pipeline.focused_element().is_some(),
+            "Focus should be gained after clicking inside ScrollView"
+        );
+        assert_eq!(
+            focus_state.load(Ordering::Relaxed), 1,
+            "on_focus_change(true) should have fired"
+        );
+
+        // Now click outside to unfocus
+        let event = pointer_press(500.0, 500.0);
+        pipeline.handle_event(
+            Point::new(500.0, 500.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        assert!(
+            pipeline.focused_element().is_none(),
+            "Focus should be cleared after clicking outside ScrollView"
+        );
+        assert_eq!(
+            focus_state.load(Ordering::Relaxed), -1,
+            "on_focus_change(false) should have been called when clicking outside"
+        );
+    }
+
+    /// Test that clicking on a child inside a ScrollView AFTER scrolling
+    /// still properly focuses the ScrollView. This was a bug where
+    /// hit_test_recursive computed wrong absolute_bounds for children of
+    /// scrolled content, causing is_pointer_inside() to fail for the
+    /// ScrollViewElement.
+    #[test]
+    fn test_scrollview_focus_after_scroll() {
+        use crate::ScrollView;
+        use crate::widgets::Widget;
+        use std::sync::atomic::Ordering;
+
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut font_system = create_test_font_system();
+
+        let focus_gained = Arc::new(AtomicBool::new(false));
+        let focus_gained_clone = focus_gained.clone();
+
+        // Create a ScrollView with many items so it can scroll
+        let mut column = Flex::column();
+        for i in 0..20 {
+            column = column.push(Text::new(&format!("Item {}", i)));
+        }
+
+        let focus_widget = Focus::new(
+            ScrollView::new(column)
+                .width(200.0)
+                .height(100.0)
+        )
+        .on_focus_change(move |focused| {
+            if focused {
+                focus_gained_clone.store(true, Ordering::Relaxed);
+            }
+        });
+
+        pipeline.reconcile(Box::new(focus_widget));
+        layout_pipeline(&mut pipeline, &mut font_system);
+
+        // First, scroll down WITHOUT clicking to focus first.
+        // This simulates: user scrolls with mouse wheel, then clicks.
+        // Scroll delta y = -100.0 means scroll down significantly.
+        let scroll_event = InputEvent::Scroll {
+            position: Point::new(10.0, 50.0),
+            delta: Point::new(0.0, -100.0),
+        };
+        pipeline.handle_event(
+            Point::new(10.0, 50.0),
+            &scroll_event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        // Process rebuilds triggered by scroll offset change and re-layout,
+        // simulating a frame render cycle
+        pipeline.perform_rebuilds();
+        layout_pipeline(&mut pipeline, &mut font_system);
+
+        // Now click inside the scroll view on scrolled content.
+        // After scrolling down, items that were below the viewport
+        // are now visible. The pointer is at (10, 50) which is inside
+        // the viewport (0,0 to 200,100).
+        let event = pointer_press(10.0, 50.0);
+        pipeline.handle_event(
+            Point::new(10.0, 50.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        assert!(
+            focus_gained.load(Ordering::Relaxed),
+            "Focus should be gained when clicking inside ScrollView after scrolling"
+        );
+    }
 }

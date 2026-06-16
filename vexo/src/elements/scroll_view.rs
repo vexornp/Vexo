@@ -146,6 +146,7 @@ impl Element for ScrollViewElement {
             InputEvent::PointerButton { state: ButtonState::Pressed, .. } => {
                 if context.is_pointer_inside() {
                     context.request_focus(context.element_id());
+                    return Some(Box::new(()));
                 }
             }
 

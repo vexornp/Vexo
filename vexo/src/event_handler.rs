@@ -145,10 +145,7 @@ impl EventHandler {
             return None;
         }
 
-        // 2. Get absolute bounds for context (from hit test result)
-        let bounds = hit_result.absolute_bounds().unwrap_or_default();
-
-        // Compute local_position relative to the innermost hit target.
+        // 2. Compute local_position relative to the innermost hit target.
         // This is equivalent to Flutter's globalToLocal().
         let local_position = hit_result
             .inner_bounds()
@@ -162,6 +159,12 @@ impl EventHandler {
         // Iterate from deepest (last) to shallowest (first)
         for &element_id in element_path.iter().rev() {
             if let Some(element) = element_registry.get_mut(element_id) {
+                // Each element gets its own bounds from the hit test,
+                // so is_pointer_inside() works correctly even for
+                // ancestors of scrolled content.
+                let bounds = hit_result.bounds_for_element(element_id)
+                    .unwrap_or_default();
+
                 let mut ctx = EventContext::with_build_owner(
                     element_id,
                     position,
@@ -290,7 +293,8 @@ impl EventHandler {
         for (&ro_key, &element_id) in ro_path.iter().zip(element_path.iter()).rev() {
             if let Some(ro) = render_objects.get(ro_key) {
                 if ro.scroll_offset().is_some() {
-                    let bounds = hit_result.absolute_bounds().unwrap_or_default();
+                    let bounds = hit_result.bounds_for_element(element_id)
+                        .unwrap_or_default();
                     let local_position = hit_result
                         .inner_bounds()
                         .map(|b| Point::new(position.x - b.position().x, position.y - b.position().y))

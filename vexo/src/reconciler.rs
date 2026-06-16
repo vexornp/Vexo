@@ -259,6 +259,7 @@ impl Reconciler {
         widget: Box<dyn Widget>,
     ) {
         let parent = element_registry.parent(root_id);
+        let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, root_id);
 
         log::debug!("[RetainMode] rebuild_root() - element_id: {:?}", root_id);
 
@@ -276,7 +277,7 @@ impl Reconciler {
             dirty_sender,
             child_ops,
             focus_manager,
-            None, // parent_focus_node_id not needed during rebuild
+            parent_focus_node_id,
         );
 
         element_registry.with_element(root_id, &mut ctx, |element, ctx| {
@@ -338,6 +339,7 @@ impl Reconciler {
 
             // Get parent and render_object for context
             let parent = element_registry.parent(element_id);
+            let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, element_id);
 
             // Create context for the element
             let mut ctx = ElementContext::new(
@@ -351,7 +353,7 @@ impl Reconciler {
                 dirty_sender,
                 child_ops,
                 focus_manager,
-                None, // parent_focus_node_id not needed during rebuild
+                parent_focus_node_id,
             );
 
             // Rebuild from current state using with_element
@@ -656,6 +658,7 @@ impl Reconciler {
         widget: Box<dyn Widget>,
     ) {
         let parent = element_registry.parent(element_id);
+        let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, element_id);
 
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
 
@@ -670,7 +673,7 @@ impl Reconciler {
             dirty_sender,
             child_ops,
             focus_manager,
-            None, // parent_focus_node_id not needed during rebuild
+            parent_focus_node_id,
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {

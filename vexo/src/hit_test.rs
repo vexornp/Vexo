@@ -45,8 +45,11 @@ pub struct HitTestResult {
     path: Vec<RenderObjectKey>,
     /// The element IDs along the path.
     element_path: Vec<ElementKey>,
-    /// Absolute bounds of the hit target (in window coordinates).
-    absolute_bounds: Option<Bounds<Logical>>,
+    /// Absolute bounds of each render object in the hit path, in window coordinates.
+    /// Parallel to `path` — `bounds_map[i]` is the bounds of `path[i]`.
+    /// Each element in the event bubble path receives its own bounds from this map,
+    /// so `is_pointer_inside()` works correctly even for ancestors of scrolled content.
+    bounds_map: Vec<Bounds<Logical>>,
     /// Absolute bounds of the deepest (innermost) hit target in the hit path.
     /// The deepest target's bounds exclude ancestor offsets (e.g., padding),
     /// so `pointer_position - inner_bounds.origin` gives local coordinates
@@ -64,7 +67,7 @@ impl HitTestResult {
         Self {
             path: Vec::new(),
             element_path: Vec::new(),
-            absolute_bounds: None,
+            bounds_map: Vec::new(),
             inner_bounds: None,
             annotations: Vec::new(),
         }
@@ -72,7 +75,7 @@ impl HitTestResult {
 
     /// Create a hit result with the given path.
     pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementKey>) -> Self {
-        Self { path, element_path, absolute_bounds: None, inner_bounds: None, annotations: Vec::new() }
+        Self { path, element_path, bounds_map: Vec::new(), inner_bounds: None, annotations: Vec::new() }
     }
 
     /// Create a hit result with absolute bounds.
@@ -81,10 +84,11 @@ impl HitTestResult {
         element_path: Vec<ElementKey>,
         absolute_bounds: Bounds<Logical>,
     ) -> Self {
+        let bounds_map = vec![absolute_bounds; path.len()];
         Self {
             path,
             element_path,
-            absolute_bounds: Some(absolute_bounds),
+            bounds_map,
             inner_bounds: Some(absolute_bounds),
             annotations: Vec::new(),
         }
@@ -123,11 +127,20 @@ impl HitTestResult {
         &self.element_path
     }
 
-    /// Get the absolute bounds of the hit target.
+    /// Get the absolute bounds of each render object in the hit path.
     ///
-    /// Returns None if nothing was hit or bounds are not available.
-    pub fn absolute_bounds(&self) -> Option<Bounds<Logical>> {
-        self.absolute_bounds
+    /// Parallel to `path()` — `bounds_map()[i]` is the bounds of `path()[i]`.
+    pub fn bounds_map(&self) -> &[Bounds<Logical>] {
+        &self.bounds_map
+    }
+
+    /// Get the absolute bounds for a specific element in the hit path.
+    ///
+    /// Looks up the element in `element_path` and returns the corresponding
+    /// bounds from `bounds_map`. Returns `None` if the element is not found.
+    pub fn bounds_for_element(&self, element_key: ElementKey) -> Option<Bounds<Logical>> {
+        let idx = self.element_path.iter().position(|&k| k == element_key)?;
+        self.bounds_map.get(idx).copied()
     }
 
     /// Get the absolute bounds of the deepest hit target.
@@ -183,7 +196,7 @@ impl RenderObjectRegistry {
     pub fn hit_test(&self, position: Position<Logical, Absolute>) -> HitTestResult {
         let mut path = Vec::new();
         let mut element_path = Vec::new();
-        let mut absolute_bounds: Option<Bounds<Logical>> = None;
+        let mut bounds_map: Vec<Bounds<Logical>> = Vec::new();
         let mut inner_bounds: Option<Bounds<Logical>> = None;
 
         if let Some(root) = self.root() {
@@ -195,7 +208,7 @@ impl RenderObjectRegistry {
                 root_absolute_position,
                 &mut path,
                 &mut element_path,
-                &mut absolute_bounds,
+                &mut bounds_map,
                 &mut inner_bounds,
             );
         }
@@ -203,7 +216,7 @@ impl RenderObjectRegistry {
         let mut result = HitTestResult {
             path,
             element_path,
-            absolute_bounds,
+            bounds_map,
             inner_bounds,
             annotations: Vec::new(),
         };
@@ -236,7 +249,8 @@ impl RenderObjectRegistry {
     /// * `parent_absolute_position` - The accumulated absolute position of the parent
     /// * `path` - Output: path from root to hit target
     /// * `element_path` - Output: element IDs along the path
-    /// * `absolute_bounds` - Output: absolute bounds of the hit target
+    /// * `bounds_map` - Output: absolute bounds of each node in the path
+    /// * `inner_bounds` - Output: bounds of the deepest hit target
     ///
     /// Returns true if this node or any descendant was hit.
     fn hit_test_recursive(
@@ -246,7 +260,7 @@ impl RenderObjectRegistry {
         parent_absolute_position: Position<Logical, Absolute>,
         path: &mut Vec<RenderObjectKey>,
         element_path: &mut Vec<ElementKey>,
-        absolute_bounds: &mut Option<Bounds<Logical>>,
+        bounds_map: &mut Vec<Bounds<Logical>>,
         inner_bounds: &mut Option<Bounds<Logical>>,
     ) -> bool {
         let obj = match self.get(id) {
@@ -304,13 +318,14 @@ impl RenderObjectRegistry {
                 element_path.push(element_id);
             }
 
-            // Compute absolute bounds for this object
-            *absolute_bounds = Some(Bounds::from_xywh(
+            // Store this node's absolute bounds in the map (parallel to path)
+            let node_bounds = Bounds::from_xywh(
                 object_absolute_position.x,
                 object_absolute_position.y,
                 size.width,
                 size.height,
-            ));
+            );
+            bounds_map.push(node_bounds);
 
             // Track the deepest hit target's bounds.
             // On each hit, we update inner_bounds. If a deeper child also hits,
@@ -360,7 +375,7 @@ impl RenderObjectRegistry {
                     object_absolute_position,
                     path,
                     element_path,
-                    absolute_bounds,
+                    bounds_map,
                     inner_bounds,
                 ) {
                     return true;
