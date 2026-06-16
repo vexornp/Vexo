@@ -285,11 +285,12 @@ pub struct DecoratedContainer {
 impl DecoratedContainer {
     /// Create a new decorated container with a child.
     pub fn new(child: impl Widget + 'static) -> Self {
+        use crate::layout::AlignSelf;
         Self {
             key: None,
             child: Box::new(child),
             style: Style::default(),
-            layout: Layout::default(),
+            layout: Layout::default().align_self(AlignSelf::Start).flex_shrink(0.0),
         }
     }
 

@@ -49,11 +49,11 @@ impl StatefulWidget for FocusableScrollList {
             ScrollView::new(content)
                 .width(200.0)
                 .height(300.0)
+                .border(border_color, border_width)
         )
         .on_focus_change(move |focused| {
             is_focused_clone.set(focused);
         })
-        .border(border_color, border_width)
         .boxed()
     }
 }

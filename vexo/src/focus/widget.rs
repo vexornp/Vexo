@@ -19,6 +19,7 @@ use crate::input::InputEvent;
 use crate::key::WidgetKey;
 use crate::render_object::RenderObject;
 use crate::widgets::Widget;
+use crate::stateful_widget::ProxyRenderObject;
 use crate::UpdateResult;
 
 // ============================================================================
@@ -91,7 +92,7 @@ impl Widget for Focus {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        self.child.create_render_object()
+        Box::new(ProxyRenderObject::new())
     }
 
     fn can_update(&self, other: &dyn Widget) -> bool {
@@ -110,8 +111,8 @@ impl Widget for Focus {
         std::slice::from_ref(&self.child)
     }
 
-    fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        self.child.update_render_object(render_object)
+    fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
+        UpdateResult::empty()
     }
 
     fn clone_boxed(&self) -> Box<dyn Widget> {
