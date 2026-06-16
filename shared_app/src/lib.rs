@@ -1,8 +1,64 @@
-use vexo::{run_desktop_demo, Application, Color, Flex, ScrollView, Text, Widget};
+use std::sync::Arc;
+
+use vexo::{
+    run_desktop_demo, Application, Color, Flex, Focus, ScrollView, Text, Widget,
+    StatefulWidget, BuildContext, State as VexoState,
+};
+use vexo::reactive::StatefulMutable;
 uniffi::setup_scaffolding!();
 
-/// Helper to create a ScrollView demo with 20 items.
-fn scroll_demo() -> Box<dyn Widget> {
+// --- FocusableScrollList: A StatefulWidget that changes border on focus ---
+
+#[derive(Clone)]
+struct FocusableScrollList;
+
+struct FocusableScrollListState {
+    is_focused: StatefulMutable<bool>,
+}
+
+impl Default for FocusableScrollListState {
+    fn default() -> Self {
+        Self {
+            is_focused: StatefulMutable::new(false),
+        }
+    }
+}
+
+impl VexoState for FocusableScrollListState {
+    fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+        self.is_focused.set_dirty_callback(callback);
+    }
+}
+
+impl StatefulWidget for FocusableScrollList {
+    type State = FocusableScrollListState;
+
+    fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+        let is_focused = state.is_focused.get();
+        let border_color = if is_focused {
+            Color::rgb(0.2, 0.4, 0.8)
+        } else {
+            Color::rgb(0.6, 0.6, 0.6)
+        };
+        let border_width = if is_focused { 2.0 } else { 1.0 };
+
+        let is_focused_clone = state.is_focused.clone();
+        let content = build_scroll_content();
+
+        Focus::new(
+            ScrollView::new(content)
+                .width(200.0)
+                .height(300.0)
+        )
+        .on_focus_change(move |focused| {
+            is_focused_clone.set(focused);
+        })
+        .border(border_color, border_width)
+        .boxed()
+    }
+}
+
+fn build_scroll_content() -> Box<dyn Widget> {
     let mut column = Flex::column().gap(0.0);
     for i in 0..20 {
         let label = format!("Item {}", i + 1);
@@ -16,11 +72,7 @@ fn scroll_demo() -> Box<dyn Widget> {
                 })
         );
     }
-    ScrollView::new(column)
-        .width(200.0)
-        .height(300.0)
-        .border(Color::rgb(0.6, 0.6, 0.6), 1.0)
-        .boxed()
+    column.boxed()
 }
 
 // --- The User's Code ---
@@ -34,7 +86,7 @@ impl Application for State {
     }
 
     fn view(_state: &mut Self::State, _font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
-        scroll_demo()
+        FocusableScrollList.boxed()
     }
 }
 

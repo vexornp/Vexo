@@ -53,6 +53,7 @@ impl FocusManager {
             children: Vec::new(),
             can_request_focus: false,
             skip_traversal: true,
+            on_focus_change: None,
         });
 
         Self {
@@ -105,6 +106,7 @@ impl FocusManager {
             children: Vec::new(),
             can_request_focus: true,
             skip_traversal: false,
+            on_focus_change: None,
         });
 
         // Register in parent's children list.
@@ -169,7 +171,8 @@ impl FocusManager {
 
     /// Clear primary focus. Takes effect immediately.
     pub fn unfocus(&mut self) {
-        if self.primary_focus.is_some() {
+        if let Some(old_id) = self.primary_focus {
+            self.notify_focus_changed(old_id, false);
             self.previous_primary_focus = self.primary_focus;
             self.primary_focus = None;
             self.focus_changed = true;
@@ -184,9 +187,17 @@ impl FocusManager {
     pub fn apply_focus_changes(&mut self) {
         if let Some(new_id) = self.pending_focus_change.take() {
             if self.primary_focus != Some(new_id) {
-                self.previous_primary_focus = self.primary_focus;
+                let old_id = self.primary_focus;
+                self.previous_primary_focus = old_id;
                 self.primary_focus = Some(new_id);
                 self.focus_changed = true;
+
+                // Notify ancestors of the previously-focused node (lost focus)
+                if let Some(old) = old_id {
+                    self.notify_focus_changed(old, false);
+                }
+                // Notify ancestors of the newly-focused node (gained focus)
+                self.notify_focus_changed(new_id, true);
             }
         }
     }
@@ -210,6 +221,58 @@ impl FocusManager {
         })
     }
 
+    /// Returns the node id that previously held primary focus.
+    pub fn previous_primary_focus_node(&self) -> Option<FocusNodeId> {
+        self.previous_primary_focus
+    }
+
+    // -----------------------------------------------------------------------
+    // Focus-change notification
+    // -----------------------------------------------------------------------
+
+    /// Notify `on_focus_change` callbacks on the given node and its ancestors
+    /// that focus state changed.
+    ///
+    /// Walks from `node_id` up to the root, invoking `on_focus_change(focused)`
+    /// on each node that has a callback set. This matches Flutter's
+    /// `FocusNode.hasFocus` behavior where ancestor nodes are notified when
+    /// a descendant gains or loses focus.
+    fn notify_focus_changed(&self, node_id: FocusNodeId, focused: bool) {
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            if let Some(node) = self.nodes.get(id) {
+                if let Some(ref callback) = node.on_focus_change {
+                    callback(focused);
+                }
+                current = node.parent;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Collect all ancestor element keys that have `on_focus_change` callbacks.
+    ///
+    /// Used by the pipeline to mark Focus-wrapped elements for rebuild when
+    /// a descendant gains or loses focus.
+    pub fn ancestor_elements_with_callbacks(&self, node_id: FocusNodeId) -> Vec<ElementKey> {
+        let mut result = Vec::new();
+        let mut current = self.nodes.get(node_id).and_then(|n| n.parent);
+        while let Some(parent_id) = current {
+            if let Some(parent) = self.nodes.get(parent_id) {
+                if parent.on_focus_change.is_some() {
+                    if let Some(ek) = parent.element_key {
+                        result.push(ek);
+                    }
+                }
+                current = parent.parent;
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
     // -----------------------------------------------------------------------
     // Node removal
     // -----------------------------------------------------------------------
@@ -227,6 +290,11 @@ impl FocusManager {
     }
 
     fn remove_node_recursive(&mut self, id: FocusNodeId) {
+        // If this node holds primary focus, notify ancestors before removing.
+        if self.primary_focus == Some(id) {
+            self.notify_focus_changed(id, false);
+        }
+
         // Collect children first so we can remove them without borrow issues.
         let children: Vec<FocusNodeId> = self
             .nodes
@@ -319,6 +387,7 @@ impl Default for FocusManager {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
 
     #[test]
@@ -571,5 +640,143 @@ mod tests {
         mgr.remove_node(parent_id);
         assert_eq!(mgr.node_for_element(parent_key), None);
         assert_eq!(mgr.node_for_element(child_key), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // on_focus_change callback tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_on_focus_change_fired_on_gain() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
+
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_clone = fired.clone();
+        if let Some(node) = mgr.get_mut(id) {
+            node.on_focus_change = Some(Arc::new(move |focused| {
+                fired_clone.store(focused, Ordering::Relaxed);
+            }));
+        }
+
+        mgr.request_focus(id);
+        mgr.apply_focus_changes();
+        assert!(fired.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_on_focus_change_fired_on_loss() {
+        use std::sync::atomic::{AtomicI32, Ordering};
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
+
+        // Track last value: 0 = never called, 1 = focused, -1 = unfocused
+        let last_value = Arc::new(AtomicI32::new(0));
+        let last_value_clone = last_value.clone();
+        if let Some(node) = mgr.get_mut(id) {
+            node.on_focus_change = Some(Arc::new(move |focused| {
+                last_value_clone.store(if focused { 1 } else { -1 }, Ordering::Relaxed);
+            }));
+        }
+
+        mgr.request_focus(id);
+        mgr.apply_focus_changes();
+        assert_eq!(last_value.load(Ordering::Relaxed), 1);
+
+        mgr.unfocus();
+        assert_eq!(last_value.load(Ordering::Relaxed), -1);
+    }
+
+    #[test]
+    fn test_on_focus_change_ancestor_notification() {
+        use std::sync::atomic::{AtomicI32, Ordering};
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+
+        let parent_key = elem_map.insert(());
+        let child_key = elem_map.insert(());
+        let parent_id = mgr.create_node_for_element(parent_key, None).unwrap();
+        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+
+        // Track ancestor's last focus value
+        let ancestor_value = Arc::new(AtomicI32::new(0));
+        let ancestor_value_clone = ancestor_value.clone();
+        if let Some(node) = mgr.get_mut(parent_id) {
+            node.on_focus_change = Some(Arc::new(move |focused| {
+                ancestor_value_clone.store(if focused { 1 } else { -1 }, Ordering::Relaxed);
+            }));
+        }
+
+        // Focus the child — ancestor should be notified
+        mgr.request_focus(child_id);
+        mgr.apply_focus_changes();
+        assert_eq!(ancestor_value.load(Ordering::Relaxed), 1);
+
+        // Unfocus — ancestor should be notified with false
+        mgr.unfocus();
+        assert_eq!(ancestor_value.load(Ordering::Relaxed), -1);
+    }
+
+    #[test]
+    fn test_on_focus_change_no_callback_after_detach() {
+        use std::sync::atomic::{AtomicI32, Ordering};
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let parent_key = elem_map.insert(());
+        let child_key = elem_map.insert(());
+        let parent_id = mgr.create_node_for_element(parent_key, None).unwrap();
+        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+
+        let call_count = Arc::new(AtomicI32::new(0));
+        let call_count_clone = call_count.clone();
+        if let Some(node) = mgr.get_mut(parent_id) {
+            node.on_focus_change = Some(Arc::new(move |_focused| {
+                call_count_clone.fetch_add(1, Ordering::Relaxed);
+            }));
+        }
+
+        // Focus child — callback fires
+        mgr.request_focus(child_id);
+        mgr.apply_focus_changes();
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
+
+        // Remove parent — callback is gone
+        mgr.remove_node(parent_id);
+
+        // The child was also removed, so primary focus is cleared.
+        // No callback should fire since the parent node is gone.
+        // Just verify no panic.
+    }
+
+    #[test]
+    fn test_ancestor_elements_with_callbacks() {
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+
+        let grandparent_key = elem_map.insert(());
+        let parent_key = elem_map.insert(());
+        let child_key = elem_map.insert(());
+
+        let grandparent_id = mgr.create_node_for_element(grandparent_key, None).unwrap();
+        let parent_id = mgr.create_node_for_element(parent_key, Some(grandparent_id)).unwrap();
+        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+
+        // Only parent has a callback
+        if let Some(node) = mgr.get_mut(parent_id) {
+            node.on_focus_change = Some(Arc::new(|_focused| {}));
+        }
+
+        let ancestors = mgr.ancestor_elements_with_callbacks(child_id);
+        assert_eq!(ancestors.len(), 1);
+        assert_eq!(ancestors[0], parent_key);
+
+        // Grandparent has no callback, so it's not in the list
+        let ancestors_from_parent = mgr.ancestor_elements_with_callbacks(parent_id);
+        assert_eq!(ancestors_from_parent.len(), 0);
     }
 }

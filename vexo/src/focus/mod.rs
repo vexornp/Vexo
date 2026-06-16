@@ -18,7 +18,7 @@ mod widget;
 pub use node::{FocusNodeId, FocusNodeData};
 pub use manager::FocusManager;
 pub use attachment::FocusAttachment;
-pub use widget::Focus;
+pub use widget::{Focus, FocusElement};
 
 #[cfg(test)]
 mod integration_tests;

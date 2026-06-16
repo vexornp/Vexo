@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use crate::input::{InputEvent, Key, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
@@ -143,27 +143,31 @@ impl Element for ScrollViewElement {
         _state: &mut StateStorage,
     ) -> Option<Box<dyn Any>> {
         match event {
+            InputEvent::PointerButton { state: ButtonState::Pressed, .. } => {
+                if context.is_pointer_inside() {
+                    context.request_focus(context.element_id());
+                }
+            }
+
             InputEvent::Scroll { delta, .. } => {
                 let new_offset = self.scroll_offset - delta.y;
                 self.apply_scroll_offset(new_offset, context);
                 return Some(Box::new(()));
             }
 
-            InputEvent::Keyboard { key, .. } => {
-                if context.is_focused_self() {
-                    let delta = match key {
-                        Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
-                        Key::Named(NamedKey::ArrowDown) => Some(LINE_HEIGHT),
-                        Key::Named(NamedKey::PageUp) => Some(-self.viewport_height),
-                        Key::Named(NamedKey::PageDown) => Some(self.viewport_height),
-                        Key::Named(NamedKey::Home) => Some(-self.scroll_offset),
-                        Key::Named(NamedKey::End) => Some(self.max_scroll() - self.scroll_offset),
-                        _ => None,
-                    };
-                    if let Some(d) = delta {
-                        self.apply_scroll_offset(self.scroll_offset + d, context);
-                        return Some(Box::new(()));
-                    }
+            InputEvent::Keyboard { key, state: ButtonState::Pressed, .. } => {
+                let delta = match key {
+                    Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
+                    Key::Named(NamedKey::ArrowDown) => Some(LINE_HEIGHT),
+                    Key::Named(NamedKey::PageUp) => Some(-self.viewport_height),
+                    Key::Named(NamedKey::PageDown) => Some(self.viewport_height),
+                    Key::Named(NamedKey::Home) => Some(-self.scroll_offset),
+                    Key::Named(NamedKey::End) => Some(self.max_scroll() - self.scroll_offset),
+                    _ => None,
+                };
+                if let Some(d) = delta {
+                    self.apply_scroll_offset(self.scroll_offset + d, context);
+                    return Some(Box::new(()));
                 }
             }
 

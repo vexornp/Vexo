@@ -42,7 +42,7 @@ fn test_focus_manager_in_pipeline() {
     let mut pipeline = ThreeTreePipeline::new();
 
     // Reconcile a Focus-wrapped Text widget.
-    // Focus uses ContainerElement which creates an element but delegates
+    // Focus uses FocusElement which creates an element but delegates
     // render object creation to the child. The element tree should still
     // be populated.
     let widget = Focus::new(Text::new("Hello"));
@@ -236,11 +236,11 @@ fn test_focus_wrapper_inflates_child() {
 
     // Reconcile Focus::new(Text::new("Hello"))
     // Focus now overrides children() to return the child as a slice,
-    // so ContainerElement should inflate the child.
+    // so FocusElement should inflate the child.
     let widget = Focus::new(Text::new("Hello"));
     pipeline.reconcile(Box::new(widget));
 
-    // Should have at least 2 elements (Focus ContainerElement + Text LeafElement)
+    // Should have at least 2 elements (FocusElement + Text LeafElement)
     assert!(pipeline.element_registry().len() >= 2);
 }
 
@@ -453,6 +453,130 @@ fn test_repeated_reconcile_no_leaks() {
         assert!(
             pipeline.focus_manager().app_node_count() <= 1,
             "Iteration {i}: focus nodes should decrease after reconciling replacement"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// on_focus_change callback integration tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod on_focus_change_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Test that on_focus_change fires when focus is gained and lost via the pipeline.
+    #[test]
+    fn test_on_focus_change_callback_via_pipeline() {
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut font_system = create_test_font_system();
+
+        let callback_fired = Arc::new(AtomicBool::new(false));
+        let callback_fired_clone = callback_fired.clone();
+
+        let focus_widget = Focus::new(Text::new("Hello"))
+            .on_focus_change(move |focused| {
+                if !focused {
+                    callback_fired_clone.store(true, Ordering::Relaxed);
+                }
+            });
+
+        pipeline.reconcile(Box::new(focus_widget));
+        layout_pipeline(&mut pipeline, &mut font_system);
+
+        // Find the FocusElement's element key
+        let focus_element_key = {
+            let fm = pipeline.focus_manager();
+            let root_node = fm.get(fm.root_scope()).unwrap();
+            root_node.children.first().and_then(|id| {
+                fm.get(*id).and_then(|n| n.element_key)
+            }).expect("Should have a Focus element")
+        };
+
+        // Focus the FocusElement
+        pipeline.set_focus(Some(focus_element_key));
+        assert!(pipeline.focused_element().is_some());
+
+        // Now unfocus by clicking outside
+        let event = pointer_press(500.0, 500.0);
+        pipeline.handle_event(
+            Point::new(500.0, 500.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        // The on_focus_change callback should have fired with false
+        assert!(
+            callback_fired.load(Ordering::Relaxed),
+            "on_focus_change(false) should have fired when clicking outside"
+        );
+    }
+
+    /// Test that on_focus_change fires on a Focus wrapper when a descendant
+    /// ScrollView gains and loses focus.
+    #[test]
+    fn test_on_focus_change_with_scrollview_descendant() {
+        use crate::ScrollView;
+        use crate::widgets::Widget;
+
+        let mut pipeline = ThreeTreePipeline::new();
+        let mut font_system = create_test_font_system();
+
+        let focus_gained = Arc::new(AtomicBool::new(false));
+        let focus_lost = Arc::new(AtomicBool::new(false));
+        let focus_gained_clone = focus_gained.clone();
+        let focus_lost_clone = focus_lost.clone();
+
+        let focus_widget = Focus::new(
+            ScrollView::new(Flex::column()
+                .push(Text::new("Line 1"))
+                .push(Text::new("Line 2"))
+            )
+            .width(200.0)
+            .height(100.0)
+        )
+        .on_focus_change(move |focused| {
+            if focused {
+                focus_gained_clone.store(true, Ordering::Relaxed);
+            } else {
+                focus_lost_clone.store(true, Ordering::Relaxed);
+            }
+        });
+
+        pipeline.reconcile(Box::new(focus_widget));
+        layout_pipeline(&mut pipeline, &mut font_system);
+
+        // Click inside the scroll view to focus it (ScrollViewElement requests focus on click)
+        let event = pointer_press(10.0, 10.0);
+        pipeline.handle_event(
+            Point::new(10.0, 10.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        assert!(
+            focus_gained.load(Ordering::Relaxed),
+            "on_focus_change(true) should have fired when clicking inside ScrollView"
+        );
+
+        // Click outside to unfocus
+        let event = pointer_press(500.0, 500.0);
+        pipeline.handle_event(
+            Point::new(500.0, 500.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            Scale::default(),
+        );
+
+        assert!(
+            focus_lost.load(Ordering::Relaxed),
+            "on_focus_change(false) should have fired when clicking outside to unfocus"
         );
     }
 }

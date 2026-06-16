@@ -5,6 +5,8 @@
 //! and `detach()` (called during unmount) to keep the focus tree in sync with
 //! the element tree.
 
+use std::sync::Arc;
+
 use super::node::FocusNodeId;
 use super::manager::FocusManager;
 
@@ -74,6 +76,31 @@ impl FocusAttachment {
         if self.is_attached {
             manager.remove_node(self.node_id);
             self.is_attached = false;
+        }
+    }
+
+    /// Set the `on_focus_change` callback on this focus node.
+    ///
+    /// The callback is invoked when this node or a descendant gains/loses
+    /// primary focus. Called with `true` when focus is gained, `false` when lost.
+    pub fn set_on_focus_change(
+        &self,
+        callback: Arc<dyn Fn(bool) + Send + Sync>,
+        manager: &mut FocusManager,
+    ) {
+        if self.is_attached {
+            if let Some(node) = manager.get_mut(self.node_id) {
+                node.on_focus_change = Some(callback);
+            }
+        }
+    }
+
+    /// Clear the `on_focus_change` callback from this focus node.
+    pub fn clear_on_focus_change(&self, manager: &mut FocusManager) {
+        if self.is_attached {
+            if let Some(node) = manager.get_mut(self.node_id) {
+                node.on_focus_change = None;
+            }
         }
     }
 }

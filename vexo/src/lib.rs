@@ -100,7 +100,7 @@ pub use style::Style;
 pub use update_result::UpdateResult;
 pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
 pub use child_ops::{ChildOp, ChildOps};
-pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus};
+pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus, FocusElement};
 pub use widgets::{Widget, Text, Flex, Grid, TextEdit, TextEditState, TextEditingController, ScrollView};
 pub use input::{MouseCursor, SystemCursorKind};
 pub use elements::{LeafElement, ContainerElement};

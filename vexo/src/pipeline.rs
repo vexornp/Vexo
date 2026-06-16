@@ -577,6 +577,10 @@ impl ThreeTreePipeline {
     /// commands — the visual output comes from the child DecoratedContainer
     /// which needs a new widget configuration from build().
     ///
+    /// Also marks ancestor elements with `on_focus_change` callbacks for
+    /// rebuild, so that Focus-wrapped widgets update their visual state
+    /// when a descendant gains or loses focus.
+    ///
     /// This follows Flutter's model: focus change → setState() →
     /// markNeedsBuild() → build() → reconciliation → markNeedsPaint().
     pub fn mark_focus_needs_build(&mut self) {
@@ -588,6 +592,24 @@ impl ThreeTreePipeline {
         // Mark the previously focused element for rebuild (e.g., lose blue border)
         if let Some(prev_el) = self.focus_manager.previous_primary_focus() {
             self.build_owner.mark_needs_build(prev_el);
+        }
+
+        // Mark Focus ancestor elements for rebuild when their descendants
+        // gain or lose focus, so on_focus_change callbacks take visual effect.
+        let ancestors: Vec<crate::id::ElementKey> = {
+            let mut result = Vec::new();
+            if let Some(focused) = self.focus_manager.primary_focus() {
+                result.extend(self.focus_manager.ancestor_elements_with_callbacks(focused));
+            }
+            if let Some(prev_node) = self.focus_manager.previous_primary_focus_node() {
+                if self.focus_manager.primary_focus() != Some(prev_node) {
+                    result.extend(self.focus_manager.ancestor_elements_with_callbacks(prev_node));
+                }
+            }
+            result
+        };
+        for ek in ancestors {
+            self.build_owner.mark_needs_build(ek);
         }
     }
 
