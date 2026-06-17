@@ -119,10 +119,10 @@ impl Painter {
         let clip = obj.clip_bounds();
         if let Some(local_clip) = &clip {
             let absolute_clip = crate::core::Bounds::new(
-                absolute_position.x + local_clip.left,
-                absolute_position.y + local_clip.top,
-                absolute_position.x + local_clip.right,
-                absolute_position.y + local_clip.bottom,
+                absolute_position.x,
+                absolute_position.y,
+                absolute_position.x + local_clip.width(),
+                absolute_position.y + local_clip.height(),
             );
             ctx.push_command(RenderCommand::PushClip { bounds: absolute_clip });
         }

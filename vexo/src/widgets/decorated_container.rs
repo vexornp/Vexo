@@ -336,6 +336,16 @@ impl DecoratedContainer {
 
     pub fn border(mut self, color: Color, width: f32) -> Self {
         self.style = self.style.border(color, width);
+        // Add padding equal to border width so the child is inset from the border.
+        // Without this, the child occupies the same area as the border and
+        // opaque content paints over the border pixels.
+        let existing = self.layout.padding.unwrap_or_default();
+        self.layout.padding = Some(EdgeInsets {
+            left: existing.left + width,
+            right: existing.right + width,
+            top: existing.top + width,
+            bottom: existing.bottom + width,
+        });
         self
     }
 
