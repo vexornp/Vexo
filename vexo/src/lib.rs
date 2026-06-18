@@ -3,6 +3,7 @@ use std::sync::mpsc;
 
 use winit::event_loop::EventLoop;
 
+pub use image_data::{ImageData, ImageDataError};
 pub use core::Color;
 pub use core::AffineTransform;
 pub use uniffi;
@@ -17,6 +18,8 @@ pub mod layout;
 mod mouse_tracker;
 pub use mouse_tracker::MouseTracker;
 
+mod image_data;
+pub mod image_atlas;
 mod quad_instance;
 pub mod render;
 mod frame_builder;
