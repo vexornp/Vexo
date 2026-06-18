@@ -304,3 +304,49 @@ impl FrameBuilder {
         (requests, draw_ranges)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::AffineTransform;
+
+    #[test]
+    fn test_add_image_request() {
+        let mut fb = FrameBuilder::new();
+        fb.add_image(ImageRequest {
+            position: [10.0, 20.0],
+            size: [100.0, 50.0],
+            image_key: 1,
+            corner_radius: 8.0,
+            transform: AffineTransform::identity().to_array(),
+        });
+
+        assert_eq!(fb.image_count(), 1);
+    }
+
+    #[test]
+    fn test_flatten_image_requests() {
+        let mut fb = FrameBuilder::new();
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [50.0, 50.0],
+            image_key: 1,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+        });
+
+        fb.push_clip(Bounds::new(0.0, 0.0, 100.0, 100.0));
+        fb.add_image(ImageRequest {
+            position: [10.0, 10.0],
+            size: [30.0, 30.0],
+            image_key: 2,
+            corner_radius: 4.0,
+            transform: AffineTransform::identity().to_array(),
+        });
+        fb.pop_clip();
+
+        let (requests, ranges) = fb.flatten_image_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(ranges.len(), 2);
+    }
+}
