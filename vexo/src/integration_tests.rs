@@ -404,4 +404,73 @@ mod global_key_tests {
             _ => panic!("Expected LocalKey"),
         }
     }
+
+    use super::*;
+    use crate::core::{Size as CoreSize, Position, Absolute, Logical};
+    use crate::layout::TaffyLayoutEngine;
+    use crate::ScrollView;
+    use crate::Flex;
+    use crate::Color;
+    use crate::render_objects::ScrollViewRenderObject;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    #[test]
+    fn test_scroll_view_cross_axis_stretching() {
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // ScrollView(width=200, height=300) > Column > Text items with .padding(16).background(color)
+        let mut column = Flex::column().gap(0.0);
+        for i in 0..5 {
+            let label = format!("Item {}", i + 1);
+            column = column.push(
+                Text::new(&label)
+                    .padding(16.0)
+                    .background(Color::WHITE)
+            );
+        }
+
+        let scroll_view = ScrollView::new(column.boxed())
+            .width(200.0)
+            .height(300.0);
+
+        pipeline.reconcile(Box::new(scroll_view));
+        pipeline.layout(CoreSize::new(800.0, 600.0), &mut engine, &mut font_system);
+
+        // The ScrollView should stretch to fill the parent's cross-axis size,
+        // even with overflow_y: Scroll (which causes Taffy to use max-content sizing).
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("should have root");
+        fn find_sv_bounds(ro_reg: &RenderObjectRegistry, id: RenderObjectKey) -> Option<crate::core::Bounds<crate::core::Logical>> {
+            let ro = ro_reg.get(id)?;
+            if ro.as_any().downcast_ref::<ScrollViewRenderObject>().is_some() {
+                return ro.computed_bounds();
+            }
+            ro.children().iter().find_map(|&c| find_sv_bounds(ro_reg, c))
+        }
+        let sv_bounds = find_sv_bounds(ro_reg, root)
+            .expect("ScrollView should have computed bounds");
+
+        assert!(sv_bounds.width() >= 200.0,
+            "ScrollView should be 200px wide but is {}px",
+            sv_bounds.width());
+
+        // Hit test at a position to the right of the text content but inside the 200px viewport.
+        // This should include the ScrollViewElement in the hit path so it can request focus.
+        let result = pipeline.hit_test(Position::<Logical, Absolute>::new(150.0, 30.0));
+        assert!(result.is_hit(), "Hit test should find elements inside the ScrollView viewport");
+
+        let has_scroll_view = result.path().iter().any(|&ro_key| {
+            ro_reg.get(ro_key)
+                .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                .is_some()
+        });
+        assert!(has_scroll_view, "ScrollView should be in the hit path for taps inside the viewport");
+    }
 }

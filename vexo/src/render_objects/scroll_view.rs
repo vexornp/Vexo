@@ -66,6 +66,8 @@ impl RenderObject for ScrollViewRenderObject {
         let layout = Layout::default()
             .flex_direction(FlexDirection::Column)
             .align(AlignItems::Stretch)
+            .width_percent(1.0)
+            .overflow_x(Overflow::Hidden)
             .overflow_y(Overflow::Scroll);
 
         match self.layout_node {
