@@ -7,6 +7,7 @@ mod container;
 mod decorated_container;
 mod gesture_detector;
 mod grid;
+mod image;
 mod mouse_region;
 pub(crate) mod scroll_view;
 mod text;
@@ -25,6 +26,7 @@ use super::UpdateResult;
 // Public API - leaf and container widgets
 pub use container::Flex;
 pub use grid::Grid;
+pub use image::Image;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use scroll_view::ScrollView;

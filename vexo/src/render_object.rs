@@ -335,6 +335,23 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the image data that needs registration in the atlas, if any.
+    ///
+    /// Returns `Some(&ImageData)` when this render object has image data
+    /// but has not yet been assigned an `ImageKey` by the pipeline.
+    /// The pipeline calls this during the image registration pass and
+    /// then calls `set_image_key()` with the resulting key.
+    fn needs_image_registration(&self) -> Option<&crate::image_data::ImageData> {
+        None
+    }
+
+    /// Set the atlas key for this render object's image.
+    ///
+    /// Called by the pipeline after registering the image data with the
+    /// backend. The render object stores the key for use during paint()
+    /// to emit `RenderCommand::Image`.
+    fn set_image_key(&mut self, _key: crate::image_atlas::ImageKey) {}
+
 }
 
 // ============================================================================

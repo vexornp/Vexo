@@ -706,6 +706,20 @@ impl ThreeTreePipeline {
             Self::set_cursor_focus_in_subtree(render_objects, child, blink_visible);
         }
     }
+
+    /// Register any unregistered images with the GPU backend.
+    ///
+    /// Walks all render objects and checks `needs_image_registration()`.
+    /// For any that return `Some(&ImageData)`, registers the image with
+    /// the backend and calls `set_image_key()` with the resulting key.
+    pub fn register_images(&mut self, backend: &mut crate::render::WgpuBackend) {
+        for (_, ro) in self.render_objects.iter_mut() {
+            if let Some(image_data) = ro.needs_image_registration() {
+                let key = backend.register_image(image_data);
+                ro.set_image_key(key);
+            }
+        }
+    }
 }
 
 impl Default for ThreeTreePipeline {

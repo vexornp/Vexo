@@ -349,6 +349,9 @@ impl<A: Application + 'static> WindowState<A> {
         // 8. Inject cursor focus/blink state into render objects before paint
         self.three_tree_pipeline.prepare_cursor_state();
 
+        // 8.5. Register any new images with the GPU atlas before paint
+        self.three_tree_pipeline.register_images(&mut self.backend);
+
         // 9. Paint dirty render objects
         let commands = self.three_tree_pipeline.paint();
 
