@@ -10,19 +10,18 @@ uniffi::setup_scaffolding!();
 
 /// Creates a 200x150 gradient JPEG as ImageData for demo purposes.
 fn create_test_image_data() -> ImageData {
-    use image::{ImageFormat, RgbaImage};
+    use image::{ImageFormat, RgbImage};
 
     let width = 200u32;
     let height = 150u32;
-    let mut img = RgbaImage::new(width, height);
+    let mut img = RgbImage::new(width, height);
 
     for y in 0..height {
         for x in 0..width {
             let r = (x as f32 / width as f32 * 255.0) as u8;
             let g = (y as f32 / height as f32 * 255.0) as u8;
             let b = 128;
-            let a = 255;
-            img.put_pixel(x, y, image::Rgba([r, g, b, a]));
+            img.put_pixel(x, y, image::Rgb([r, g, b]));
         }
     }
 
