@@ -17,3 +17,4 @@ env_logger = { workspace = true }
 uniffi = { workspace = true }
 bitflags = { workspace = true }
 futures-signals = { workspace = true }
+image = { workspace = true }

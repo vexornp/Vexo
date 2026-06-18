@@ -41,6 +41,9 @@ glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
 # Foreign Function Interface (for mobile exports)
 uniffi = {version = "0.30.0", features = ["cli"] }
 
+# Image Decoding
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
 # Data Structures
 slotmap = "1.0"
 
