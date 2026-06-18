@@ -47,8 +47,14 @@ impl TextPipeline {
         // Upload geometry data to GPU (flattened instances + draw ranges)
         backend.upload_geometry(frame_builder);
 
+        // Upload image geometry data to GPU
+        backend.upload_image_geometry(frame_builder);
+
         let flattened = frame_builder.flatten_quads();
         let clip_groups = frame_builder.clip_groups();
+
+        // Get image draw ranges
+        let (_, image_draw_ranges) = frame_builder.flatten_image_requests();
 
         // Prepare all text together (glyphon's prepare() replaces vertex buffer
         // contents each call, so per-clip-group prepare would lose previous groups).
@@ -66,6 +72,7 @@ impl TextPipeline {
         backend.execute_render_pass(
             clip_groups,
             &flattened.draw_ranges,
+            &image_draw_ranges,
             scale_factor,
             viewport_width,
             viewport_height,

@@ -7,7 +7,10 @@ use std::sync::Arc;
 use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
-use crate::core::{Color, Physical, Scale, Size};
+use crate::core::{AffineTransform, Color, Physical, Scale, Size};
+use crate::image_atlas::{AtlasRegion, ImageKey, ShelfAllocator};
+use crate::image_data::ImageData;
+use crate::image_instance::ImageInstance;
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
 use crate::frame_builder::{ClipGroup, DrawRange, FrameBuilder};
@@ -25,6 +28,26 @@ impl Vertex {
         use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+/// Vertex for image quads (2D position, matching image_shader.wgsl model_pos).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ImageVertex {
+    pos: [f32; 2],
+}
+
+impl ImageVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<ImageVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
         }
@@ -66,6 +89,16 @@ pub struct WgpuBackend {
     viewport: glyphon::Viewport,
     #[allow(dead_code)]
     cache: glyphon::Cache,
+
+    // Image rendering
+    image_pipeline: wgpu::RenderPipeline,
+    image_vertex_buffer: wgpu::Buffer,
+    image_index_buffer: wgpu::Buffer,
+    image_instance_buffer: wgpu::Buffer,
+    image_instance_buffer_capacity: usize,
+    image_atlas_bind_group: wgpu::BindGroup,
+    image_atlas_texture: wgpu::Texture,
+    image_allocator: ShelfAllocator,
 
     // Current configuration
     current_config: Option<RenderConfig>,
@@ -252,6 +285,161 @@ impl WgpuBackend {
             }],
         });
 
+        // Create image pipeline
+        let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Image Shader"),
+            source: wgpu::ShaderSource::Wgsl(crate::resource::file::IMAGE_WGSL.into()),
+        });
+
+        const ATLAS_SIZE: u32 = 2048;
+
+        let image_atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Image Atlas Texture"),
+            size: wgpu::Extent3d {
+                width: ATLAS_SIZE,
+                height: ATLAS_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let image_atlas_view = image_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Image Atlas Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let image_atlas_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Image Atlas Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let image_atlas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Image Atlas Bind Group"),
+            layout: &image_atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&image_atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&image_sampler),
+                },
+            ],
+        });
+
+        let image_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Image Pipeline Layout"),
+                bind_group_layouts: &[&global_bind_group_layout, &image_atlas_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let image_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Image Pipeline"),
+            layout: Some(&image_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &image_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[
+                    ImageVertex::desc(),
+                    ImageInstance::desc(),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &image_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        // Image quad vertices (2D, matching image_shader.wgsl model_pos)
+        const IMAGE_QUAD_VERTICES: &[ImageVertex] = &[
+            ImageVertex { pos: [0.0, 0.0] },
+            ImageVertex { pos: [1.0, 0.0] },
+            ImageVertex { pos: [1.0, 1.0] },
+            ImageVertex { pos: [0.0, 1.0] },
+        ];
+
+        const IMAGE_QUAD_INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
+
+        let image_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Image Vertex Buffer"),
+            contents: bytemuck::cast_slice(IMAGE_QUAD_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let image_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Image Index Buffer"),
+            contents: bytemuck::cast_slice(IMAGE_QUAD_INDICES),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        const INITIAL_IMAGE_INSTANCE_CAPACITY: usize = 100;
+
+        let image_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Image Instance Buffer"),
+            size: (std::mem::size_of::<ImageInstance>() * INITIAL_IMAGE_INSTANCE_CAPACITY) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let image_allocator = ShelfAllocator::new(ATLAS_SIZE, ATLAS_SIZE);
+
         // Initialize glyphon
         let cache = glyphon::Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
@@ -296,6 +484,14 @@ impl WgpuBackend {
             text_renderer,
             viewport,
             cache,
+            image_pipeline,
+            image_vertex_buffer,
+            image_index_buffer,
+            image_instance_buffer,
+            image_instance_buffer_capacity: INITIAL_IMAGE_INSTANCE_CAPACITY,
+            image_atlas_bind_group,
+            image_atlas_texture,
+            image_allocator,
             current_config: Some(RenderConfig::new(physical_size, scale)),
             clear_color: Color::WHITE.to_wgpu_color(),
         })
@@ -426,6 +622,69 @@ impl WgpuBackend {
         self.instance_buffer_capacity = new_capacity;
     }
 
+    /// Register an image in the atlas. Returns an ImageKey for future reference.
+    pub fn register_image(&mut self, image_data: &ImageData) -> ImageKey {
+        let (key, region) = self.image_allocator.allocate(image_data.width, image_data.height);
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.image_atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: region.x, y: region.y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &image_data.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image_data.width * 4),
+                rows_per_image: Some(image_data.height),
+            },
+            wgpu::Extent3d {
+                width: image_data.width,
+                height: image_data.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        key
+    }
+
+    /// Unregister an image from the atlas.
+    pub fn unregister_image(&mut self, key: ImageKey) {
+        self.image_allocator.remove(key);
+    }
+
+    /// Get the atlas region for a registered image.
+    pub fn get_image_region(&self, key: ImageKey) -> Option<&AtlasRegion> {
+        self.image_allocator.get_region(key)
+    }
+
+    /// Ensure the image instance buffer can hold `required` instances.
+    fn ensure_image_instance_capacity(&mut self, required: usize) {
+        if required <= self.image_instance_buffer_capacity {
+            return;
+        }
+        let new_capacity = required.max(self.image_instance_buffer_capacity * 2);
+        self.image_instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Image Instance Buffer"),
+            size: (std::mem::size_of::<ImageInstance>() * new_capacity) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.image_instance_buffer_capacity = new_capacity;
+    }
+
+    /// Upload image geometry from frame builder to GPU buffers.
+    pub fn upload_image_geometry(&mut self, frame_builder: &FrameBuilder) {
+        let (requests, _ranges) = frame_builder.flatten_image_requests();
+        if requests.is_empty() { return; }
+        let atlas_size = [self.image_allocator.atlas_width() as f32, self.image_allocator.atlas_height() as f32];
+        let instances: Vec<ImageInstance> = requests.iter().map(|req| {
+            let region = self.image_allocator.get_region(req.image_key).expect("Image key not found in atlas");
+            ImageInstance::from_logical(req.position, req.size, region, atlas_size, req.corner_radius, AffineTransform::from_array(req.transform))
+        }).collect();
+        self.ensure_image_instance_capacity(instances.len());
+        self.queue.write_buffer(&self.image_instance_buffer, 0, bytemuck::cast_slice(&instances));
+    }
+
     /// Upload geometry from frame builder to GPU buffers.
     pub fn upload_geometry(&mut self, frame_builder: &FrameBuilder) {
         let flattened = frame_builder.flatten_quads();
@@ -444,6 +703,7 @@ impl WgpuBackend {
         &mut self,
         clip_groups: &[ClipGroup],
         draw_ranges: &[DrawRange],
+        image_draw_ranges: &[DrawRange],
         scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
@@ -503,6 +763,34 @@ impl WgpuBackend {
                 }
 
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..6, 0, range.first_instance..range.first_instance + range.count);
+            }
+
+            // Draw image quads per clip group with appropriate scissor rect
+            render_pass.set_pipeline(&self.image_pipeline);
+            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.image_atlas_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
+
+            for (group, range) in clip_groups.iter().zip(image_draw_ranges.iter()) {
+                if range.count == 0 { continue; }
+
+                // Set scissor rect for this clip group
+                if let Some(clip) = &group.clip_bounds {
+                    let x = (clip.left * scale_factor).max(0.0) as u32;
+                    let y = (clip.top * scale_factor).max(0.0) as u32;
+                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
+                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
+                    let w = right.saturating_sub(x);
+                    let h = bottom.saturating_sub(y);
+                    if w == 0 || h == 0 { continue; }
+                    render_pass.set_scissor_rect(x, y, w, h);
+                } else {
+                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                }
+
+                render_pass.set_index_buffer(self.image_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..6, 0, range.first_instance..range.first_instance + range.count);
             }
 
