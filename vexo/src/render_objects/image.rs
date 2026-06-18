@@ -235,7 +235,7 @@ impl RenderObject for ImageRenderObject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{Layout, LayoutEngine, TaffyLayoutEngine};
+    use crate::layout::{Layout, TaffyLayoutEngine};
 
     fn make_test_image_data() -> ImageData {
         ImageData {
