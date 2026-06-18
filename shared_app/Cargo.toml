@@ -20,6 +20,7 @@ parking_lot = "0.12"
 crossbeam = "0.8"
 log = { workspace = true }
 futures-signals = { workspace = true }
+image = { workspace = true }
 
 
 [build-dependencies]

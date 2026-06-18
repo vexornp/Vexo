@@ -2035,6 +2035,7 @@ dependencies = [
  "crossbeam",
  "futures-signals",
  "glyphon",
+ "image",
  "log",
  "parking_lot",
  "pollster",
