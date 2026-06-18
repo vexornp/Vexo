@@ -102,6 +102,21 @@ pub fn process_commands(
                 frame_builder.add_rect(bounds, *color, None, 0.0);
                 frame_builder.pop_transform();
             }
+            RenderCommand::Image { bounds, image_key, corner_radius } => {
+                let offset_bounds: Bounds<Logical> = Bounds::new(
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
+                );
+                frame_builder.add_image(crate::frame_builder::ImageRequest {
+                    position: [offset_bounds.left, offset_bounds.top],
+                    size: [offset_bounds.width(), offset_bounds.height()],
+                    image_key: *image_key,
+                    corner_radius: *corner_radius,
+                    transform: current_transform.to_array(),
+                });
+            }
             RenderCommand::PushClip { bounds } => {
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,

@@ -20,6 +20,7 @@ pub use mouse_tracker::MouseTracker;
 
 mod image_data;
 pub mod image_atlas;
+mod image_instance;
 mod quad_instance;
 pub mod render;
 mod frame_builder;

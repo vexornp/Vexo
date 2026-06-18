@@ -1,4 +1,5 @@
 use crate::core::{AffineTransform, Color, Logical, Point, Stroke};
+use crate::image_atlas::ImageKey;
 use crate::quad_instance::QuadInstance;
 
 #[derive(Clone)]
@@ -9,6 +10,15 @@ pub struct TextRequest {
     pub color: Color,
     /// Maximum width for text wrapping. If None, no wrapping.
     pub max_width: Option<f32>,
+}
+
+#[derive(Clone)]
+pub struct ImageRequest {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub image_key: ImageKey,
+    pub corner_radius: f32,
+    pub transform: [f32; 6],
 }
 
 pub type Bounds = crate::core::Bounds<Logical>;
@@ -22,6 +32,8 @@ pub struct ClipGroup {
     pub quads: Vec<QuadInstance>,
     /// Text requests in this group.
     pub text_requests: Vec<TextRequest>,
+    /// Image requests in this group.
+    pub image_requests: Vec<ImageRequest>,
 }
 
 pub struct DrawRange {
@@ -147,6 +159,7 @@ impl FrameBuilder {
             clip_bounds: clip_key,
             quads: Vec::new(),
             text_requests: Vec::new(),
+            image_requests: Vec::new(),
         });
         self.current_group_index = Some(idx);
         &mut self.clip_groups[idx]
@@ -269,5 +282,25 @@ impl FrameBuilder {
             color,
             max_width,
         });
+    }
+
+    pub fn add_image(&mut self, request: ImageRequest) {
+        self.current_group().image_requests.push(request);
+    }
+
+    pub fn image_count(&self) -> usize {
+        self.clip_groups.iter().map(|g| g.image_requests.len()).sum()
+    }
+
+    pub fn flatten_image_requests(&self) -> (Vec<ImageRequest>, Vec<DrawRange>) {
+        let mut requests = Vec::new();
+        let mut draw_ranges = Vec::new();
+        for group in &self.clip_groups {
+            let first_instance = requests.len() as u32;
+            requests.extend_from_slice(&group.image_requests);
+            let count = group.image_requests.len() as u32;
+            draw_ranges.push(DrawRange { first_instance, count });
+        }
+        (requests, draw_ranges)
     }
 }

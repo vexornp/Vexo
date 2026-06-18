@@ -12,6 +12,7 @@
 
 use crate::core::{AffineTransform, Bounds, Color, Point, Stroke};
 use crate::core::Logical;
+use crate::image_atlas::ImageKey;
 
 // ============================================================================
 // RENDER COMMAND
@@ -59,7 +60,15 @@ pub enum RenderCommand {
         color: Color,
     },
 
-    
+    Image {
+        /// The image bounds in logical coordinates.
+        bounds: Bounds<Logical>,
+        /// Key identifying the image in the atlas.
+        image_key: ImageKey,
+        /// Corner radius for rounded image clipping (0.0 = sharp corners).
+        corner_radius: f32,
+    },
+
     /// Push a clipping region onto the stack.
     /// All subsequent commands are clipped to this region.
     PushClip {
