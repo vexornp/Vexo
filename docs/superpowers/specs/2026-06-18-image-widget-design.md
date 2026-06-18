@@ -31,7 +31,7 @@ pub struct Image {
 ```
 
 - `ImageData` holds decoded RGBA pixels and dimensions (width, height). Decoded once at construction time via the `image` crate from embedded bytes.
-- `ImageData::from_bytes(bytes: &[u8])` — decodes JPEG, returns `ImageData`. Synchronous, no async (embedded assets).
+- `ImageData::from_bytes(bytes: &[u8])` — decodes JPEG, returns `Result<ImageData, ImageDataError>`. Synchronous, no async (embedded assets).
 - Full `style` and `layout` fields for modifier compatibility.
 - Inherent modifier methods via `layout_builder_methods!()` macro, plus style-setting methods (`.background()`, `.border()`, `.corner_radius()`, `.clip()`) — same pattern as other widgets.
 
@@ -80,7 +80,7 @@ pub struct Shelf {
 ```
 
 - **Atlas size**: 2048x2048 RGBA8 texture (16MB). Sufficient for embedded-only launch.
-- **Packing**: Shelf allocator. Find first shelf with enough remaining width and matching height. If no shelf fits, create a new shelf. If atlas is full, panic (embedded images are bounded).
+- **Packing**: Shelf allocator. Find first shelf with enough remaining width and whose height ≥ image height. If no shelf fits, create a new shelf at the image's height. If atlas is full (not enough vertical space for a new shelf), panic (embedded images are bounded).
 - **Registration**: `register(device: &wgpu::Device, queue: &wgpu::Queue, image_data: &ImageData) -> ImageKey`. Writes pixel data to atlas texture via `queue.write_texture()` with region offset.
 - **Lookup**: `get_region(key: ImageKey) -> Option<AtlasRegion>`. Used by shader to compute UVs.
 - **Lifecycle**: Created once during `WgpuBackend` initialization. Images registered during element mount. No eviction needed for embedded-only launch.
