@@ -7,6 +7,7 @@ use winit::{
     window::Window,
 };
 
+use crate::animation::AnimationTicker;
 use crate::core::{Absolute, Logical, Physical, Point, Scale, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
@@ -61,6 +62,9 @@ pub struct WindowState<A: Application + 'static> {
     /// Last known pointer position in logical coordinates.
     /// Used to provide position for scroll events (winit MouseWheel doesn't include position).
     last_pointer_position: Point<Logical>,
+
+    /// Animation ticker that fires per-frame callbacks for active animations.
+    animation_ticker: Arc<AnimationTicker>,
 }
 
 
@@ -89,6 +93,7 @@ impl<A: Application + 'static> WindowState<A> {
             needs_redraw: true,
             current_cursor: SystemCursorKind::Arrow,
             last_pointer_position: Point::new(0.0, 0.0),
+            animation_ticker: Arc::new(AnimationTicker::new()),
         })
     }
 
@@ -276,6 +281,11 @@ impl<A: Application + 'static> WindowState<A> {
         self.window.as_ref()
     }
 
+    /// Get the animation ticker for this window.
+    pub fn animation_ticker(&self) -> &Arc<AnimationTicker> {
+        &self.animation_ticker
+    }
+
     /// Check if cursor blink has toggled. Returns true if visibility changed
     /// (caller should request a frame).
     pub fn check_cursor_blink(&mut self) -> bool {
@@ -320,6 +330,10 @@ impl<A: Application + 'static> WindowState<A> {
 
         self.needs_redraw = false;
         self.frame_builder.clear();
+
+        // Fire all active animation callbacks. These may mark elements dirty
+        // via the mpsc channel, which perform_rebuilds() will process below.
+        self.animation_ticker.tick();
 
         log::debug!("\n========================================");
         log::debug!("[RetainMode] === FRAME START ===");
@@ -411,6 +425,12 @@ impl<A: Application + 'static> WindowState<A> {
         //     request_redraw() is idempotent; the next render_retain() will
         //     early-return if nothing is dirty (blink hasn't toggled yet).
         if self.three_tree_pipeline.focused_element().is_some() {
+            self.request_frame();
+        }
+
+        // Keep the frame loop alive while animations are active so that
+        // tick() continues to fire each frame.
+        if self.animation_ticker.has_active() {
             self.request_frame();
         }
 
