@@ -41,6 +41,18 @@ impl Color {
         [self.r, self.g, self.b, self.a]
     }
 
+    /// Linearly interpolate between two colors.
+    ///
+    /// `t` ranges from 0.0 (returns `a`) to 1.0 (returns `b`).
+    pub fn lerp(a: Color, b: Color, t: f64) -> Color {
+        Color {
+            r: a.r + (b.r - a.r) * t as f32,
+            g: a.g + (b.g - a.g) * t as f32,
+            b: a.b + (b.b - a.b) * t as f32,
+            a: a.a + (b.a - a.a) * t as f32,
+        }
+    }
+
     /// Create a new color with a different alpha value.
     pub const fn with_alpha(&self, a: f32) -> Self {
         Self {
@@ -181,5 +193,33 @@ mod tests {
         assert_eq!(Color::WHITE, Color::rgb(1.0, 1.0, 1.0));
         assert_eq!(Color::BLACK, Color::rgb(0.0, 0.0, 0.0));
         assert_eq!(Color::TRANSPARENT.a, 0.0);
+    }
+
+    #[test]
+    fn test_color_lerp_midpoint() {
+        let a = Color::rgb(1.0, 0.0, 0.0);
+        let b = Color::rgb(0.0, 0.0, 1.0);
+        let mid = Color::lerp(a, b, 0.5);
+        assert!((mid.r - 0.5).abs() < 0.001);
+        assert!((mid.g).abs() < 0.001);
+        assert!((mid.b - 0.5).abs() < 0.001);
+        assert!((mid.a - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_color_lerp_boundaries() {
+        let a = Color::rgb(1.0, 0.0, 0.0);
+        let b = Color::rgb(0.0, 0.0, 1.0);
+        assert_eq!(Color::lerp(a, b, 0.0), a);
+        assert_eq!(Color::lerp(a, b, 1.0), b);
+    }
+
+    #[test]
+    fn test_color_lerp_with_alpha() {
+        let a = Color::new(1.0, 0.0, 0.0, 1.0);
+        let b = Color::new(0.0, 0.0, 1.0, 0.0);
+        let mid = Color::lerp(a, b, 0.5);
+        assert!((mid.r - 0.5).abs() < 0.001);
+        assert!((mid.a - 0.5).abs() < 0.001);
     }
 }
