@@ -82,6 +82,20 @@ impl AnimationController {
         if self.direction == AnimationDirection::Stopped {
             return;
         }
+        if self.duration.is_zero() {
+            self.value = match self.direction {
+                AnimationDirection::Forward => 1.0,
+                AnimationDirection::Reverse => 0.0,
+                AnimationDirection::Stopped => return,
+            };
+            self.direction = AnimationDirection::Stopped;
+            self.start_time = None;
+            self.unregister_from_ticker();
+            if let Some(cb) = &self.dirty_callback {
+                cb();
+            }
+            return;
+        }
         let start = self.start_time.unwrap();
         let elapsed = now.checked_duration_since(start).unwrap_or(Duration::ZERO).as_secs_f64();
         let duration = self.duration.as_secs_f64();
@@ -271,5 +285,23 @@ mod tests {
         assert_eq!(ctrl.value(), 0.0);
         ctrl.reverse();
         assert_eq!(ctrl.value(), 1.0);
+    }
+
+    #[test]
+    fn test_controller_zero_duration_forward() {
+        let mut ctrl = AnimationController::new(Duration::ZERO);
+        ctrl.forward();
+        ctrl.advance(Instant::now());
+        assert!((ctrl.value() - 1.0).abs() < 0.001);
+        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+    }
+
+    #[test]
+    fn test_controller_zero_duration_reverse() {
+        let mut ctrl = AnimationController::new(Duration::ZERO);
+        ctrl.reverse();
+        ctrl.advance(Instant::now());
+        assert!(ctrl.value().abs() < 0.001);
+        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
     }
 }
