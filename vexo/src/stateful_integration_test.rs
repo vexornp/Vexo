@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Flex};
+    use crate::animation::AnimationTicker;
     use crate::widgets::{GestureDetector, DecoratedContainer};
     use crate::Style;
     use crate::reactive::StatefulMutable;
@@ -50,7 +51,7 @@ mod tests {
 
     #[test]
     fn test_stateful_widget_in_pipeline() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Create a stateful widget
         let counter = Counter { label: "Count".to_string() };
@@ -64,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_stateful_widget_state_persists_across_rebuild() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial reconcile
         let counter = Counter { label: "Count".to_string() };
@@ -83,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_stateful_widget_layout_and_paint() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         let counter = Counter { label: "Count".to_string() };
         pipeline.reconcile(Box::new(counter));
@@ -139,7 +140,7 @@ mod tests {
     /// Test that StatefulMutable.set() triggers a rebuild that updates the text.
     #[test]
     fn test_reactive_stateful_widget_rebuild_updates_text() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // 1. Initial reconcile
         pipeline.reconcile(Box::new(ReactiveCounter));
@@ -265,7 +266,7 @@ mod tests {
             }
         }
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // 1. Initial reconcile
         let widget = ClickableCounter { click_count: click_count.clone() };
@@ -369,7 +370,7 @@ mod tests {
             }
         }
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(SimpleStateful));
 
         // Layout
@@ -431,7 +432,7 @@ mod tests {
             }
         }
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // 1. Initial reconcile
         pipeline.reconcile(Box::new(SimpleReactive));
@@ -580,7 +581,7 @@ mod tests {
         let controller = TextEditingController::new("editable", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         // Layout

@@ -185,7 +185,9 @@ pub type LeafElement = LeafRenderObjectElement;
 mod tests {
     use super::*;
     use std::sync::mpsc;
+    use std::sync::Arc;
     use crate::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner, ChildOps};
+    use crate::animation::AnimationTicker;
     use crate::focus::FocusManager;
 
     fn make_element_key() -> ElementKey {
@@ -215,6 +217,7 @@ mod tests {
             &mut child_ops,
             &mut focus_manager,
             None,
+            Arc::new(AnimationTicker::new()),
         );
 
         element.mount(&mut context);
@@ -247,6 +250,7 @@ mod tests {
             &mut child_ops,
             &mut focus_manager,
             None,
+            Arc::new(AnimationTicker::new()),
         );
 
         element.mount(&mut context);
@@ -282,6 +286,7 @@ mod tests {
             &mut child_ops,
             &mut focus_manager,
             None,
+            Arc::new(AnimationTicker::new()),
         );
 
         element.mount(&mut context);
@@ -314,6 +319,7 @@ mod tests {
             &mut child_ops,
             &mut focus_manager,
             None,
+            Arc::new(AnimationTicker::new()),
         );
 
         element.mount(&mut context);

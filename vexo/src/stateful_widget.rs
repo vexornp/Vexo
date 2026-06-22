@@ -15,6 +15,7 @@ use super::widgets::Widget;
 use super::elements::RenderObjectElement;
 use super::EventContext;
 use super::focus::attachment::FocusAttachment;
+use crate::animation::AnimationTicker;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
 
@@ -204,6 +205,15 @@ pub struct StateContext<'a> {
     /// Dirty callback for wiring controller change notifications.
     /// Clone this to pass to controllers that need to trigger rebuilds.
     dirty_callback: Arc<dyn Fn() + Send + Sync>,
+
+    /// Animation ticker for registering per-frame callbacks.
+    /// State::init() can use this to wire AnimationControllers:
+    /// ```ignore
+    /// fn init(&mut self, ctx: &mut StateContext) {
+    ///     self.controller.set_ticker(ctx.animation_ticker().clone());
+    /// }
+    /// ```
+    animation_ticker: Arc<AnimationTicker>,
 }
 
 impl<'a> StateContext<'a> {
@@ -213,12 +223,14 @@ impl<'a> StateContext<'a> {
         build_owner: &'a BuildOwner,
         widget: &'a dyn Any,
         dirty_callback: Arc<dyn Fn() + Send + Sync>,
+        animation_ticker: Arc<AnimationTicker>,
     ) -> Self {
         Self {
             element_id,
             build_owner,
             widget,
             dirty_callback,
+            animation_ticker,
         }
     }
 
@@ -277,6 +289,19 @@ impl<'a> StateContext<'a> {
     /// Clone the Arc and pass it to controllers like TextEditingController.
     pub fn dirty_callback(&self) -> Arc<dyn Fn() + Send + Sync> {
         self.dirty_callback.clone()
+    }
+
+    /// Get the animation ticker for this element.
+    ///
+    /// Use this in `State::init()` to wire AnimationControllers to the
+    /// per-frame tick loop:
+    /// ```ignore
+    /// fn init(&mut self, ctx: &mut StateContext) {
+    ///     self.controller.set_ticker(ctx.animation_ticker().clone());
+    /// }
+    /// ```
+    pub fn animation_ticker(&self) -> &Arc<AnimationTicker> {
+        &self.animation_ticker
     }
 }
 
@@ -507,6 +532,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             context.build_owner,
             &self.widget as &dyn Any,
             dirty_callback,
+            context.animation_ticker.clone(),
         );
         state.init(&mut state_ctx);
 
@@ -554,6 +580,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
                 context.build_owner,
                 &self.widget as &dyn Any,
                 dirty_callback,
+                context.animation_ticker.clone(),
             );
             state_ref.did_update_widget(&old_widget as &dyn Any, &mut state_ctx);
         }
@@ -598,6 +625,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
                     context.build_owner,
                     &self.widget as &dyn Any,
                     dirty_callback,
+                    context.animation_ticker.clone(),
                 );
                 state.dispose(&mut state_ctx);
             }
@@ -918,6 +946,7 @@ mod tests {
             &mut child_ops,
             &mut focus_manager,
             None,
+            Arc::new(AnimationTicker::new()),
         );
 
         let mut element = element;
@@ -949,6 +978,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
+            Arc::new(AnimationTicker::new()),
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -971,6 +1001,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
+            Arc::new(AnimationTicker::new()),
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
@@ -1000,6 +1031,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
+            Arc::new(AnimationTicker::new()),
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -1021,6 +1053,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
+            Arc::new(AnimationTicker::new()),
             );
             Element::unmount(&mut element, &mut ctx);
         }

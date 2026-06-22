@@ -14,7 +14,7 @@
 //! # Lifecycle
 //!
 //! ```ignore
-//! let mut pipeline = ThreeTreePipeline::new();
+//! let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 //!
 //! // Reconcile widget tree with element tree
 //! pipeline.reconcile(root_widget);
@@ -37,8 +37,9 @@
 //! - `paint()` recursively collects commands from the root
 
 use std::any::Any;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
+use crate::animation::AnimationTicker;
 use crate::core::{Absolute, Logical, Point, Position, Scale, Size};
 use crate::mouse_tracker::MouseTracker;
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
@@ -72,7 +73,7 @@ use super::widgets::Widget;
 /// # Example
 ///
 /// ```ignore
-/// let mut pipeline = ThreeTreePipeline::new();
+/// let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 ///
 /// // Build and reconcile widget tree
 /// let widget = Button::new("Click Me");
@@ -136,11 +137,15 @@ pub struct ThreeTreePipeline {
     /// Cached render commands from the last paint pass.
     /// Returned on idle frames when nothing needs repainting.
     cached_commands: Option<Vec<RenderCommand>>,
+
+    /// Animation ticker that fires per-frame callbacks for active animations.
+    /// Passed to ElementContext so State::init() can access it.
+    animation_ticker: Arc<AnimationTicker>,
 }
 
 impl ThreeTreePipeline {
     /// Create a new empty pipeline.
-    pub fn new() -> Self {
+    pub fn new(animation_ticker: Arc<AnimationTicker>) -> Self {
         let (dirty_sender, dirty_receiver) = mpsc::channel();
         Self {
             element_registry: ElementRegistry::new(),
@@ -156,6 +161,7 @@ impl ThreeTreePipeline {
             cursor_blink: CursorBlinkState::new(),
             mouse_tracker: MouseTracker::new(),
             cached_commands: None,
+            animation_ticker,
         }
     }
 
@@ -184,7 +190,7 @@ impl ThreeTreePipeline {
     /// # Example
     ///
     /// ```ignore
-    /// let mut pipeline = ThreeTreePipeline::new();
+    /// let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     ///
     /// // Initial widget tree
     /// pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -203,6 +209,7 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
             &self.dirty_sender,
             &mut self.focus_manager,
+            &self.animation_ticker,
             root_widget,
         );
     }
@@ -226,6 +233,7 @@ impl ThreeTreePipeline {
             &self.dirty_sender,
             &self.dirty_receiver,
             &mut self.focus_manager,
+            &self.animation_ticker,
             &mut self.needs_full_reconcile,
             root_widget,
         );
@@ -246,6 +254,7 @@ impl ThreeTreePipeline {
             &mut self.child_ops,
             &self.dirty_sender,
             &mut self.focus_manager,
+            &self.animation_ticker,
             &self.dirty_receiver,
         );
     }
@@ -724,7 +733,7 @@ impl ThreeTreePipeline {
 
 impl Default for ThreeTreePipeline {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(AnimationTicker::new()))
     }
 }
 
@@ -747,7 +756,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_new() {
-        let pipeline = ThreeTreePipeline::new();
+        let pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         assert!(pipeline.element_registry().is_empty());
         assert!(pipeline.render_objects().is_empty());
@@ -765,7 +774,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_single_widget() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile with a text widget
         let widget = Text::new("Hello");
@@ -785,7 +794,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_updates_matching() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -804,7 +813,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_layout() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile first
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -820,7 +829,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_paint_empty() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Paint with no render objects
         let commands = pipeline.paint();
@@ -830,7 +839,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_paint_with_content() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -848,7 +857,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_miss() {
-        let pipeline = ThreeTreePipeline::new();
+        let pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Hit test with no content
         let result = pipeline.hit_test(Position::new(100.0, 100.0));
@@ -859,7 +868,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_with_content() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -878,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_hit_test_outside() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile and layout
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -897,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
@@ -913,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_mark_all_needs_layout() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         pipeline.reconcile(Box::new(Text::new("Hello")));
         pipeline.clear_dirty();
@@ -926,7 +935,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_reconcile_replaces_different_type() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -946,7 +955,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_syncs_focused_element_to_build_owner() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(Text::new("Hello")));
 
         // Set focus on the root element

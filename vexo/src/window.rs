@@ -79,6 +79,8 @@ impl<A: Application + 'static> WindowState<A> {
 
         let layout_engine = Box::new(TaffyLayoutEngine::new());
 
+        let animation_ticker = Arc::new(AnimationTicker::new());
+
         Ok(Self {
             backend,
             window: Some(window),
@@ -89,11 +91,11 @@ impl<A: Application + 'static> WindowState<A> {
             user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
-            three_tree_pipeline: ThreeTreePipeline::new(),
+            three_tree_pipeline: ThreeTreePipeline::new(animation_ticker.clone()),
             needs_redraw: true,
             current_cursor: SystemCursorKind::Arrow,
             last_pointer_position: Point::new(0.0, 0.0),
-            animation_ticker: Arc::new(AnimationTicker::new()),
+            animation_ticker,
         })
     }
 

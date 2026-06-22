@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use crate::animation::AnimationTicker;
 use crate::core::{Point, Scale, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
@@ -39,7 +40,7 @@ fn pointer_press(x: f32, y: f32) -> InputEvent {
 
 #[test]
 fn test_focus_manager_in_pipeline() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Reconcile a Focus-wrapped Text widget.
     // Focus uses FocusElement which creates an element but delegates
@@ -55,7 +56,7 @@ fn test_focus_manager_in_pipeline() {
 
 #[test]
 fn test_click_outside_clears_focus() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     let mut font_system = create_test_font_system();
 
     // Reconcile a plain Text widget and set focus on it
@@ -82,7 +83,7 @@ fn test_click_outside_clears_focus() {
 
 #[test]
 fn test_programmatic_set_focus() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Reconcile a simple Text widget (no Focus wrapper)
     pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -99,7 +100,7 @@ fn test_programmatic_set_focus() {
 
 #[test]
 fn test_programmatic_clear_focus() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     pipeline.reconcile(Box::new(Text::new("Hello")));
     let root = pipeline.element_registry().root().unwrap();
@@ -115,7 +116,7 @@ fn test_programmatic_clear_focus() {
 
 #[test]
 fn test_focus_syncs_to_build_owner() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     pipeline.reconcile(Box::new(Text::new("Hello")));
     let root = pipeline.element_registry().root().unwrap();
@@ -132,7 +133,7 @@ fn test_focus_syncs_to_build_owner() {
 
 #[test]
 fn test_click_inside_hit_succeeds_then_unfocuses() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     let mut font_system = create_test_font_system();
 
     // Reconcile a plain Text widget (has render objects for hit testing)
@@ -162,7 +163,7 @@ fn test_click_inside_hit_succeeds_then_unfocuses() {
 
 #[test]
 fn test_set_focus_creates_node_on_demand() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Reconcile a Text widget without Focus wrapper
     pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -178,7 +179,7 @@ fn test_set_focus_creates_node_on_demand() {
 
 #[test]
 fn test_multiple_focus_requests_last_wins() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Reconcile a Flex::column() with two Text children
     pipeline.reconcile(Box::new(
@@ -205,7 +206,7 @@ fn test_multiple_focus_requests_last_wins() {
 
 #[test]
 fn test_click_to_focus_with_stateful_element() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     let mut font_system = create_test_font_system();
 
     // Reconcile a TextEdit wrapped in Focus.
@@ -232,7 +233,7 @@ fn test_click_to_focus_with_stateful_element() {
 
 #[test]
 fn test_focus_wrapper_inflates_child() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Reconcile Focus::new(Text::new("Hello"))
     // Focus now overrides children() to return the child as a slice,
@@ -251,7 +252,7 @@ fn test_focus_wrapper_inflates_child() {
 /// Mounting a widget tree should create one focus node per element.
 #[test]
 fn test_mount_creates_focus_node_for_every_element() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() + 2 Texts = 3 application focus nodes
     let widget = Flex::column()
@@ -269,7 +270,7 @@ fn test_mount_creates_focus_node_for_every_element() {
 /// Unmounting by reconciling an empty root should remove all focus nodes.
 #[test]
 fn test_unmount_removes_all_focus_nodes() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     let widget = Flex::column()
         .push(Text::new("a"))
@@ -289,7 +290,7 @@ fn test_unmount_removes_all_focus_nodes() {
 /// Replacing a child via rebuild should not leak focus nodes.
 #[test]
 fn test_rebuild_replaces_focus_nodes() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("old") ]
     let widget = Flex::column().push(Text::new("old"));
@@ -309,7 +310,7 @@ fn test_rebuild_replaces_focus_nodes() {
 /// Adding a child via rebuild should add a focus node.
 #[test]
 fn test_rebuild_adds_focus_node_for_new_child() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("a") ]
     let widget = Flex::column().push(Text::new("a"));
@@ -332,7 +333,7 @@ fn test_rebuild_adds_focus_node_for_new_child() {
 /// Removing a child via rebuild should remove its focus node.
 #[test]
 fn test_rebuild_removes_focus_node_for_removed_child() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("a"), Text("b") ]
     let widget = Flex::column()
@@ -355,7 +356,7 @@ fn test_rebuild_removes_focus_node_for_removed_child() {
 /// Focus tree should mirror the element tree parent-child structure.
 #[test]
 fn test_focus_tree_mirrors_element_tree_structure() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("a"), Text("b") ]
     let widget = Flex::column()
@@ -378,7 +379,7 @@ fn test_focus_tree_mirrors_element_tree_structure() {
 /// A focused element that gets unmounted should not leave a dangling focus reference.
 #[test]
 fn test_unmount_focused_element_clears_focus() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Focus(Text("a")), Text("b") ]
     let widget = Flex::column()
@@ -435,7 +436,7 @@ fn test_unmount_focused_element_clears_focus() {
 /// Multiple reconcile cycles should not leak focus nodes.
 #[test]
 fn test_repeated_reconcile_no_leaks() {
-    let mut pipeline = ThreeTreePipeline::new();
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     for i in 0..5 {
         let widget = Flex::column()
@@ -469,7 +470,7 @@ mod on_focus_change_tests {
     /// Test that on_focus_change fires when focus is gained and lost via the pipeline.
     #[test]
     fn test_on_focus_change_callback_via_pipeline() {
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut font_system = create_test_font_system();
 
         let callback_fired = Arc::new(AtomicBool::new(false));
@@ -522,7 +523,7 @@ mod on_focus_change_tests {
         use crate::ScrollView;
         use crate::widgets::Widget;
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut font_system = create_test_font_system();
 
         let focus_gained = Arc::new(AtomicBool::new(false));
@@ -647,7 +648,7 @@ mod on_focus_change_tests {
             }
         }
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut font_system = create_test_font_system();
 
         // Reconcile the FocusableScrollList widget
@@ -707,7 +708,7 @@ mod on_focus_change_tests {
         use crate::widgets::Widget;
         use std::sync::atomic::Ordering;
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut font_system = create_test_font_system();
 
         let focus_gained = Arc::new(AtomicBool::new(false));

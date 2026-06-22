@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::animation::AnimationTicker;
 use glyphon::{cosmic_text::Motion, Action, Attrs, Buffer, Edit, Metrics, Shaping};
 
 use crate::editor::Editor;
@@ -739,7 +740,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         // Should have elements in the tree
@@ -754,7 +755,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
@@ -770,7 +771,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
@@ -787,7 +788,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
@@ -811,7 +812,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
@@ -856,7 +857,7 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(text_edit));
 
         let mut engine = TaffyLayoutEngine::new();
@@ -914,7 +915,7 @@ mod tests {
             .push(crate::Text::new("Title"))
             .push(text_edit);
 
-        let mut pipeline = ThreeTreePipeline::new();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(column));
 
         let mut engine = TaffyLayoutEngine::new();

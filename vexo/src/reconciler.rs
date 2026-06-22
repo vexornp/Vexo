@@ -5,8 +5,9 @@
 //! associated functions that take explicit parameters instead of accessing
 //! `self` fields on a pipeline.
 
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
+use crate::animation::AnimationTicker;
 use super::build_owner::BuildOwner;
 use super::child_ops::{ChildOp, ChildOps};
 use super::dirty::DirtyTracking;
@@ -71,6 +72,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         root_widget: Box<dyn Widget>,
     ) {
         // Check if we have an existing root element
@@ -92,6 +94,7 @@ impl Reconciler {
                     child_ops,
                     dirty_sender,
                     focus_manager,
+                    animation_ticker,
                     root_id,
                     root_widget,
                 );
@@ -108,6 +111,7 @@ impl Reconciler {
                 child_ops,
                 dirty_sender,
                 focus_manager,
+                animation_ticker,
                 root_id,
             );
         }
@@ -122,6 +126,7 @@ impl Reconciler {
             child_ops,
             dirty_sender,
             focus_manager,
+            animation_ticker,
             None,
             root_widget,
         );
@@ -144,6 +149,7 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         needs_full_reconcile: &mut bool,
         root_widget: Box<dyn Widget>,
     ) {
@@ -157,6 +163,7 @@ impl Reconciler {
             child_ops,
             dirty_sender,
             focus_manager,
+            animation_ticker,
             dirty_receiver,
         );
 
@@ -179,6 +186,7 @@ impl Reconciler {
                 child_ops,
                 dirty_sender,
                 focus_manager,
+                animation_ticker,
                 root_widget,
             );
             *needs_full_reconcile = false;
@@ -202,6 +210,7 @@ impl Reconciler {
                         child_ops,
                         dirty_sender,
                         focus_manager,
+                        animation_ticker,
                         root_id,
                         root_widget,
                     );
@@ -217,6 +226,7 @@ impl Reconciler {
                         child_ops,
                         dirty_sender,
                         focus_manager,
+                        animation_ticker,
                         root_widget,
                     );
                 }
@@ -230,6 +240,7 @@ impl Reconciler {
                     child_ops,
                     dirty_sender,
                     focus_manager,
+                    animation_ticker,
                     root_widget,
                 );
             }
@@ -255,6 +266,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         root_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -278,6 +290,7 @@ impl Reconciler {
             child_ops,
             focus_manager,
             parent_focus_node_id,
+            animation_ticker.clone(),
         );
 
         element_registry.with_element(root_id, &mut ctx, |element, ctx| {
@@ -294,6 +307,7 @@ impl Reconciler {
             child_ops,
             dirty_sender,
             focus_manager,
+            animation_ticker,
         );
     }
 
@@ -310,6 +324,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
     ) {
         // First, drain any dirty signals from StatefulMutable callbacks
@@ -357,6 +372,7 @@ impl Reconciler {
                 child_ops,
                 focus_manager,
                 parent_focus_node_id,
+                animation_ticker.clone(),
             );
 
             // Animate then rebuild from current state using with_element
@@ -375,6 +391,7 @@ impl Reconciler {
                 child_ops,
                 dirty_sender,
                 focus_manager,
+                animation_ticker,
             );
 
             // Exit build scope
@@ -395,6 +412,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -420,6 +438,7 @@ impl Reconciler {
             child_ops,
             focus_manager,
             None, // parent_focus_node_id not needed during reconcile
+            animation_ticker.clone(),
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -436,6 +455,7 @@ impl Reconciler {
             child_ops,
             dirty_sender,
             focus_manager,
+            animation_ticker,
         );
     }
 
@@ -457,6 +477,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         parent: Option<ElementKey>,
         widget: Box<dyn Widget>,
     ) -> ElementKey {
@@ -484,6 +505,7 @@ impl Reconciler {
             child_ops,
             focus_manager,
             parent_focus_node_id,
+            animation_ticker.clone(),
         );
 
         // Call mount() on the element via with_element
@@ -513,6 +535,7 @@ impl Reconciler {
             child_ops,
             dirty_sender,
             focus_manager,
+            animation_ticker,
         );
 
         // After child ops are processed, the element's render_object() may have changed
@@ -552,6 +575,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
     ) {
         loop {
             let ops = child_ops.drain();
@@ -576,6 +600,7 @@ impl Reconciler {
                             child_ops,
                             dirty_sender,
                             focus_manager,
+                            animation_ticker,
                             Some(parent),
                             widget,
                         );
@@ -604,6 +629,7 @@ impl Reconciler {
                             child_ops,
                             focus_manager,
                             None, // parent_focus_node_id not needed during child_mounted
+                            animation_ticker.clone(),
                         );
 
                         element_registry.with_element(parent, &mut ctx, |element, ctx| {
@@ -621,6 +647,7 @@ impl Reconciler {
                             child_ops,
                             dirty_sender,
                             focus_manager,
+                            animation_ticker,
                             child,
                             widget,
                         );
@@ -636,6 +663,7 @@ impl Reconciler {
                             child_ops,
                             dirty_sender,
                             focus_manager,
+                            animation_ticker,
                             child,
                         );
                     }
@@ -658,6 +686,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -678,6 +707,7 @@ impl Reconciler {
             child_ops,
             focus_manager,
             parent_focus_node_id,
+            animation_ticker.clone(),
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -709,6 +739,7 @@ impl Reconciler {
         child_ops: &mut ChildOps,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
         element_id: ElementKey,
     ) {
         // Get children and parent before unmounting
@@ -726,6 +757,7 @@ impl Reconciler {
                 child_ops,
                 dirty_sender,
                 focus_manager,
+                animation_ticker,
                 *child_id,
             );
         }
@@ -743,6 +775,7 @@ impl Reconciler {
             child_ops,
             focus_manager,
             None, // parent_focus_node_id not needed during unmount
+            animation_ticker.clone(),
         );
 
         // Call unmount() via with_element

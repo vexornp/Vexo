@@ -1,6 +1,7 @@
 //! End-to-end test for the retain-mode pipeline.
 
 use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
+use crate::animation::AnimationTicker;
 use crate::widgets::{DecoratedContainer, Transform};
 use crate::core::{Color, Position, Size};
 use crate::layout::{Layout, TaffyLayoutEngine, AlignItems, JustifyContent, TrackSizing, GridPlacement};
@@ -30,7 +31,7 @@ fn test_retain_pipeline_e2e() {
         .push(Text::new("World"));
 
     // === Step 2: Create pipeline and reconcile ===
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     // Verify element creation
@@ -77,7 +78,7 @@ fn test_retain_pipeline_e2e() {
 /// reconciling multiple times without paint in between.
 #[test]
 fn test_retain_pipeline_update_flow() {
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = create_test_font_system();
 
@@ -123,7 +124,7 @@ fn test_decorated_container_widget_in_pipeline() {
             .corner_radius(8.0));
 
     // Create pipeline and reconcile
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(container));
 
     // Should have created elements and render objects
@@ -178,7 +179,7 @@ fn test_translate_transform_in_pipeline() {
 
     let widget = Transform::translate(child, 50.0, 30.0);
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     // Layout
@@ -242,7 +243,7 @@ fn test_rotate_transform_in_pipeline() {
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let widget = Transform::rotate(child, angle);
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     let mut engine = TaffyLayoutEngine::new();
@@ -294,7 +295,7 @@ fn test_scale_transform_in_pipeline() {
 
     let widget = Transform::scale(child, 2.0, 3.0);
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     let mut engine = TaffyLayoutEngine::new();
@@ -405,7 +406,7 @@ fn test_rotate_transform_with_rounded_rect() {
 
     let widget = Transform::rotate(child, 0.3);
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     let mut engine = TaffyLayoutEngine::new();
@@ -439,7 +440,7 @@ fn test_column_with_layout() {
                 .align(AlignItems::Center),
         );
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
@@ -476,7 +477,7 @@ fn test_with_layout_on_children() {
                 .gap(10.0),
         );
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
@@ -517,7 +518,7 @@ fn test_grid_widget() {
                 .gap(4.0),
         );
 
-    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
     assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");

@@ -71,6 +71,7 @@ fn test_key_preserves_identity() {
 mod full_pipeline_tests {
     use crate::core::{Position, Size};
     use crate::layout::TaffyLayoutEngine;
+    use crate::animation::AnimationTicker;
     use crate::{Flex, Text, ThreeTreePipeline};
     use std::sync::Arc;
 
@@ -82,7 +83,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_full_frame_flow() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -110,7 +111,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_hit_test_through_pipeline() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -138,7 +139,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_keyed_reconciliation() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First frame with a keyed widget
         let widget = Text::new("A").with_key("first");
@@ -162,7 +163,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_paint_cycle() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -180,7 +181,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_different_widget_types_cause_remount() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First frame with Text
         pipeline.reconcile(Box::new(Text::new("Text content")));
@@ -201,7 +202,7 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile creates dirty elements
         pipeline.reconcile(Box::new(Text::new("Test")));
@@ -226,6 +227,7 @@ mod event_handling_tests {
     use crate::core::{Point, Scale, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
+    use crate::animation::AnimationTicker;
     use crate::{Text, ThreeTreePipeline};
     use std::sync::Arc;
 
@@ -237,7 +239,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_no_root() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         let event = InputEvent::PointerButton {
             position: Point::new(10.0, 10.0),
@@ -252,7 +254,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_with_text_widget() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile a text widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -279,7 +281,7 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_focus_management() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initially no focus
         assert!(pipeline.focused_element().is_none());
@@ -304,12 +306,14 @@ mod event_handling_tests {
 
 #[cfg(test)]
 mod targeted_rebuild_tests {
+    use std::sync::Arc;
+    use crate::animation::AnimationTicker;
     use crate::{Text, ThreeTreePipeline};
 
     #[test]
     fn test_targeted_rebuild_single_element() {
         // Test that marking a single element dirty only rebuilds that element
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial: single text
         pipeline.update(Box::new(Text::new("Hello")));
@@ -329,7 +333,7 @@ mod targeted_rebuild_tests {
     fn test_update_vs_reconcile() {
         // Test that update() is more efficient than reconcile()
         // after initial mount
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First update: should trigger full reconcile
         pipeline.update(Box::new(Text::new("First")));
@@ -350,7 +354,9 @@ mod targeted_rebuild_tests {
 
 #[cfg(test)]
 mod global_key_tests {
-    use crate::{Text, Widget};
+    use std::sync::Arc;
+    use crate::animation::AnimationTicker;
+    use crate::{Text, Widget, ThreeTreePipeline};
     use crate::key::{GlobalKey, WidgetKey};
 
     #[test]
@@ -421,7 +427,7 @@ mod global_key_tests {
 
     #[test]
     fn test_scroll_view_cross_axis_stretching() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new();
+        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 

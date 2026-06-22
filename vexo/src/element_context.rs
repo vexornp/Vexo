@@ -1,5 +1,6 @@
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
+use crate::animation::AnimationTicker;
 use crate::build_owner::BuildOwner;
 use crate::child_ops::ChildOps;
 use crate::dirty::DirtyTracking;
@@ -30,6 +31,11 @@ pub struct ElementContext<'a> {
     /// a focus attachment. Set by the reconciler before calling mount().
     /// `None` means no ancestor has a focus node (will attach to root).
     pub parent_focus_node_id: Option<FocusNodeId>,
+
+    /// Animation ticker for registering per-frame callbacks.
+    /// Passed through to StateContext so that State::init() can wire
+    /// AnimationControllers to the ticker.
+    pub animation_ticker: Arc<AnimationTicker>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -45,6 +51,7 @@ impl<'a> ElementContext<'a> {
         child_ops: &'a mut ChildOps,
         focus_manager: &'a mut FocusManager,
         parent_focus_node_id: Option<FocusNodeId>,
+        animation_ticker: Arc<AnimationTicker>,
     ) -> Self {
         Self {
             element_id,
@@ -58,6 +65,7 @@ impl<'a> ElementContext<'a> {
             child_ops,
             focus_manager,
             parent_focus_node_id,
+            animation_ticker,
         }
     }
 
