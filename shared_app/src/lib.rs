@@ -1,11 +1,11 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use vexo::{
-    run_desktop_demo, Application, Color, Flex, Focus, Image, ImageData, ScrollView, Text, Widget,
-    StatefulWidget, BuildContext, State as VexoState,
-};
 use vexo::reactive::StatefulMutable;
+use vexo::{
+    run_desktop_demo, Application, BuildContext, Color, Flex, Focus, Image, ImageData, ScrollView,
+    State as VexoState, StatefulWidget, Text, Widget,
+};
 uniffi::setup_scaffolding!();
 
 /// Creates a 200x150 gradient JPEG as ImageData for demo purposes.
@@ -74,7 +74,7 @@ impl StatefulWidget for FocusableScrollList {
             ScrollView::new(content)
                 .width(200.0)
                 .height(300.0)
-                .border(border_color, border_width)
+                .border(border_color, border_width),
         )
         .on_focus_change(move |focused| {
             is_focused_clone.set(focused);
@@ -87,15 +87,11 @@ fn build_scroll_content() -> Box<dyn Widget> {
     let mut column = Flex::column().gap(0.0);
     for i in 0..20 {
         let label = format!("Item {}", i + 1);
-        column = column.push(
-            Text::new(&label)
-                .padding(16.0)
-                .background(if i % 2 == 0 {
-                    Color::rgb(0.95, 0.95, 0.95)
-                } else {
-                    Color::WHITE
-                })
-        );
+        column = column.push(Text::new(&label).padding(16.0).background(if i % 2 == 0 {
+            Color::rgb(0.95, 0.95, 0.95)
+        } else {
+            Color::WHITE
+        }));
     }
     column.boxed()
 }
@@ -115,18 +111,9 @@ impl Application for State {
 
         Flex::column()
             .gap(16.0)
-            .push(
-                Text::new("Image Demo")
-                    .padding(8.0)
-            )
-            .push(
-                Image::new(test_image)
-                    .width(200.0)
-                    .corner_radius(8.0)
-            )
-            .push(
-                FocusableScrollList.boxed()
-            )
+            .push(Text::new("Image Demo").padding(8.0))
+            .push(Image::new(test_image).width(200.0).border(Color::BLUE, 3.0))
+            .push(FocusableScrollList.boxed())
             .boxed()
     }
 }
