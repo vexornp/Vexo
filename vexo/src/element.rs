@@ -68,6 +68,13 @@ pub trait Element {
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}
 
+    /// Advance animations before rebuild.
+    ///
+    /// Called by the reconciler before `rebuild_from_state` on each frame.
+    /// StatefulElement overrides this to call `State::animate(now)`, giving
+    /// the state a chance to advance any AnimationControllers.
+    fn animate(&mut self, _now: std::time::Instant, _context: &mut ElementContext) {}
+
     /// Get the focus attachment for this element.
     fn focus_attachment(&self) -> &Option<FocusAttachment>;
 

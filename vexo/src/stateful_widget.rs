@@ -121,6 +121,16 @@ pub trait State: 'static {
     fn on_event(&mut self, _widget: &dyn Any, _event: &InputEvent, _ctx: &mut crate::EventContext) -> Option<Box<dyn Any>> {
         None
     }
+
+    /// Advance animations before rebuild.
+    ///
+    /// Called by the reconciler on each frame before `rebuild_from_state`.
+    /// Override this to advance any AnimationControllers held by this state.
+    /// The `now` parameter is the current time, captured once at the start
+    /// of the rebuild cycle.
+    ///
+    /// The default implementation does nothing.
+    fn animate(&mut self, _now: std::time::Instant) {}
 }
 
 /// Wrapper for simple state types that don't need reactive fields.
@@ -676,6 +686,16 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             None => return None,
         };
         state_ref.on_event(&self.widget, event, context)
+    }
+
+    fn animate(&mut self, now: std::time::Instant, context: &mut crate::element_context::ElementContext) {
+        let element_id = match self.id {
+            Some(id) => id,
+            None => return,
+        };
+        if let Some(state_ref) = context.state.get_mut::<W::State>(element_id) {
+            state_ref.animate(now);
+        }
     }
 
     fn focus_attachment(&self) -> &Option<FocusAttachment> {

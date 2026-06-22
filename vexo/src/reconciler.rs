@@ -325,6 +325,9 @@ impl Reconciler {
         // Drain dirty elements
         let dirty_ids: Vec<ElementKey> = build_owner.drain_dirty_sorted();
 
+        // Capture the current time once for all animate calls in this cycle.
+        let now = std::time::Instant::now();
+
         // Rebuild each dirty element
         for element_id in dirty_ids {
             // Skip if element was removed during a previous rebuild
@@ -356,8 +359,9 @@ impl Reconciler {
                 parent_focus_node_id,
             );
 
-            // Rebuild from current state using with_element
+            // Animate then rebuild from current state using with_element
             element_registry.with_element(element_id, &mut ctx, |element, ctx| {
+                element.animate(now, ctx);
                 element.rebuild_from_state(ctx);
             });
 
