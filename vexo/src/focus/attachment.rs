@@ -45,16 +45,6 @@ impl FocusAttachment {
         self.is_attached
     }
 
-    /// Reparent the focus node to a new parent in the focus tree.
-    ///
-    /// Called during rebuild to keep the focus tree synced with the element
-    /// tree. This is a no-op if the attachment has already been detached.
-    pub fn reparent(&self, new_parent: FocusNodeId, manager: &mut FocusManager) {
-        if self.is_attached {
-            manager.reparent(self.node_id, Some(new_parent));
-        }
-    }
-
     /// Reparent the focus node to a new parent, attaching to root if `None`.
     ///
     /// This is the primary variant called from element `rebuild()` methods.
@@ -183,7 +173,7 @@ mod tests {
         assert!(mgr.get(parent_a).unwrap().children.contains(&node));
 
         // Reparent to parent_b.
-        attachment.reparent(parent_b, &mut mgr);
+        attachment.reparent_to(Some(parent_b), &mut mgr);
 
         // Node is now under parent_b.
         assert!(!mgr.get(parent_a).unwrap().children.contains(&node));
@@ -206,7 +196,7 @@ mod tests {
         attachment.detach(&mut mgr);
 
         // Reparent after detach should be a no-op (node no longer exists).
-        attachment.reparent(parent_b, &mut mgr);
+        attachment.reparent_to(Some(parent_b), &mut mgr);
 
         // parent_b should not have gained any children from this.
         assert!(mgr.get(parent_b).unwrap().children.is_empty());
