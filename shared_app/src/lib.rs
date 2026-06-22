@@ -1,10 +1,14 @@
+use std::cell::RefCell;
 use std::io::Cursor;
+use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use vexo::reactive::StatefulMutable;
 use vexo::{
-    run_desktop_demo, Application, BuildContext, Color, Flex, Focus, Image, ImageData, ScrollView,
-    State as VexoState, StatefulWidget, Text, Widget,
+    run_desktop_demo, AnimationController, Application, BuildContext, Color, ColorTween, Flex,
+    Focus, Image, ImageData, ScrollView, State as VexoState, StateContext, StatefulWidget, Text,
+    Tween, Widget,
 };
 uniffi::setup_scaffolding!();
 
@@ -96,6 +100,65 @@ fn build_scroll_content() -> Box<dyn Widget> {
     column.boxed()
 }
 
+// --- AnimatedButton: A StatefulWidget whose background color animates on press ---
+
+#[derive(Clone)]
+struct AnimatedButton;
+
+struct AnimatedButtonState {
+    anim: Rc<RefCell<AnimationController>>,
+    color_tween: ColorTween,
+}
+
+impl Default for AnimatedButtonState {
+    fn default() -> Self {
+        Self {
+            anim: Rc::new(RefCell::new(AnimationController::new(Duration::from_millis(300)))),
+            color_tween: ColorTween::new(Color::rgb(0.2, 0.4, 0.8), Color::rgb(0.8, 0.2, 0.2)),
+        }
+    }
+}
+
+impl VexoState for AnimatedButtonState {
+    fn init(&mut self, ctx: &mut StateContext) {
+        self.anim
+            .borrow_mut()
+            .set_ticker(ctx.animation_ticker().clone());
+    }
+
+    fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+        self.anim.borrow_mut().set_dirty_callback(callback);
+    }
+
+    fn animate(&mut self, now: std::time::Instant) {
+        self.anim.borrow_mut().advance(now);
+    }
+}
+
+impl StatefulWidget for AnimatedButton {
+    type State = AnimatedButtonState;
+
+    fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+        let t = state.anim.borrow().value();
+        let bg = state.color_tween.lerp(t);
+
+        let anim = state.anim.clone();
+        Flex::column()
+            .background(bg)
+            .corner_radius(8.0)
+            .padding(8.0)
+            .push(Text::new("Tap to animate"))
+            .on_press(move || {
+                let mut ctrl = anim.borrow_mut();
+                if ctrl.value() < 0.5 {
+                    ctrl.forward();
+                } else {
+                    ctrl.reverse();
+                }
+            })
+    }
+}
+
 // --- The User's Code ---
 pub struct State;
 
@@ -114,6 +177,7 @@ impl Application for State {
             .push(Text::new("Image Demo").padding(8.0))
             .push(Image::new(test_image).width(200.0).border(Color::BLUE, 3.0))
             .push(FocusableScrollList.boxed())
+            .push(AnimatedButton.boxed())
             .boxed()
     }
 }
