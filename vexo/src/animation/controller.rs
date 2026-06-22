@@ -43,6 +43,7 @@ impl AnimationController {
     }
 
     pub fn reverse(&mut self) {
+        self.value = 1.0;
         self.unregister_from_ticker();
         self.direction = AnimationDirection::Reverse;
         self.start_time = Some(Instant::now());
@@ -74,7 +75,7 @@ impl AnimationController {
             return;
         }
         let start = self.start_time.unwrap();
-        let elapsed = now.duration_since(start).as_secs_f64();
+        let elapsed = now.checked_duration_since(start).unwrap_or(Duration::ZERO).as_secs_f64();
         let duration = self.duration.as_secs_f64();
         let raw = elapsed / duration;
 
@@ -147,7 +148,6 @@ mod tests {
     #[test]
     fn test_controller_advance_reverse() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
-        ctrl.value = 1.0;
         ctrl.reverse();
         let start = ctrl.start_time.unwrap();
         let now = start + Duration::from_millis(500);
@@ -158,7 +158,6 @@ mod tests {
     #[test]
     fn test_controller_advance_completes_reverse() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
-        ctrl.value = 1.0;
         ctrl.reverse();
         let start = ctrl.start_time.unwrap();
         let now = start + Duration::from_millis(1001);
@@ -256,5 +255,13 @@ mod tests {
         ticker.tick();
         // Only one callback should be active (not two)
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_controller_reverse_sets_value_to_1() {
+        let mut ctrl = AnimationController::new(Duration::from_secs(1));
+        assert_eq!(ctrl.value(), 0.0);
+        ctrl.reverse();
+        assert_eq!(ctrl.value(), 1.0);
     }
 }
