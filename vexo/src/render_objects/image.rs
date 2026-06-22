@@ -175,11 +175,21 @@ impl RenderObject for ImageRenderObject {
                 // 5. Draw image if key is set (registered in atlas)
                 if let Some(key) = self.image_key {
                     let corner_radius = self.style.corner_radius.as_ref().map_or(0.0, |cr| cr.radius);
-                    commands.push(RenderCommand::Image {
-                        bounds: absolute_bounds,
-                        image_key: key,
-                        corner_radius,
-                    });
+                    // Inset image bounds by border width so it renders inside the border ring
+                    let bw = self.style.border.as_ref().map_or(0.0, |b| b.width);
+                    let image_bounds = Bounds::new(
+                        absolute_bounds.left + bw,
+                        absolute_bounds.top + bw,
+                        absolute_bounds.right - bw,
+                        absolute_bounds.bottom - bw,
+                    );
+                    if image_bounds.width() > 0.0 && image_bounds.height() > 0.0 {
+                        commands.push(RenderCommand::Image {
+                            bounds: image_bounds,
+                            image_key: key,
+                            corner_radius: (corner_radius - bw).max(0.0),
+                        });
+                    }
                 }
 
                 commands
@@ -416,5 +426,29 @@ mod tests {
         // With clip
         obj.style.clip = true;
         assert!(obj.clip_bounds().is_some());
+    }
+
+    #[test]
+    fn test_image_render_object_border_insets_image() {
+        let data = make_test_image_data();
+        let style = crate::Style::new().border(crate::core::Color::BLUE, 3.0);
+        let mut obj = ImageRenderObject::new(&data, style, Layout::default());
+        obj.computed_bounds = Some(Bounds::new(0.0, 0.0, 100.0, 50.0));
+        obj.image_key = Some(1);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let result = obj.paint(&mut ctx);
+
+        let image_cmd = result.iter().find_map(|c| match c {
+            RenderCommand::Image { bounds, .. } => Some(*bounds),
+            _ => None,
+        });
+        let img_bounds = image_cmd.expect("should have Image command");
+        // Image bounds should be inset by border_width (3.0)
+        assert_eq!(img_bounds.left, 3.0);
+        assert_eq!(img_bounds.top, 3.0);
+        assert_eq!(img_bounds.right, 97.0);
+        assert_eq!(img_bounds.bottom, 47.0);
     }
 }
