@@ -11,6 +11,7 @@ pub use uniffi;
 mod app;
 pub use app::{KeyBindingAction, VexoApp};
 
+pub mod animation;
 pub mod core;
 pub mod editor;
 pub mod input;
