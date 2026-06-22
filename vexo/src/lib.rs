@@ -12,6 +12,12 @@ mod app;
 pub use app::{KeyBindingAction, VexoApp};
 
 pub mod animation;
+
+pub use animation::{
+    AnimationController, AnimationDirection,
+    AnimationTicker, TickHandle,
+    Tween, ColorTween, FloatTween,
+};
 pub mod core;
 pub mod editor;
 pub mod input;
@@ -86,6 +92,8 @@ mod window_integration_test;
 mod build_owner_tests;
 #[cfg(test)]
 mod stateful_integration_test;
+#[cfg(test)]
+mod animation_flow_tests;
 
 // --- Re-exports from former retain/ ---
 

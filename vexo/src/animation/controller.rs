@@ -62,6 +62,14 @@ impl AnimationController {
         self.value
     }
 
+    pub fn direction(&self) -> AnimationDirection {
+        self.direction
+    }
+
+    pub fn start_time(&self) -> Option<Instant> {
+        self.start_time
+    }
+
     pub fn set_dirty_callback(&mut self, cb: Arc<dyn Fn() + Send + Sync>) {
         self.dirty_callback = Some(cb);
     }
