@@ -201,6 +201,11 @@ impl<A: Application + 'static> WindowState<A> {
 
             let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, self.scale);
 
+            // Drain the dirty channel so that elements whose dirty callbacks
+            // fired during event handling (e.g., AnimationController::forward())
+            // are visible to has_pending_rebuilds() below.
+            pipeline.drain_dirty_to_build_owner();
+
             // Reset cursor blink on keyboard input so cursor becomes visible
             if matches!(input_event, InputEvent::Keyboard { .. }) {
                 if pipeline.reset_cursor_blink() {

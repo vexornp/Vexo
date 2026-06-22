@@ -272,6 +272,17 @@ impl ThreeTreePipeline {
         self.build_owner.has_pending_rebuilds()
     }
 
+    /// Drain the dirty channel and mark elements for rebuild.
+    ///
+    /// This must be called after event handling so that elements whose dirty
+    /// callbacks sent their ID through the mpsc channel (e.g., AnimationController)
+    /// are visible to `has_pending_rebuilds()` before the frame-request check.
+    pub fn drain_dirty_to_build_owner(&mut self) {
+        while let Ok(element_id) = self.dirty_receiver.try_recv() {
+            self.build_owner.mark_needs_build(element_id);
+        }
+    }
+
     /// Take the focus-changed flag. Returns true if focus state changed
     /// and clears the flag.
     pub fn take_focus_changed(&mut self) -> bool {

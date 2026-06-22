@@ -40,6 +40,14 @@ impl AnimationController {
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
             self.tick_handle = Some(ticker.register(cb.clone()));
         }
+        // Fire dirty callback immediately so the element is marked for rebuild
+        // and a frame is requested on the same event loop turn. Without this,
+        // the callback is only fired on the next tick(), which only runs inside
+        // render_retain(), which only runs when a frame is already requested —
+        // a deadlock.
+        if let Some(cb) = &self.dirty_callback {
+            cb();
+        }
     }
 
     pub fn reverse(&mut self) {
@@ -49,6 +57,9 @@ impl AnimationController {
         self.start_time = Some(Instant::now());
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
             self.tick_handle = Some(ticker.register(cb.clone()));
+        }
+        if let Some(cb) = &self.dirty_callback {
+            cb();
         }
     }
 
@@ -274,9 +285,12 @@ mod tests {
         ctrl.set_ticker(ticker.clone());
         ctrl.forward();
         ctrl.forward(); // second forward should unregister old and register new
+        // Only one callback should be active in the ticker (not two),
+        // so tick() should fire exactly once.
+        let before = counter.load(Ordering::SeqCst);
         ticker.tick();
-        // Only one callback should be active (not two)
-        assert_eq!(counter.load(Ordering::SeqCst), 1);
+        let after = counter.load(Ordering::SeqCst);
+        assert_eq!(after - before, 1);
     }
 
     #[test]
