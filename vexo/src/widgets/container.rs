@@ -3,6 +3,29 @@
 use super::{Element, Widget};
 use super::super::key::WidgetKey;
 use crate::layout_builder_methods;
+
+/// Trait for types that can be pushed as children into a container.
+///
+/// Implemented by `impl Widget` (always pushed) and `Option<Box<dyn Widget>>`
+/// (pushed only if `Some`, skipped if `None`). This enables the `children![]`
+/// macro to handle conditional children transparently.
+pub trait ChildPush {
+    fn push_into(self, children: &mut Vec<Box<dyn Widget>>);
+}
+
+impl<W: Widget + 'static> ChildPush for W {
+    fn push_into(self, children: &mut Vec<Box<dyn Widget>>) {
+        children.push(self.boxed());
+    }
+}
+
+impl ChildPush for Option<Box<dyn Widget>> {
+    fn push_into(self, children: &mut Vec<Box<dyn Widget>>) {
+        if let Some(child) = self {
+            children.push(child);
+        }
+    }
+}
 use crate::style::Style;
 #[allow(unused_imports)]
 use crate::core::Color;
@@ -77,8 +100,10 @@ impl Flex {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget + 'static) -> Self {
-        self.children.push(Box::new(child));
+    ///
+    /// Accepts any `impl Widget` or `Option<Box<dyn Widget>>` (for conditional children).
+    pub fn push(mut self, child: impl ChildPush + 'static) -> Self {
+        child.push_into(&mut self.children);
         self
     }
 

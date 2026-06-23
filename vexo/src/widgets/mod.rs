@@ -24,7 +24,7 @@ use super::RenderObject;
 use super::UpdateResult;
 
 // Public API - leaf and container widgets
-pub use container::{Flex, Column, Row};
+pub use container::{Flex, Column, Row, ChildPush};
 pub use grid::Grid;
 pub use image::Image;
 pub use text::Text;

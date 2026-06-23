@@ -59,17 +59,15 @@ macro_rules! grid {
 /// Takes a parent widget expression followed by child expressions.
 /// Expands to chained `.push()` calls. Each child must implement `Widget`.
 ///
-/// # Example
+/// Conditional children are supported via `Option`:
 /// ```ignore
 /// children![Column::new().gap(16.0),
-///     Text::new("Title").padding(8.0),
-///     Text::new("Body"),
-///     children![Row::new().gap(8.0),
-///         Text::new("A"),
-///         Text::new("B"),
-///     ],
+///     Text::new("Always shown"),
+///     if show_extra { Text::new("Extra").boxed() },
 /// ]
 /// ```
+/// `if` expressions that don't evaluate produce `None`, which is skipped.
+/// Conditional children must be `Option<Box<dyn Widget>>` (use `.boxed()`).
 #[macro_export]
 macro_rules! children {
     ($parent:expr, $($child:expr),* $(,)?) => {{

@@ -58,8 +58,10 @@ impl Grid {
     }
 
     /// Add a child widget.
-    pub fn push(mut self, child: impl Widget + 'static) -> Self {
-        self.children.push(Box::new(child));
+    ///
+    /// Accepts any `impl Widget` or `Option<Box<dyn Widget>>` (for conditional children).
+    pub fn push(mut self, child: impl super::container::ChildPush + 'static) -> Self {
+        child.push_into(&mut self.children);
         self
     }
 
