@@ -3,9 +3,18 @@
 //! Provides `StatefulMutable<T>` which bridges futures-signals `Mutable<T>`
 //! with the Vexo BuildOwner for automatic dirty marking when state changes.
 
-pub use futures_signals::signal::{Mutable, ReadOnlyMutable, Signal, SignalExt};
+pub use futures_signals::signal::{Mutable, ReadOnlyMutable, SignalExt};
 
 use std::sync::Arc;
+
+/// Reactive state primitive — the Vexo equivalent of React's `useState` or Vue's `ref()`.
+///
+/// When `set()` is called and the value changes, the owning element is
+/// automatically marked dirty, triggering a rebuild on the next frame.
+///
+/// Renamed from `StatefulMutable` for web developer familiarity.
+/// `StatefulMutable` remains available as a deprecated alias.
+pub type Signal<T> = StatefulMutable<T>;
 
 /// A `Mutable<T>` that automatically marks its owning element dirty when changed.
 ///

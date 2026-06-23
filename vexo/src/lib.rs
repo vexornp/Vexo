@@ -34,6 +34,9 @@ mod frame_builder;
 pub use frame_builder::FrameBuilder;
 mod resource;
 pub mod reactive;
+pub use reactive::Signal;
+#[deprecated(since = "0.x", note = "Use `Signal` instead")]
+pub use reactive::StatefulMutable;
 pub mod state;
 mod macros;
 mod window;
