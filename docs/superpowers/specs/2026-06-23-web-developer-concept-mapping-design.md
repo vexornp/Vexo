@@ -145,7 +145,7 @@ Column::new()   // = Flex::column()
 Row::new()      // = Flex::row()
 ```
 
-Simple newtype wrappers or type aliases. Zero behavioral change.
+Type aliases (`pub type Column = Flex;`), not newtypes. Zero behavioral change. Newtypes would break the `.push()` chain since `push()` is on `Flex`.
 
 ### 4b. `children![]` macro
 
