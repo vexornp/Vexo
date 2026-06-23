@@ -473,12 +473,57 @@ pub trait StatefulWidget: Sized + 'static {
 /// This is the web-developer-friendly name for `StatefulWidget`.
 /// Maps to React's function component or Vue's component.
 ///
-/// The key difference from `StatefulWidget` is the method name:
-/// `render()` instead of `build()`.
-pub trait Component: StatefulWidget {}
+/// Use `render()` instead of `build()`. The blanket `impl StatefulWidget`
+/// for `Component` types delegates `build()` to `render()`, so you only
+/// need to implement this trait.
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Clone)]
+/// struct Counter { label: String }
+///
+/// #[derive(ComponentState)]
+/// struct CounterState { count: Signal<u32> }
+///
+/// impl Default for CounterState {
+///     fn default() -> Self { Self { count: Signal::new(0) } }
+/// }
+///
+/// impl Component for Counter {
+///     type State = CounterState;
+///
+///     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+///         Column::new()
+///             .push(Text::new(format!("{}: {}", self.label, state.count.get())))
+///             .boxed()
+///     }
+/// }
+/// ```
+pub trait Component: Sized + 'static {
+    /// The mutable state type that persists across rebuilds.
+    ///
+    /// Must implement `State + Default` for initialization and lifecycle.
+    type State: State + Default;
 
-/// Blanket impl: anything implementing `StatefulWidget` is a `Component`.
-impl<T: StatefulWidget> Component for T {}
+    /// Build the widget tree using current state.
+    ///
+    /// Called during mount, update, and state-driven rebuilds.
+    /// The state is passed mutably so the widget can modify it.
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget>;
+}
+
+/// Blanket impl: any `Component` is also a `StatefulWidget`.
+///
+/// Delegates `StatefulWidget::build()` to `Component::render()`,
+/// so developers only need to implement `Component::render()`.
+impl<T: Component> StatefulWidget for T {
+    type State = T::State;
+
+    fn build(&self, state: &mut Self::State, ctx: &mut BuildContext) -> Box<dyn Widget> {
+        self.render(state, ctx)
+    }
+}
 
 /// Element for StatefulWidget widgets.
 ///

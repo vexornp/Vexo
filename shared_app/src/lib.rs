@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use vexo::reactive::Signal;
 use vexo::{
-    run_desktop_demo, AnimationController, Application, Column, ComponentState, RenderContext,
-    Color, ColorTween, Focus, Image, ImageData, LifecycleContext, StatefulWidget, ScrollView,
+    run_desktop_demo, AnimationController, Application, Column, Component, ComponentState,
+    RenderContext, Color, ColorTween, Focus, Image, ImageData, LifecycleContext, ScrollView,
     Text, Tween, Widget,
 };
 uniffi::setup_scaffolding!();
@@ -36,7 +36,7 @@ fn create_test_image_data() -> ImageData {
     ImageData::from_bytes(&jpeg_bytes).expect("Failed to create ImageData from JPEG bytes")
 }
 
-// --- FocusableScrollList: A StatefulWidget that changes border on focus ---
+// --- FocusableScrollList: A Component that changes border on focus ---
 
 #[derive(Clone)]
 struct FocusableScrollList;
@@ -54,10 +54,10 @@ impl Default for FocusableScrollListState {
     }
 }
 
-impl StatefulWidget for FocusableScrollList {
+impl Component for FocusableScrollList {
     type State = FocusableScrollListState;
 
-    fn build(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let is_focused = state.is_focused.get();
         let border_color = if is_focused {
             Color::rgb(0.2, 0.4, 0.8)
@@ -95,7 +95,7 @@ fn build_scroll_content() -> Box<dyn Widget> {
     column.boxed()
 }
 
-// --- AnimatedButton: A StatefulWidget whose background color animates on press ---
+// --- AnimatedButton: A Component whose background color animates on press ---
 
 #[derive(Clone)]
 struct AnimatedButton;
@@ -130,10 +130,10 @@ impl vexo::State for AnimatedButtonState {
     }
 }
 
-impl StatefulWidget for AnimatedButton {
+impl Component for AnimatedButton {
     type State = AnimatedButtonState;
 
-    fn build(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let t = state.anim.borrow().value();
         let bg = state.color_tween.lerp(t);
 
