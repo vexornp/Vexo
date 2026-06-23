@@ -54,6 +54,33 @@ macro_rules! grid {
     }};
 }
 
+/// Declarative child composition macro — reads like JSX children.
+///
+/// Takes a parent widget expression followed by child expressions.
+/// Expands to chained `.push()` calls. Each child must implement `Widget`.
+///
+/// # Example
+/// ```ignore
+/// children![Column::new().gap(16.0),
+///     Text::new("Title").padding(8.0),
+///     Text::new("Body"),
+///     children![Row::new().gap(8.0),
+///         Text::new("A"),
+///         Text::new("B"),
+///     ],
+/// ]
+/// ```
+#[macro_export]
+macro_rules! children {
+    ($parent:expr, $($child:expr),* $(,)?) => {{
+        let mut __vexo_parent = $parent;
+        $(
+            __vexo_parent = __vexo_parent.push($child);
+        )*
+        __vexo_parent
+    }};
+}
+
 /// Generate layout property builder methods for a widget struct.
 ///
 /// Each method delegates to the corresponding `Layout` builder,
@@ -594,5 +621,61 @@ mod tests {
         assert_eq!(p.right, 2.0);
         assert_eq!(p.bottom, 3.0);
         assert_eq!(p.left, 4.0);
+    }
+
+    // --- children! macro tests ---
+
+    #[test]
+    fn children_macro_pushes_children() {
+        let col = children![crate::Flex::column(),
+            crate::Text::new("A"),
+            crate::Text::new("B"),
+            crate::Text::new("C"),
+        ];
+        assert_eq!(col.children().len(), 3);
+    }
+
+    #[test]
+    fn children_macro_nesting() {
+        let col = children![crate::Flex::column(),
+            crate::Text::new("Title"),
+            children![crate::Flex::row(),
+                crate::Text::new("A"),
+                crate::Text::new("B"),
+            ],
+        ];
+        assert_eq!(col.children().len(), 2);
+    }
+
+    #[test]
+    fn children_macro_with_builder_methods() {
+        let col = children![crate::Flex::column().gap(16.0),
+            crate::Text::new("Title").padding(8.0),
+            crate::Text::new("Body"),
+        ];
+        assert_eq!(col.children().len(), 2);
+    }
+
+    #[test]
+    fn children_macro_with_grid() {
+        let grid = children![crate::Grid::new(),
+            crate::Text::new("Cell 1"),
+            crate::Text::new("Cell 2"),
+        ];
+        assert_eq!(grid.children().len(), 2);
+    }
+
+    #[test]
+    fn children_macro_single_child() {
+        let col = children![crate::Flex::column(),
+            crate::Text::new("Only child"),
+        ];
+        assert_eq!(col.children().len(), 1);
+    }
+
+    #[test]
+    fn children_macro_no_children() {
+        let col = children![crate::Flex::column(),];
+        assert_eq!(col.children().len(), 0);
     }
 }
