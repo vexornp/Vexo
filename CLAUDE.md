@@ -75,7 +75,7 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 │  Widget trait (build() → Element)                              │
 │  Widget primitives: Text, TextEditContent, Column, Row         │
 │  Widget combinators: DecoratedContainer, GestureDetector        │
-│  Stateful widgets: StatefulWidget, StatefulMutable              │
+│  Stateful widgets: Component (was StatefulWidget), Signal (was StatefulMutable) │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -161,7 +161,7 @@ vexo/src/
 ├── pipeline.rs                 # ThreeTreePipeline
 ├── reconciler.rs               # Reconciler
 ├── build_owner.rs              # BuildOwner
-├── stateful_widget.rs          # StatefulWidget, State trait
+├── stateful_widget.rs          # Component (was StatefulWidget), ComponentState (was State), RenderContext, LifecycleContext
 ├── element_state.rs            # StateStorage
 ├── layouter.rs                 # Layouter
 ├── painter.rs                  # Painter
@@ -191,7 +191,7 @@ vexo/src/
 ├── state/                      # State management
 │   ├── mod.rs
 │   └── cursor_blink.rs         # CursorBlinkState
-├── reactive/                   # Reactive primitives (StatefulMutable)
+├── reactive/                   # Reactive primitives (Signal, was StatefulMutable)
 │   └── mod.rs
 ├── editor.rs                   # Editor (wraps glyphon::Editor)
 ├── renderer.rs                 # UiBatcher, RenderPipeline
@@ -293,10 +293,33 @@ backend.render();
 - WindowState: `vexo/src/window.rs`
 - Render backend: `vexo/src/render/wgpu_backend.rs`
 - Input events: `vexo/src/input/event.rs`
-- Stateful widgets: `vexo/src/stateful_widget.rs`, `vexo/src/reactive/mod.rs`
+- Stateful widgets: `vexo/src/stateful_widget.rs` (Component, ComponentState), `vexo/src/reactive/mod.rs` (Signal)
 - Sample application: `shared_app/src/lib.rs`
 - iOS wrapper: `shared_app/src/lib.rs`
 - Build script: `build_for_ios.sh`
+
+## Web Developer API Mapping
+
+Vexo's public API maps to web framework concepts:
+
+| Vexo | Web analog |
+|---|---|
+| `Component` trait | React function component / Vue component |
+| `ComponentState` trait | React hooks state / Vue reactive state |
+| `#[derive(ComponentState)]` | Auto-wires `Signal` fields (like React auto-re-renders) |
+| `Signal<T>` | React `useState` / Vue `ref()` |
+| `Component::render()` | React render / Vue template |
+| `RenderContext` | React render function context |
+| `LifecycleContext` | React effect context |
+| `on_mount()` | React `useEffect([])` / Vue `onMounted()` |
+| `on_update()` | React `useEffect([deps])` / Vue `onUpdated()` |
+| `on_unmount()` | React cleanup / Vue `onUnmounted()` |
+| `on_tick()` | `requestAnimationFrame` |
+| `Column::new()` / `Row::new()` | `<div flex-direction: column/row>` |
+| `children![]` macro | JSX children |
+| `.on_press()` / `.on_release()` | `onClick` / `onMouseUp` |
+
+Deprecated names (still functional): `StatefulWidget` -> `Component`, `State` -> `ComponentState`, `StatefulMutable` -> `Signal`, `BuildContext` -> `RenderContext`, `StateContext` -> `LifecycleContext`, `build()` -> `render()`.
 
 ## Three-Tree Architecture
 
