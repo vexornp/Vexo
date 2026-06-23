@@ -102,29 +102,54 @@ mod animation_flow_tests;
 // --- Re-exports from former retain/ ---
 
 pub use key::{Key, GlobalKey, WidgetKey};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use id::{ElementKey, RenderObjectKey};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use element_state::StateStorage;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use element::{Element, ElementRegistry};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use element_context::ElementContext;
 pub use event_context::EventContext;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use dirty::DirtyTracking;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use build_owner::{BuildOwner, RebuildResult};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use reconcile::Reconcilable;
 pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
-pub use stateful_widget::{Component, ComponentState, RenderContext, LifecycleContext,
-    StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
+pub use stateful_widget::{Component, ComponentState, RenderContext, LifecycleContext};
+#[deprecated(since = "0.x", note = "Use `Component` instead")]
+pub use stateful_widget::StatefulWidget;
+#[deprecated(since = "0.x", note = "Use `RenderContext` instead")]
+pub use stateful_widget::BuildContext;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
+pub use stateful_widget::StatefulElement;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
+pub use stateful_widget::ProxyRenderObject;
+#[deprecated(since = "0.x", note = "Use `ComponentState` instead")]
+pub use stateful_widget::State;
+#[deprecated(since = "0.x", note = "Use `LifecycleContext` instead")]
+pub use stateful_widget::StateContext;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
+pub use stateful_widget::SimpleState;
 #[deprecated(since = "0.x", note = "Use `ComponentState` instead")]
 pub use stateful_widget::State as ComponentStateDeprecated;
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use child_ops::{ChildOp, ChildOps};
 pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus, FocusElement};
 pub use widgets::{Widget, Text, Flex, Column, Row, Grid, TextEdit, TextEditState, TextEditingController, ScrollView, Image};
 pub use input::{MouseCursor, SystemCursorKind};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use elements::{LeafElement, ContainerElement};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject, ImageRenderObject};
+#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
 pub use pipeline::ThreeTreePipeline;
 
 extern crate alloc;
