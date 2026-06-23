@@ -120,7 +120,7 @@ pub use stateful_widget::{Component, ComponentState, RenderContext, LifecycleCon
 pub use stateful_widget::State as ComponentStateDeprecated;
 pub use child_ops::{ChildOp, ChildOps};
 pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus, FocusElement};
-pub use widgets::{Widget, Text, Flex, Grid, TextEdit, TextEditState, TextEditingController, ScrollView, Image};
+pub use widgets::{Widget, Text, Flex, Column, Row, Grid, TextEdit, TextEditState, TextEditingController, ScrollView, Image};
 pub use input::{MouseCursor, SystemCursorKind};
 pub use elements::{LeafElement, ContainerElement};
 pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject, ImageRenderObject};

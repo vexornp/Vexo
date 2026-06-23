@@ -184,6 +184,46 @@ impl Widget for Flex {
 }
 
 
+/// A vertical flex container — the web developer's default layout.
+///
+/// Web developer equivalent of `<div style="display: flex; flex-direction: column">`.
+/// Returns a `Flex` pre-configured with column direction.
+///
+/// # Example
+/// ```ignore
+/// Column::new().gap(16.0).push(Text::new("Title")).push(Text::new("Body"))
+/// ```
+pub struct Column;
+
+impl Column {
+    /// Create a vertical flex container.
+    ///
+    /// Equivalent to `Flex::column()`.
+    pub fn new() -> Flex {
+        Flex::column()
+    }
+}
+
+/// A horizontal flex container.
+///
+/// Web developer equivalent of `<div style="display: flex; flex-direction: row">`.
+/// Returns a `Flex` pre-configured with row direction.
+///
+/// # Example
+/// ```ignore
+/// Row::new().gap(8.0).push(Text::new("A")).push(Text::new("B"))
+/// ```
+pub struct Row;
+
+impl Row {
+    /// Create a horizontal flex container.
+    ///
+    /// Equivalent to `Flex::row()`.
+    pub fn new() -> Flex {
+        Flex::row()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,5 +333,37 @@ mod tests {
         assert!(w.style.corner_radius.is_some());
         assert!(w.style.clip);
         assert!(w.layout.padding.is_some());
+    }
+
+    #[test]
+    fn column_new_creates_vertical_flex() {
+        let col = Column::new();
+        let flex = Flex::column();
+        assert_eq!(col.children().len(), flex.children().len());
+        assert_eq!(col.layout.flex_direction, Some(FlexDirection::Column));
+    }
+
+    #[test]
+    fn row_new_creates_horizontal_flex() {
+        let row = Row::new();
+        let flex = Flex::row();
+        assert_eq!(row.children().len(), flex.children().len());
+        assert_eq!(row.layout.flex_direction, Some(FlexDirection::Row));
+    }
+
+    #[test]
+    fn column_supports_builder_methods() {
+        let col = Column::new().gap(16.0).padding(8.0);
+        assert_eq!(col.children().len(), 0);
+        assert_eq!(col.layout.flex_direction, Some(FlexDirection::Column));
+        assert!(col.layout.gap.is_some());
+        assert!(col.layout.padding.is_some());
+    }
+
+    #[test]
+    fn row_supports_builder_methods() {
+        let row = Row::new().gap(8.0).push(Text::new("A")).push(Text::new("B"));
+        assert_eq!(row.children().len(), 2);
+        assert_eq!(row.layout.flex_direction, Some(FlexDirection::Row));
     }
 }
