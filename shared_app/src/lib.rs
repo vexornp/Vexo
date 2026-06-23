@@ -4,11 +4,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use vexo::reactive::StatefulMutable;
+use vexo::reactive::Signal;
 use vexo::{
-    run_desktop_demo, AnimationController, Application, BuildContext, Color, ColorTween, Flex,
-    Focus, Image, ImageData, ScrollView, State as VexoState, StateContext, StatefulWidget, Text,
-    Tween, Widget,
+    run_desktop_demo, AnimationController, Application, Column, ComponentState, RenderContext,
+    Color, ColorTween, Focus, Image, ImageData, LifecycleContext, StatefulWidget, ScrollView,
+    Text, Tween, Widget,
 };
 uniffi::setup_scaffolding!();
 
@@ -41,28 +41,23 @@ fn create_test_image_data() -> ImageData {
 #[derive(Clone)]
 struct FocusableScrollList;
 
+#[derive(ComponentState)]
 struct FocusableScrollListState {
-    is_focused: StatefulMutable<bool>,
+    is_focused: Signal<bool>,
 }
 
 impl Default for FocusableScrollListState {
     fn default() -> Self {
         Self {
-            is_focused: StatefulMutable::new(false),
+            is_focused: Signal::new(false),
         }
-    }
-}
-
-impl VexoState for FocusableScrollListState {
-    fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-        self.is_focused.set_dirty_callback(callback);
     }
 }
 
 impl StatefulWidget for FocusableScrollList {
     type State = FocusableScrollListState;
 
-    fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+    fn build(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let is_focused = state.is_focused.get();
         let border_color = if is_focused {
             Color::rgb(0.2, 0.4, 0.8)
@@ -88,7 +83,7 @@ impl StatefulWidget for FocusableScrollList {
 }
 
 fn build_scroll_content() -> Box<dyn Widget> {
-    let mut column = Flex::column().gap(0.0);
+    let mut column = Column::new().gap(0.0);
     for i in 0..20 {
         let label = format!("Item {}", i + 1);
         column = column.push(Text::new(&label).padding(16.0).background(if i % 2 == 0 {
@@ -119,8 +114,8 @@ impl Default for AnimatedButtonState {
     }
 }
 
-impl VexoState for AnimatedButtonState {
-    fn init(&mut self, ctx: &mut StateContext) {
+impl vexo::State for AnimatedButtonState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         self.anim
             .borrow_mut()
             .set_ticker(ctx.animation_ticker().clone());
@@ -130,7 +125,7 @@ impl VexoState for AnimatedButtonState {
         self.anim.borrow_mut().set_dirty_callback(callback);
     }
 
-    fn animate(&mut self, now: std::time::Instant) {
+    fn on_tick(&mut self, now: std::time::Instant) {
         self.anim.borrow_mut().advance(now);
     }
 }
@@ -138,12 +133,12 @@ impl VexoState for AnimatedButtonState {
 impl StatefulWidget for AnimatedButton {
     type State = AnimatedButtonState;
 
-    fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+    fn build(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let t = state.anim.borrow().value();
         let bg = state.color_tween.lerp(t);
 
         let anim = state.anim.clone();
-        Flex::column()
+        Column::new()
             .background(bg)
             .corner_radius(8.0)
             .padding(8.0)
@@ -172,7 +167,7 @@ impl Application for State {
     fn view(_state: &mut Self::State, _font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
         let test_image = create_test_image_data();
 
-        Flex::column()
+        Column::new()
             .gap(16.0)
             .push(Text::new("Image Demo").padding(8.0))
             .push(Image::new(test_image).width(200.0).border(Color::BLUE, 3.0))
