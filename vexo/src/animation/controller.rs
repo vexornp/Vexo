@@ -35,6 +35,7 @@ impl AnimationController {
 
     pub fn forward(&mut self) {
         self.unregister_from_ticker();
+        self.value = 0.0;
         self.direction = AnimationDirection::Forward;
         self.start_time = Some(Instant::now());
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
