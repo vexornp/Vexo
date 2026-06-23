@@ -459,6 +459,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "component_state_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2632,6 +2641,7 @@ dependencies = [
  "anyhow",
  "bitflags",
  "bytemuck",
+ "component_state_derive",
  "env_logger 0.10.2",
  "futures-signals",
  "glyphon",

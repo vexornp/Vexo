@@ -5,10 +5,13 @@ members = [
     # 1. The core Vexo framework library
     "vexo",
 
-    # 2. The platform-agnostic application logic (for desktop and mobile exports)
+    # 2. Proc-macro crate for #[derive(ComponentState)]
+    "vexo/component_state_derive",
+
+    # 3. The platform-agnostic application logic (for desktop and mobile exports)
     "shared_app",
 
-    # 3. The executable that runs the shared_app logic on the desktop
+    # 4. The executable that runs the shared_app logic on the desktop
     "desktop_demo",
 ]
 

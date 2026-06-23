@@ -18,3 +18,4 @@ uniffi = { workspace = true }
 bitflags = { workspace = true }
 futures-signals = { workspace = true }
 image = { workspace = true }
+component_state_derive = { path = "component_state_derive" }
