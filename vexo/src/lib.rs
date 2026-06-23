@@ -114,7 +114,10 @@ pub use hit_test::HitTestResult;
 pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
 pub use style::Style;
 pub use update_result::UpdateResult;
-pub use stateful_widget::{StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
+pub use stateful_widget::{Component, ComponentState, RenderContext, LifecycleContext,
+    StatefulWidget, BuildContext, StatefulElement, ProxyRenderObject, State, StateContext, SimpleState};
+#[deprecated(since = "0.x", note = "Use `ComponentState` instead")]
+pub use stateful_widget::State as ComponentStateDeprecated;
 pub use child_ops::{ChildOp, ChildOps};
 pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus, FocusElement};
 pub use widgets::{Widget, Text, Flex, Grid, TextEdit, TextEditState, TextEditingController, ScrollView, Image};

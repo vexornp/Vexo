@@ -132,6 +132,40 @@ pub trait State: 'static {
     ///
     /// The default implementation does nothing.
     fn animate(&mut self, _now: std::time::Instant) {}
+
+    // ========================================================================
+    // Web-developer-friendly lifecycle aliases
+    // ========================================================================
+
+    /// Called once when the element is first mounted.
+    ///
+    /// Alias for `init()`. Web developers familiar with React's `useEffect([])`
+    /// or Vue's `onMounted()` should use this name.
+    fn on_mount(&mut self, ctx: &mut StateContext) {
+        self.init(ctx);
+    }
+
+    /// Called when the parent widget is rebuilt with new configuration.
+    ///
+    /// Alias for `did_update_widget()`. Maps to React's `useEffect([deps])`
+    /// or Vue's `onUpdated()`.
+    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+        self.did_update_widget(old_widget, ctx);
+    }
+
+    /// Called when the element is removed from the tree.
+    ///
+    /// Alias for `dispose()`. Maps to React's cleanup function or Vue's `onUnmounted()`.
+    fn on_unmount(&mut self, ctx: &mut StateContext) {
+        self.dispose(ctx);
+    }
+
+    /// Called every frame before render, for animations and per-frame logic.
+    ///
+    /// Alias for `animate()`. Maps to `requestAnimationFrame`.
+    fn on_tick(&mut self, now: std::time::Instant) {
+        self.animate(now);
+    }
 }
 
 /// Wrapper for simple state types that don't need reactive fields.
@@ -171,6 +205,19 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
         &mut self.0
     }
 }
+
+// ============================================================================
+// COMPONENT STATE TRAIT
+// ============================================================================
+
+/// Trait for state objects belonging to Components.
+///
+/// This is the web-developer-friendly name for `State`.
+/// `State` remains available as a deprecated alias.
+pub trait ComponentState: State {}
+
+/// Blanket impl: anything implementing `State` is a `ComponentState`.
+impl<T: State> ComponentState for T {}
 
 // ============================================================================
 // STATE CONTEXT
@@ -305,6 +352,12 @@ impl<'a> StateContext<'a> {
     }
 }
 
+/// Context provided to `ComponentState` lifecycle methods.
+///
+/// Web-developer-friendly name for `StateContext`.
+/// Maps to React's effect context or Vue's lifecycle hook context.
+pub type LifecycleContext<'a> = StateContext<'a>;
+
 // ============================================================================
 // BUILD CONTEXT
 // ============================================================================
@@ -349,6 +402,12 @@ impl<'a> BuildContext<'a> {
         self.build_owner.focused_element() == Some(self.element_id)
     }
 }
+
+/// Context provided to `Component::render()`.
+///
+/// Web-developer-friendly name for `BuildContext`.
+/// Maps to React's render function context or Vue's setup context.
+pub type RenderContext<'a> = BuildContext<'a>;
 
 /// Trait for widgets that have persistent mutable state.
 ///
@@ -402,6 +461,22 @@ pub trait StatefulWidget: Sized + 'static {
     /// The state is passed mutably so the widget can modify it.
     fn build(&self, state: &mut Self::State, ctx: &mut BuildContext) -> Box<dyn Widget>;
 }
+
+// ============================================================================
+// COMPONENT TRAIT
+// ============================================================================
+
+/// Trait for widgets with persistent mutable state.
+///
+/// This is the web-developer-friendly name for `StatefulWidget`.
+/// Maps to React's function component or Vue's component.
+///
+/// The key difference from `StatefulWidget` is the method name:
+/// `render()` instead of `build()`.
+pub trait Component: StatefulWidget {}
+
+/// Blanket impl: anything implementing `StatefulWidget` is a `Component`.
+impl<T: StatefulWidget> Component for T {}
 
 /// Element for StatefulWidget widgets.
 ///
