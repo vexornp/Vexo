@@ -64,7 +64,9 @@ pub trait State: 'static {
     ///     text_edit.controller.set_dirty_callback(ctx.dirty_callback());
     /// }
     /// ```
-    fn init(&mut self, _ctx: &mut StateContext) {}
+    fn init(&mut self, ctx: &mut StateContext) {
+        self.on_mount(ctx);
+    }
 
     /// Called when the parent widget is rebuilt with a new configuration.
     ///
@@ -85,14 +87,18 @@ pub trait State: 'static {
     ///     }
     /// }
     /// ```
-    fn did_update_widget(&mut self, _old_widget: &dyn Any, _ctx: &mut StateContext) {}
+    fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+        self.on_update(old_widget, ctx);
+    }
 
     /// Called when the StatefulElement is removed from the tree.
     ///
     /// Equivalent to Flutter's `dispose()`. Use this for cleanup
     /// like canceling timers, releasing resources, and unwiring
     /// controller callbacks.
-    fn dispose(&mut self, _ctx: &mut StateContext) {}
+    fn dispose(&mut self, ctx: &mut StateContext) {
+        self.on_unmount(ctx);
+    }
 
     /// Wire up dirty callbacks for any `StatefulMutable` fields.
     ///
@@ -131,7 +137,9 @@ pub trait State: 'static {
     /// of the rebuild cycle.
     ///
     /// The default implementation does nothing.
-    fn animate(&mut self, _now: std::time::Instant) {}
+    fn animate(&mut self, now: std::time::Instant) {
+        self.on_tick(now);
+    }
 
     // ========================================================================
     // Web-developer-friendly lifecycle aliases
@@ -139,33 +147,27 @@ pub trait State: 'static {
 
     /// Called once when the element is first mounted.
     ///
-    /// Alias for `init()`. Web developers familiar with React's `useEffect([])`
-    /// or Vue's `onMounted()` should use this name.
-    fn on_mount(&mut self, ctx: &mut StateContext) {
-        self.init(ctx);
-    }
+    /// Web-developer-friendly lifecycle method. Maps to React's `useEffect([])`
+    /// or Vue's `onMounted()`. Override this instead of `init()`.
+    fn on_mount(&mut self, _ctx: &mut StateContext) {}
 
     /// Called when the parent widget is rebuilt with new configuration.
     ///
-    /// Alias for `did_update_widget()`. Maps to React's `useEffect([deps])`
-    /// or Vue's `onUpdated()`.
-    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
-        self.did_update_widget(old_widget, ctx);
-    }
+    /// Web-developer-friendly lifecycle method. Maps to React's `useEffect([deps])`
+    /// or Vue's `onUpdated()`. Override this instead of `did_update_widget()`.
+    fn on_update(&mut self, _old_widget: &dyn Any, _ctx: &mut StateContext) {}
 
     /// Called when the element is removed from the tree.
     ///
-    /// Alias for `dispose()`. Maps to React's cleanup function or Vue's `onUnmounted()`.
-    fn on_unmount(&mut self, ctx: &mut StateContext) {
-        self.dispose(ctx);
-    }
+    /// Web-developer-friendly lifecycle method. Maps to React's cleanup function
+    /// or Vue's `onUnmounted()`. Override this instead of `dispose()`.
+    fn on_unmount(&mut self, _ctx: &mut StateContext) {}
 
     /// Called every frame before render, for animations and per-frame logic.
     ///
-    /// Alias for `animate()`. Maps to `requestAnimationFrame`.
-    fn on_tick(&mut self, now: std::time::Instant) {
-        self.animate(now);
-    }
+    /// Web-developer-friendly lifecycle method. Maps to `requestAnimationFrame`.
+    /// Override this instead of `animate()`.
+    fn on_tick(&mut self, _now: std::time::Instant) {}
 }
 
 /// Wrapper for simple state types that don't need reactive fields.
@@ -213,7 +215,7 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 /// Trait for state objects belonging to Components.
 ///
 /// This is the web-developer-friendly name for `State`.
-/// `State` remains available as a deprecated alias.
+/// `State` remains available as the original name.
 pub trait ComponentState: State {}
 
 /// Blanket impl: anything implementing `State` is a `ComponentState`.
