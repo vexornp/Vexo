@@ -13,3 +13,5 @@ pub use vexo::Widget;
 
 pub mod platform;
 pub use platform::Platform;
+
+pub mod theme;
