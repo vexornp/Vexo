@@ -10,3 +10,6 @@ pub use vexo::ComponentState;
 pub use vexo::Signal;
 pub use vexo::Color;
 pub use vexo::Widget;
+
+pub mod platform;
+pub use platform::Platform;
