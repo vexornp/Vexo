@@ -157,7 +157,8 @@ impl Button {
     fn resolve_text_color(&self, is_hovered: bool) -> Color {
         let alpha = if self.disabled { tokens::button::DISABLED_ALPHA } else { 1.0 };
         let base = match self.variant {
-            ButtonVariant::Primary | ButtonVariant::Destructive => tokens::button::PRIMARY_TEXT,
+            ButtonVariant::Primary => tokens::button::PRIMARY_TEXT,
+            ButtonVariant::Destructive => tokens::button::DESTRUCTIVE_TEXT,
             ButtonVariant::Secondary => tokens::button::SECONDARY_TEXT,
             ButtonVariant::Ghost => {
                 if is_hovered && self.effective_platform() == Platform::Desktop {
@@ -177,19 +178,20 @@ impl Button {
         }
     }
 
+    /// Returns (top, right, bottom, left) for padding_each (TRBL order).
     fn resolve_padding(&self) -> (f32, f32, f32, f32) {
         match self.effective_platform() {
             Platform::Desktop => (
-                tokens::button::PADDING_H_DESKTOP,
+                tokens::button::PADDING_V_DESKTOP,
                 tokens::button::PADDING_H_DESKTOP,
                 tokens::button::PADDING_V_DESKTOP,
-                tokens::button::PADDING_V_DESKTOP,
+                tokens::button::PADDING_H_DESKTOP,
             ),
             Platform::Mobile => (
-                tokens::button::PADDING_H_MOBILE,
+                tokens::button::PADDING_V_MOBILE,
                 tokens::button::PADDING_H_MOBILE,
                 tokens::button::PADDING_V_MOBILE,
-                tokens::button::PADDING_V_MOBILE,
+                tokens::button::PADDING_H_MOBILE,
             ),
         }
     }
@@ -206,7 +208,7 @@ impl Component for Button {
         let (border_color, border_width) = self.resolve_border();
         let _text_color = self.resolve_text_color(is_hovered);
         let corner_radius = self.resolve_corner_radius();
-        let (pl, pr, pt, pb) = self.resolve_padding();
+        let (pt, pr, pb, pl) = self.resolve_padding();
 
         let disabled = self.disabled;
         let on_press_cb = self.on_press.clone();
@@ -219,7 +221,7 @@ impl Component for Button {
         let mut text = Text::new(&self.label)
             .background(bg)
             .corner_radius(corner_radius)
-            .padding_each(pl, pr, pt, pb);
+            .padding_each(pt, pr, pb, pl);
 
         if border_width > 0.0 {
             text = text.border(border_color, border_width);
