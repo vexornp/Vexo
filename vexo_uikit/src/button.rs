@@ -206,6 +206,7 @@ impl Component for Button {
 
         let bg = self.resolve_bg(is_pressed, is_hovered);
         let (border_color, border_width) = self.resolve_border();
+        // TODO: apply text_color when vexo Text widget supports text color
         let _text_color = self.resolve_text_color(is_hovered);
         let corner_radius = self.resolve_corner_radius();
         let (pt, pr, pb, pl) = self.resolve_padding();

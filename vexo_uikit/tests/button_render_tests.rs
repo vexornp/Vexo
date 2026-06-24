@@ -47,7 +47,7 @@ fn button_disabled_render_does_not_panic() {
 }
 
 #[test]
-fn button_hover_state_produces_different_render() {
+fn button_hover_state_render_does_not_panic() {
     let button = Button::new("Hover").variant(ButtonVariant::Primary).platform(Platform::Desktop);
     let mut state = ButtonState::default();
     let element_id = make_element_key();
