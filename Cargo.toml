@@ -13,6 +13,9 @@ members = [
 
     # 4. The executable that runs the shared_app logic on the desktop
     "desktop_demo",
+
+    # 5. Rich UI component library built on vexo
+    "vexo_uikit",
 ]
 
 # ------------------------------------------------------------------------
