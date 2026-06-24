@@ -33,8 +33,8 @@ impl Default for ButtonVariant {
 /// Auto-wired by `#[derive(ComponentState)]`.
 #[derive(ComponentState, Default)]
 pub struct ButtonState {
-    is_pressed: Signal<bool>,
-    is_hovered: Signal<bool>,
+    pub is_pressed: Signal<bool>,
+    pub is_hovered: Signal<bool>,
 }
 
 /// A platform-adaptive button component.
