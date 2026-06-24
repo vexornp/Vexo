@@ -10,6 +10,7 @@ use vexo::{
     RenderContext, Color, ColorTween, Focus, Image, ImageData, LifecycleContext, ScrollView,
     Text, Tween, Widget,
 };
+use vexo_uikit::Button;
 uniffi::setup_scaffolding!();
 
 /// Creates a 200x150 gradient JPEG as ImageData for demo purposes.
@@ -114,7 +115,7 @@ impl Default for AnimatedButtonState {
     }
 }
 
-impl vexo::State for AnimatedButtonState {
+impl vexo::ComponentState for AnimatedButtonState {
     fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         self.anim
             .borrow_mut()
@@ -155,16 +156,20 @@ impl Component for AnimatedButton {
 }
 
 // --- The User's Code ---
-pub struct State;
+pub struct State {
+    click_count: Signal<u32>,
+}
 
 impl Application for State {
     type State = Self;
 
     fn new() -> Self::State {
-        Self
+        Self {
+            click_count: Signal::new(0),
+        }
     }
 
-    fn view(_state: &mut Self::State, _font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
+    fn view(state: &mut Self::State, _font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
         let test_image = create_test_image_data();
 
         Column::new()
@@ -173,6 +178,14 @@ impl Application for State {
             .push(Image::new(test_image).width(200.0).border(Color::BLUE, 3.0))
             .push(FocusableScrollList.boxed())
             .push(AnimatedButton.boxed())
+            .push(
+                Button::new(format!("Clicked {} times", state.click_count.get()))
+                    .on_press({
+                        let count = state.click_count.clone();
+                        move || count.set(count.get() + 1)
+                    })
+                    .boxed(),
+            )
             .boxed()
     }
 }
