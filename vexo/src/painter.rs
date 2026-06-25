@@ -133,9 +133,20 @@ impl Painter {
             ctx.push_command(RenderCommand::PushOffset { offset: *offset });
         }
 
+        // If this object has an opacity, push it before painting children.
+        let opacity = obj.opacity();
+        if let Some(opacity_value) = &opacity {
+            ctx.push_command(RenderCommand::PushOpacity { opacity: *opacity_value });
+        }
+
         // Paint children
         for child_id in obj.children() {
             Self::paint_recursive(render_objects, *child_id, ctx, absolute_position);
+        }
+
+        // Pop opacity after children
+        if opacity.is_some() {
+            ctx.push_command(RenderCommand::PopOpacity);
         }
 
         // Pop scroll offset after children
