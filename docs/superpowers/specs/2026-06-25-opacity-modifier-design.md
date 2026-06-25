@@ -94,9 +94,58 @@ Add `current_opacity: f32` initialized to `1.0` and `opacity_stack: Vec<f32>`.
 - `PopOpacity` → pop previous opacity from stack
 - When processing `Rect`, `Caret`: multiply `fill` and `stroke` color alpha by `current_opacity`
 - When processing `Text`: multiply `color` alpha by `current_opacity`
-- When processing `Image`: the image shader uses its own alpha; multiply into the image request's alpha field
+- When processing `Image`: set `image_request.opacity = current_opacity`
 
-This is the single place where alpha multiplication happens. FrameBuilder receives already-multiplied colors.
+This is the single place where alpha multiplication happens for Rect/Text/Caret (colors are pre-multiplied before reaching FrameBuilder). For Image, the opacity value is passed through to the GPU shader.
+
+### ImageRequest & ImageInstance (`vexo/src/frame_builder.rs`, `vexo/src/image_instance.rs`)
+
+Add `opacity: f32` field to both structs. Default value `1.0`.
+
+`ImageRequest`:
+```rust
+pub struct ImageRequest {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub image_key: ImageKey,
+    pub corner_radius: f32,
+    pub transform: [f32; 6],
+    pub opacity: f32,  // NEW — 0.0 to 1.0, default 1.0
+}
+```
+
+`ImageInstance`:
+```rust
+pub struct ImageInstance {
+    // ... existing fields ...
+    pub opacity: f32,  // NEW — replaces one _padding slot
+    pub _padding: [f32; 1],  // reduced from [f32; 2]
+}
+```
+
+The `opacity` field replaces one of the two `_padding` f32s in `ImageInstance`, keeping the struct size unchanged (no GPU layout changes needed beyond the attribute wiring).
+
+### Image Shader (`vexo/src/image_shader.wgsl`)
+
+Add `inst_opacity` attribute at location 9 (reusing the former padding slot). In the fragment shader, multiply the final output alpha by `inst_opacity`:
+
+```wgsl
+// In vs_main, add:
+@location(9) inst_opacity: f32,
+
+// Pass through to fragment
+out.opacity = inst_opacity;
+
+// In fs_main, change the return:
+// Before: return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha);
+// After:  return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha * in.opacity);
+```
+
+For the no-corner-radius fast path:
+```wgsl
+// Before: return tex_color;
+// After:  return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity);
+```
 
 ## Edge Cases
 
@@ -128,5 +177,9 @@ This is the single place where alpha multiplication happens. FrameBuilder receiv
 - `vexo/src/render_object.rs` — add `opacity()` default method to RenderObject trait
 - `vexo/src/render/command.rs` — add `PushOpacity`/`PopOpacity` variants
 - `vexo/src/painter.rs` — emit PushOpacity/PopOpacity around children when `obj.opacity()` returns Some
-- `vexo/src/render/command_processor.rs` — add opacity stack, multiply alpha into colors
+- `vexo/src/render/command_processor.rs` — add opacity stack, multiply alpha into Rect/Text/Caret colors, pass opacity to Image requests
+- `vexo/src/frame_builder.rs` — add `opacity: f32` field to `ImageRequest`
+- `vexo/src/image_instance.rs` — add `opacity: f32` field (replace one `_padding` slot), update `desc()` and `from_logical()`
+- `vexo/src/image_shader.wgsl` — add `inst_opacity` attribute, multiply final output alpha by opacity
+- `vexo/src/render/wgpu_backend.rs` — pass opacity from ImageRequest through to ImageInstance
 - `vexo/src/lib.rs` — re-export Opacity
