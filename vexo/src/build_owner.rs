@@ -14,7 +14,7 @@
 //!
 //! The dirty tracking uses `RefCell` for interior mutability. This allows
 //! the `mark_needs_build()` method to be called from within callbacks
-//! (e.g., `StatefulMutable::set()` dirty callbacks) that fire during
+//! (e.g., `Signal::set()` dirty callbacks) that fire during
 //! event handling, when the pipeline has a mutable borrow on itself.
 //! Using `RefCell` avoids aliasing UB that would occur with raw pointers.
 
@@ -39,7 +39,7 @@ use super::id::ElementKey;
 /// `mark_needs_build()` to be called from within event callbacks without
 /// requiring a mutable reference to the BuildOwner. This is necessary
 /// because the pipeline holds a mutable borrow during event handling,
-/// and the `StatefulMutable` dirty callbacks need to mark elements dirty.
+/// and the `Signal` dirty callbacks need to mark elements dirty.
 pub struct BuildOwner {
     /// Elements that need rebuild, in insertion order.
     /// Sorted by depth before rebuild via `sort_dirty_by_depth()`.

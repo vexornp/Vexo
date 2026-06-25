@@ -33,7 +33,7 @@ pub struct ElementContext<'a> {
     pub parent_focus_node_id: Option<FocusNodeId>,
 
     /// Animation ticker for registering per-frame callbacks.
-    /// Passed through to StateContext so that State::init() can wire
+    /// Passed through to LifecycleContext so that ComponentState::on_mount() can wire
     /// AnimationControllers to the ticker.
     pub animation_ticker: Arc<AnimationTicker>,
 }

@@ -1,6 +1,6 @@
-//! TextEdit widget - editable text input in retain mode.
+//! TextEdit widget - editable text input.
 //!
-//! Follows Flutter's EditableText pattern: a StatefulWidget with an external
+//! Follows Flutter's EditableText pattern: a Component with an external
 //! TextEditingController that owns the glyphon::Editor state.
 
 use std::any::Any;
@@ -15,7 +15,7 @@ use crate::editor::Editor;
 use crate::input::{ButtonState, InputEvent, Key, MouseCursor, NamedKey, SystemCursorKind};
 
 use super::super::key::WidgetKey;
-use super::super::stateful_widget::{BuildContext, State, StateContext, StatefulWidget};
+use super::super::stateful_widget::{RenderContext, ComponentState, LifecycleContext, Component};
 use super::super::EventContext;
 use super::Widget;
 
@@ -34,7 +34,7 @@ use super::Widget;
 ///
 /// The dirty callback uses `RefCell` for interior mutability, allowing
 /// it to be set/cleared through a shared reference (`&self`). This is
-/// necessary because `StateContext::widget()` returns `&dyn Any` (immutable),
+/// necessary because `LifecycleContext::widget()` returns `&dyn Any` (immutable),
 /// but controller wiring needs to modify the callback.
 pub struct TextEditingController {
     editor: Rc<RefCell<Editor>>,
@@ -208,7 +208,7 @@ impl std::fmt::Debug for TextEditingController {
 ///
 /// This state type is minimal — the actual editing state lives in the
 /// TextEditingController, which is owned externally. The state exists
-/// to satisfy the StatefulWidget pattern.
+/// to satisfy the Component pattern.
 pub struct TextEditState;
 
 impl Default for TextEditState {
@@ -217,12 +217,12 @@ impl Default for TextEditState {
     }
 }
 
-impl State for TextEditState {
+impl ComponentState for TextEditState {
     /// Wire the TextEditingController's dirty callback during initialization.
     ///
     /// Equivalent to Flutter's `initState()` where EditableTextState subscribes
     /// to `widget.controller.addListener(_didChangeTextEditingValue)`.
-    fn init(&mut self, ctx: &mut StateContext) {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         if let Some(text_edit) = ctx.widget().downcast_ref::<TextEdit>() {
             text_edit
                 .controller
@@ -234,7 +234,7 @@ impl State for TextEditState {
     ///
     /// Equivalent to Flutter's `didUpdateWidget()` where EditableTextState
     /// unsubscribes from the old controller and subscribes to the new one.
-    fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
         let old_te = old_widget.downcast_ref::<TextEdit>();
         let new_te = ctx.widget().downcast_ref::<TextEdit>();
         if let (Some(old), Some(new)) = (old_te, new_te) {
@@ -249,7 +249,7 @@ impl State for TextEditState {
     ///
     /// Equivalent to Flutter's `dispose()` where EditableTextState unsubscribes
     /// from `widget.controller.removeListener(_didChangeTextEditingValue)`.
-    fn dispose(&mut self, ctx: &mut StateContext) {
+    fn on_unmount(&mut self, ctx: &mut LifecycleContext) {
         if let Some(text_edit) = ctx.widget().downcast_ref::<TextEdit>() {
             text_edit.controller.clear_dirty_callback();
         }
@@ -385,7 +385,7 @@ impl State for TextEditState {
 
 /// Editable text input widget in retain mode.
 ///
-/// TextEdit is a StatefulWidget that displays editable text content.
+/// TextEdit is a Component that displays editable text content.
 /// The editing state is owned by an external TextEditingController,
 /// which the parent creates and passes in.
 ///
@@ -403,7 +403,7 @@ impl State for TextEditState {
 /// - TextEditState is the state (lifecycle)
 /// - TextEditingController is the controller (editing state)
 ///
-/// build() returns a DecoratedContainer wrapping a TextEditContent widget, with
+/// render() returns a DecoratedContainer wrapping a TextEditContent widget, with
 /// focus-dependent border styling.
 #[derive(Clone)]
 pub struct TextEdit {
@@ -500,10 +500,10 @@ impl TextEdit {
     }
 }
 
-impl StatefulWidget for TextEdit {
+impl Component for TextEdit {
     type State = TextEditState;
 
-    fn build(&self, _state: &mut TextEditState, ctx: &mut BuildContext) -> Box<dyn Widget> {
+    fn render(&self, _state: &mut TextEditState, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let is_focused = ctx.is_focused();
 
         let border_color = if is_focused {

@@ -455,6 +455,11 @@ impl RenderObjectRegistry {
         self.objects.len()
     }
 
+    /// Iterate over all render object keys.
+    pub fn keys(&self) -> impl Iterator<Item = RenderObjectKey> + '_ {
+        self.objects.keys()
+    }
+
     /// Iterate mutably over all render objects.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (RenderObjectKey, &mut Box<dyn RenderObject>)> {
         self.objects.iter_mut()

@@ -210,7 +210,7 @@ fn test_click_to_focus_with_stateful_element() {
     let mut font_system = create_test_font_system();
 
     // Reconcile a TextEdit wrapped in Focus.
-    // TextEdit is a StatefulWidget that requests focus on pointer press.
+    // TextEdit is a Component that requests focus on pointer press.
     let controller = crate::TextEditingController::new("Hello", &mut font_system);
     let widget = Focus::new(crate::TextEdit::new(controller.clone()));
     pipeline.reconcile(Box::new(widget));
@@ -581,14 +581,14 @@ mod on_focus_change_tests {
         );
     }
 
-    /// Test that a StatefulWidget wrapping Focus+ScrollView properly
+    /// Test that a Component wrapping Focus+ScrollView properly
     /// updates its visual state when focus is lost by clicking outside.
     /// This mirrors the FocusableScrollList pattern from shared_app.
     #[test]
     fn test_stateful_widget_focus_loss_updates_state() {
-        use crate::reactive::StatefulMutable;
-        use crate::StatefulWidget;
-        use crate::State as VexoState;
+        use crate::reactive::Signal;
+        use crate::Component;
+        use crate::ComponentState;
         use crate::ScrollView;
         use crate::widgets::Widget;
         use std::sync::atomic::{AtomicI32, Ordering};
@@ -604,7 +604,7 @@ mod on_focus_change_tests {
         struct FocusableScrollList;
 
         struct FocusableScrollListState {
-            is_focused: StatefulMutable<bool>,
+            is_focused: Signal<bool>,
             focus_state: Arc<AtomicI32>,
         }
 
@@ -613,22 +613,22 @@ mod on_focus_change_tests {
                 let fs = Arc::new(AtomicI32::new(0));
                 FOCUS_STATE.with(|cell| *cell.borrow_mut() = fs.clone());
                 Self {
-                    is_focused: StatefulMutable::new(false),
+                    is_focused: Signal::new(false),
                     focus_state: fs,
                 }
             }
         }
 
-        impl VexoState for FocusableScrollListState {
+        impl ComponentState for FocusableScrollListState {
             fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
                 self.is_focused.set_dirty_callback(callback);
             }
         }
 
-        impl StatefulWidget for FocusableScrollList {
+        impl Component for FocusableScrollList {
             type State = FocusableScrollListState;
 
-            fn build(&self, state: &mut Self::State, _ctx: &mut crate::BuildContext) -> Box<dyn Widget> {
+            fn render(&self, state: &mut Self::State, _ctx: &mut crate::RenderContext) -> Box<dyn Widget> {
                 let is_focused_clone = state.is_focused.clone();
                 let fs = state.focus_state.clone();
                 Focus::new(

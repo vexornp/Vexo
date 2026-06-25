@@ -63,7 +63,7 @@ impl Focus {
     ///
     /// Called with `true` when focus is gained, `false` when lost.
     /// The callback can trigger a rebuild by calling a dirty callback
-    /// captured from a StatefulWidget's `State::init()`.
+    /// captured from a Component's `ComponentState::on_mount()`.
     pub fn on_focus_change(mut self, callback: impl Fn(bool) + Send + Sync + 'static) -> Self {
         self.on_focus_change = Some(Arc::new(callback));
         self

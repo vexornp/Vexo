@@ -37,7 +37,7 @@ pub fn derive_component_state(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl vexo::State for #name {
+        impl vexo::ComponentState for #name {
             fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
                 #(#wire_calls)*
             }
@@ -49,23 +49,16 @@ pub fn derive_component_state(input: TokenStream) -> TokenStream {
 
 fn is_signal_type(ty: &Type) -> bool {
     // Check if type is Signal<T> or vexo::Signal<T> or vexo::reactive::Signal<T>
-    // Also checks StatefulMutable<T> and its qualified paths
     let type_str = quote!(#ty).to_string().replace(" ", "");
     type_str.starts_with("Signal<")
         || type_str.starts_with("vexo::Signal<")
         || type_str.starts_with("vexo::reactive::Signal<")
-        || type_str.starts_with("StatefulMutable<")
-        || type_str.starts_with("vexo::StatefulMutable<")
-        || type_str.starts_with("vexo::reactive::StatefulMutable<")
 }
 
 fn is_option_signal_type(ty: &Type) -> bool {
-    // Check if type is Option<Signal<T>>, Option<StatefulMutable<T>>, or qualified variants
+    // Check if type is Option<Signal<T>> or qualified variants
     let type_str = quote!(#ty).to_string().replace(" ", "");
     type_str.starts_with("Option<Signal<")
         || type_str.starts_with("Option<vexo::Signal<")
-        || type_str.starts_with("Option<StatefulMutable<")
-        || type_str.starts_with("Option<vexo::StatefulMutable<")
         || type_str.starts_with("Option<vexo::reactive::Signal<")
-        || type_str.starts_with("Option<vexo::reactive::StatefulMutable<")
 }

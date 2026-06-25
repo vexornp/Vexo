@@ -1,6 +1,6 @@
 //! Reactive state primitives for the Vexo framework.
 //!
-//! Provides `StatefulMutable<T>` which bridges futures-signals `Mutable<T>`
+//! Provides `Signal<T>` which bridges futures-signals `Mutable<T>`
 //! with the Vexo BuildOwner for automatic dirty marking when state changes.
 
 pub use futures_signals::signal::{Mutable, ReadOnlyMutable, SignalExt};
@@ -12,37 +12,19 @@ use std::sync::Arc;
 /// When `set()` is called and the value changes, the owning element is
 /// automatically marked dirty, triggering a rebuild on the next frame.
 ///
-/// Renamed from `StatefulMutable` for web developer familiarity.
-/// `StatefulMutable` remains available as a deprecated alias.
-pub type Signal<T> = StatefulMutable<T>;
-
-/// A `Mutable<T>` that automatically marks its owning element dirty when changed.
-///
-/// This is the primary reactive primitive for `StatefulWidget` state.
-/// When `set()` is called and the value actually changes, the owning
-/// `StatefulElement` is automatically marked dirty in the `BuildOwner`,
-/// triggering a rebuild on the next frame.
-///
-/// # Usage in State
+/// # Usage in ComponentState
 ///
 /// ```ignore
-/// use vexo::reactive::StatefulMutable;
+/// use vexo::Signal;
 ///
+/// #[derive(ComponentState)]
 /// struct CounterState {
-///     count: StatefulMutable<u32>,
+///     count: Signal<u32>,
 /// }
 ///
 /// impl Default for CounterState {
 ///     fn default() -> Self {
-///         Self {
-///             count: StatefulMutable::new(0),
-///         }
-///     }
-/// }
-///
-/// impl retain::State for CounterState {
-///     fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-///         self.count.set_dirty_callback(callback);
+///         Self { count: Signal::new(0) }
 ///     }
 /// }
 ///
@@ -52,10 +34,10 @@ pub type Signal<T> = StatefulMutable<T>;
 ///
 /// # Clone Semantics
 ///
-/// `StatefulMutable<T>` uses Arc semantics — cloning creates a new handle
+/// `Signal<T>` uses Arc semantics — cloning creates a new handle
 /// to the same underlying value and dirty callback. This allows callbacks
 /// to capture clones and still trigger rebuilds.
-pub struct StatefulMutable<T> {
+pub struct Signal<T> {
     /// The underlying Mutable value.
     inner: Mutable<T>,
 
@@ -64,8 +46,8 @@ pub struct StatefulMutable<T> {
     on_change: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
-impl<T> StatefulMutable<T> {
-    /// Create a new `StatefulMutable` with the given initial value.
+impl<T> Signal<T> {
+    /// Create a new `Signal` with the given initial value.
     ///
     /// The dirty callback is not set until the element is mounted.
     /// Until then, `set()` will update the value but not trigger a rebuild.
@@ -89,7 +71,7 @@ impl<T> StatefulMutable<T> {
     }
 }
 
-impl<T: PartialEq + Copy> StatefulMutable<T> {
+impl<T: PartialEq + Copy> Signal<T> {
     /// Get the current value (requires `T: Copy`).
     pub fn get(&self) -> T {
         self.inner.get()
@@ -110,7 +92,7 @@ impl<T: PartialEq + Copy> StatefulMutable<T> {
     }
 }
 
-impl<T: PartialEq + Clone> StatefulMutable<T> {
+impl<T: PartialEq + Clone> Signal<T> {
     /// Get a cloned copy of the current value (requires `T: Clone`).
     pub fn get_cloned(&self) -> T {
         self.inner.get_cloned()
@@ -128,7 +110,7 @@ impl<T: PartialEq + Clone> StatefulMutable<T> {
     }
 }
 
-impl<T> Clone for StatefulMutable<T> {
+impl<T> Clone for Signal<T> {
     /// Clone creates a new handle to the same underlying value.
     ///
     /// Both the original and the clone share the same `Mutable<T>` and
@@ -142,7 +124,7 @@ impl<T> Clone for StatefulMutable<T> {
     }
 }
 
-impl<T: Default> Default for StatefulMutable<T> {
+impl<T: Default> Default for Signal<T> {
     fn default() -> Self {
         Self::new(T::default())
     }

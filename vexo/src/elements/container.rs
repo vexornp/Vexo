@@ -213,6 +213,8 @@ impl Element for ContainerElement {
             let old_len = old_children.len();
             let new_len = new_child_widgets.len();
 
+            log::debug!("[ContainerElement::rebuild] element_id={:?}, old_children={}, new_children={}", context.element_id, old_len, new_len);
+
             for (i, new_child_widget) in new_child_widgets.into_iter().enumerate() {
                 if i < old_len {
                     // Update existing child

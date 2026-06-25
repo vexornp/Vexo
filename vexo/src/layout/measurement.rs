@@ -8,6 +8,8 @@ use std::hash::{Hash, Hasher};
 
 use glyphon::{Attrs, Buffer, FontSystem, Metrics, Shaping};
 
+use crate::core::{Logical, Size};
+
 // ============================================================================
 // MEASURE CONTEXT TYPES
 // ============================================================================
@@ -47,7 +49,7 @@ impl<'a> TextMeasurer<'a> {
 
     /// Measure text with given constraints.
     ///
-    /// Returns (width, height) in logical pixels.
+    /// Returns the measured size in logical pixels.
     ///
     /// # Arguments
     /// - `content`: Text to measure
@@ -62,7 +64,7 @@ impl<'a> TextMeasurer<'a> {
         line_height: f32,
         available_width: Option<f32>,
         available_height: Option<f32>,
-    ) -> (f32, f32) {
+    ) -> Size<Logical> {
         let metrics = Metrics::new(font_size, font_size * line_height);
         let mut buffer = Buffer::new(self.font_system, metrics);
 
@@ -82,7 +84,7 @@ impl<'a> TextMeasurer<'a> {
             total_height = total_height.max(run.line_top + run.line_height);
         }
 
-        (max_width, total_height)
+        Size::new(max_width, total_height)
     }
 }
 
@@ -125,7 +127,7 @@ impl MeasureCacheKey {
 
 /// Cache for measurement results to avoid redundant text shaping.
 pub struct MeasureCache {
-    entries: HashMap<MeasureCacheKey, (f32, f32)>,
+    entries: HashMap<MeasureCacheKey, Size<Logical>>,
     max_entries: usize,
 }
 
@@ -139,12 +141,12 @@ impl MeasureCache {
     }
 
     /// Get a cached measurement.
-    pub fn get(&self, key: &MeasureCacheKey) -> Option<(f32, f32)> {
+    pub fn get(&self, key: &MeasureCacheKey) -> Option<Size<Logical>> {
         self.entries.get(key).copied()
     }
 
     /// Insert a measurement into the cache.
-    pub fn insert(&mut self, key: MeasureCacheKey, size: (f32, f32)) {
+    pub fn insert(&mut self, key: MeasureCacheKey, size: Size<Logical>) {
         if self.entries.len() >= self.max_entries {
             // Simple eviction: clear all entries
             self.entries.clear();
@@ -214,7 +216,7 @@ pub fn measure_text_node(
 
             let mut measurer = TextMeasurer::new(font_system);
 
-            let (natural_w, natural_h) = if let Some(cached) = cache.get(&natural_key) {
+            let natural_size = if let Some(cached) = cache.get(&natural_key) {
                 cached
             } else {
                 let size = measurer.measure(
@@ -235,28 +237,27 @@ pub fn measure_text_node(
                 _ => None,
             };
 
-            let (w, h) = if let Some(max_w) = definite_width {
-                if natural_w <= max_w {
+            let measured_size = if let Some(max_w) = definite_width {
+                if natural_size.width <= max_w {
                     // Natural width fits — no wrapping needed
-                    (natural_w, natural_h)
+                    natural_size
                 } else {
                     // Natural width exceeds available space — remeasure with constraint
                     let available_height = match available_space.height {
                         AvailableSpace::Definite(h) => Some(h),
                         _ => None,
                     };
-                    let (wrapped_w, wrapped_h) = measurer.measure(
+                    measurer.measure(
                         &text_ctx.content,
                         text_ctx.font_size,
                         text_ctx.line_height,
                         Some(max_w),
                         available_height,
-                    );
-                    (wrapped_w, wrapped_h)
+                    )
                 }
             } else {
                 // No width constraint (MaxContent/MinContent) — use natural size
-                (natural_w, natural_h)
+                natural_size
             };
 
             // Cache with the effective constraint key
@@ -264,14 +265,14 @@ pub fn measure_text_node(
                 &text_ctx.content,
                 text_ctx.font_size,
                 text_ctx.line_height,
-                if w < natural_w { definite_width } else { None },
+                if measured_size.width < natural_size.width { definite_width } else { None },
                 None,
             );
-            cache.insert(cache_key, (w, h));
+            cache.insert(cache_key, measured_size);
 
             Size {
-                width: known_dimensions.width.unwrap_or(w),
-                height: known_dimensions.height.unwrap_or(h),
+                width: known_dimensions.width.unwrap_or(measured_size.width),
+                height: known_dimensions.height.unwrap_or(measured_size.height),
             }
         }
     }
@@ -296,11 +297,11 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let (w, h) = measurer.measure("Hello", 24.0, 1.2, None, None);
+        let size = measurer.measure("Hello", 24.0, 1.2, None, None);
 
-        assert!(w > 0.0, "Width should be positive");
-        assert!(h > 0.0, "Height should be positive");
-        assert!(h < 24.0 * 1.5, "Height should be close to line height");
+        assert!(size.width > 0.0, "Width should be positive");
+        assert!(size.height > 0.0, "Height should be positive");
+        assert!(size.height < 24.0 * 1.5, "Height should be close to line height");
     }
 
     #[test]
@@ -308,12 +309,12 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let (w1, h1) = measurer.measure("Hello World", 24.0, 1.2, None, None);
-        let (w2, h2) = measurer.measure("Hello World", 24.0, 1.2, Some(50.0), None);
+        let size1 = measurer.measure("Hello World", 24.0, 1.2, None, None);
+        let size2 = measurer.measure("Hello World", 24.0, 1.2, Some(50.0), None);
 
         // Wrapped text should be narrower but taller
-        assert!(w2 < w1, "Wrapped text should be narrower");
-        assert!(h2 > h1, "Wrapped text should be taller");
+        assert!(size2.width < size1.width, "Wrapped text should be narrower");
+        assert!(size2.height > size1.height, "Wrapped text should be taller");
     }
 
     #[test]
@@ -321,10 +322,10 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let (_w, h) = measurer.measure("Line1\nLine2\nLine3", 24.0, 1.2, None, None);
+        let size = measurer.measure("Line1\nLine2\nLine3", 24.0, 1.2, None, None);
 
         // Should have height for 3 lines
-        assert!(h >= 24.0 * 1.2 * 3.0, "Height should accommodate 3 lines");
+        assert!(size.height >= 24.0 * 1.2 * 3.0, "Height should accommodate 3 lines");
     }
 
     #[test]
@@ -332,10 +333,10 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let (w, h) = measurer.measure("", 24.0, 1.2, None, None);
+        let size = measurer.measure("", 24.0, 1.2, None, None);
 
-        assert_eq!(w, 0.0, "Empty text should have zero width");
-        assert!(h > 0.0, "Empty text should still have line height");
+        assert_eq!(size.width, 0.0, "Empty text should have zero width");
+        assert!(size.height > 0.0, "Empty text should still have line height");
     }
 
     #[test]
@@ -343,10 +344,10 @@ mod tests {
         let mut cache = MeasureCache::new();
 
         let key = MeasureCacheKey::new("test", 24.0, 1.2, None, None);
-        cache.insert(key.clone(), (100.0, 30.0));
+        cache.insert(key.clone(), Size::new(100.0, 30.0));
 
         let result = cache.get(&key);
-        assert_eq!(result, Some((100.0, 30.0)));
+        assert_eq!(result, Some(Size::new(100.0, 30.0)));
     }
 
     #[test]
@@ -354,9 +355,9 @@ mod tests {
         let mut cache = MeasureCache::new();
         cache.max_entries = 2;
 
-        cache.insert(MeasureCacheKey::new("a", 24.0, 1.2, None, None), (1.0, 1.0));
-        cache.insert(MeasureCacheKey::new("b", 24.0, 1.2, None, None), (2.0, 2.0));
-        cache.insert(MeasureCacheKey::new("c", 24.0, 1.2, None, None), (3.0, 3.0));
+        cache.insert(MeasureCacheKey::new("a", 24.0, 1.2, None, None), Size::new(1.0, 1.0));
+        cache.insert(MeasureCacheKey::new("b", 24.0, 1.2, None, None), Size::new(2.0, 2.0));
+        cache.insert(MeasureCacheKey::new("c", 24.0, 1.2, None, None), Size::new(3.0, 3.0));
 
         // Cache should have been cleared when exceeding max_entries
         assert_eq!(cache.entries.len(), 1);

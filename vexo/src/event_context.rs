@@ -52,9 +52,9 @@ pub struct EventContext<'a> {
     /// (which is the normal case), and `None` in test contexts.
     pub build_owner: Option<&'a BuildOwner>,
 
-    /// Channel sender for dirty element signals from StatefulMutable callbacks.
+    /// Channel sender for dirty element signals from Signal callbacks.
     ///
-    /// When a `StatefulMutable::set()` fires its dirty callback from within
+    /// When a `Signal::set()` fires its dirty callback from within
     /// an event handler, it sends the element ID through this channel.
     pub dirty_sender: Option<&'a std::sync::mpsc::Sender<ElementKey>>,
 

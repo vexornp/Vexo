@@ -1,4 +1,4 @@
-//! StatefulWidget trait for widgets with persistent mutable state.
+//! Component trait for widgets with persistent mutable state.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -20,65 +20,58 @@ use crate::input::InputEvent;
 use crate::render::RenderCommand;
 
 // ============================================================================
-// STATE TRAIT
+// COMPONENT STATE TRAIT
 // ============================================================================
 
-/// Trait for state objects that belong to StatefulElements.
+/// Trait for state objects that belong to Components.
 ///
-/// This is the Vexo equivalent of Flutter's `State` class.
+/// This is the Vexo equivalent of React's state hooks or Vue's reactive state.
 /// Provides lifecycle hooks and a mechanism for wiring up reactive
-/// fields (like `StatefulMutable`) to automatically mark the element
+/// fields (like `Signal`) to automatically mark the element
 /// dirty when state changes.
 ///
-/// # Implementing State
+/// # Implementing ComponentState
 ///
-/// Every `StatefulWidget::State` type must implement both `State` and `Default`.
+/// Every `Component::State` type must implement both `ComponentState` and `Default`.
 /// For simple state types with no reactive fields, use the `SimpleState` wrapper
-/// or implement `State` with an empty body (all methods have default no-op impls).
+/// or implement `ComponentState` with an empty body (all methods have default no-op impls).
 ///
-/// For state types containing `StatefulMutable` fields, implement `set_dirty_callback()`
-/// to wire them up:
+/// For state types containing `Signal` fields, implement `set_dirty_callback()`
+/// to wire them up, or use `#[derive(ComponentState)]` which auto-wires them:
 ///
 /// ```ignore
+/// #[derive(ComponentState)]
 /// struct MyState {
-///     count: StatefulMutable<u32>,
-/// }
-///
-/// impl State for MyState {
-///     fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-///         self.count.set_dirty_callback(callback);
-///     }
+///     count: Signal<u32>,
 /// }
 /// ```
-pub trait State: 'static {
-    /// Called once when the StatefulElement is first mounted.
+pub trait ComponentState: 'static {
+    /// Called once when the element is first mounted.
     ///
-    /// Equivalent to Flutter's `initState()`. Use this for one-time
-    /// initialization and for subscribing to controller notifications.
+    /// Maps to React's `useEffect([])` or Vue's `onMounted()`.
+    /// Use this for one-time initialization and for subscribing to controller notifications.
     ///
     /// Access the widget via `ctx.widget()` and the dirty callback via
     /// `ctx.dirty_callback()` to wire up controllers:
     /// ```ignore
-    /// fn init(&mut self, ctx: &mut StateContext) {
+    /// fn on_mount(&mut self, ctx: &mut LifecycleContext) {
     ///     let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
     ///     text_edit.controller.set_dirty_callback(ctx.dirty_callback());
     /// }
     /// ```
-    fn init(&mut self, ctx: &mut StateContext) {
-        self.on_mount(ctx);
-    }
+    fn on_mount(&mut self, _ctx: &mut LifecycleContext) {}
 
     /// Called when the parent widget is rebuilt with a new configuration.
     ///
-    /// Equivalent to Flutter's `didUpdateWidget()`. The framework has already
-    /// updated the widget to the new instance before calling this method.
-    /// Access the current widget via `ctx.widget()`, and compare with
-    /// `old_widget` to detect changes.
+    /// Maps to React's `useEffect([deps])` or Vue's `onUpdated()`.
+    /// The framework has already updated the widget to the new instance before
+    /// calling this method. Access the current widget via `ctx.widget()`, and
+    /// compare with `old_widget` to detect changes.
     ///
     /// Use this to re-wire controller callbacks when the widget's controller
     /// changes:
     /// ```ignore
-    /// fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
+    /// fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
     ///     let old_te = old_widget.downcast_ref::<TextEdit>().unwrap();
     ///     let new_te = ctx.widget().downcast_ref::<TextEdit>().unwrap();
     ///     if !Rc::ptr_eq(&old_te.controller.editor(), &new_te.controller.editor()) {
@@ -87,26 +80,23 @@ pub trait State: 'static {
     ///     }
     /// }
     /// ```
-    fn did_update_widget(&mut self, old_widget: &dyn Any, ctx: &mut StateContext) {
-        self.on_update(old_widget, ctx);
-    }
+    fn on_update(&mut self, _old_widget: &dyn Any, _ctx: &mut LifecycleContext) {}
 
-    /// Called when the StatefulElement is removed from the tree.
+    /// Called when the element is removed from the tree.
     ///
-    /// Equivalent to Flutter's `dispose()`. Use this for cleanup
-    /// like canceling timers, releasing resources, and unwiring
-    /// controller callbacks.
-    fn dispose(&mut self, ctx: &mut StateContext) {
-        self.on_unmount(ctx);
-    }
+    /// Maps to React's cleanup function or Vue's `onUnmounted()`.
+    /// Use this for cleanup like canceling timers, releasing resources,
+    /// and unwiring controller callbacks.
+    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {}
 
-    /// Wire up dirty callbacks for any `StatefulMutable` fields.
+    /// Wire up dirty callbacks for any `Signal` fields.
     ///
-    /// Override this if your state contains `StatefulMutable` fields.
+    /// Override this if your state contains `Signal` fields.
     /// The callback marks the owning element dirty in the BuildOwner,
     /// triggering a rebuild on the next frame.
     ///
     /// The default implementation does nothing (no reactive fields).
+    /// For auto-wiring, use `#[derive(ComponentState)]`.
     fn set_dirty_callback(&mut self, _callback: Arc<dyn Fn() + Send + Sync>) {}
 
     /// Whether this element should request focus when clicked.
@@ -129,58 +119,24 @@ pub trait State: 'static {
         None
     }
 
-    /// Advance animations before rebuild.
-    ///
-    /// Called by the reconciler on each frame before `rebuild_from_state`.
-    /// Override this to advance any AnimationControllers held by this state.
-    /// The `now` parameter is the current time, captured once at the start
-    /// of the rebuild cycle.
-    ///
-    /// The default implementation does nothing.
-    fn animate(&mut self, now: std::time::Instant) {
-        self.on_tick(now);
-    }
-
-    // ========================================================================
-    // Web-developer-friendly lifecycle aliases
-    // ========================================================================
-
-    /// Called once when the element is first mounted.
-    ///
-    /// Web-developer-friendly lifecycle method. Maps to React's `useEffect([])`
-    /// or Vue's `onMounted()`. Override this instead of `init()`.
-    fn on_mount(&mut self, _ctx: &mut StateContext) {}
-
-    /// Called when the parent widget is rebuilt with new configuration.
-    ///
-    /// Web-developer-friendly lifecycle method. Maps to React's `useEffect([deps])`
-    /// or Vue's `onUpdated()`. Override this instead of `did_update_widget()`.
-    fn on_update(&mut self, _old_widget: &dyn Any, _ctx: &mut StateContext) {}
-
-    /// Called when the element is removed from the tree.
-    ///
-    /// Web-developer-friendly lifecycle method. Maps to React's cleanup function
-    /// or Vue's `onUnmounted()`. Override this instead of `dispose()`.
-    fn on_unmount(&mut self, _ctx: &mut StateContext) {}
-
     /// Called every frame before render, for animations and per-frame logic.
     ///
-    /// Web-developer-friendly lifecycle method. Maps to `requestAnimationFrame`.
-    /// Override this instead of `animate()`.
+    /// Maps to `requestAnimationFrame`. Override this to advance any
+    /// AnimationControllers held by this state.
     fn on_tick(&mut self, _now: std::time::Instant) {}
 }
 
 /// Wrapper for simple state types that don't need reactive fields.
 ///
-/// Use this when your `StatefulWidget::State` is a plain `Default` type
-/// with no `StatefulMutable` fields. It implements both `State` and `Default`
+/// Use this when your `Component::State` is a plain `Default` type
+/// with no `Signal` fields. It implements both `ComponentState` and `Default`
 /// with no-op lifecycle hooks.
 ///
 /// # Example
 ///
 /// ```ignore
 /// struct MyWidget;
-/// impl StatefulWidget for MyWidget {
+/// impl Component for MyWidget {
 ///     type State = SimpleState<MyPlainState>;
 ///     // ...
 /// }
@@ -193,7 +149,7 @@ impl<T: Default + 'static> Default for SimpleState<T> {
     }
 }
 
-impl<T: Default + 'static> State for SimpleState<T> {}
+impl<T: Default + 'static> ComponentState for SimpleState<T> {}
 
 impl<T: Default + 'static> std::ops::Deref for SimpleState<T> {
     type Target = T;
@@ -209,35 +165,22 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 }
 
 // ============================================================================
-// COMPONENT STATE TRAIT
+// LIFECYCLE CONTEXT
 // ============================================================================
 
-/// Trait for state objects belonging to Components.
+/// Context provided to `ComponentState` lifecycle methods.
 ///
-/// This is the web-developer-friendly name for `State`.
-/// `State` remains available as the original name.
-pub trait ComponentState: State {}
-
-/// Blanket impl: anything implementing `State` is a `ComponentState`.
-impl<T: State> ComponentState for T {}
-
-// ============================================================================
-// STATE CONTEXT
-// ============================================================================
-
-/// Context provided to `State::init()`, `did_update_widget()`, and `dispose()`.
-///
-/// This is the Vexo equivalent of Flutter's `State` class methods.
+/// Maps to React's effect context or Vue's lifecycle hook context.
 /// The key method is `setState()`, which mutates state and marks the
 /// element dirty for rebuild.
 ///
 /// Unlike Flutter's `State.widget` getter, Vexo provides widget access
-/// through `StateContext::widget()` since Rust's trait objects cannot
+/// through `LifecycleContext::widget()` since Rust's trait objects cannot
 /// be generic over the widget type. Downcast to the concrete type:
 /// ```ignore
 /// let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
 /// ```
-pub struct StateContext<'a> {
+pub struct LifecycleContext<'a> {
     /// The element ID of the owning StatefulElement.
     element_id: ElementKey,
 
@@ -256,17 +199,11 @@ pub struct StateContext<'a> {
     dirty_callback: Arc<dyn Fn() + Send + Sync>,
 
     /// Animation ticker for registering per-frame callbacks.
-    /// State::init() can use this to wire AnimationControllers:
-    /// ```ignore
-    /// fn init(&mut self, ctx: &mut StateContext) {
-    ///     self.controller.set_ticker(ctx.animation_ticker().clone());
-    /// }
-    /// ```
     animation_ticker: Arc<AnimationTicker>,
 }
 
-impl<'a> StateContext<'a> {
-    /// Create a new StateContext. Only called by StatefulElement.
+impl<'a> LifecycleContext<'a> {
+    /// Create a new LifecycleContext. Only called by StatefulElement.
     fn new(
         element_id: ElementKey,
         build_owner: &'a BuildOwner,
@@ -319,14 +256,14 @@ impl<'a> StateContext<'a> {
 
     /// Get the current widget configuration as a type-erased reference.
     ///
-    /// Downcast to the concrete widget type in your State implementation:
+    /// Downcast to the concrete widget type in your ComponentState implementation:
     /// ```ignore
     /// let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
     /// ```
     ///
     /// This is the Vexo equivalent of Flutter's `State.widget` getter.
     /// The widget is always the *new* (current) configuration — in
-    /// `did_update_widget()`, use the `old_widget` parameter for the
+    /// `on_update()`, use the `old_widget` parameter for the
     /// previous configuration.
     pub fn widget(&self) -> &dyn Any {
         self.widget
@@ -342,10 +279,10 @@ impl<'a> StateContext<'a> {
 
     /// Get the animation ticker for this element.
     ///
-    /// Use this in `State::init()` to wire AnimationControllers to the
+    /// Use this in `on_mount()` to wire AnimationControllers to the
     /// per-frame tick loop:
     /// ```ignore
-    /// fn init(&mut self, ctx: &mut StateContext) {
+    /// fn on_mount(&mut self, ctx: &mut LifecycleContext) {
     ///     self.controller.set_ticker(ctx.animation_ticker().clone());
     /// }
     /// ```
@@ -354,18 +291,14 @@ impl<'a> StateContext<'a> {
     }
 }
 
-/// Context provided to `ComponentState` lifecycle methods.
+// ============================================================================
+// RENDER CONTEXT
+// ============================================================================
+
+/// Context provided to `Component::render()`.
 ///
-/// Web-developer-friendly name for `StateContext`.
-/// Maps to React's effect context or Vue's lifecycle hook context.
-pub type LifecycleContext<'a> = StateContext<'a>;
-
-// ============================================================================
-// BUILD CONTEXT
-// ============================================================================
-
-/// Context provided to StatefulWidget::build().
-pub struct BuildContext<'a> {
+/// Maps to React's render function context or Vue's setup context.
+pub struct RenderContext<'a> {
     /// The element ID for this stateful element.
     pub element_id: ElementKey,
 
@@ -381,7 +314,7 @@ pub struct BuildContext<'a> {
     pub build_owner: &'a BuildOwner,
 }
 
-impl<'a> BuildContext<'a> {
+impl<'a> RenderContext<'a> {
     /// Request a rebuild of this element.
     ///
     /// The element will be rebuilt during the next frame.
@@ -405,77 +338,14 @@ impl<'a> BuildContext<'a> {
     }
 }
 
-/// Context provided to `Component::render()`.
-///
-/// Web-developer-friendly name for `BuildContext`.
-/// Maps to React's render function context or Vue's setup context.
-pub type RenderContext<'a> = BuildContext<'a>;
-
-/// Trait for widgets that have persistent mutable state.
-///
-/// StatefulWidget is the Vexo equivalent of Flutter's StatefulWidget.
-/// The state persists across widget tree rebuilds, allowing the widget
-/// to maintain mutable data that survives reconciliation.
-///
-/// # Example
-///
-/// ```ignore
-/// #[derive(Clone)]
-/// struct Counter {
-///     label: String,
-/// }
-///
-/// struct CounterState {
-///     count: u32,
-/// }
-///
-/// impl Default for CounterState {
-///     fn default() -> Self {
-///         Self { count: 0 }
-///     }
-/// }
-///
-/// impl StatefulWidget for Counter {
-///     type State = CounterState;
-///
-///     fn build(&self, state: &mut CounterState, ctx: &mut BuildContext) -> Box<dyn Widget> {
-///         Flex::column()
-///             .push(Text::new(format!("{}: {}", self.label, state.count)))
-///             .push(Button::new("Increment", || {
-///                 state.count += 1;
-///                 ctx.request_rebuild();
-///             }))
-///             .boxed()
-///     }
-/// }
-/// ```
-pub trait StatefulWidget: Sized + 'static {
-    /// The mutable state type that persists across rebuilds.
-    ///
-    /// Must implement `State + Default` for initialization and lifecycle.
-    /// The blanket `impl<T: Default + 'static> State for T {}` ensures
-    /// backward compatibility with plain `Default` state types.
-    type State: State + Default;
-
-    /// Build the widget tree using current state.
-    ///
-    /// Called during mount, update, and state-driven rebuilds.
-    /// The state is passed mutably so the widget can modify it.
-    fn build(&self, state: &mut Self::State, ctx: &mut BuildContext) -> Box<dyn Widget>;
-}
-
 // ============================================================================
 // COMPONENT TRAIT
 // ============================================================================
 
 /// Trait for widgets with persistent mutable state.
 ///
-/// This is the web-developer-friendly name for `StatefulWidget`.
 /// Maps to React's function component or Vue's component.
-///
-/// Use `render()` instead of `build()`. The blanket `impl StatefulWidget`
-/// for `Component` types delegates `build()` to `render()`, so you only
-/// need to implement this trait.
+/// Use `render()` to describe the widget tree based on current state.
 ///
 /// # Example
 ///
@@ -503,8 +373,10 @@ pub trait StatefulWidget: Sized + 'static {
 pub trait Component: Sized + 'static {
     /// The mutable state type that persists across rebuilds.
     ///
-    /// Must implement `State + Default` for initialization and lifecycle.
-    type State: State + Default;
+    /// Must implement `ComponentState + Default` for initialization and lifecycle.
+    /// The blanket `impl<T: Default + 'static> ComponentState for T {}` ensures
+    /// backward compatibility with plain `Default` state types.
+    type State: ComponentState + Default;
 
     /// Build the widget tree using current state.
     ///
@@ -513,26 +385,14 @@ pub trait Component: Sized + 'static {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget>;
 }
 
-/// Blanket impl: any `Component` is also a `StatefulWidget`.
+/// Element for Component widgets.
 ///
-/// Delegates `StatefulWidget::build()` to `Component::render()`,
-/// so developers only need to implement `Component::render()`.
-impl<T: Component> StatefulWidget for T {
-    type State = T::State;
-
-    fn build(&self, state: &mut Self::State, ctx: &mut BuildContext) -> Box<dyn Widget> {
-        self.render(state, ctx)
-    }
-}
-
-/// Element for StatefulWidget widgets.
-///
-/// StatefulElement wraps a StatefulWidget and:
+/// StatefulElement wraps a Component and:
 /// - Stores the widget configuration
 /// - Manages state in StateStorage (keyed by element ID)
 /// - Builds a child widget tree on mount and update
 /// - Delegates rendering to the child element
-pub struct StatefulElement<W: StatefulWidget> {
+pub struct StatefulElement<W: Component> {
     /// The widget configuration.
     widget: W,
 
@@ -549,7 +409,7 @@ pub struct StatefulElement<W: StatefulWidget> {
     focus_attachment: Option<FocusAttachment>,
 }
 
-impl<W: StatefulWidget> StatefulElement<W> {
+impl<W: Component> StatefulElement<W> {
     /// Create a new StatefulElement from a widget.
     pub fn new(widget: W) -> Self {
         Self {
@@ -562,7 +422,7 @@ impl<W: StatefulWidget> StatefulElement<W> {
     }
 }
 
-impl<W: StatefulWidget + Clone> StatefulElement<W> {
+impl<W: Component + Clone> StatefulElement<W> {
     /// Build the child widget using the element's state.
     fn build_child_widget(
         &self,
@@ -572,18 +432,17 @@ impl<W: StatefulWidget + Clone> StatefulElement<W> {
         render_objects: &mut RenderObjectRegistry,
         build_owner: &BuildOwner,
     ) -> Box<dyn Widget> {
-        // Create BuildContext and build
-        let mut build_ctx = BuildContext {
+        let mut render_ctx = RenderContext {
             element_id,
             dirty,
             render_objects,
             build_owner,
         };
-        self.widget.build(state, &mut build_ctx)
+        self.widget.render(state, &mut render_ctx)
     }
 }
 
-impl<W: StatefulWidget + Clone> RenderObjectElement for StatefulElement<W> {
+impl<W: Component + Clone> RenderObjectElement for StatefulElement<W> {
     fn widget(&self) -> Option<&dyn Widget> {
         Some(&self.widget)
     }
@@ -619,7 +478,7 @@ impl<W: StatefulWidget + Clone> RenderObjectElement for StatefulElement<W> {
     }
 }
 
-impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
+impl<W: Component + Clone> Element for StatefulElement<W> {
     fn mount(&mut self, context: &mut ElementContext) {
         // Create focus attachment BEFORE mounting children.
         // Children will look up this element's focus node as their parent
@@ -647,21 +506,21 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
         });
         state.set_dirty_callback(dirty_callback.clone());
 
-        // Call State::init() lifecycle hook with widget access.
+        // Call ComponentState::on_mount() lifecycle hook with widget access.
         // State can wire controller callbacks via ctx.widget() and ctx.dirty_callback().
-        let mut state_ctx = StateContext::new(
+        let mut lifecycle_ctx = LifecycleContext::new(
             element_id,
             context.build_owner,
             &self.widget as &dyn Any,
             dirty_callback,
             context.animation_ticker.clone(),
         );
-        state.init(&mut state_ctx);
+        state.on_mount(&mut lifecycle_ctx);
 
         // Store state in StateStorage
         context.insert_state(element_id, state);
 
-        // Build the child widget tree using BuildContext
+        // Build the child widget tree using RenderContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
@@ -678,17 +537,22 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
-        // Save old widget for did_update_widget before replacing
+        // Save old widget for on_update before replacing
         let old_widget: W = self.widget.clone();
 
-        // Downcast to the concrete widget type
-        if let Ok(widget) = new_widget.downcast::<W>() {
-            self.widget = *widget;
+        // Downcast Box<dyn Any> → Box<dyn Widget> → W
+        // The reconciler wraps widgets as Box<Box<dyn Widget>>, so we need
+        // the two-step downcast (same as ContainerElement::rebuild and
+        // RenderObjectElement::update_render_object).
+        if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
+            if let Some(w) = widget.as_any().downcast_ref::<W>() {
+                self.widget = w.clone();
+            }
         }
 
         let element_id = context.element_id;
 
-        // Call State::did_update_widget() lifecycle hook.
+        // Call ComponentState::on_update() lifecycle hook.
         // The widget has already been updated to the new instance.
         // State can compare old vs. new controllers and re-wire callbacks.
         {
@@ -697,17 +561,17 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
                 let _ = tx.send(element_id);
             });
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
-            let mut state_ctx = StateContext::new(
+            let mut lifecycle_ctx = LifecycleContext::new(
                 element_id,
                 context.build_owner,
                 &self.widget as &dyn Any,
                 dirty_callback,
                 context.animation_ticker.clone(),
             );
-            state_ref.did_update_widget(&old_widget as &dyn Any, &mut state_ctx);
+            state_ref.on_update(&old_widget as &dyn Any, &mut lifecycle_ctx);
         }
 
-        // Build the child widget tree using BuildContext
+        // Build the child widget tree using RenderContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
@@ -734,7 +598,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
-        // Call State::dispose() lifecycle hook before removing state.
+        // Call ComponentState::on_unmount() lifecycle hook before removing state.
         // State can unwire controller callbacks via ctx.widget() and ctx.dirty_callback().
         if let Some(id) = self.id {
             if let Some(state) = context.state.get_mut::<W::State>(id) {
@@ -742,14 +606,14 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
                 let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
                     let _ = tx.send(id);
                 });
-                let mut state_ctx = StateContext::new(
+                let mut lifecycle_ctx = LifecycleContext::new(
                     id,
                     context.build_owner,
                     &self.widget as &dyn Any,
                     dirty_callback,
                     context.animation_ticker.clone(),
                 );
-                state.dispose(&mut state_ctx);
+                state.on_unmount(&mut lifecycle_ctx);
             }
         }
 
@@ -791,11 +655,11 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
         // Rebuild using the CURRENT widget + updated state.
         // This is called by perform_rebuilds() when setState() or
-        // StatefulMutable::set() marked this element dirty.
+        // Signal::set() marked this element dirty.
 
         let element_id = self.id.unwrap_or(context.element_id);
 
-        // Build the child widget tree using BuildContext
+        // Build the child widget tree using RenderContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
@@ -844,7 +708,7 @@ impl<W: StatefulWidget + Clone> Element for StatefulElement<W> {
             None => return,
         };
         if let Some(state_ref) = context.state.get_mut::<W::State>(element_id) {
-            state_ref.animate(now);
+            state_ref.on_tick(now);
         }
     }
 
@@ -954,16 +818,16 @@ impl RenderObject for ProxyRenderObject {
 }
 
 // ============================================================================
-// WIDGET TRAIT IMPLEMENTATION FOR STATEFULWIDGET
+// WIDGET TRAIT IMPLEMENTATION FOR COMPONENT
 // ============================================================================
 
-/// Blanket Widget implementation for StatefulWidget types.
+/// Blanket Widget implementation for Component types.
 ///
-/// This allows StatefulWidget implementations to be used anywhere
+/// This allows Component implementations to be used anywhere
 /// a Widget is expected.
-impl<W: StatefulWidget + Clone + 'static> Widget for W {
+impl<W: Component + Clone + 'static> Widget for W {
     fn key(&self) -> Option<WidgetKey> {
-        None // StatefulWidget widgets can override this if needed
+        None
     }
 
     fn create_element(&self) -> Box<dyn Element> {
@@ -996,6 +860,8 @@ mod tests {
 
     use super::*;
     use crate::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner, ChildOps, FocusManager};
+    use crate::reactive::Signal;
+    use crate::ComponentState;
 
     #[derive(Clone)]
     struct TestCounter {
@@ -1003,23 +869,26 @@ mod tests {
     }
 
     struct TestCounterState {
-        count: u32,
+        count: Signal<u32>,
     }
 
     impl Default for TestCounterState {
         fn default() -> Self {
-            Self { count: 0 }
+            Self { count: Signal::new(0) }
         }
     }
 
-    impl State for TestCounterState {}
+    impl ComponentState for TestCounterState {
+        fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+            self.count.set_dirty_callback(callback);
+        }
+    }
 
-    impl StatefulWidget for TestCounter {
+    impl Component for TestCounter {
         type State = TestCounterState;
 
-        fn build(&self, state: &mut TestCounterState, _ctx: &mut BuildContext) -> Box<dyn Widget> {
-            // Return a simple text widget showing the count
-            Box::new(Text::new(format!("{}: {}", self.label, state.count)))
+        fn render(&self, state: &mut TestCounterState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+            Box::new(Text::new(format!("{}: {}", self.label, state.count.get())))
         }
     }
 
@@ -1076,7 +945,7 @@ mod tests {
 
         // State should be created with default value
         assert!(state.get::<TestCounterState>(element_id).is_some());
-        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count, 0);
+        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count.get(), 0);
     }
 
     #[test]
@@ -1100,13 +969,13 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
-            Arc::new(AnimationTicker::new()),
+                Arc::new(AnimationTicker::new()),
             );
             Element::mount(&mut element, &mut ctx);
         }
 
         // Modify state
-        state.get_mut::<TestCounterState>(element_id).unwrap().count = 5;
+        state.get_mut::<TestCounterState>(element_id).unwrap().count.set(5);
 
         // Update with new widget
         let new_widget = TestCounter { label: "Updated".to_string() };
@@ -1123,13 +992,13 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
-            Arc::new(AnimationTicker::new()),
+                Arc::new(AnimationTicker::new()),
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
 
         // State should be preserved
-        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count, 5);
+        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count.get(), 5);
     }
 
     #[test]
@@ -1153,7 +1022,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
-            Arc::new(AnimationTicker::new()),
+                Arc::new(AnimationTicker::new()),
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -1175,7 +1044,7 @@ mod tests {
                 &mut child_ops,
                 &mut focus_manager,
                 None,
-            Arc::new(AnimationTicker::new()),
+                Arc::new(AnimationTicker::new()),
             );
             Element::unmount(&mut element, &mut ctx);
         }
@@ -1197,10 +1066,10 @@ mod tests {
     }
 
     #[test]
-    fn test_build_context_request_rebuild() {
+    fn test_render_context_request_rebuild() {
         let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
 
-        let mut ctx = BuildContext {
+        let mut ctx = RenderContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,
@@ -1213,11 +1082,11 @@ mod tests {
     }
 
     #[test]
-    fn test_build_context_is_focused() {
+    fn test_render_context_is_focused() {
         let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
 
         // Not focused initially
-        let ctx = BuildContext {
+        let ctx = RenderContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,
@@ -1227,7 +1096,7 @@ mod tests {
 
         // Set this element as focused
         build_owner.set_focused_element(Some(element_id));
-        let ctx = BuildContext {
+        let ctx = RenderContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,
@@ -1237,7 +1106,7 @@ mod tests {
 
         // Clear focus
         build_owner.set_focused_element(None);
-        let ctx = BuildContext {
+        let ctx = RenderContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,

@@ -1,16 +1,16 @@
 use std::sync::{Arc, Mutex};
-use vexo::{ComponentState, Signal, State, StatefulMutable};
+use vexo::{ComponentState, Signal};
 
 #[derive(ComponentState)]
 struct TestState {
-    count: StatefulMutable<u32>,
+    count: Signal<u32>,
     label: String, // non-Signal field, should be skipped
 }
 
 impl Default for TestState {
     fn default() -> Self {
         Self {
-            count: StatefulMutable::new(0),
+            count: Signal::new(0),
             label: String::new(),
         }
     }
@@ -73,14 +73,14 @@ fn derive_works_with_signal_alias() {
 
 #[derive(ComponentState)]
 struct TestStateWithOption {
-    optional_count: Option<StatefulMutable<u32>>,
+    optional_count: Option<Signal<u32>>,
     label: String,
 }
 
 impl Default for TestStateWithOption {
     fn default() -> Self {
         Self {
-            optional_count: Some(StatefulMutable::new(0)),
+            optional_count: Some(Signal::new(0)),
             label: String::new(),
         }
     }

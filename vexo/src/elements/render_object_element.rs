@@ -159,6 +159,7 @@ pub trait RenderObjectElement: Element {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
                     if let Some(widget) = self.widget() {
                         let result = widget.update_render_object(ro.as_mut());
+                        log::debug!("[update_render_object] element {:?}, result={}", context.element_id, result.bits());
 
                         // Only mark dirty based on what actually changed
                         if result.contains(UpdateResult::LAYOUT) {

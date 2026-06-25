@@ -327,7 +327,7 @@ impl Reconciler {
         animation_ticker: &Arc<AnimationTicker>,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
     ) {
-        // First, drain any dirty signals from StatefulMutable callbacks
+        // First, drain any dirty signals from Signal callbacks
         Self::drain_dirty_channel(dirty_receiver, build_owner);
 
         if !build_owner.has_pending_rebuilds() {
@@ -717,7 +717,7 @@ impl Reconciler {
 
     /// Drain dirty signals from the channel and mark elements for rebuild.
     ///
-    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
+    /// When a `Signal::set()` fires its dirty callback, it sends
     /// the element ID through the channel. This method drains the channel
     /// and calls `mark_needs_build()` on the BuildOwner for each one.
     pub(crate) fn drain_dirty_channel(

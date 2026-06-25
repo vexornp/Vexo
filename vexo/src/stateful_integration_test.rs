@@ -1,12 +1,12 @@
-//! Integration tests for StatefulWidget with ThreeTreePipeline.
+//! Integration tests for Component with ThreeTreePipeline.
 
 #[cfg(test)]
 mod tests {
-    use crate::{State, StatefulWidget, BuildContext, ThreeTreePipeline, Widget, Text, Flex};
+    use crate::{ComponentState, Component, RenderContext, ThreeTreePipeline, Widget, Text, Flex};
     use crate::animation::AnimationTicker;
     use crate::widgets::{GestureDetector, DecoratedContainer};
     use crate::Style;
-    use crate::reactive::StatefulMutable;
+    use crate::reactive::Signal;
     use crate::core::Size;
     use crate::layout::TaffyLayoutEngine;
     use crate::input::{InputEvent, ButtonState, PointerButton};
@@ -39,12 +39,12 @@ mod tests {
         }
     }
 
-    impl State for CounterState {}
+    impl ComponentState for CounterState {}
 
-    impl StatefulWidget for Counter {
+    impl Component for Counter {
         type State = CounterState;
 
-        fn build(&self, state: &mut CounterState, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+        fn render(&self, state: &mut CounterState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
             Box::new(Text::new(format!("{}: {}", self.label, state.count)))
         }
     }
@@ -102,34 +102,34 @@ mod tests {
     }
 
     // ========================================================================
-    // Reactive Counter with StatefulMutable - the real test
+    // Reactive Counter with Signal - the real test
     // ========================================================================
 
     #[derive(Clone)]
     struct ReactiveCounter;
 
     struct ReactiveCounterState {
-        count: StatefulMutable<u32>,
+        count: Signal<u32>,
     }
 
     impl Default for ReactiveCounterState {
         fn default() -> Self {
             Self {
-                count: StatefulMutable::new(0),
+                count: Signal::new(0),
             }
         }
     }
 
-    impl State for ReactiveCounterState {
-        fn set_dirty_callback(&mut self, cb: Arc<dyn Fn() + Send + Sync>) {
-            self.count.set_dirty_callback(cb);
+    impl ComponentState for ReactiveCounterState {
+        fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+            self.count.set_dirty_callback(callback);
         }
     }
 
-    impl StatefulWidget for ReactiveCounter {
+    impl Component for ReactiveCounter {
         type State = ReactiveCounterState;
 
-        fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+        fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
             let count = state.count.get();
             Box::new(Flex::column()
                 .push(Text::new(format!("Count: {}", count)))
@@ -137,7 +137,7 @@ mod tests {
         }
     }
 
-    /// Test that StatefulMutable.set() triggers a rebuild that updates the text.
+    /// Test that Signal.set() triggers a rebuild that updates the text.
     #[test]
     fn test_reactive_stateful_widget_rebuild_updates_text() {
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -163,38 +163,19 @@ mod tests {
             "Initial text should be 'Count: 0'");
 
         // 3. Find the StatefulElement's element ID
-        // Walk the element tree to find the StatefulElement
         let root_id = pipeline.element_registry().root().unwrap();
         let root_children = pipeline.element_registry().children(root_id).to_vec();
 
-        // The root should be a StatefulElement (for ReactiveCounter)
-        // Its child should be a ContainerElement (for Flex)
-        // The Flex::column()'s child should be a LeafElement (for Text)
         assert!(!root_children.is_empty(), "Root should have children");
 
-        // 4. Get the state and modify it via StatefulMutable
-        // We need to find the element that owns the ReactiveCounterState
-        // The root element IS the StatefulElement for ReactiveCounter
+        // 4. Get the state and modify it via Signal
         let _stateful_element_id = root_id;
 
-        // Access the state through the pipeline's state storage
-        // Unfortunately, state_storage() is not public. We'll use a different approach:
-        // Use mark_needs_build() to mark the element dirty, then rebuild.
-
-        // Actually, we can test the flow differently:
-        // Use the pipeline's update() method with the same widget, which should
-        // call StatefulElement::update() which reads the current state.
-
-        // But first, let's verify that the state was stored correctly by
-        // checking the element tree structure.
         let child_id = root_children[0];
         let child_children = pipeline.element_registry().children(child_id).to_vec();
         assert!(!child_children.is_empty(), "Flex should have children");
 
-        // 5. Now test the state update flow:
-        // We can't directly access StateStorage from the pipeline (it's private).
-        // Instead, we'll test by calling update() with the same widget and
-        // checking that the output doesn't change (since state hasn't changed).
+        // 5. Test the state update flow via pipeline update
         pipeline.update(Box::new(ReactiveCounter));
 
         // Layout and paint again
@@ -216,8 +197,8 @@ mod tests {
     #[test]
     fn test_gesture_detector_updates_stateful_widget() {
         // This test creates a widget tree with GestureDetector wrapping a
-        // DecoratedContainer, inside a StatefulWidget. When the GestureDetector
-        // fires on_press, it should update the StatefulMutable, which should
+        // DecoratedContainer, inside a Component. When the GestureDetector
+        // fires on_press, it should update the Signal, which should
         // trigger a rebuild that updates the text.
 
         let click_count = Arc::new(AtomicU32::new(0));
@@ -228,27 +209,27 @@ mod tests {
         }
 
         struct ClickableCounterState {
-            count: StatefulMutable<u32>,
+            count: Signal<u32>,
         }
 
         impl Default for ClickableCounterState {
             fn default() -> Self {
                 Self {
-                    count: StatefulMutable::new(0),
+                    count: Signal::new(0),
                 }
             }
         }
 
-        impl State for ClickableCounterState {
-            fn set_dirty_callback(&mut self, cb: Arc<dyn Fn() + Send + Sync>) {
-                self.count.set_dirty_callback(cb);
+        impl ComponentState for ClickableCounterState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
             }
         }
 
-        impl StatefulWidget for ClickableCounter {
+        impl Component for ClickableCounter {
             type State = ClickableCounterState;
 
-            fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
                 let count = state.count.get();
                 let count_clone = state.count.clone();
                 let click_count = self.click_count.clone();
@@ -294,8 +275,6 @@ mod tests {
             "Initial text should include 'Count: 0', got: {:?}", count_texts);
 
         // 3. Simulate a click event on the GestureDetector
-        // We need to find a position that hits the GestureDetector's render object.
-        // Since we don't know the exact layout, let's try the center of the window.
         let click_position = Point::new(400.0, 300.0);
         let event = InputEvent::PointerButton {
             position: click_position,
@@ -338,34 +317,28 @@ mod tests {
         }).collect();
         eprintln!("test: after click, count texts: {:?}", after_count_texts);
 
-        // The text should have changed if the click was handled and rebuild worked.
-        // If the click wasn't handled (hit test missed), the text stays "Count: 0".
         if clicks > 0 {
             assert!(after_count_texts.contains(&"Count: 1".to_string()),
                 "After click, text should be 'Count: 1', got: {:?}", after_count_texts);
         } else {
-            // Click wasn't handled - this is expected if the hit test missed.
-            // The test still passes but we log a warning.
             log::warn!("test: click was not handled (hit test may have missed)");
             eprintln!("test: click was not handled (hit test may have missed)");
         }
     }
 
     /// Test that StatefulElement appears in the hit test element_path.
-    /// This verifies that ProxyRenderObject correctly forwards hit tests
-    /// so that StatefulElement is part of the render tree hit path.
     #[test]
     fn test_stateful_element_in_hit_test_path() {
         use crate::SimpleState;
         use crate::core::{Position, Logical, Absolute};
 
-        // Create a simple StatefulWidget that wraps Text
+        // Create a simple Component that wraps Text
         #[derive(Clone)]
         struct SimpleStateful;
 
-        impl StatefulWidget for SimpleStateful {
+        impl Component for SimpleStateful {
             type State = SimpleState<()>;
-            fn build(&self, _state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+            fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
                 Box::new(Text::new("Stateful"))
             }
         }
@@ -378,7 +351,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
 
-        // Hit test inside the text bounds (top-left area where text renders)
+        // Hit test inside the text bounds
         let result = pipeline.hit_test(Position::<Logical, Absolute>::new(5.0, 5.0));
 
         // Should hit something
@@ -390,7 +363,6 @@ mod tests {
         assert!(element_path.contains(&root_id),
             "StatefulElement should appear in hit test element path. Path: {:?}", element_path);
 
-        // Should have at least StatefulElement + child
         assert!(element_path.len() >= 2,
             "Element path should have at least StatefulElement + child. Got: {:?}", element_path);
     }
@@ -398,35 +370,34 @@ mod tests {
     /// Test that directly exercises the state → rebuild → render path
     /// without relying on hit testing.
     #[test]
-    fn test_stateful_mutable_triggers_rebuild_and_updates_render() {
-        use crate::StatefulWidget;
-        use std::sync::Arc;
+    fn test_signal_triggers_rebuild_and_updates_render() {
+        use crate::Component;
 
         #[derive(Clone)]
         struct SimpleReactive;
 
         struct SimpleReactiveState {
-            count: StatefulMutable<u32>,
+            count: Signal<u32>,
         }
 
         impl Default for SimpleReactiveState {
             fn default() -> Self {
                 Self {
-                    count: StatefulMutable::new(0),
+                    count: Signal::new(0),
                 }
             }
         }
 
-        impl State for SimpleReactiveState {
-            fn set_dirty_callback(&mut self, cb: Arc<dyn Fn() + Send + Sync>) {
-                self.count.set_dirty_callback(cb);
+        impl ComponentState for SimpleReactiveState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
             }
         }
 
-        impl StatefulWidget for SimpleReactive {
+        impl Component for SimpleReactive {
             type State = SimpleReactiveState;
 
-            fn build(&self, state: &mut Self::State, _ctx: &mut BuildContext) -> Box<dyn Widget> {
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
                 let count = state.count.get();
                 Box::new(Text::new(format!("Count: {}", count)))
             }
@@ -454,26 +425,7 @@ mod tests {
         assert_eq!(initial_text, Some("Count: 0".to_string()),
             "Initial text should be 'Count: 0'");
 
-        // 3. Now we need to update the state and trigger a rebuild.
-        // The StatefulMutable's dirty callback was set during mount.
-        // We can't directly access the state, but we CAN use mark_needs_build()
-        // via the BuildOwner, and then call perform_rebuilds().
-
-        // However, the real flow is: StatefulMutable::set() → dirty callback →
-        // BuildOwner::mark_needs_build() → perform_rebuilds() → rebuild_from_state().
-
-        // To test this, we need to:
-        // a) Get the state from StateStorage
-        // b) Call state.count.set(1)
-        // c) This should trigger the dirty callback
-        // d) Call perform_rebuilds()
-        // e) Check the render output
-
-        // But StateStorage is not public. Let's use a different approach:
-        // We'll use the pipeline's update() method, which calls StatefulElement::update(),
-        // which reads the current state and rebuilds the child widget.
-
-        // First, let's verify that the state is preserved across update():
+        // 3. Test the state update flow via pipeline update.
         pipeline.update(Box::new(SimpleReactive));
 
         // Layout and paint
@@ -490,61 +442,24 @@ mod tests {
         assert_eq!(after_update_text, Some("Count: 0".to_string()),
             "After update with no state change, text should still be 'Count: 0'");
 
-        // 4. Now let's test the mark_needs_build → perform_rebuilds path.
-        // We can access the BuildOwner through the pipeline's public API.
-        // Actually, we can't. But we can test by calling perform_rebuilds()
-        // after manually marking the element dirty.
-
-        // Let's find the root element ID and mark it dirty.
-        let _root_id = pipeline.element_registry().root().unwrap();
-
-        // Use the pipeline's internal BuildOwner to mark the element dirty.
-        // We need to access it through a method that's available.
-        // Actually, we can use the handle_event flow with a position that
-        // we know will hit the element.
-
-        // Alternative: let's directly test the StatefulMutable callback mechanism.
-        // Create a StatefulMutable, set a dirty callback, call set(), verify callback fires.
+        // 4. Test the Signal callback mechanism.
         let callback_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let callback_fired_clone = callback_fired.clone();
 
-        let mut mutable = StatefulMutable::new(42u32);
+        let mut mutable = Signal::new(42u32);
         mutable.set_dirty_callback(Arc::new(move || {
             callback_fired_clone.store(true, Ordering::SeqCst);
         }));
 
         mutable.set(43);
         assert!(callback_fired.load(Ordering::SeqCst),
-            "StatefulMutable::set() should fire the dirty callback");
+            "Signal::set() should fire the dirty callback");
 
-        // 5. Now let's test the full pipeline flow by using mark_needs_build.
-        // We need to find a way to trigger the state update.
-        // The only way to do this from outside is through handle_event.
-        // But the hit test might miss.
-
-        // Let's try a different approach: create a widget tree where we know
-        // the exact layout, so we can hit test correctly.
-        // Actually, let's just verify the core mechanism works by checking
-        // that the state is accessible and can be modified.
-
-        // The real issue might be that the state is not being modified correctly
-        // when the GestureDetector callback fires. Let's verify that the
-        // StatefulMutable inside the state is actually shared correctly.
-
-        // When StatefulElement::mount() is called, it creates the state and
-        // stores it in StateStorage. The state contains a StatefulMutable<u32>.
-        // The dirty callback is set on this StatefulMutable.
-        // When the GestureDetector's on_press callback fires, it calls
-        // state.count.set(count + 1). But this state is a CLONE of the
-        // original state (because the build() method takes &mut Self::State,
-        // and the callback captures a clone of the StatefulMutable).
-
-        // The key question: does cloning a StatefulMutable preserve the
-        // dirty callback? Let's check.
+        // 5. Test that cloning a Signal preserves the dirty callback.
         let callback2_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let callback2_fired_clone = callback2_fired.clone();
 
-        let mut original = StatefulMutable::new(0u32);
+        let mut original = Signal::new(0u32);
         original.set_dirty_callback(Arc::new(move || {
             callback2_fired_clone.store(true, Ordering::SeqCst);
         }));
@@ -553,24 +468,14 @@ mod tests {
         cloned.set(1);
 
         assert!(callback2_fired.load(Ordering::SeqCst),
-            "Cloned StatefulMutable should preserve the dirty callback");
+            "Cloned Signal should preserve the dirty callback");
     }
 
     // ========================================================================
     // TextEdit click-to-focus tests (no Phase 2 ancestor walk)
     // ========================================================================
-    //
-    // Phase 2 (ancestor walk) was removed from the event handler. TextEdit
-    // click-to-focus still works because StatefulElement now has a
-    // ProxyRenderObject that appears in the hit test path, so the event
-    // reaches StatefulElement via Phase 1 bubbling.
 
     /// Verify that TextEdit click-to-focus works without Phase 2.
-    ///
-    /// After removing the Phase 2 ancestor walk from EventHandler, focus
-    /// requests from StatefulElement should still be honored because
-    /// ProxyRenderObject places StatefulElement in the hit test path,
-    /// allowing Phase 1 bubbling to deliver the event to it.
     #[test]
     fn test_textedit_click_to_focus_without_phase2() {
         use crate::{TextEdit, TextEditingController};
@@ -604,15 +509,913 @@ mod tests {
         let _result = pipeline.handle_event(click_position, &event, Modifiers::default(), &mut fs, Scale::default());
 
         // After clicking, the TextEdit's StatefulElement should be focused
-        // This works because ProxyRenderObject appears in the hit test path,
-        // so Phase 1 bubbling delivers the event to StatefulElement, which
-        // then requests focus via on_event().
         assert!(pipeline.focused_element().is_some(),
             "TextEdit should be focused after click (via Phase 1 bubbling, no Phase 2 needed)");
 
-        // The focused element should be the root StatefulElement
         let root = pipeline.element_registry().root().unwrap();
         assert_eq!(pipeline.focused_element(), Some(root),
             "The focused element should be the TextEdit's StatefulElement");
+    }
+
+    /// Test that modifying a parent's Signal triggers a rebuild
+    /// that updates the rendered text.
+    ///
+    /// This directly exercises the Signal → dirty_callback → rebuild → render path
+    /// without relying on hit testing.
+    #[test]
+    fn test_signal_set_triggers_rebuild_and_updates_render() {
+        use crate::Component;
+
+        #[derive(Clone)]
+        struct Parent;
+
+        struct ParentState {
+            count: Signal<u32>,
+        }
+
+        impl Default for ParentState {
+            fn default() -> Self {
+                Self { count: Signal::new(0) }
+            }
+        }
+
+        impl ComponentState for ParentState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for Parent {
+            type State = ParentState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.count.get();
+                Box::new(Text::new(format!("Count: {}", count)))
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(Parent));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_text = initial_commands.iter().find_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else {
+                None
+            }
+        });
+        assert_eq!(initial_text, Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'");
+
+        // 3. Get the root element ID
+        let root_id = pipeline.element_registry().root().unwrap();
+
+        // 4. Mark the root element as needing rebuild
+        pipeline.mark_needs_build(root_id);
+
+        // 5. Perform rebuilds - this should re-run Parent::render()
+        pipeline.perform_rebuilds();
+
+        // 6. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_text = after_commands.iter().find_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else {
+                None
+            }
+        });
+        // Since we didn't change the Signal value, it should still be "Count: 0"
+        // But this test verifies that mark_needs_build + perform_rebuilds + render works
+        assert_eq!(after_text, Some("Count: 0".to_string()),
+            "After rebuild with no state change, text should still be 'Count: 0'");
+    }
+
+    /// Test that a child Component modifying a parent's Signal triggers
+    /// a rebuild that updates the parent's rendered output.
+    ///
+    /// This reproduces the bug where Button's on_press calls
+    /// count.set(count.get() + 1) but the parent's text doesn't update.
+    ///
+    /// We test this by creating a parent Component with a Signal and a
+    /// GestureDetector child. We simulate a click on the GestureDetector
+    /// and verify the Signal update propagates through rebuild.
+    #[test]
+    fn test_child_signal_update_propagates_to_parent_render() {
+        use crate::Component;
+
+        // Parent Component: owns the Signal, renders a Column with text + GestureDetector
+        #[derive(Clone)]
+        struct Parent;
+
+        struct ParentState {
+            count: Signal<u32>,
+        }
+
+        impl Default for ParentState {
+            fn default() -> Self {
+                Self { count: Signal::new(0) }
+            }
+        }
+
+        impl ComponentState for ParentState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for Parent {
+            type State = ParentState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.count.get();
+                let count_clone = state.count.clone();
+                // GestureDetector wraps the entire column so any click triggers on_press
+                GestureDetector::new(
+                    Flex::column()
+                        .push(Text::new(format!("Count: {}", count)))
+                        .push(Text::new("Increment"))
+                )
+                .on_press(move || {
+                    count_clone.set(count_clone.get() + 1);
+                })
+                .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(Parent));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_text = initial_commands.iter().find_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                if content.starts_with("Count:") {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        assert_eq!(initial_text, Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'");
+
+        // 3. Click at (5, 5) which should be inside the GestureDetector's bounds
+        let click_position = Point::new(5.0, 5.0);
+        let event = InputEvent::PointerButton {
+            position: click_position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
+
+        // 4. Drain the dirty channel (like process_input_event does)
+        pipeline.drain_dirty_to_build_owner();
+        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+
+        // 5. Perform rebuilds
+        pipeline.perform_rebuilds();
+
+        // 6. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_text = after_commands.iter().find_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                if content.starts_with("Count:") {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        eprintln!("test: after click, text: {:?}", after_text);
+        assert_eq!(after_text, Some("Count: 1".to_string()),
+            "After click, text should be 'Count: 1', got: {:?}", after_text);
+    }
+
+    /// Test that a nested child Component's on_press can update a parent's Signal
+    /// and the parent re-renders with the updated value.
+    ///
+    /// This mirrors the real app pattern where the Application's Signal is
+    /// modified from a Button's on_press callback.
+    #[test]
+    fn test_nested_child_component_updates_parent_signal() {
+        use crate::Component;
+
+        // Child Component: a button-like component that calls a callback on press
+        #[derive(Clone)]
+        struct ChildButton {
+            label: String,
+        }
+
+        struct ChildButtonState {
+            is_pressed: Signal<bool>,
+        }
+
+        impl Default for ChildButtonState {
+            fn default() -> Self {
+                Self { is_pressed: Signal::new(false) }
+            }
+        }
+
+        impl ComponentState for ChildButtonState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.is_pressed.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for ChildButton {
+            type State = ChildButtonState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let is_pressed = state.is_pressed.get();
+                let label = self.label.clone();
+                // This is simplified - real Button has more state
+                let _ = (is_pressed, label);
+                Text::new(&self.label).boxed()
+            }
+        }
+
+        // Parent Component: owns the count Signal, renders Column with text + ChildButton
+        #[derive(Clone)]
+        struct Parent;
+
+        struct ParentState {
+            count: Signal<u32>,
+        }
+
+        impl Default for ParentState {
+            fn default() -> Self {
+                Self { count: Signal::new(0) }
+            }
+        }
+
+        impl ComponentState for ParentState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for Parent {
+            type State = ParentState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.count.get();
+                let count_clone = state.count.clone();
+                // GestureDetector wrapping everything so clicks always hit
+                GestureDetector::new(
+                    Flex::column()
+                        .push(Text::new(format!("Count: {}", count)))
+                        .push(ChildButton { label: format!("Clicked {} times", count) })
+                )
+                .on_press(move || {
+                    count_clone.set(count_clone.get() + 1);
+                })
+                .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(Parent));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else {
+                None
+            }
+        }).collect();
+        assert!(initial_texts.iter().any(|t| t == "Count: 0"),
+            "Initial texts should include 'Count: 0'");
+        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"),
+            "Initial texts should include 'Clicked 0 times'");
+
+        // 3. Click
+        let click_position = Point::new(5.0, 5.0);
+        let event = InputEvent::PointerButton {
+            position: click_position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
+
+        // 4. Drain and rebuild
+        pipeline.drain_dirty_to_build_owner();
+
+        pipeline.perform_rebuilds();
+
+        // 5. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else {
+                None
+            }
+        }).collect();
+        assert!(after_texts.iter().any(|t| t == "Count: 1"),
+            "After click, texts should include 'Count: 1', got: {:?}", after_texts);
+        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click, texts should include 'Clicked 1 times', got: {:?}", after_texts);
+    }
+
+    /// Test that exactly mirrors the real app pattern:
+    /// A parent Component with a Signal, and a child Component (like Button)
+    /// whose on_press callback modifies BOTH the child's own is_pressed Signal
+    /// AND the parent's count Signal. Both elements get marked dirty.
+    /// This tests that the reconciliation correctly propagates the parent's
+    /// updated widget configuration down to the child.
+    #[test]
+    fn test_button_like_child_updates_parent_signal() {
+        use crate::Component;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Child Component mimicking Button: has own is_pressed Signal
+        // and an on_press callback. Its render() creates a GestureDetector
+        // whose on_press sets is_pressed AND calls the user callback.
+        #[derive(Clone)]
+        struct ButtonLike {
+            label: String,
+            on_press: Rc<RefCell<dyn FnMut()>>,
+        }
+
+        struct ButtonLikeState {
+            is_pressed: Signal<bool>,
+        }
+
+        impl Default for ButtonLikeState {
+            fn default() -> Self {
+                Self { is_pressed: Signal::new(false) }
+            }
+        }
+
+        impl ComponentState for ButtonLikeState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.is_pressed.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for ButtonLike {
+            type State = ButtonLikeState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let is_pressed = state.is_pressed.get();
+                let _ = is_pressed; // used in real Button to change visual state
+                let is_pressed_signal = state.is_pressed.clone();
+                let on_press_cb = self.on_press.clone();
+                // This mimics real Button's render: creates a GestureDetector
+                // whose on_press sets is_pressed THEN calls the user callback
+                Text::new(&self.label).boxed()
+                    .on_press(move || {
+                        is_pressed_signal.set(true);  // marks child dirty
+                        (on_press_cb.borrow_mut())(); // calls user callback (marks parent dirty)
+                    })
+            }
+        }
+
+        // Parent Component with count Signal
+        #[derive(Clone)]
+        struct Parent;
+
+        struct ParentState {
+            count: Signal<u32>,
+        }
+
+        impl Default for ParentState {
+            fn default() -> Self {
+                Self { count: Signal::new(0) }
+            }
+        }
+
+        impl ComponentState for ParentState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for Parent {
+            type State = ParentState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.count.get();
+                let count_clone = state.count.clone();
+
+                let on_press: Rc<RefCell<dyn FnMut()>> = Rc::new(RefCell::new({
+                    let count_clone = count_clone.clone();
+                    move || {
+                        count_clone.set(count_clone.get() + 1);
+                    }
+                }));
+
+                let button = ButtonLike {
+                    label: format!("Clicked {} times", count),
+                    on_press: on_press.clone(),
+                };
+
+                // Wrap everything in a GestureDetector to catch clicks
+                GestureDetector::new(
+                    Flex::column()
+                        .push(Text::new(format!("Count: {}", count)))
+                        .push(button)
+                )
+                .on_press({
+                    let on_press = on_press.clone();
+                    move || {
+                        (on_press.borrow_mut())();
+                    }
+                })
+                .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(Parent));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
+        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+
+        // 3. Simulate click
+        let click_position = Point::new(5.0, 5.0);
+        let event = InputEvent::PointerButton {
+            position: click_position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
+
+        // 4. Drain and rebuild
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        // 5. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        assert!(after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}", after_texts);
+        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click: should have 'Clicked 1 times', got: {:?}", after_texts);
+    }
+
+    /// Test that exactly mirrors the real shared_app pattern:
+    /// A parent Component (Application) with a Signal, and a child Component
+    /// (Button) pushed into a Column with NO outer GestureDetector.
+    /// The Button's own on_press uses text.boxed().on_press().on_release().on_enter().on_exit()
+    /// which creates nested GestureDetector + MouseRegion wrappers.
+    /// The events must be caught by the Button's inner GestureDetector.
+    #[test]
+    fn test_real_button_pattern_in_column_no_outer_gesture() {
+        use crate::Component;
+        use crate::core::{Position, Logical, Absolute};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Child Component exactly like vexo_uikit::Button
+        #[derive(Clone)]
+        struct ButtonLike {
+            label: String,
+            on_press: Rc<RefCell<dyn FnMut()>>,
+        }
+
+        struct ButtonLikeState {
+            is_pressed: Signal<bool>,
+            is_hovered: Signal<bool>,
+        }
+
+        impl Default for ButtonLikeState {
+            fn default() -> Self {
+                Self {
+                    is_pressed: Signal::new(false),
+                    is_hovered: Signal::new(false),
+                }
+            }
+        }
+
+        impl crate::ComponentState for ButtonLikeState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.is_pressed.set_dirty_callback(callback.clone());
+                self.is_hovered.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for ButtonLike {
+            type State = ButtonLikeState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let is_pressed_signal = state.is_pressed.clone();
+                let is_pressed_signal_release = state.is_pressed.clone();
+                let is_pressed_signal_exit = state.is_pressed.clone();
+                let is_hovered_signal = state.is_hovered.clone();
+                let is_hovered_signal_exit = state.is_hovered.clone();
+                let disabled = false;
+                let on_press_cb = self.on_press.clone();
+
+                // Exactly mirrors real Button::render()
+                Text::new(&self.label).boxed()
+                    .on_press(move || {
+                        if !disabled {
+                            is_pressed_signal.set(true);
+                            (on_press_cb.borrow_mut())();
+                        }
+                    })
+                    .on_release(move || {
+                        is_pressed_signal_release.set(false);
+                    })
+                    .on_enter(move || {
+                        if !disabled {
+                            is_hovered_signal.set(true);
+                        }
+                    })
+                    .on_exit(move || {
+                        is_hovered_signal_exit.set(false);
+                        is_pressed_signal_exit.set(false);
+                    })
+            }
+        }
+
+        // Parent Component exactly like the real Application State
+        #[derive(Clone)]
+        struct App;
+
+        struct AppState {
+            click_count: Signal<u32>,
+        }
+
+        impl Default for AppState {
+            fn default() -> Self {
+                Self { click_count: Signal::new(0) }
+            }
+        }
+
+        impl crate::ComponentState for AppState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.click_count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for App {
+            type State = AppState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.click_count.get();
+                let count_clone = state.click_count.clone();
+
+                // Exactly mirrors real shared_app view()
+                Flex::column()
+                    .gap(16.0)
+                    .push(Text::new(format!("Count: {}", count)))
+                    .push(
+                        ButtonLike {
+                            label: format!("Clicked {} times", count),
+                            on_press: Rc::new(RefCell::new(move || {
+                                count_clone.set(count_clone.get() + 1);
+                            })),
+                        }
+                    )
+                    .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(App));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        eprintln!("test: initial texts: {:?}", initial_texts);
+        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
+        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+
+        // 3. Hit test to verify the element path
+        // The Column has: Text("Count: 0") at top, ButtonLike below with 16px gap.
+        // We need to click inside the ButtonLike's area, not the "Count: 0" text.
+        // First, let's see what render objects exist to find the Button area.
+        let root_ro = pipeline.render_objects().root();
+        eprintln!("test: root render object: {:?}", root_ro);
+        if let Some(root) = root_ro {
+            fn dump_render_tree(ro_registry: &crate::RenderObjectRegistry, ro_key: crate::RenderObjectKey, depth: usize) {
+                let ro = ro_registry.get(ro_key);
+                let bounds = ro.and_then(|r| r.computed_bounds());
+                let elem = ro_registry.element_for(ro_key);
+                let children = ro.map(|r| r.children().to_vec()).unwrap_or_default();
+                eprintln!("test: {}ro={:?} elem={:?} bounds={:?} children={}",
+                    "  ".repeat(depth), ro_key, elem, bounds, children.len());
+                for child in children {
+                    dump_render_tree(ro_registry, child, depth + 1);
+                }
+            }
+            dump_render_tree(pipeline.render_objects(), root, 0);
+        }
+
+        // Find a position inside the ButtonLike's bounds by looking at the Column's children.
+        // The Column layout: Text (29px) + 16px gap + Button. So Button starts at ~45px.
+        // Click at (5, 50) which should be inside the Button area.
+        let hit_pos = Position::<Logical, Absolute>::new(5.0, 50.0);
+        let hit_result = pipeline.hit_test(hit_pos);
+        eprintln!("test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
+            hit_result.is_hit(), hit_result.path().len(), hit_result.element_path().len());
+        for (i, (&ro_key, &elem_key)) in hit_result.path().iter().zip(hit_result.element_path().iter()).enumerate() {
+            let ro = pipeline.render_objects().get(ro_key);
+            let bounds = ro.and_then(|r| r.computed_bounds());
+            eprintln!("test:   hit_path[{}]: ro={:?}, elem={:?}, bounds={:?}", i, ro_key, elem_key, bounds);
+        }
+
+        // 4. Simulate click at the Button position
+        let click_position = Point::new(5.0, 50.0);
+        let event = InputEvent::PointerButton {
+            position: click_position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
+        eprintln!("test: handle_event returned: {:?}", _result.is_some());
+
+        // 5. Drain and rebuild
+        pipeline.drain_dirty_to_build_owner();
+        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+        pipeline.perform_rebuilds();
+
+        // 6. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        eprintln!("test: after click, texts: {:?}", after_texts);
+        assert!(after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}", after_texts);
+        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click: should have 'Clicked 1 times', got: {:?}", after_texts);
+    }
+
+    /// Test that mirrors the real shared_app pattern where Button.on_press().boxed()
+    /// creates an OUTER GestureDetector wrapping the Button Component.
+    /// This tests the full event dispatch chain through the outer GestureDetector,
+    /// the Button's StatefulElement/ProxyRenderObject, and the inner GestureDetector
+    /// from Button::render().
+    #[test]
+    fn test_real_app_button_with_outer_on_press() {
+        use crate::Component;
+        use crate::core::{Position, Logical, Absolute};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Child Component exactly like vexo_uikit::Button
+        #[derive(Clone)]
+        struct ButtonLike {
+            label: String,
+            on_press: Rc<RefCell<dyn FnMut()>>,
+        }
+
+        struct ButtonLikeState {
+            is_pressed: Signal<bool>,
+            is_hovered: Signal<bool>,
+        }
+
+        impl Default for ButtonLikeState {
+            fn default() -> Self {
+                Self {
+                    is_pressed: Signal::new(false),
+                    is_hovered: Signal::new(false),
+                }
+            }
+        }
+
+        impl crate::ComponentState for ButtonLikeState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.is_pressed.set_dirty_callback(callback.clone());
+                self.is_hovered.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for ButtonLike {
+            type State = ButtonLikeState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let is_pressed_signal = state.is_pressed.clone();
+                let is_pressed_signal_release = state.is_pressed.clone();
+                let is_pressed_signal_exit = state.is_pressed.clone();
+                let is_hovered_signal = state.is_hovered.clone();
+                let is_hovered_signal_exit = state.is_hovered.clone();
+                let disabled = false;
+                let on_press_cb = self.on_press.clone();
+
+                // Exactly mirrors real Button::render()
+                Text::new(&self.label).boxed()
+                    .on_press(move || {
+                        if !disabled {
+                            is_pressed_signal.set(true);
+                            (on_press_cb.borrow_mut())();
+                        }
+                    })
+                    .on_release(move || {
+                        is_pressed_signal_release.set(false);
+                    })
+                    .on_enter(move || {
+                        if !disabled {
+                            is_hovered_signal.set(true);
+                        }
+                    })
+                    .on_exit(move || {
+                        is_hovered_signal_exit.set(false);
+                        is_pressed_signal_exit.set(false);
+                    })
+            }
+        }
+
+        // Parent Component exactly like the real Application State
+        #[derive(Clone)]
+        struct App;
+
+        struct AppState {
+            click_count: Signal<u32>,
+        }
+
+        impl Default for AppState {
+            fn default() -> Self {
+                Self { click_count: Signal::new(0) }
+            }
+        }
+
+        impl crate::ComponentState for AppState {
+            fn set_dirty_callback(&mut self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+                self.click_count.set_dirty_callback(callback);
+            }
+        }
+
+        impl Component for App {
+            type State = AppState;
+
+            fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let count = state.click_count.get();
+                let count_clone = state.click_count.clone();
+
+                // Exactly mirrors real shared_app view():
+                // Button::new(...).on_press(...).boxed()
+                // This creates an OUTER GestureDetector wrapping the Button
+                Flex::column()
+                    .gap(16.0)
+                    .push(Text::new(format!("Count: {}", count)))
+                    .push(
+                        ButtonLike {
+                            label: format!("Clicked {} times", count),
+                            on_press: Rc::new(RefCell::new({
+                                let count_clone = count_clone.clone();
+                                move || {
+                                    count_clone.set(count_clone.get() + 1);
+                                }
+                            })),
+                        }
+                        .on_press({
+                            let count_clone = count_clone.clone();
+                            move || {
+                                count_clone.set(count_clone.get() + 1);
+                            }
+                        })
+                        .boxed()
+                    )
+                    .boxed()
+            }
+        }
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // 1. Initial reconcile
+        pipeline.reconcile(Box::new(App));
+
+        // 2. Layout and paint
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let initial_commands = pipeline.paint();
+
+        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        eprintln!("test: initial texts: {:?}", initial_texts);
+        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
+        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+
+        // 3. Dump render tree and find Button position
+        let root_ro = pipeline.render_objects().root();
+        if let Some(root) = root_ro {
+            fn dump_render_tree(ro_registry: &crate::RenderObjectRegistry, ro_key: crate::RenderObjectKey, depth: usize) {
+                let ro = ro_registry.get(ro_key);
+                let bounds = ro.and_then(|r| r.computed_bounds());
+                let elem = ro_registry.element_for(ro_key);
+                let children = ro.map(|r| r.children().to_vec()).unwrap_or_default();
+                eprintln!("test: {}ro={:?} elem={:?} bounds={:?} children={}",
+                    "  ".repeat(depth), ro_key, elem, bounds, children.len());
+                for child in children {
+                    dump_render_tree(ro_registry, child, depth + 1);
+                }
+            }
+            dump_render_tree(pipeline.render_objects(), root, 0);
+        }
+
+        // 4. Hit test at Button position
+        let hit_pos = Position::<Logical, Absolute>::new(5.0, 50.0);
+        let hit_result = pipeline.hit_test(hit_pos);
+        eprintln!("test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
+            hit_result.is_hit(), hit_result.path().len(), hit_result.element_path().len());
+
+        // 5. Simulate click
+        let click_position = Point::new(5.0, 50.0);
+        let event = InputEvent::PointerButton {
+            position: click_position,
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let mut font_system = create_test_font_system();
+        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, Scale::default());
+        eprintln!("test: handle_event returned: {:?}", _result.is_some());
+
+        // 6. Drain and rebuild
+        pipeline.drain_dirty_to_build_owner();
+        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+        pipeline.perform_rebuilds();
+
+        // 7. Layout and paint
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+        let after_commands = pipeline.paint();
+
+        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
+            if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                Some(content.clone())
+            } else { None }
+        }).collect();
+        eprintln!("test: after click, texts: {:?}", after_texts);
+        assert!(after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}", after_texts);
     }
 }

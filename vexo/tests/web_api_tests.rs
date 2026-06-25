@@ -1,7 +1,7 @@
 //! Integration tests verifying the web-developer-friendly API surface.
 //!
-//! These tests ensure that the new names, aliases, and macros work correctly
-//! and that the old names still function (with deprecation warnings).
+//! These tests ensure that the new names, macros, and trait implementations
+//! work correctly.
 
 use vexo::*;
 use vexo::reactive::Signal;
@@ -95,19 +95,17 @@ fn derive_component_state_compiles() {
     let _state = WebApiTestState::default();
 }
 
-// --- RenderContext / LifecycleContext type alias tests ---
+// --- RenderContext / LifecycleContext tests ---
 
 #[test]
-fn render_context_is_build_context() {
-    // Verify the type alias exists and compiles.
-    // RenderContext<'a> = BuildContext<'a>, so a function accepting
-    // RenderContext can also accept BuildContext values.
+fn render_context_compiles() {
+    // Verify the type compiles and can be used in function signatures.
     fn _check(_: RenderContext) {}
 }
 
 #[test]
-fn lifecycle_context_is_state_context() {
-    // Verify the type alias exists and compiles.
+fn lifecycle_context_compiles() {
+    // Verify the type compiles and can be used in function signatures.
     fn _check(_: LifecycleContext) {}
 }
 
@@ -138,8 +136,7 @@ impl Component for TestComponent {
 #[test]
 fn component_trait_works() {
     // Verify Component trait compiles and can create a widget via clone_boxed
-    // (which goes through the blanket Widget impl for StatefulWidget,
-    //  which in turn delegates to Component::render via the blanket impl).
+    // (which goes through the blanket Widget impl for Component).
     let comp = TestComponent;
     let _widget: Box<dyn Widget> = comp.clone_boxed();
 }
@@ -180,18 +177,6 @@ fn row_macro_creates_horizontal_flex() {
     assert_eq!(row.children().len(), 2);
 }
 
-// --- Signal alias consistency ---
-
-#[test]
-fn signal_is_stateful_mutable_alias() {
-    // Verify that Signal<T> and StatefulMutable<T> are the same type
-    // by constructing one and using the other's methods.
-    let s: Signal<u32> = Signal::new(10);
-    assert_eq!(s.get(), 10);
-    s.set(20);
-    assert_eq!(s.get(), 20);
-}
-
 // --- Widget trait method tests (builder-style API) ---
 
 #[test]
@@ -215,7 +200,7 @@ fn widget_with_layout_modifier() {
 
 #[test]
 fn component_state_blanket_impl() {
-    // Any type implementing State should also implement ComponentState.
+    // Types implementing ComponentState via derive should work.
     fn assert_component_state<T: ComponentState>() {}
     assert_component_state::<TestComponentState>();
 }

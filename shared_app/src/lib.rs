@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use vexo::reactive::Signal;
 use vexo::{
-    run_desktop_demo, AnimationController, Application, Column, Component, ComponentState,
-    RenderContext, Color, ColorTween, Focus, Image, ImageData, LifecycleContext, ScrollView,
-    Text, Tween, Widget,
+    AnimationController, Application, Color, ColorTween, Column, Component, ComponentState,
+    Focus, Image, ImageData, LifecycleContext, RenderContext, ScrollView, Text, Tween, Widget,
 };
 use vexo_uikit::Button;
+
 uniffi::setup_scaffolding!();
 
 /// Creates a 200x150 gradient JPEG as ImageData for demo purposes.
@@ -156,6 +156,8 @@ impl Component for AnimatedButton {
 }
 
 // --- The User's Code ---
+
+#[derive(ComponentState, Default)]
 pub struct State {
     click_count: Signal<u32>,
 }
@@ -169,7 +171,7 @@ impl Application for State {
         }
     }
 
-    fn view(state: &mut Self::State, _font_system: &mut glyphon::FontSystem) -> Box<dyn Widget> {
+    fn view(state: &mut Self::State) -> Box<dyn Widget> {
         let test_image = create_test_image_data();
 
         Column::new()
@@ -201,7 +203,7 @@ impl MobileApp {
     }
 
     pub fn start_app(&self) {
-        let rt = run_desktop_demo::<State>();
+        let rt = vexo::run_desktop_demo::<State>();
         match rt {
             Ok(_) => println!("App exited normally"),
             Err(e) => println!("App exited with error: {:?}", e),

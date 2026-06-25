@@ -114,9 +114,9 @@ pub struct ThreeTreePipeline {
     /// The pipeline drains and executes these after each element method call.
     child_ops: ChildOps,
 
-    /// Channel for receiving dirty element signals from StatefulMutable callbacks.
+    /// Channel for receiving dirty element signals from Signal callbacks.
     ///
-    /// When a `StatefulMutable::set()` fires its dirty callback, it sends
+    /// When a `Signal::set()` fires its dirty callback, it sends
     /// the element ID through this channel instead of directly calling
     /// `mark_needs_build()`. The pipeline drains the channel and calls
     /// `mark_needs_build()` itself, eliminating the need for raw pointers.
@@ -139,7 +139,7 @@ pub struct ThreeTreePipeline {
     cached_commands: Option<Vec<RenderCommand>>,
 
     /// Animation ticker that fires per-frame callbacks for active animations.
-    /// Passed to ElementContext so State::init() can access it.
+    /// Passed to ElementContext so ComponentState::on_mount() can access it.
     animation_ticker: Arc<AnimationTicker>,
 }
 
@@ -165,7 +165,7 @@ impl ThreeTreePipeline {
         }
     }
 
-    /// Sync focused_element to BuildOwner so StatefulWidget::build() can access it.
+    /// Sync focused_element to BuildOwner so Component::render() can access it.
     fn sync_focus_to_build_owner(&self) {
         self.build_owner.set_focused_element(self.focus_manager.primary_focus_element());
     }
@@ -592,17 +592,17 @@ impl ThreeTreePipeline {
     /// Mark focus-related elements for rebuild when focus changes.
     ///
     /// Focus-dependent styling (e.g., TextEdit's border color) is computed
-    /// in StatefulWidget::build() via BuildContext::is_focused(). A repaint
+    /// in Component::render() via RenderContext::is_focused(). A repaint
     /// alone doesn't help because ProxyRenderObject.paint() returns empty
     /// commands — the visual output comes from the child DecoratedContainer
-    /// which needs a new widget configuration from build().
+    /// which needs a new widget configuration from render().
     ///
     /// Also marks ancestor elements with `on_focus_change` callbacks for
     /// rebuild, so that Focus-wrapped widgets update their visual state
     /// when a descendant gains or loses focus.
     ///
     /// This follows Flutter's model: focus change → setState() →
-    /// markNeedsBuild() → build() → reconciliation → markNeedsPaint().
+    /// markNeedsBuild() → render() → reconciliation → markNeedsPaint().
     pub fn mark_focus_needs_build(&mut self) {
         // Mark the currently focused element for rebuild (e.g., gain blue border)
         if let Some(focused_el) = self.focus_manager.primary_focus_element() {
@@ -638,14 +638,13 @@ impl ThreeTreePipeline {
         self.dirty.clear();
     }
 
-    /// Mark all render objects as needing layout.
+    /// Mark all render objects as needing layout and paint.
     ///
-    /// Useful when the window size changes.
+    /// Useful when the window size changes and the entire tree
+    /// must be re-laid-out with the new available space.
     pub fn mark_all_needs_layout(&mut self) {
-        // Mark root
-        if let Some(root) = self.render_objects.root() {
-            self.dirty.mark_needs_layout(root);
-            self.dirty.mark_needs_paint(root);
+        for id in self.render_objects.keys() {
+            self.dirty.mark_needs_layout(id);
         }
     }
 

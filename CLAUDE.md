@@ -75,7 +75,7 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 │  Widget trait (build() → Element)                              │
 │  Widget primitives: Text, TextEditContent, Column, Row         │
 │  Widget combinators: DecoratedContainer, GestureDetector        │
-│  Stateful widgets: Component (was StatefulWidget), Signal (was StatefulMutable) │
+│  Stateful widgets: Component, Signal                                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -161,7 +161,7 @@ vexo/src/
 ├── pipeline.rs                 # ThreeTreePipeline
 ├── reconciler.rs               # Reconciler
 ├── build_owner.rs              # BuildOwner
-├── stateful_widget.rs          # Component (was StatefulWidget), ComponentState (was State), RenderContext, LifecycleContext
+├── stateful_widget.rs          # Component, ComponentState, RenderContext, LifecycleContext
 ├── element_state.rs            # StateStorage
 ├── layouter.rs                 # Layouter
 ├── painter.rs                  # Painter
@@ -191,7 +191,7 @@ vexo/src/
 ├── state/                      # State management
 │   ├── mod.rs
 │   └── cursor_blink.rs         # CursorBlinkState
-├── reactive/                   # Reactive primitives (Signal, was StatefulMutable)
+├── reactive/                   # Reactive primitives (Signal)
 │   └── mod.rs
 ├── editor.rs                   # Editor (wraps glyphon::Editor)
 ├── renderer.rs                 # UiBatcher, RenderPipeline
@@ -209,7 +209,7 @@ vexo/src/
    - `view(state, font_system)`: Renders state to a widget tree
 
 2. **Rendering Pipeline**:
-   - `Application::view()` → widget tree → `Widget::build()` → element tree → `Element::mount()` → render object tree → `RenderObject::layout()` (Taffy) → `RenderObject::paint()` (RenderCommands) → `WgpuBackend.render()`
+   - `Application::view()` → widget tree → `Widget::create_element()` → element tree → `Element::mount()` → render object tree → `RenderObject::layout()` (Taffy) → `RenderObject::paint()` (RenderCommands) → `WgpuBackend.render()`
    - Text is handled separately via glyphon: positioned by Taffy, rendered after geometry via `TextRenderer`
 
 3. **Element Child Management**:
@@ -222,7 +222,7 @@ vexo/src/
    - Platform-independent input abstraction enables testing without winit
 
 5. **State Management**:
-   - `StatefulWidget` + `StatefulMutable` for component-local state
+   - `Component` + `Signal` for component-local state
    - `TextEditingController` for text editing state
    - `CursorBlinkState` for cursor animation
 
@@ -278,6 +278,7 @@ backend.render();
 ## Development Workflow
 
 - Always run `cargo build` after making edits to Rust files, and `cargo test` after implementing features. Never assume tests pass without running them.
+- **Don't run the desktop demo yourself** — you can't interact with the GUI. Ask the user to run it, perform UI actions, and share the log output instead.
 
 ## Commit Guidelines
 
@@ -319,8 +320,6 @@ Vexo's public API maps to web framework concepts:
 | `children![]` macro | JSX children |
 | `.on_press()` / `.on_release()` | `onClick` / `onMouseUp` |
 
-Deprecated names (still functional): `StatefulWidget` -> `Component`, `State` -> `ComponentState`, `StatefulMutable` -> `Signal`, `BuildContext` -> `RenderContext`, `StateContext` -> `LifecycleContext`, `build()` -> `render()`.
-
 ## Three-Tree Architecture
 
 Vexo implements Flutter's three-tree architecture for efficient UI updates. The key design principle is that **all elements manage their own children** through the `update_child()` method.
@@ -361,5 +360,5 @@ This method handles all four cases:
 | `LeafElement` | None | No children to manage |
 | `ContainerElement` | Multiple | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
 | `DecoratedContainerElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
-| `StatefulElement` | Single (from `build()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
+| `StatefulElement` | Single (from `render()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
 | `GestureDetectorElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |

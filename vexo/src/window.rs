@@ -13,8 +13,10 @@ use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::text_pipeline::TextPipeline;
-use crate::{ThreeTreePipeline, Widget as RetainWidget};
+use crate::ThreeTreePipeline;
 use crate::Application;
+use crate::RootComponent;
+use crate::widgets::Widget;
 
 fn system_cursor_to_winit(kind: SystemCursorKind) -> winit::cursor::CursorIcon {
     match kind {
@@ -42,8 +44,6 @@ pub struct WindowState<A: Application + 'static> {
     // Scale factor for logical-to-physical conversion
     scale: Scale,
 
-    // User's application state
-    user_app_state: A::State,
     _phantom: std::marker::PhantomData<A>,
 
     // Text preparation (glyphon) and GPU submission
@@ -88,7 +88,6 @@ impl<A: Application + 'static> WindowState<A> {
             layout_engine,
             font_system,
             scale: Scale::new(1.0),
-            user_app_state: A::new(),
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline: ThreeTreePipeline::new(animation_ticker.clone()),
@@ -123,10 +122,12 @@ impl<A: Application + 'static> WindowState<A> {
             // Framework events (no InputEvent conversion)
             WindowEvent::SurfaceResized(size) => {
                 self.resize(Size::from_winit(*size));
+                self.three_tree_pipeline.mark_all_needs_layout();
                 self.request_frame();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale = Scale::new(*scale_factor);
+                self.three_tree_pipeline.mark_all_needs_layout();
                 self.request_frame();
             }
             WindowEvent::RedrawRequested => {
@@ -221,7 +222,7 @@ impl<A: Application + 'static> WindowState<A> {
             }
 
             // Flutter-style: focus changes trigger rebuild of focused elements
-            // so that StatefulWidget::build() re-runs with updated is_focused().
+            // so that Component::render() re-runs with updated is_focused().
             // The rebuild produces new widget configs → reconciliation →
             // mark_needs_paint → frame_request_needed.
             // Also mark the render object subtree for paint so the cursor
@@ -255,7 +256,7 @@ impl<A: Application + 'static> WindowState<A> {
                     win.set_cursor(winit::cursor::Cursor::Icon(system_cursor_to_winit(self.current_cursor)));
                 }
             }
-            // Hover enter/exit callbacks may have changed StatefulWidget state
+            // Hover enter/exit callbacks may have changed Component state
             // which sends its element key through the dirty channel, so
             // request_frame() is enough — no full reconcile needed.
             if hover_changed {
@@ -271,11 +272,6 @@ impl<A: Application + 'static> WindowState<A> {
         if let Some(win) = &self.window {
             win.request_redraw();
         }
-    }
-
-    /// Generate a widget tree from the application.
-    fn view(&mut self) -> Box<dyn RetainWidget> {
-        A::view(&mut self.user_app_state, &mut self.font_system)
     }
 
     /// Frame tick - called each frame to update timing.
@@ -308,12 +304,13 @@ impl<A: Application + 'static> WindowState<A> {
     /// Render using the three-tree retain-mode pipeline.
     ///
     /// This method implements the full retain-mode rendering flow:
-    /// 1. Generate widget tree from view()
-    /// 2. Reconcile widget tree with element tree
-    /// 3. Layout dirty render objects
-    /// 4. Paint dirty render objects
-    /// 5. Process RenderCommands through frame builder
-    /// 6. Submit to GPU
+    /// 1. Generate widget tree from RootComponent
+    /// 2. Reconcile widget tree with element tree (first frame only)
+    /// 3. Perform state-driven rebuilds (subsequent frames)
+    /// 4. Layout dirty render objects
+    /// 5. Paint dirty render objects
+    /// 6. Process RenderCommands through frame builder
+    /// 7. Submit to GPU
     pub fn render_retain(&mut self) -> Result<(), wgpu::SurfaceError> {
         // 1. Backend check
         if !self.backend.is_ready() {
@@ -348,10 +345,15 @@ impl<A: Application + 'static> WindowState<A> {
         // 4. Perform state-driven rebuilds
         self.three_tree_pipeline.perform_rebuilds();
 
-        // 5. Only call view() + update() when something external triggered it
-        if needs_reconcile {
-            let widget_tree = self.view();
-            self.three_tree_pipeline.update(widget_tree);
+        // 5. On first frame, reconcile the RootComponent into the element tree.
+        //    After that, perform_rebuilds() handles everything — when a Signal
+        //    on the app state fires, the RootComponent's StatefulElement is
+        //    marked dirty and rebuild_from_state() re-calls A::view().
+        //    We only pass a new root widget on the initial mount; state-driven
+        //    rebuilds are handled entirely by perform_rebuilds() above.
+        if self.three_tree_pipeline.needs_full_reconcile() {
+            let root_widget = RootComponent::<A>::default().boxed();
+            self.three_tree_pipeline.update(root_widget);
         }
 
         // 6. Compute logical size

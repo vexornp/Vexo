@@ -3,9 +3,9 @@ use std::sync::mpsc;
 
 use winit::event_loop::EventLoop;
 
-pub use image_data::{ImageData, ImageDataError};
-pub use core::Color;
 pub use core::AffineTransform;
+pub use core::Color;
+pub use image_data::{ImageData, ImageDataError};
 pub use uniffi;
 
 mod app;
@@ -14,9 +14,8 @@ pub use app::{KeyBindingAction, VexoApp};
 pub mod animation;
 
 pub use animation::{
-    AnimationController, AnimationDirection,
-    AnimationTicker, TickHandle,
-    Tween, ColorTween, FloatTween,
+    AnimationController, AnimationDirection, AnimationTicker, ColorTween, FloatTween, TickHandle,
+    Tween,
 };
 pub mod core;
 pub mod editor;
@@ -25,25 +24,23 @@ pub mod layout;
 mod mouse_tracker;
 pub use mouse_tracker::MouseTracker;
 
-mod image_data;
+mod frame_builder;
 pub mod image_atlas;
+mod image_data;
 mod image_instance;
 mod quad_instance;
 pub mod render;
-mod frame_builder;
 pub use frame_builder::FrameBuilder;
-mod resource;
 pub mod reactive;
-pub use reactive::Signal;
+mod resource;
 pub use component_state_derive::ComponentState;
-#[deprecated(since = "0.x", note = "Use `Signal` instead")]
-pub use reactive::StatefulMutable;
-pub mod state;
+pub use reactive::Signal;
 mod macros;
-mod window;
+pub mod state;
 mod text_cache;
-mod text_processor;
 mod text_pipeline;
+mod text_processor;
+mod window;
 pub use window::WindowState;
 
 pub use state::CursorBlinkState;
@@ -53,121 +50,197 @@ pub use layout::{AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Ov
 
 // --- Former retain/ modules (flattened) ---
 
-mod key;
-mod id;
-mod element_state;
+mod build_owner;
+mod child_ops;
+mod dirty;
 mod element;
 mod element_context;
-mod event_handler;
+mod element_state;
 mod event_context;
-mod render_object;
-mod dirty;
-mod build_owner;
-mod reconcile;
+mod event_handler;
+mod global_key_registry;
 mod hit_test;
-mod pipeline;
+mod id;
+mod key;
 mod layouter;
 mod painter;
+mod pipeline;
+mod reconcile;
 mod reconciler;
-mod global_key_registry;
+mod render_object;
+mod stateful_widget;
 mod style;
 mod update_result;
-mod stateful_widget;
-mod child_ops;
 
-pub mod widgets;
 pub mod elements;
-pub mod render_objects;
 pub mod focus;
+pub mod render_objects;
+pub mod widgets;
 
 #[cfg(test)]
-mod key_tests;
+mod animation_flow_tests;
 #[cfg(test)]
-mod reconcile_tests;
+mod build_owner_tests;
+#[cfg(test)]
+mod e2e_test;
 #[cfg(test)]
 mod element_registry_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-mod e2e_test;
+mod key_tests;
 #[cfg(test)]
-mod window_integration_test;
-#[cfg(test)]
-mod build_owner_tests;
+mod reconcile_tests;
 #[cfg(test)]
 mod stateful_integration_test;
 #[cfg(test)]
-mod animation_flow_tests;
+mod window_integration_test;
 
 // --- Re-exports from former retain/ ---
 
-pub use key::{Key, GlobalKey, WidgetKey};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use id::{ElementKey, RenderObjectKey};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use element_state::StateStorage;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use element::{Element, ElementRegistry};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use element_context::ElementContext;
-pub use event_context::EventContext;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use dirty::DirtyTracking;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
 pub use build_owner::{BuildOwner, RebuildResult};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use reconcile::Reconcilable;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use child_ops::{ChildOp, ChildOps};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use dirty::DirtyTracking;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use element::{Element, ElementRegistry};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use element_context::ElementContext;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use element_state::StateStorage;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use elements::{ContainerElement, LeafElement};
+pub use event_context::EventContext;
+pub use focus::{Focus, FocusElement, FocusManager, FocusNodeData, FocusNodeId};
+pub use global_key_registry::{GlobalKeyError, GlobalKeyRegistry};
 pub use hit_test::HitTestResult;
-pub use global_key_registry::{GlobalKeyRegistry, GlobalKeyError};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use id::{ElementKey, RenderObjectKey};
+pub use input::{MouseCursor, SystemCursorKind};
+pub use key::{GlobalKey, Key, WidgetKey};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use pipeline::ThreeTreePipeline;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use reconcile::Reconcilable;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use render_object::{
+    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
+};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use render_objects::{
+    ContainerRenderObject, ImageRenderObject, TextEditRenderObject, TextRenderObject,
+};
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use stateful_widget::ProxyRenderObject;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use stateful_widget::SimpleState;
+#[deprecated(
+    since = "0.x",
+    note = "Internal API — framework-managed, not for direct use"
+)]
+pub use stateful_widget::StatefulElement;
+pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderContext};
 pub use style::Style;
 pub use update_result::UpdateResult;
-pub use stateful_widget::{Component, ComponentState, RenderContext, LifecycleContext};
-#[deprecated(since = "0.x", note = "Use `Component` instead")]
-pub use stateful_widget::StatefulWidget;
-#[deprecated(since = "0.x", note = "Use `RenderContext` instead")]
-pub use stateful_widget::BuildContext;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use stateful_widget::StatefulElement;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use stateful_widget::ProxyRenderObject;
-#[deprecated(since = "0.x", note = "Use `ComponentState` instead")]
-pub use stateful_widget::State;
-#[deprecated(since = "0.x", note = "Use `LifecycleContext` instead")]
-pub use stateful_widget::StateContext;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use stateful_widget::SimpleState;
-#[deprecated(since = "0.x", note = "Use `ComponentState` instead")]
-pub use stateful_widget::State as ComponentStateDeprecated;
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use child_ops::{ChildOp, ChildOps};
-pub use focus::{FocusManager, FocusNodeId, FocusNodeData, Focus, FocusElement};
-pub use widgets::{Widget, Text, Flex, Column, Row, Grid, TextEdit, TextEditState, TextEditingController, ScrollView, Image};
-pub use input::{MouseCursor, SystemCursorKind};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use elements::{LeafElement, ContainerElement};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use render_objects::{TextRenderObject, ContainerRenderObject, TextEditRenderObject, ImageRenderObject};
-#[deprecated(since = "0.x", note = "Internal API — framework-managed, not for direct use")]
-pub use pipeline::ThreeTreePipeline;
+pub use widgets::{
+    Column, Flex, Grid, Image, Row, ScrollView, Text, TextEdit, TextEditState,
+    TextEditingController, Widget,
+};
 
 extern crate alloc;
 
 pub trait Application: Sized + 'static {
-    type State;
+    type State: ComponentState + Default;
 
     fn new() -> Self::State;
 
     /// Returns a widget tree for the three-tree architecture.
-    fn view(state: &mut Self::State, font_system: &mut glyphon::FontSystem) -> Box<dyn Widget>;
+    fn view(state: &mut Self::State) -> Box<dyn Widget>;
+}
+
+/// Root component that bridges the `Application` trait into the widget tree.
+///
+/// Follows Flutter's design where the root widget is a regular `StatefulWidget`.
+/// The `Application::State` becomes the `Component::State`, so `Signal` fields
+/// are automatically wired by `StatefulElement::mount()` — when a `Signal::set()`
+/// fires, the element is marked dirty and `Application::view()` is re-called
+/// through the normal `perform_rebuilds()` pipeline.
+pub(crate) struct RootComponent<A: Application> {
+    _phantom: std::marker::PhantomData<A>,
+}
+
+impl<A: Application> Clone for RootComponent<A> {
+    fn clone(&self) -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<A: Application> Default for RootComponent<A> {
+    fn default() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<A: Application> Component for RootComponent<A> {
+    type State = A::State;
+
+    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        A::view(state)
+    }
 }
 
 pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
     // Initialize logger with debug level for retain mode by default
     // Override with RUST_LOG environment variable if needed
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-        .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     let event_loop = EventLoop::new()?;
     let (sender, receiver) = mpsc::channel();

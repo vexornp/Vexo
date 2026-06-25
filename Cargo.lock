@@ -2050,6 +2050,7 @@ dependencies = [
  "pollster",
  "uniffi",
  "vexo",
+ "vexo_uikit",
  "winit",
 ]
 
@@ -2653,6 +2654,14 @@ dependencies = [
  "uniffi",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "vexo_uikit"
+version = "0.1.0"
+dependencies = [
+ "slotmap",
+ "vexo",
 ]
 
 [[package]]
