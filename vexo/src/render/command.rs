@@ -113,6 +113,16 @@ pub enum RenderCommand {
 
     /// Pop the most recent transform from the stack.
     PopTransform,
+
+    /// Push an opacity context onto the stack.
+    /// All subsequent commands have their alpha multiplied by this value.
+    PushOpacity {
+        /// The opacity value (0.0 = invisible, 1.0 = fully opaque).
+        opacity: f32,
+    },
+
+    /// Pop the most recent opacity context from the stack.
+    PopOpacity,
 }
 
 // ============================================================================
@@ -333,5 +343,19 @@ mod tests {
         let s = Stroke::default();
         assert_eq!(s.color, Color::BLACK);
         assert_eq!(s.width, 1.0);
+    }
+
+    #[test]
+    fn test_opacity_commands() {
+        let cmd = RenderCommand::PushOpacity { opacity: 0.5 };
+        match cmd {
+            RenderCommand::PushOpacity { opacity } => assert_eq!(opacity, 0.5),
+            _ => panic!("Expected PushOpacity"),
+        }
+        let cmd = RenderCommand::PopOpacity;
+        match cmd {
+            RenderCommand::PopOpacity => {}
+            _ => panic!("Expected PopOpacity"),
+        }
     }
 }

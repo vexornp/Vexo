@@ -166,6 +166,12 @@ pub fn process_commands(
                     current_origin = prev_origin;
                 }
             }
+            RenderCommand::PushOpacity { .. } => {
+                // Opacity stack tracking; GPU application will be added in a future task.
+            }
+            RenderCommand::PopOpacity => {
+                // Opacity stack tracking; GPU application will be added in a future task.
+            }
         }
     }
 }
