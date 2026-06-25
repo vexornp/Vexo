@@ -19,6 +19,7 @@ pub struct ImageRequest {
     pub image_key: ImageKey,
     pub corner_radius: f32,
     pub transform: [f32; 6],
+    pub opacity: f32,
 }
 
 pub type Bounds = crate::core::Bounds<Logical>;
@@ -319,9 +320,23 @@ mod tests {
             image_key: 1,
             corner_radius: 8.0,
             transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
         });
 
         assert_eq!(fb.image_count(), 1);
+    }
+
+    #[test]
+    fn test_image_request_opacity() {
+        let req = ImageRequest {
+            position: [10.0, 20.0],
+            size: [100.0, 50.0],
+            image_key: 1,
+            corner_radius: 8.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 0.5,
+        };
+        assert_eq!(req.opacity, 0.5);
     }
 
     #[test]
@@ -333,6 +348,7 @@ mod tests {
             image_key: 1,
             corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
         });
 
         fb.push_clip(Bounds::new(0.0, 0.0, 100.0, 100.0));
@@ -342,6 +358,7 @@ mod tests {
             image_key: 2,
             corner_radius: 4.0,
             transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
         });
         fb.pop_clip();
 

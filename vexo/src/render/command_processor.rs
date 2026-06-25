@@ -115,6 +115,7 @@ pub fn process_commands(
                     image_key: *image_key,
                     corner_radius: *corner_radius,
                     transform: current_transform.to_array(),
+                    opacity: 1.0,
                 });
             }
             RenderCommand::PushClip { bounds } => {

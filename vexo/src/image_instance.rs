@@ -9,8 +9,9 @@ pub struct ImageInstance {
     pub uv_origin: [f32; 2],
     pub uv_size: [f32; 2],
     pub corner_radius: f32,
+    pub opacity: f32,
     pub transform: [f32; 6],
-    pub _padding: [f32; 2],
+    pub _padding: [f32; 1],
 }
 
 impl ImageInstance {
@@ -21,6 +22,7 @@ impl ImageInstance {
         atlas_size: [f32; 2],
         corner_radius: f32,
         transform: AffineTransform,
+        opacity: f32,
     ) -> Self {
         Self {
             position: pos,
@@ -34,8 +36,9 @@ impl ImageInstance {
                 region.height as f32 / atlas_size[1],
             ],
             corner_radius,
+            opacity,
             transform: transform.to_array(),
-            _padding: [0.0; 2],
+            _padding: [0.0],
         }
     }
 
@@ -50,9 +53,10 @@ impl ImageInstance {
                 wgpu::VertexAttribute { offset: 16, shader_location: 3, format: wgpu::VertexFormat::Float32x2 },
                 wgpu::VertexAttribute { offset: 24, shader_location: 4, format: wgpu::VertexFormat::Float32x2 },
                 wgpu::VertexAttribute { offset: 32, shader_location: 5, format: wgpu::VertexFormat::Float32 },
-                wgpu::VertexAttribute { offset: 36, shader_location: 6, format: wgpu::VertexFormat::Float32x2 },
-                wgpu::VertexAttribute { offset: 44, shader_location: 7, format: wgpu::VertexFormat::Float32x2 },
-                wgpu::VertexAttribute { offset: 52, shader_location: 8, format: wgpu::VertexFormat::Float32x2 },
+                wgpu::VertexAttribute { offset: 36, shader_location: 9, format: wgpu::VertexFormat::Float32 },
+                wgpu::VertexAttribute { offset: 40, shader_location: 6, format: wgpu::VertexFormat::Float32x2 },
+                wgpu::VertexAttribute { offset: 48, shader_location: 7, format: wgpu::VertexFormat::Float32x2 },
+                wgpu::VertexAttribute { offset: 56, shader_location: 8, format: wgpu::VertexFormat::Float32x2 },
             ],
         }
     }

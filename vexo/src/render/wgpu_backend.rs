@@ -679,7 +679,7 @@ impl WgpuBackend {
         let atlas_size = [self.image_allocator.atlas_width() as f32, self.image_allocator.atlas_height() as f32];
         let instances: Vec<ImageInstance> = requests.iter().map(|req| {
             let region = self.image_allocator.get_region(req.image_key).expect("Image key not found in atlas");
-            ImageInstance::from_logical(req.position, req.size, region, atlas_size, req.corner_radius, AffineTransform::from_array(req.transform))
+            ImageInstance::from_logical(req.position, req.size, region, atlas_size, req.corner_radius, AffineTransform::from_array(req.transform), req.opacity)
         }).collect();
         self.ensure_image_instance_capacity(instances.len());
         self.queue.write_buffer(&self.image_instance_buffer, 0, bytemuck::cast_slice(&instances));
