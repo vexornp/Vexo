@@ -3,7 +3,7 @@
 //! This module provides the bridge between the new `RenderCommand` output from
 //! `Paint::paint()` and the existing `FrameBuilder` renderer.
 
-use crate::core::{AffineTransform, Bounds, Logical, Point};
+use crate::core::{AffineTransform, Bounds, Logical, Point, Stroke};
 use crate::render::RenderCommand;
 use crate::frame_builder::FrameBuilder;
 
@@ -35,6 +35,12 @@ pub fn process_commands(
     let mut current_transform = AffineTransform::identity();
     let mut current_origin: Point<Logical> = Point::zero();
 
+    // Stack to track nested opacity values.
+    // Opacity multiplies into color alpha for Rect/Text/Caret and is passed
+    // directly for Image.
+    let mut current_opacity: f32 = 1.0;
+    let mut opacity_stack: Vec<f32> = Vec::new();
+
     for cmd in commands {
         match cmd {
             RenderCommand::Rect {
@@ -43,6 +49,8 @@ pub fn process_commands(
                 stroke,
                 corner_radius,
             } => {
+                let fill = fill.with_alpha(fill.a * current_opacity);
+                let stroke = stroke.map(|s| Stroke::new(s.color.with_alpha(s.color.a * current_opacity), s.width));
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
@@ -51,7 +59,7 @@ pub fn process_commands(
                 );
                 // Bake current transform into the frame builder before adding this rect
                 frame_builder.push_transform(current_transform);
-                frame_builder.add_rect(adjusted_bounds, *fill, *stroke, *corner_radius);
+                frame_builder.add_rect(adjusted_bounds, fill, stroke, *corner_radius);
                 frame_builder.pop_transform();
             }
             RenderCommand::Text {
@@ -61,6 +69,7 @@ pub fn process_commands(
                 color,
                 max_width,
             } => {
+                let color = color.with_alpha(color.a * current_opacity);
                 // Apply offset to text position
                 let offset_pos = Point::new(
                     position.x + current_offset.x,
@@ -77,13 +86,14 @@ pub fn process_commands(
                     let transformed = current_transform.transform_point(relative);
                     Point::new(transformed.x + current_origin.x, transformed.y + current_origin.y)
                 };
-                frame_builder.add_text(content, final_pos, *font_size, *color, *max_width);
+                frame_builder.add_text(content, final_pos, *font_size, color, *max_width);
             }
             RenderCommand::Caret {
                 position,
                 height,
                 color,
             } => {
+                let color = color.with_alpha(color.a * current_opacity);
                 // Apply offset to caret position
                 let offset_pos: Point<Logical> = Point::new(
                     position.x + current_offset.x,
@@ -99,7 +109,7 @@ pub fn process_commands(
                 };
                 let bounds = Bounds::from_xywh(final_pos.x, final_pos.y, 2.0, *height);
                 frame_builder.push_transform(current_transform);
-                frame_builder.add_rect(bounds, *color, None, 0.0);
+                frame_builder.add_rect(bounds, color, None, 0.0);
                 frame_builder.pop_transform();
             }
             RenderCommand::Image { bounds, image_key, corner_radius } => {
@@ -115,7 +125,7 @@ pub fn process_commands(
                     image_key: *image_key,
                     corner_radius: *corner_radius,
                     transform: current_transform.to_array(),
-                    opacity: 1.0,
+                    opacity: current_opacity,
                 });
             }
             RenderCommand::PushClip { bounds } => {
@@ -167,11 +177,14 @@ pub fn process_commands(
                     current_origin = prev_origin;
                 }
             }
-            RenderCommand::PushOpacity { .. } => {
-                // Opacity stack tracking; GPU application will be added in a future task.
+            RenderCommand::PushOpacity { opacity } => {
+                opacity_stack.push(current_opacity);
+                current_opacity = current_opacity * opacity;
             }
             RenderCommand::PopOpacity => {
-                // Opacity stack tracking; GPU application will be added in a future task.
+                if let Some(prev_opacity) = opacity_stack.pop() {
+                    current_opacity = prev_opacity;
+                }
             }
         }
     }
@@ -468,5 +481,56 @@ mod tests {
         assert_eq!(text.content, "Shifted");
         assert_eq!(text.position.x, 209.0);
         assert_eq!(text.position.y, 365.0);
+    }
+
+    #[test]
+    fn test_process_rect_with_opacity() {
+        let mut frame_builder = FrameBuilder::new();
+        let commands = vec![
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
+            RenderCommand::PopOpacity,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(quad.color, Color::RED.with_alpha(0.5).to_array());
+    }
+
+    #[test]
+    fn test_process_nested_opacity() {
+        let mut frame_builder = FrameBuilder::new();
+        let commands = vec![
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
+            RenderCommand::PopOpacity,
+            RenderCommand::PopOpacity,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        // 0.5 * 0.5 = 0.25
+        assert_eq!(quad.color, Color::RED.with_alpha(0.25).to_array());
+    }
+
+    #[test]
+    fn test_process_text_with_opacity() {
+        let mut frame_builder = FrameBuilder::new();
+        let commands = vec![
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::text("Hello", Point::new(10.0, 20.0), 16.0, Color::BLACK),
+            RenderCommand::PopOpacity,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.text_count(), 1);
+        let text = &frame_builder.text_requests()[0];
+        assert_eq!(text.color, Color::BLACK.with_alpha(0.5));
     }
 }
