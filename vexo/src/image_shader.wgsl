@@ -6,6 +6,7 @@ struct VertexOutput {
     @location(2) uv_size: vec2<f32>,
     @location(3) size: vec2<f32>,
     @location(4) corner_radius: f32,
+    @location(5) opacity: f32,
 };
 
 struct GlobalUniforms {
@@ -25,6 +26,7 @@ fn vs_main(
     @location(3) inst_uv_origin: vec2<f32>,
     @location(4) inst_uv_size: vec2<f32>,
     @location(5) inst_corner_radius: f32,
+    @location(9) inst_opacity: f32,
     @location(6) inst_transform_ab: vec2<f32>,
     @location(7) inst_transform_cd: vec2<f32>,
     @location(8) inst_transform_ef: vec2<f32>,
@@ -49,6 +51,7 @@ fn vs_main(
     out.uv_size = inst_uv_size;
     out.size = inst_size * globals.scale_factor;
     out.corner_radius = inst_corner_radius * globals.scale_factor;
+    out.opacity = inst_opacity;
     return out;
 }
 
@@ -59,7 +62,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(image_atlas, image_sampler, atlas_uv);
 
     if (radius < 0.5) {
-        return tex_color;
+        return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity);
     }
 
     let pixel_pos = in.uv * in.size;
@@ -74,5 +77,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha);
+    return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha * in.opacity);
 }
