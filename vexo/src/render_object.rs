@@ -335,6 +335,15 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the opacity for this render object, if any.
+    ///
+    /// When present, the painter emits `PushOpacity`/`PopOpacity` around
+    /// this object's children. The opacity value (0.0..1.0) is multiplied
+    /// into the alpha of all descendant colors.
+    fn opacity(&self) -> Option<f32> {
+        None
+    }
+
     /// Get the image data that needs registration in the atlas, if any.
     ///
     /// Returns `Some(&ImageData)` when this render object has image data
@@ -711,6 +720,23 @@ mod tests {
         let ctx = HitTestContext::mock();
         // Just verify it can be created
         let _ = ctx;
+    }
+
+    #[test]
+    fn test_render_object_opacity_default() {
+        struct TestRO;
+        impl RenderObject for TestRO {
+            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+                unimplemented!()
+            }
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> { vec![] }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool { true }
+            fn as_any(&self) -> &dyn std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        }
+        let ro = TestRO;
+        assert!(ro.opacity().is_none());
     }
 
     #[test]
