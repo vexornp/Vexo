@@ -6,7 +6,7 @@
 //! borrow conflicts when StatefulElement needs both `&mut W::State` and
 //! `&mut EventContext`.
 
-use crate::core::{Bounds, Logical, Point, Scale};
+use crate::core::{Bounds, Logical, Point, Scale, ScaleSource};
 use crate::input::Modifiers;
 
 use super::id::ElementKey;
@@ -76,8 +76,8 @@ pub struct EventContext<'a> {
     /// `pointer_position - inner_bounds.origin`.
     local_position: Point<Logical>,
 
-    /// DPI scale factor for converting logical to physical coordinates.
-    scale: Scale,
+    /// Shared scale factor source.
+    scale_source: ScaleSource,
 }
 
 impl<'a> EventContext<'a> {
@@ -89,7 +89,7 @@ impl<'a> EventContext<'a> {
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
         font_system: &'a mut glyphon::FontSystem,
         render_objects: Option<&'a RenderObjectRegistry>,
     ) -> Self {
@@ -100,7 +100,7 @@ impl<'a> EventContext<'a> {
             focused_element,
             bounds,
             modifiers,
-            scale,
+            scale_source,
             font_system,
             build_owner: None,
             dirty_sender: None,
@@ -118,7 +118,7 @@ impl<'a> EventContext<'a> {
         focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
         font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
         dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
@@ -131,7 +131,7 @@ impl<'a> EventContext<'a> {
             focused_element,
             bounds,
             modifiers,
-            scale,
+            scale_source,
             font_system,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
@@ -159,7 +159,7 @@ impl<'a> EventContext<'a> {
 
     /// Get the DPI scale factor.
     pub fn scale(&self) -> Scale {
-        self.scale
+        self.scale_source.get()
     }
 
     /// Check if this element is currently focused.
@@ -233,7 +233,7 @@ impl<'a> EventContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::Bounds;
+    use crate::core::{Bounds, ScaleSource};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -265,7 +265,7 @@ mod tests {
             None,
             Bounds::default(),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -283,7 +283,7 @@ mod tests {
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -297,7 +297,7 @@ mod tests {
             None,
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -315,7 +315,7 @@ mod tests {
             Some(element),
             Bounds::default(),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -329,7 +329,7 @@ mod tests {
             None,
             Bounds::default(),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -347,7 +347,7 @@ mod tests {
             None,
             Bounds::default(),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -369,7 +369,7 @@ mod tests {
             None,
             Bounds::default(),
             Modifiers::default(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -390,7 +390,7 @@ mod tests {
             None,
             Bounds::default(),
             Modifiers::control(),
-            Scale::default(),
+            ScaleSource::default(),
             &mut font_system,
             None,
         );

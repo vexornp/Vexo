@@ -544,7 +544,7 @@ mod tests {
             None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::Scale::default(),
+            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -582,7 +582,7 @@ mod tests {
             None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::Scale::default(),
+            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
         );
@@ -617,7 +617,7 @@ mod tests {
             None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::Scale::default(),
+            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
         );
