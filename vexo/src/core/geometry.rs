@@ -876,7 +876,6 @@ impl<C, R> std::ops::SubAssign for Position<C, R> {
 #[cfg(test)]
 mod scale_source_tests {
     use super::ScaleSource;
-    use super::Scale;
 
     #[test]
     fn test_scale_source_get_returns_initial_value() {
