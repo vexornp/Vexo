@@ -188,6 +188,22 @@ impl Application for State {
                     })
                     .boxed(),
             )
+            .push(
+                Column::new()
+                    .gap(12.0)
+                    .push(Text::new("Opacity Demo").padding(8.0))
+                    .push(
+                        Column::new()
+                            .gap(8.0)
+                            .push(Text::new("100%").background(Color::rgb(0.2, 0.4, 0.8)).padding(8.0).corner_radius(4.0))
+                            .push(Text::new("75%").background(Color::rgb(0.2, 0.4, 0.8)).padding(8.0).corner_radius(4.0).opacity(0.75))
+                            .push(Text::new("50%").background(Color::rgb(0.2, 0.4, 0.8)).padding(8.0).corner_radius(4.0).opacity(0.5))
+                            .push(Text::new("25%").background(Color::rgb(0.2, 0.4, 0.8)).padding(8.0).corner_radius(4.0).opacity(0.25))
+                            .push(Text::new("10%").background(Color::rgb(0.2, 0.4, 0.8)).padding(8.0).corner_radius(4.0).opacity(0.1))
+                            .width(200.0),
+                    )
+                    .boxed(),
+            )
             .boxed()
     }
 }
