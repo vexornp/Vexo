@@ -9,6 +9,7 @@ mod gesture_detector;
 mod grid;
 mod image;
 mod mouse_region;
+mod opacity;
 pub(crate) mod scroll_view;
 mod text;
 mod text_edit;
@@ -36,6 +37,7 @@ pub use super::{Key, GlobalKey};
 pub(crate) use decorated_container::DecoratedContainer;
 pub(crate) use gesture_detector::GestureDetector;
 pub(crate) use mouse_region::MouseRegion;
+pub use opacity::Opacity;
 pub(crate) use text_edit_content::TextEditContent;
 pub(crate) use transform::Transform;
 pub(crate) use with_layout::WithLayout;
@@ -312,6 +314,13 @@ pub trait Widget: Any {
         Self: Sized + 'static,
     {
         Box::new(Transform::scale(self, sx, sy))
+    }
+
+    fn opacity(self, value: f32) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(Opacity::new(self, value))
     }
 }
 

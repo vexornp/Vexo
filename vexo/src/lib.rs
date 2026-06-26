@@ -187,7 +187,7 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::Style;
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Column, Flex, Grid, Image, Row, ScrollView, Text, TextEdit, TextEditState,
+    Column, Flex, Grid, Image, Opacity, Row, ScrollView, Text, TextEdit, TextEditState,
     TextEditingController, Widget,
 };
 
