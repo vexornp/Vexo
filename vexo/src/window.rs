@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Logical, Physical, Point, Scale, Size};
+use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::render::{RenderBackend, WgpuBackend};
@@ -41,8 +41,8 @@ pub struct WindowState<A: Application + 'static> {
 
     // Font system for text rendering
     font_system: glyphon::FontSystem,
-    // Scale factor for logical-to-physical conversion
-    scale: Scale,
+    // Shared scale factor source (single source of truth)
+    scale_source: ScaleSource,
 
     _phantom: std::marker::PhantomData<A>,
 
@@ -72,10 +72,8 @@ impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
         let backend = WgpuBackend::new(window.clone()).await?;
 
-        // Read the initial scale factor from the backend config
-        let scale = backend.current_config()
-            .map(|c| Scale::new(c.scale_factor() as f64))
-            .unwrap_or(Scale::new(1.0));
+        // Get the shared scale source from the backend
+        let scale_source = backend.scale_source();
 
         // Initialize font system with embedded font
         let font_data = crate::resource::file::FONT.to_vec();
@@ -92,7 +90,7 @@ impl<A: Application + 'static> WindowState<A> {
             frame_builder: crate::FrameBuilder::new(),
             layout_engine,
             font_system,
-            scale,
+            scale_source,
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline: ThreeTreePipeline::new(animation_ticker.clone()),
@@ -104,13 +102,12 @@ impl<A: Application + 'static> WindowState<A> {
     }
 
     pub fn resize(&mut self, size: Size<Physical>) {
-        let config =
-            crate::render::RenderConfig::new(size, Scale::new(self.scale.factor() as f64));
+        let config = crate::render::RenderConfig::new(size);
         self.backend.resize(config);
     }
 
     pub fn scale_factor_changed(&mut self, scale_factor: f64, _new_inner_size: winit::dpi::PhysicalSize<u32>) {
-        self.scale = Scale::new(scale_factor);
+        self.scale_source.set(scale_factor);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -131,8 +128,7 @@ impl<A: Application + 'static> WindowState<A> {
                 self.request_frame();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.scale = Scale::new(*scale_factor);
-                self.backend.update_scale_factor(*scale_factor as f32);
+                self.scale_source.set(*scale_factor);
                 self.three_tree_pipeline.mark_all_needs_layout();
                 self.request_frame();
             }
@@ -149,10 +145,10 @@ impl<A: Application + 'static> WindowState<A> {
             WindowEvent::PointerMoved { position, .. } => {
                 // Track pointer position for scroll events
                 let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
-                self.last_pointer_position = physical.to_logical(self.scale);
+                self.last_pointer_position = physical.to_logical(self.scale_source.get());
                 // Pass to widget tree for hit-testing
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
+                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -174,7 +170,7 @@ impl<A: Application + 'static> WindowState<A> {
 
                 // Other keyboard input goes to widgets
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
+                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -183,7 +179,7 @@ impl<A: Application + 'static> WindowState<A> {
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale, self.last_pointer_position)
+                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -206,7 +202,7 @@ impl<A: Application + 'static> WindowState<A> {
         let (frame_needed, rebuilds_pending) = {
             let pipeline = &mut self.three_tree_pipeline;
 
-            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, self.scale);
+            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, self.scale_source.get());
 
             // Drain the dirty channel so that elements whose dirty callbacks
             // fired during event handling (e.g., AnimationController::forward())
@@ -295,6 +291,11 @@ impl<A: Application + 'static> WindowState<A> {
         &self.animation_ticker
     }
 
+    /// Get a clone of the scale source.
+    pub fn scale_source(&self) -> ScaleSource {
+        self.scale_source.clone()
+    }
+
     /// Check if cursor blink has toggled. Returns true if visibility changed
     /// (caller should request a frame).
     pub fn check_cursor_blink(&mut self) -> bool {
@@ -363,7 +364,7 @@ impl<A: Application + 'static> WindowState<A> {
         }
 
         // 6. Compute logical size
-        let scale = self.scale;
+        let scale = self.scale_source.get();
         let logical_width = self.backend.width() as f32 / scale.factor();
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
