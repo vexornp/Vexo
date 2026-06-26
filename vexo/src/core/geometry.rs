@@ -34,6 +34,8 @@
 //! ```
 
 use std::marker::PhantomData;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // MARKER TYPES: Logical vs Physical
@@ -584,6 +586,52 @@ impl std::ops::Div<f32> for Scale {
 }
 
 // ============================================================================
+// SCALE SOURCE
+// ============================================================================
+
+/// Shared handle to the DPI scale factor.
+///
+/// Wraps `Arc<AtomicU64>` so all consumers read from the same memory.
+/// One `set()` call updates the value for every holder of a clone.
+pub struct ScaleSource {
+    inner: Arc<AtomicU64>,
+}
+
+impl ScaleSource {
+    /// Create a new scale source with the given initial value.
+    pub fn new(initial: f64) -> Self {
+        Self {
+            inner: Arc::new(AtomicU64::new(initial.to_bits())),
+        }
+    }
+
+    /// Read the current scale factor.
+    pub fn get(&self) -> Scale {
+        let bits = self.inner.load(Ordering::Relaxed);
+        Scale::new(f64::from_bits(bits))
+    }
+
+    /// Update the scale factor. Visible to all holders immediately.
+    pub fn set(&self, value: f64) {
+        self.inner.store(value.to_bits(), Ordering::Relaxed);
+    }
+}
+
+impl Clone for ScaleSource {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+impl Default for ScaleSource {
+    fn default() -> Self {
+        Self::new(1.0)
+    }
+}
+
+// ============================================================================
 // AFFINE TRANSFORM
 // ============================================================================
 
@@ -824,6 +872,40 @@ impl<C, R> std::ops::SubAssign for Position<C, R> {
 // ============================================================================
 // TESTS
 // ============================================================================
+
+#[cfg(test)]
+mod scale_source_tests {
+    use super::ScaleSource;
+    use super::Scale;
+
+    #[test]
+    fn test_scale_source_get_returns_initial_value() {
+        let source = ScaleSource::new(2.0);
+        let scale = source.get();
+        assert_eq!(scale.factor_f64(), 2.0);
+    }
+
+    #[test]
+    fn test_scale_source_set_updates_value() {
+        let source = ScaleSource::new(1.0);
+        source.set(3.0);
+        assert_eq!(source.get().factor_f64(), 3.0);
+    }
+
+    #[test]
+    fn test_scale_source_clones_share_state() {
+        let source = ScaleSource::new(1.0);
+        let clone = source.clone();
+        source.set(2.5);
+        assert_eq!(clone.get().factor_f64(), 2.5);
+    }
+
+    #[test]
+    fn test_scale_source_default() {
+        let source = ScaleSource::default();
+        assert_eq!(source.get().factor_f64(), 1.0);
+    }
+}
 
 #[cfg(test)]
 mod tests {

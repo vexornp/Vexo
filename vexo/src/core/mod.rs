@@ -55,6 +55,6 @@ mod id;
 mod stroke;
 
 pub use color::Color;
-pub use geometry::{Absolute, AffineTransform, Bounds, Logical, Physical, Point, Position, Relative, Scale, Size};
+pub use geometry::{Absolute, AffineTransform, Bounds, Logical, Physical, Point, Position, Relative, Scale, ScaleSource, Size};
 pub use id::WidgetId;
 pub use stroke::Stroke;
