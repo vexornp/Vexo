@@ -5,7 +5,7 @@
 
 use glyphon::FontSystem;
 
-use crate::core::{Physical, Scale, Size};
+use crate::core::{Physical, Size};
 use crate::frame_builder::FrameBuilder;
 
 /// Configuration for the render backend.
@@ -13,14 +13,12 @@ use crate::frame_builder::FrameBuilder;
 pub struct RenderConfig {
     /// Physical size in screen pixels.
     pub size: Size<Physical>,
-    /// DPI scale factor.
-    pub scale: Scale,
 }
 
 impl RenderConfig {
     /// Create a new render config.
-    pub fn new(size: Size<Physical>, scale: Scale) -> Self {
-        Self { size, scale }
+    pub fn new(size: Size<Physical>) -> Self {
+        Self { size }
     }
 
     /// Get width as u32 for GPU APIs.
@@ -33,11 +31,6 @@ impl RenderConfig {
         self.size.height_u32()
     }
 
-    /// Get scale factor as f32 for GPU APIs.
-    pub fn scale_factor(&self) -> f32 {
-        self.scale.factor()
-    }
-
     /// Get screen size as [f32; 2] for GPU uniforms.
     pub fn screen_size_array(&self) -> [f32; 2] {
         self.size.to_array()
@@ -48,7 +41,6 @@ impl Default for RenderConfig {
     fn default() -> Self {
         Self {
             size: Size::new(800.0, 600.0),
-            scale: Scale::default(),
         }
     }
 }
@@ -122,7 +114,13 @@ mod tests {
         let config = RenderConfig::default();
         assert_eq!(config.width(), 800);
         assert_eq!(config.height(), 600);
-        assert_eq!(config.scale_factor(), 1.0);
+    }
+
+    #[test]
+    fn test_render_config_new() {
+        let config = RenderConfig::new(Size::new(1920.0, 1080.0));
+        assert_eq!(config.width(), 1920);
+        assert_eq!(config.height(), 1080);
     }
 
     #[test]
