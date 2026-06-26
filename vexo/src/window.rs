@@ -148,7 +148,7 @@ impl<A: Application + 'static> WindowState<A> {
                 self.last_pointer_position = physical.to_logical(self.scale_source.get());
                 // Pass to widget tree for hit-testing
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
+                    InputEvent::from_winit(event, &self.scale_source, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -170,7 +170,7 @@ impl<A: Application + 'static> WindowState<A> {
 
                 // Other keyboard input goes to widgets
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
+                    InputEvent::from_winit(event, &self.scale_source, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }
@@ -179,7 +179,7 @@ impl<A: Application + 'static> WindowState<A> {
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
-                    InputEvent::from_winit(event, self.scale_source.get(), self.last_pointer_position)
+                    InputEvent::from_winit(event, &self.scale_source, self.last_pointer_position)
                 {
                     self.process_input_event(input_event);
                 }

@@ -10,7 +10,7 @@
 //! - Enable testing of input handling
 //! - Provide a clean, minimal event model
 
-use crate::core::{Point, Logical, Physical, Scale};
+use crate::core::{Point, Logical, Physical, Scale, ScaleSource};
 
 // ============================================================================
 // INPUT EVENT
@@ -231,9 +231,10 @@ impl InputEvent {
     /// (e.g., surface resize, close requested).
     pub fn from_winit(
         event: &winit::event::WindowEvent,
-        scale: Scale,
+        scale_source: &ScaleSource,
         pointer_position: Point<Logical>,
     ) -> Option<Self> {
+        let scale = scale_source.get();
         use winit::event::ElementState;
 
         match event {
