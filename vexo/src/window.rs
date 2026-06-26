@@ -202,7 +202,7 @@ impl<A: Application + 'static> WindowState<A> {
         let (frame_needed, rebuilds_pending) = {
             let pipeline = &mut self.three_tree_pipeline;
 
-            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, self.scale_source.get());
+            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, &self.scale_source);
 
             // Drain the dirty channel so that elements whose dirty callbacks
             // fired during event handling (e.g., AnimationController::forward())

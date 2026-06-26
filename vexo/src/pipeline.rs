@@ -40,7 +40,7 @@ use std::any::Any;
 use std::sync::{Arc, mpsc};
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Logical, Point, Position, Scale, Size};
+use crate::core::{Absolute, Logical, Point, Position, ScaleSource, Size};
 use crate::mouse_tracker::MouseTracker;
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
 use crate::render::RenderCommand;
@@ -468,7 +468,7 @@ impl ThreeTreePipeline {
         event: &InputEvent,
         modifiers: Modifiers,
         font_system: &mut glyphon::FontSystem,
-        scale: Scale,
+        scale_source: &ScaleSource,
     ) -> Option<Box<dyn Any>> {
         let result = EventHandler::handle_event(
             &mut self.element_registry,
@@ -481,7 +481,7 @@ impl ThreeTreePipeline {
             position,
             event,
             modifiers,
-            scale,
+            scale_source.clone(),
         );
 
         // Commit deferred focus changes
