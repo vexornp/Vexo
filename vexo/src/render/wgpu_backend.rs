@@ -547,6 +547,23 @@ impl WgpuBackend {
         &mut self.viewport
     }
 
+    /// Update the scale factor in the GlobalUniforms buffer.
+    pub fn update_scale_factor(&mut self, scale_factor: f32) {
+        if let Some(config) = &mut self.current_config {
+            let new_config = RenderConfig::new(
+                config.size,
+                Scale::new(scale_factor as f64),
+            );
+            *config = new_config.clone();
+            let uniform = GlobalUniforms {
+                screen_size: new_config.screen_size_array(),
+                scale_factor: new_config.scale_factor(),
+                _padding: 0.0,
+            };
+            self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+        }
+    }
+
     /// Update viewport resolution.
     pub fn update_viewport(&mut self, size: Size<Physical>) {
         self.viewport.update(
@@ -857,6 +874,7 @@ impl RenderBackend for WgpuBackend {
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
             self.is_configured = true;
+            self.current_config = Some(config.clone());
 
             // Update uniforms
             let uniform = GlobalUniforms {

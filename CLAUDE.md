@@ -278,7 +278,9 @@ backend.render();
 ## Development Workflow
 
 - Always run `cargo build` after making edits to Rust files, and `cargo test` after implementing features. Never assume tests pass without running them.
-- **Don't run the desktop demo yourself** — you can't interact with the GUI. Ask the user to run it, perform UI actions, and share the log output instead.
+- **Never run `cargo run -p desktop_demo` yourself** — you can't interact with the GUI AND your terminal may be on a different display (e.g., non-Retina) producing misleading results. Always ask the user to run it.
+- **When debugging GUI bugs, always use the `debugging-gui-with-logs` skill.** Follow its workflow strictly: (1) form hypothesis, (2) add `log::debug!` with a unique prefix, (3) give the user the run command with `RUST_LOG=debug | grep | tee`, (4) read the log evidence, (5) fix root cause. Never skip to theory or try to reason without log evidence first.
+- **Never rationalize running the demo.** Commands like `cargo run | grep` still execute the GUI on your display. If you need runtime evidence, instrument and ask the user to run.
 
 ## Commit Guidelines
 

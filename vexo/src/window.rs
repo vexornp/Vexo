@@ -72,6 +72,11 @@ impl<A: Application + 'static> WindowState<A> {
     pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
         let backend = WgpuBackend::new(window.clone()).await?;
 
+        // Read the initial scale factor from the backend config
+        let scale = backend.current_config()
+            .map(|c| Scale::new(c.scale_factor() as f64))
+            .unwrap_or(Scale::new(1.0));
+
         // Initialize font system with embedded font
         let font_data = crate::resource::file::FONT.to_vec();
         let binary = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(font_data));
@@ -87,7 +92,7 @@ impl<A: Application + 'static> WindowState<A> {
             frame_builder: crate::FrameBuilder::new(),
             layout_engine,
             font_system,
-            scale: Scale::new(1.0),
+            scale,
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline: ThreeTreePipeline::new(animation_ticker.clone()),
@@ -127,6 +132,7 @@ impl<A: Application + 'static> WindowState<A> {
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale = Scale::new(*scale_factor);
+                self.backend.update_scale_factor(*scale_factor as f32);
                 self.three_tree_pipeline.mark_all_needs_layout();
                 self.request_frame();
             }
