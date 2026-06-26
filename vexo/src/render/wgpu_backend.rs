@@ -7,7 +7,7 @@ use std::sync::Arc;
 use glyphon::{FontSystem, Viewport};
 use wgpu::util::DeviceExt;
 
-use crate::core::{AffineTransform, Color, Physical, Scale, Size};
+use crate::core::{AffineTransform, Color, Physical, ScaleSource, Size};
 use crate::image_atlas::{AtlasRegion, ImageKey, ShelfAllocator};
 use crate::image_data::ImageData;
 use crate::image_instance::ImageInstance;
@@ -103,6 +103,9 @@ pub struct WgpuBackend {
     // Current configuration
     current_config: Option<RenderConfig>,
 
+    // Shared scale factor source
+    scale_source: ScaleSource,
+
     // Clear color
     clear_color: wgpu::Color,
 }
@@ -111,7 +114,7 @@ impl WgpuBackend {
     /// Create a new WGPU backend with a window.
     pub async fn new(window: Arc<dyn winit::window::Window>) -> anyhow::Result<Self> {
         let size = window.surface_size();
-        let scale_factor = window.scale_factor() as f32;
+        let scale_factor = window.scale_factor();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -120,17 +123,18 @@ impl WgpuBackend {
         let surface = instance.create_surface(window.clone()).unwrap();
 
         let physical_size = Size::<Physical>::new(size.width as f32, size.height as f32);
+        let scale_source = ScaleSource::new(scale_factor);
 
-        Self::init(surface, instance, physical_size, Scale::new(scale_factor as f64)).await
+        Self::init(surface, instance, physical_size, scale_source).await
     }
 
     async fn init(
         surface: wgpu::Surface<'static>,
         instance: wgpu::Instance,
         physical_size: Size<Physical>,
-        scale: Scale,
+        scale_source: ScaleSource,
     ) -> anyhow::Result<Self> {
-        let scale_factor = scale.factor();
+        let scale_factor = scale_source.get().factor();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptionsBase {
                 power_preference: wgpu::PowerPreference::default(),
@@ -492,7 +496,8 @@ impl WgpuBackend {
             image_atlas_bind_group,
             image_atlas_texture,
             image_allocator,
-            current_config: Some(RenderConfig::new(physical_size, scale)),
+            current_config: Some(RenderConfig::new(physical_size)),
+            scale_source,
             clear_color: Color::WHITE.to_wgpu_color(),
         })
     }
@@ -547,23 +552,6 @@ impl WgpuBackend {
         &mut self.viewport
     }
 
-    /// Update the scale factor in the GlobalUniforms buffer.
-    pub fn update_scale_factor(&mut self, scale_factor: f32) {
-        if let Some(config) = &mut self.current_config {
-            let new_config = RenderConfig::new(
-                config.size,
-                Scale::new(scale_factor as f64),
-            );
-            *config = new_config.clone();
-            let uniform = GlobalUniforms {
-                screen_size: new_config.screen_size_array(),
-                scale_factor: new_config.scale_factor(),
-                _padding: 0.0,
-            };
-            self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
-        }
-    }
-
     /// Update viewport resolution.
     pub fn update_viewport(&mut self, size: Size<Physical>) {
         self.viewport.update(
@@ -598,6 +586,11 @@ impl WgpuBackend {
     /// Get the current render config, if available.
     pub fn current_config(&self) -> Option<&RenderConfig> {
         self.current_config.as_ref()
+    }
+
+    /// Get a clone of the scale source for distribution.
+    pub fn scale_source(&self) -> ScaleSource {
+        self.scale_source.clone()
     }
 
     /// Prepare text rendering.
@@ -721,13 +714,14 @@ impl WgpuBackend {
         clip_groups: &[ClipGroup],
         draw_ranges: &[DrawRange],
         image_draw_ranges: &[DrawRange],
-        scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
     ) -> Result<(), RenderError> {
         if !self.is_configured {
             return Err(RenderError::SurfaceNotConfigured);
         }
+
+        let scale_factor = self.scale_source.get().factor();
 
         let output = self.surface.get_current_texture()
             .map_err(|e| RenderError::AcquireFailed(format!("{:?}", e)))?;
@@ -839,18 +833,16 @@ impl RenderBackend for WgpuBackend {
     ) {
         self.current_config = Some(config.clone());
 
-        // Update global uniforms if size changed
+        let scale_factor = self.scale_source.get().factor();
         let uniform = GlobalUniforms {
             screen_size: config.screen_size_array(),
-            scale_factor: config.scale_factor(),
+            scale_factor,
             _padding: 0.0,
         };
         self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        // Upload geometry buffers
         self.upload_geometry(frame_builder);
 
-        // Update viewport
         self.viewport.update(
             &self.queue,
             glyphon::Resolution {
@@ -876,10 +868,10 @@ impl RenderBackend for WgpuBackend {
             self.is_configured = true;
             self.current_config = Some(config.clone());
 
-            // Update uniforms
+            let scale_factor = self.scale_source.get().factor();
             let uniform = GlobalUniforms {
                 screen_size: config.screen_size_array(),
-                scale_factor: config.scale_factor(),
+                scale_factor,
                 _padding: 0.0,
             };
             self.queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::bytes_of(&uniform));
