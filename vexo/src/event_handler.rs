@@ -7,7 +7,7 @@
 use std::any::Any;
 use std::sync::mpsc;
 
-use crate::core::{Absolute, Bounds, Logical, Point, Position, Scale};
+use crate::core::{Absolute, Bounds, Logical, Point, Position, ScaleSource};
 use crate::input::{ButtonState, InputEvent, Modifiers};
 
 use super::build_owner::BuildOwner;
@@ -46,7 +46,7 @@ impl EventHandler {
         _position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
     ) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::PointerMoved { position } => Self::handle_pointer_event(
@@ -60,7 +60,7 @@ impl EventHandler {
                 *position,
                 event,
                 modifiers,
-                scale,
+                scale_source.clone(),
             ),
             InputEvent::PointerButton { position, .. } => Self::handle_pointer_event(
                 element_registry,
@@ -73,7 +73,7 @@ impl EventHandler {
                 *position,
                 event,
                 modifiers,
-                scale,
+                scale_source.clone(),
             ),
             InputEvent::Scroll { .. } => Self::handle_scroll_event(
                 element_registry,
@@ -86,7 +86,7 @@ impl EventHandler {
                 _position,
                 event,
                 modifiers,
-                scale,
+                scale_source.clone(),
             ),
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
@@ -98,7 +98,7 @@ impl EventHandler {
                 focus_manager,
                 event,
                 modifiers,
-                scale,
+                scale_source,
             ),
             _ => None,
         }
@@ -125,7 +125,7 @@ impl EventHandler {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
     ) -> Option<Box<dyn Any>> {
         // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
@@ -172,7 +172,7 @@ impl EventHandler {
                     focus_manager.primary_focus_element(),
                     bounds,
                     modifiers,
-                    scale,
+                    scale_source.clone(),
                     font_system,
                     build_owner,
                     dirty_sender,
@@ -223,7 +223,7 @@ impl EventHandler {
         focus_manager: &mut FocusManager,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
     ) -> Option<Box<dyn Any>> {
         // Get focused element
         let focused = focus_manager.primary_focus_element()?;
@@ -238,7 +238,7 @@ impl EventHandler {
             focus_manager.primary_focus_element(),
             bounds,
             modifiers,
-            scale,
+            scale_source,
             font_system,
             build_owner,
             dirty_sender,
@@ -278,7 +278,7 @@ impl EventHandler {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale: Scale,
+        scale_source: ScaleSource,
     ) -> Option<Box<dyn Any>> {
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
         let hit_result = render_objects.hit_test(absolute_position);
@@ -308,7 +308,7 @@ impl EventHandler {
                             focus_manager.primary_focus_element(),
                             bounds,
                             modifiers,
-                            scale,
+                            scale_source.clone(),
                             font_system,
                             build_owner,
                             dirty_sender,
