@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use crate::animation::AnimationTicker;
-use crate::core::{Point, Scale, Size};
+use crate::core::{Point, ScaleSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
 use crate::{Flex, Focus, Text, ThreeTreePipeline};
@@ -74,7 +74,7 @@ fn test_click_outside_clears_focus() {
         &event,
         Modifiers::default(),
         &mut font_system,
-        Scale::default(),
+        &ScaleSource::default(),
     );
 
     // Focus should be cleared
@@ -154,7 +154,7 @@ fn test_click_inside_hit_succeeds_then_unfocuses() {
         &event,
         Modifiers::default(),
         &mut font_system,
-        Scale::default(),
+        &ScaleSource::default(),
     );
 
     // Focus is cleared because no element handled the event
@@ -224,7 +224,7 @@ fn test_click_to_focus_with_stateful_element() {
         &event,
         Modifiers::default(),
         &mut font_system,
-        Scale::default(),
+        &ScaleSource::default(),
     );
 
     // Focus should be set (TextEdit requested focus)
@@ -506,7 +506,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // The on_focus_change callback should have fired with false
@@ -557,7 +557,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         assert!(
@@ -572,7 +572,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         assert!(
@@ -665,7 +665,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         assert!(
@@ -684,7 +684,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         assert!(
@@ -746,7 +746,7 @@ mod on_focus_change_tests {
             &scroll_event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // Process rebuilds triggered by scroll offset change and re-layout,
@@ -764,7 +764,7 @@ mod on_focus_change_tests {
             &event,
             Modifiers::default(),
             &mut font_system,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         assert!(

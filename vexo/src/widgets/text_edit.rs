@@ -803,7 +803,7 @@ mod tests {
     // Focus integration tests
     // ========================================================================
 
-    use crate::core::{Logical, Point, Scale};
+    use crate::core::{Logical, Point, ScaleSource};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 
     #[test]
@@ -832,7 +832,7 @@ mod tests {
             &event,
             Modifiers::default(),
             &mut fs,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // The TextEdit's StatefulElement should now be focused
@@ -874,7 +874,7 @@ mod tests {
             &click_inside,
             Modifiers::default(),
             &mut fs,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // Verify TextEdit is focused
@@ -894,7 +894,7 @@ mod tests {
             &click_outside,
             Modifiers::default(),
             &mut fs,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // Focus should be cleared because no element handled the click
@@ -944,7 +944,7 @@ mod tests {
             &event,
             Modifiers::default(),
             &mut fs,
-            Scale::default(),
+            &ScaleSource::default(),
         );
 
         // The TextEdit's StatefulElement should now be focused

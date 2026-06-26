@@ -224,7 +224,7 @@ mod full_pipeline_tests {
 
 #[cfg(test)]
 mod event_handling_tests {
-    use crate::core::{Point, Scale, Size};
+    use crate::core::{Point, ScaleSource, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
     use crate::animation::AnimationTicker;
@@ -248,7 +248,7 @@ mod event_handling_tests {
         };
 
         let mut font_system = create_test_font_system();
-        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default(), &mut font_system, Scale::default());
+        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default(), &mut font_system, &ScaleSource::default());
         assert!(message.is_none());
     }
 
@@ -273,7 +273,7 @@ mod event_handling_tests {
 
         // Text element doesn't handle events, so should return None
         let mut font_system = create_test_font_system();
-        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default(), &mut font_system, Scale::default());
+        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default(), &mut font_system, &ScaleSource::default());
 
         // Text element returns None by default
         assert!(message.is_none());
