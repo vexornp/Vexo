@@ -417,7 +417,7 @@ impl<A: Application + 'static> WindowState<A> {
         let prepared_text = self.text_pipeline.collect_text(
             &mut self.frame_builder,
             &mut self.font_system,
-            scale,
+            &self.scale_source,
             physical_size,
         );
 

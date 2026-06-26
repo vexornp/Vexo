@@ -1,6 +1,6 @@
 use glyphon::{Buffer, FontSystem, TextArea};
 
-use crate::core::{Bounds, Color, Physical, Scale, Size};
+use crate::core::{Bounds, Color, Physical, ScaleSource, Size};
 use crate::frame_builder::ClipGroup;
 use crate::text_cache::TextCache;
 
@@ -65,10 +65,11 @@ impl TextProcessor {
     fn create_text_area(
         buffer: Buffer,
         physical_pos: crate::core::Point<Physical>,
-        scale: Scale,
+        scale_source: &ScaleSource,
         bounds: Bounds<Physical>,
         color: Color,
     ) -> (Buffer, TextAreaData) {
+        let scale = scale_source.get();
         let data = TextAreaData {
             left: physical_pos.x,
             top: physical_pos.y,
@@ -85,9 +86,10 @@ impl TextProcessor {
         &mut self,
         font_system: &mut FontSystem,
         clip_groups: &[ClipGroup],
-        scale: Scale,
+        scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> PreparedText {
+        let scale = scale_source.get();
         let mut buffers: Vec<Buffer> = Vec::new();
         let mut text_area_data: Vec<TextAreaData> = Vec::new();
 
@@ -114,7 +116,7 @@ impl TextProcessor {
                 let (buf, data) = Self::create_text_area(
                     buffer,
                     physical_pos,
-                    scale,
+                    scale_source,
                     bounds,
                     req.color,
                 );
@@ -141,14 +143,14 @@ impl TextProcessor {
         &mut self,
         frame_builder: &mut crate::frame_builder::FrameBuilder,
         font_system: &mut FontSystem,
-        scale: Scale,
+        scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
         let clip_groups = frame_builder.clip_groups();
         let regular = self.process_text_requests(
             font_system,
             clip_groups,
-            scale,
+            scale_source,
             viewport_physical,
         );
 

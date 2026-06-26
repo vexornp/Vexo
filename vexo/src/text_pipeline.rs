@@ -1,4 +1,4 @@
-use crate::core::{Physical, Scale, Size};
+use crate::core::{Physical, ScaleSource, Size};
 use crate::render::{RenderError, WgpuBackend};
 use crate::frame_builder::FrameBuilder;
 use crate::text_processor::{CombinedPreparedText, TextProcessor};
@@ -29,11 +29,11 @@ impl TextPipeline {
         &mut self,
         frame_builder: &mut FrameBuilder,
         font_system: &mut glyphon::FontSystem,
-        scale: Scale,
+        scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
         self.text_processor
-            .collect_text(frame_builder, font_system, scale, viewport_physical)
+            .collect_text(frame_builder, font_system, scale_source, viewport_physical)
     }
 
     /// Stage 2: Execute the render on the backend.
@@ -63,9 +63,6 @@ impl TextPipeline {
 
         // Execute the render pass with per-clip-group scissor rects for quads,
         // then render all text with full-viewport scissor.
-        let scale_factor = backend.current_config()
-            .map(|c| c.scale_factor())
-            .unwrap_or(1.0);
         let viewport_width = backend.width();
         let viewport_height = backend.height();
 
@@ -73,7 +70,6 @@ impl TextPipeline {
             clip_groups,
             &flattened.draw_ranges,
             &image_draw_ranges,
-            scale_factor,
             viewport_width,
             viewport_height,
         )?;
