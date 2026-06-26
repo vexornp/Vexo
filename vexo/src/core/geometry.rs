@@ -904,6 +904,26 @@ mod scale_source_tests {
         let source = ScaleSource::default();
         assert_eq!(source.get().factor_f64(), 1.0);
     }
+
+    #[test]
+    fn test_scale_source_multi_holder_propagation() {
+        // Simulates: WgpuBackend creates ScaleSource, WindowState and others get clones
+        let backend_source = ScaleSource::new(1.0);
+        let window_source = backend_source.clone();
+        let context_source = backend_source.clone();
+
+        // Backend updates scale (e.g., OS reports Retina)
+        backend_source.set(2.0);
+
+        // All holders see the new value
+        assert_eq!(window_source.get().factor_f64(), 2.0);
+        assert_eq!(context_source.get().factor_f64(), 2.0);
+
+        // WindowState can also update (e.g., ScaleFactorChanged event)
+        window_source.set(3.0);
+        assert_eq!(backend_source.get().factor_f64(), 3.0);
+        assert_eq!(context_source.get().factor_f64(), 3.0);
+    }
 }
 
 #[cfg(test)]

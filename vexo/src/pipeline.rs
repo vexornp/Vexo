@@ -481,7 +481,7 @@ impl ThreeTreePipeline {
             position,
             event,
             modifiers,
-            scale_source.clone(),
+            scale_source,
         );
 
         // Commit deferred focus changes
