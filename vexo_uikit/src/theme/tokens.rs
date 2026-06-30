@@ -24,7 +24,7 @@ pub mod button {
     pub const GHOST_TEXT_HOVER: Color = Color::rgb(0.224, 0.612, 1.0);
 
     // Disabled
-    pub const DISABLED_ALPHA: f32 = 0.5;
+    pub const DISABLED_OPACITY: f32 = 0.5;
 
     // Desktop sizing
     pub const CORNER_RADIUS_DESKTOP: f32 = 6.0;

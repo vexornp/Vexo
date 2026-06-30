@@ -7,7 +7,7 @@ fn button_primary_bg_is_blue() {
 }
 
 #[test]
-fn button_disabled_alpha_is_half() {
-    let alpha = vexo_uikit::theme::tokens::button::DISABLED_ALPHA;
-    assert!((alpha - 0.5).abs() < 0.01);
+fn button_disabled_opacity_is_half() {
+    let opacity = vexo_uikit::theme::tokens::button::DISABLED_OPACITY;
+    assert!((opacity - 0.5).abs() < 0.01);
 }

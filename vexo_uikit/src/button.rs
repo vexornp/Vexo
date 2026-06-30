@@ -1,9 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use vexo::{
-    Color, Component, ComponentState, RenderContext, Signal, Text, Widget,
-};
+use vexo::{Color, Component, ComponentState, RenderContext, Signal, Text, Widget};
 
 use crate::platform::Platform;
 use crate::theme::tokens;
@@ -118,8 +116,7 @@ impl Button {
     }
 
     fn resolve_bg(&self, is_pressed: bool, is_hovered: bool) -> Color {
-        let alpha = if self.disabled { tokens::button::DISABLED_ALPHA } else { 1.0 };
-        let base = match self.variant {
+        match self.variant {
             ButtonVariant::Primary => {
                 if is_pressed {
                     tokens::button::PRIMARY_BG_PRESSED
@@ -140,23 +137,18 @@ impl Button {
                 }
             }
             ButtonVariant::Ghost => tokens::button::GHOST_BG,
-        };
-        base.with_alpha(alpha)
+        }
     }
 
     fn resolve_border(&self) -> (Color, f32) {
-        let alpha = if self.disabled { tokens::button::DISABLED_ALPHA } else { 1.0 };
         match self.variant {
-            ButtonVariant::Secondary => {
-                (tokens::button::SECONDARY_BORDER.with_alpha(alpha), 1.0)
-            }
+            ButtonVariant::Secondary => (tokens::button::SECONDARY_BORDER, 1.0),
             _ => (Color::TRANSPARENT, 0.0),
         }
     }
 
     fn resolve_text_color(&self, is_hovered: bool) -> Color {
-        let alpha = if self.disabled { tokens::button::DISABLED_ALPHA } else { 1.0 };
-        let base = match self.variant {
+        match self.variant {
             ButtonVariant::Primary => tokens::button::PRIMARY_TEXT,
             ButtonVariant::Destructive => tokens::button::DESTRUCTIVE_TEXT,
             ButtonVariant::Secondary => tokens::button::SECONDARY_TEXT,
@@ -167,8 +159,7 @@ impl Button {
                     tokens::button::GHOST_TEXT
                 }
             }
-        };
-        base.with_alpha(alpha)
+        }
     }
 
     fn resolve_corner_radius(&self) -> f32 {
@@ -210,6 +201,11 @@ impl Component for Button {
         let _text_color = self.resolve_text_color(is_hovered);
         let corner_radius = self.resolve_corner_radius();
         let (pt, pr, pb, pl) = self.resolve_padding();
+        let opacity = if self.disabled {
+            tokens::button::DISABLED_OPACITY
+        } else {
+            1.0
+        };
 
         let disabled = self.disabled;
         let on_press_cb = self.on_press.clone();
@@ -247,5 +243,6 @@ impl Component for Button {
                 is_hovered_signal_exit.set(false);
                 is_pressed_signal_exit.set(false);
             })
+            .opacity(opacity)
     }
 }
