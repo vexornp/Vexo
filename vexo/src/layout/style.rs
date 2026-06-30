@@ -791,12 +791,12 @@ impl JustifyContent {
     fn to_taffy(self) -> taffy::prelude::JustifyContent {
         use taffy::prelude::JustifyContent as TaffyJustify;
         match self {
-            JustifyContent::Start => TaffyJustify::Start,
-            JustifyContent::End => TaffyJustify::End,
-            JustifyContent::Center => TaffyJustify::Center,
-            JustifyContent::SpaceBetween => TaffyJustify::SpaceBetween,
-            JustifyContent::SpaceAround => TaffyJustify::SpaceAround,
-            JustifyContent::SpaceEvenly => TaffyJustify::SpaceEvenly,
+            JustifyContent::Start => TaffyJustify::START,
+            JustifyContent::End => TaffyJustify::END,
+            JustifyContent::Center => TaffyJustify::CENTER,
+            JustifyContent::SpaceBetween => TaffyJustify::SPACE_BETWEEN,
+            JustifyContent::SpaceAround => TaffyJustify::SPACE_AROUND,
+            JustifyContent::SpaceEvenly => TaffyJustify::SPACE_EVENLY,
         }
     }
 }
@@ -805,11 +805,11 @@ impl AlignItems {
     fn to_taffy(self) -> taffy::prelude::AlignItems {
         use taffy::prelude::AlignItems as TaffyAlign;
         match self {
-            AlignItems::Stretch => TaffyAlign::Stretch,
-            AlignItems::Start => TaffyAlign::Start,
-            AlignItems::End => TaffyAlign::End,
-            AlignItems::Center => TaffyAlign::Center,
-            AlignItems::Baseline => TaffyAlign::Baseline,
+            AlignItems::Stretch => TaffyAlign::STRETCH,
+            AlignItems::Start => TaffyAlign::START,
+            AlignItems::End => TaffyAlign::END,
+            AlignItems::Center => TaffyAlign::CENTER,
+            AlignItems::Baseline => TaffyAlign::BASELINE,
         }
     }
 }
@@ -818,12 +818,12 @@ impl AlignContent {
     fn to_taffy(self) -> taffy::prelude::AlignContent {
         use taffy::prelude::AlignContent as TaffyAlign;
         match self {
-            AlignContent::Start => TaffyAlign::Start,
-            AlignContent::End => TaffyAlign::End,
-            AlignContent::Center => TaffyAlign::Center,
-            AlignContent::Stretch => TaffyAlign::Stretch,
-            AlignContent::SpaceBetween => TaffyAlign::SpaceBetween,
-            AlignContent::SpaceAround => TaffyAlign::SpaceAround,
+            AlignContent::Start => TaffyAlign::START,
+            AlignContent::End => TaffyAlign::END,
+            AlignContent::Center => TaffyAlign::CENTER,
+            AlignContent::Stretch => TaffyAlign::STRETCH,
+            AlignContent::SpaceBetween => TaffyAlign::SPACE_BETWEEN,
+            AlignContent::SpaceAround => TaffyAlign::SPACE_AROUND,
         }
     }
 }
@@ -914,12 +914,12 @@ impl AlignSelf {
     fn to_taffy(self) -> taffy::prelude::AlignSelf {
         use taffy::prelude::AlignItems as TaffyAlign;
         match self {
-            AlignSelf::Auto => TaffyAlign::Stretch,
-            AlignSelf::Start => TaffyAlign::Start,
-            AlignSelf::End => TaffyAlign::End,
-            AlignSelf::Center => TaffyAlign::Center,
-            AlignSelf::Stretch => TaffyAlign::Stretch,
-            AlignSelf::Baseline => TaffyAlign::Baseline,
+            AlignSelf::Auto => TaffyAlign::STRETCH,
+            AlignSelf::Start => TaffyAlign::START,
+            AlignSelf::End => TaffyAlign::END,
+            AlignSelf::Center => TaffyAlign::CENTER,
+            AlignSelf::Stretch => TaffyAlign::STRETCH,
+            AlignSelf::Baseline => TaffyAlign::BASELINE,
         }
     }
 }
