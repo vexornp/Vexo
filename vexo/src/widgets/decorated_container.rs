@@ -6,16 +6,16 @@
 
 use std::any::Any;
 
-use crate::core::{Color, Logical, Size};
 #[allow(unused_imports)]
 use crate::core::Bounds;
+use crate::core::{Color, Logical, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
 #[allow(unused_imports)]
 use crate::layout::{
-    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
-    Inset, JustifyContent, Layout, Overflow,
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap, Inset,
+    JustifyContent, Layout, Overflow,
 };
 use crate::layout_builder_methods;
 use crate::render_objects::ContainerRenderObject;
@@ -290,7 +290,9 @@ impl DecoratedContainer {
             key: None,
             child: Box::new(child),
             style: Style::default(),
-            layout: Layout::default().align_self(AlignSelf::Start).flex_shrink(0.0),
+            layout: Layout::default()
+                .align_self(AlignSelf::Start)
+                .flex_shrink(0.0),
         }
     }
 
@@ -322,6 +324,11 @@ impl DecoratedContainer {
     /// Get the style.
     pub fn style_ref(&self) -> &Style {
         &self.style
+    }
+
+    /// Get the layout.
+    pub fn layout_ref(&self) -> &Layout {
+        &self.layout
     }
 }
 
@@ -551,8 +558,7 @@ mod tests {
 
     #[test]
     fn test_decorated_container_padding_preserves_default() {
-        let dc = DecoratedContainer::new(Text::new("Hello"))
-            .padding(8.0);
+        let dc = DecoratedContainer::new(Text::new("Hello")).padding(8.0);
         assert!(dc.layout.padding.is_some());
     }
 

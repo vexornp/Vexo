@@ -43,7 +43,7 @@ pub(crate) use mouse_region::MouseRegion;
 pub use opacity::Opacity;
 pub(crate) use text_edit_content::TextEditContent;
 pub(crate) use transform::Transform;
-pub(crate) use with_layout::WithLayout;
+pub use with_layout::WithLayout;
 
 /// Immutable widget configuration - rebuilt each frame.
 ///

@@ -227,10 +227,12 @@ impl Component for Button {
         // All decoration on the container. DecoratedContainer defaults to
         // align_self(Start).flex_shrink(0.0), so the container sizes to its
         // content (text intrinsic width + padding + border).
+        // Note: layout_builder_methods!()'s padding_each takes (left, right, top, bottom),
+        // unlike modifier_methods!()'s (top, right, bottom, left) on Text.
         let mut container = DecoratedContainer::new(text)
             .background(bg)
             .corner_radius(corner_radius)
-            .padding_each(pt, pr, pb, pl);
+            .padding_each(pl, pr, pt, pb);
 
         if border_width > 0.0 {
             container = container.border(border_color, border_width);

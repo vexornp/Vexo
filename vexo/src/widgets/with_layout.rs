@@ -7,21 +7,21 @@
 
 use std::any::Any;
 
+use crate::core::{Bounds, Logical, Size};
+use crate::elements::RenderObjectElement;
+use crate::focus::attachment::FocusAttachment;
+use crate::input::InputEvent;
 #[allow(unused_imports)]
 use crate::layout::{
-    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
-    Inset, JustifyContent, Layout, LayoutNodeKey, Overflow, Position,
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap, Inset,
+    JustifyContent, Layout, LayoutNodeKey, Overflow, Position,
 };
 use crate::layout_builder_methods;
 use crate::render_objects::ContainerRenderObject;
-use crate::elements::RenderObjectElement;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
 };
-use crate::core::{Bounds, Logical, Size};
-use crate::input::InputEvent;
-use crate::focus::attachment::FocusAttachment;
 
 // ============================================================================
 // WithLayoutElement
@@ -264,6 +264,11 @@ impl WithLayout {
         self.key = Some(key.into());
         self
     }
+
+    /// Get the layout.
+    pub fn layout_ref(&self) -> &Layout {
+        &self.layout
+    }
 }
 
 impl WithLayout {
@@ -326,8 +331,8 @@ impl Widget for WithLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::{AlignItems, FlexDirection};
     use crate::{GlobalKey, Key, Text};
-    use crate::layout::{FlexDirection, AlignItems};
 
     #[test]
     fn test_with_layout_creation() {
@@ -430,8 +435,7 @@ mod tests {
 
     #[test]
     fn test_with_layout_gap_preserves_padding() {
-        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0))
-            .gap(4.0);
+        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0)).gap(4.0);
         assert!(w.layout.padding.is_some());
         assert!(w.layout.gap.is_some());
     }
