@@ -1,30 +1,71 @@
-use vexo::{Application, Color, Column, ComponentState, Text, Widget};
+use vexo::{Application, Color, Column, ComponentState, Signal, Text, Widget};
+use vexo_uikit::{Button, ButtonVariant};
 
 uniffi::setup_scaffolding!();
 
 #[derive(ComponentState, Default)]
 pub struct State {
-    _placeholder: (),
+    count: Signal<u32>,
 }
 
 impl Application for State {
     type State = Self;
 
     fn new() -> Self::State {
-        Self::State { _placeholder: () }
+        Self::State::default()
     }
 
-    fn view(_state: &mut Self::State) -> Box<dyn Widget> {
-        let mut column = Column::new().gap(0.0);
-        for i in 0..20 {
-            let label = format!("Row {}", i + 1);
-            column = column.push(Text::new(&label).padding(16.0).background(if i % 2 == 0 {
-                Color::rgb(0.95, 0.95, 0.95)
-            } else {
-                Color::WHITE
-            }));
-        }
-        column.boxed()
+    fn view(state: &mut Self::State) -> Box<dyn Widget> {
+        let pressed = state.count.get();
+
+        let title = Text::new("Button Showcase").with_font_size(32.0);
+        let subtitle = Text::new(format!("Pressed: {} times", pressed));
+
+        let count = state.count.clone();
+
+        Column::new()
+            .gap(16.0)
+            .padding(24.0)
+            .background(Color::WHITE)
+            .push(title)
+            .push(subtitle)
+            .push(
+                Button::new("Submit")
+                    .variant(ButtonVariant::Primary)
+                    .on_press(move || {
+                        count.set(count.get() + 1);
+                    }),
+            )
+            .push({
+                let count = state.count.clone();
+                Button::new("Cancel")
+                    .variant(ButtonVariant::Secondary)
+                    .on_press(move || {
+                        count.set(count.get() + 1);
+                    })
+            })
+            .push({
+                let count = state.count.clone();
+                Button::new("Delete")
+                    .variant(ButtonVariant::Destructive)
+                    .on_press(move || {
+                        count.set(count.get() + 1);
+                    })
+            })
+            .push({
+                let count = state.count.clone();
+                Button::new("More")
+                    .variant(ButtonVariant::Ghost)
+                    .on_press(move || {
+                        count.set(count.get() + 1);
+                    })
+            })
+            .push(
+                Button::new("Submit")
+                    .variant(ButtonVariant::Primary)
+                    .disabled(true),
+            )
+            .boxed()
     }
 }
 
