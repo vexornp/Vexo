@@ -109,8 +109,7 @@ impl TextProcessor {
                 // (text_x, text_y, text_x + vp_w, text_y + vp_h), which pushes the
                 // bottom far past the viewport. glyphon internally clamps bounds to
                 // the resolution, and a large bottom value interacts badly with that
-                // clamping (especially with the upstream bug where resolution.width is
-                // used for the Y-axis max instead of resolution.height).
+                // clamping.
                 let bounds = if let Some(clip) = &group.clip_bounds {
                     clip.to_physical(scale)
                 } else {
