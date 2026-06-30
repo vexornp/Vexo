@@ -197,8 +197,8 @@ impl WgpuBackend {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&global_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&global_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -321,7 +321,7 @@ impl WgpuBackend {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -366,8 +366,8 @@ impl WgpuBackend {
         let image_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Image Pipeline Layout"),
-                bind_group_layouts: &[&global_bind_group_layout, &image_atlas_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&global_bind_group_layout), Some(&image_atlas_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let image_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
