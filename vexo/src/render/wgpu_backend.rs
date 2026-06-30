@@ -238,7 +238,7 @@ impl WgpuBackend {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -407,7 +407,7 @@ impl WgpuBackend {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -723,8 +723,10 @@ impl WgpuBackend {
 
         let scale_factor = self.scale_source.get().factor();
 
-        let output = self.surface.get_current_texture()
-            .map_err(|e| RenderError::AcquireFailed(format!("{:?}", e)))?;
+        let output = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            other => return Err(RenderError::AcquireFailed(format!("{:?}", other))),
+        };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -747,6 +749,7 @@ impl WgpuBackend {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
