@@ -368,6 +368,7 @@ mod tests {
                 "Hello",
                 &Attrs::new(),
                 Shaping::Advanced,
+                None,
             );
         });
         raw_editor.with_buffer_mut(|buffer| {

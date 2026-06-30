@@ -67,7 +67,7 @@ impl Editor {
         shaping: glyphon::Shaping,
     ) {
         self.raw.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, text, attrs, shaping);
+            buffer.set_text(font_system, text, attrs, shaping, None);
         });
         self.apply_width_and_shape(font_system);
     }

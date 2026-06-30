@@ -48,7 +48,7 @@ impl TextEditingController {
         let metrics = Metrics::new(16.0, 20.0);
         let mut raw_editor = glyphon::Editor::new(Buffer::new_empty(metrics));
         raw_editor.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, initial_text, &Attrs::new(), Shaping::Advanced);
+            buffer.set_text(font_system, initial_text, &Attrs::new(), Shaping::Advanced, None);
         });
         raw_editor.with_buffer_mut(|buffer| {
             buffer.shape_until_scroll(font_system, true);

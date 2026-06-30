@@ -72,7 +72,7 @@ impl<'a> TextMeasurer<'a> {
         buffer.set_size(self.font_system, available_width, available_height);
 
         // Set and shape the text
-        buffer.set_text(self.font_system, content, &Attrs::new(), Shaping::Advanced);
+        buffer.set_text(self.font_system, content, &Attrs::new(), Shaping::Advanced, None);
         buffer.shape_until_scroll(self.font_system, true);
 
         // Calculate dimensions from layout runs

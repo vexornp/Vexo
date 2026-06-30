@@ -99,6 +99,7 @@ impl TextCache {
             &request.content,
             &Attrs::new().color(color_rgba_u8),
             Shaping::Advanced,
+            None,
         );
         buffer.shape_until_scroll(font_system, true);
 

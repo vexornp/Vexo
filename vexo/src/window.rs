@@ -110,7 +110,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.scale_source.set(scale_factor);
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), String> {
         // Use retain mode rendering
         self.render_retain()
     }
@@ -318,7 +318,7 @@ impl<A: Application + 'static> WindowState<A> {
     /// 5. Paint dirty render objects
     /// 6. Process RenderCommands through frame builder
     /// 7. Submit to GPU
-    pub fn render_retain(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render_retain(&mut self) -> Result<(), String> {
         // 1. Backend check
         if !self.backend.is_ready() {
             return Ok(());
@@ -429,12 +429,7 @@ impl<A: Application + 'static> WindowState<A> {
                 prepared_text,
                 &mut self.font_system,
             )
-            .map_err(|e| match e {
-                crate::render::RenderError::SurfaceNotConfigured => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::AcquireFailed(_) => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::TextPrepareFailed(_) => wgpu::SurfaceError::Lost,
-                crate::render::RenderError::GpuError(_) => wgpu::SurfaceError::Lost,
-            })?;
+            .map_err(|e| e.to_string())?;
 
         // 14. If a TextEdit is focused, keep the event loop alive so
         //     about_to_wait fires and can check cursor blink timing.
