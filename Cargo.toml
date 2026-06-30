@@ -31,7 +31,7 @@ wgpu = "29.0.3"
 winit = "0.31.0-beta.2"
 
 # Layout Engine
-taffy = "0.9.1"
+taffy = "0.11"
 
 # Utility
 pollster = "0.4.0"
