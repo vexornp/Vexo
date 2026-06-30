@@ -25,25 +25,25 @@ use super::RenderObject;
 use super::UpdateResult;
 
 // Public API - leaf and container widgets
-pub use container::{Flex, Column, Row, ChildPush};
+pub use super::{GlobalKey, Key};
+pub use container::{ChildPush, Column, Flex, Row};
 pub use grid::Grid;
 pub use image::Image;
+pub use scroll_view::ScrollView;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
-pub use scroll_view::ScrollView;
-pub use super::{Key, GlobalKey};
 
 // Crate-internal modifier widgets (not part of public API)
-pub(crate) use decorated_container::DecoratedContainer;
+use crate::core::Color;
+use crate::input::MouseCursor;
+use crate::layout::Layout;
+pub use decorated_container::DecoratedContainer;
 pub(crate) use gesture_detector::GestureDetector;
 pub(crate) use mouse_region::MouseRegion;
 pub use opacity::Opacity;
 pub(crate) use text_edit_content::TextEditContent;
 pub(crate) use transform::Transform;
 pub(crate) use with_layout::WithLayout;
-use crate::core::Color;
-use crate::input::MouseCursor;
-use crate::layout::Layout;
 
 /// Immutable widget configuration - rebuilt each frame.
 ///
@@ -370,12 +370,12 @@ impl Widget for Box<dyn Widget> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::element::Element;
-    use crate::key::{Key, WidgetKey};
-    use crate::{LayoutContext, RenderObject};
-    use crate::layout::TaffyLayoutEngine;
     use crate::core::Logical;
+    use crate::element::Element;
     use crate::input::SystemCursorKind;
+    use crate::key::{Key, WidgetKey};
+    use crate::layout::TaffyLayoutEngine;
+    use crate::{LayoutContext, RenderObject};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -410,7 +410,9 @@ mod tests {
         }
 
         fn create_element(&self) -> Box<dyn Element> {
-            Box::new(TestElement { focus_attachment: None })
+            Box::new(TestElement {
+                focus_attachment: None,
+            })
         }
 
         fn create_render_object(&self) -> Box<dyn RenderObject> {
@@ -432,7 +434,12 @@ mod tests {
 
     impl Element for TestElement {
         fn mount(&mut self, _context: &mut crate::ElementContext) {}
-        fn update(&mut self, _new_widget: Box<dyn std::any::Any>, _context: &mut crate::ElementContext) {}
+        fn update(
+            &mut self,
+            _new_widget: Box<dyn std::any::Any>,
+            _context: &mut crate::ElementContext,
+        ) {
+        }
         fn unmount(&mut self, _context: &mut crate::ElementContext) {}
         fn render_object(&self) -> Option<crate::RenderObjectKey> {
             None
@@ -446,7 +453,9 @@ mod tests {
         fn focus_attachment(&self) -> &Option<crate::focus::attachment::FocusAttachment> {
             &self.focus_attachment
         }
-        fn focus_attachment_mut(&mut self) -> &mut Option<crate::focus::attachment::FocusAttachment> {
+        fn focus_attachment_mut(
+            &mut self,
+        ) -> &mut Option<crate::focus::attachment::FocusAttachment> {
             &mut self.focus_attachment
         }
     }
@@ -456,7 +465,11 @@ mod tests {
     }
 
     impl RenderObject for TestRenderObject {
-        fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[crate::layout::LayoutNodeKey]) -> crate::LayoutResult {
+        fn layout(
+            &mut self,
+            ctx: &mut LayoutContext,
+            _child_nodes: &[crate::layout::LayoutNodeKey],
+        ) -> crate::LayoutResult {
             let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
             self.layout_node = Some(node);
             crate::LayoutResult {
@@ -473,7 +486,11 @@ mod tests {
             vec![]
         }
 
-        fn hit_test(&self, _position: crate::core::Point<Logical>, _ctx: &crate::HitTestContext) -> bool {
+        fn hit_test(
+            &self,
+            _position: crate::core::Point<Logical>,
+            _ctx: &crate::HitTestContext,
+        ) -> bool {
             true
         }
 
