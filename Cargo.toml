@@ -27,7 +27,7 @@ members = [
 
 [workspace.dependencies]
 # Graphics & Windowing
-wgpu = "27.0.1"
+wgpu = "29.0.3"
 winit = "0.31.0-beta.2"
 
 # Layout Engine
@@ -42,7 +42,7 @@ env_logger = "0.10"
 bitflags = "2.10.0"
 
 # Text Rendering
-glyphon = { git = "https://github.com/grovesNL/glyphon.git", branch = "main" }
+glyphon = "0.11"
 
 # Foreign Function Interface (for mobile exports)
 uniffi = {version = "0.30.0", features = ["cli"] }
@@ -56,8 +56,3 @@ slotmap = "1.0"
 # Reactive State
 futures-signals = "0.3"
 
-# Patch glyphon to fix Y-axis TextBounds clamping bug (uses resolution.height
-# instead of resolution.width). Remove once upstream merges the fix.
-# See: https://github.com/grovesNL/glyphon/blob/main/src/text_render.rs
-[patch."https://github.com/grovesNL/glyphon.git"]
-glyphon = { git = "https://github.com/vexorsis/glyphon.git", branch = "fix/resolution-height-y-axis-v0.9" }
