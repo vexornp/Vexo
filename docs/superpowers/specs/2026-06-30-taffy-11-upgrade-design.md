@@ -112,16 +112,16 @@ align_self: self.align_self.map(|a| a.to_taffy()),
 align_self: self.align_self.map(|a| a.to_taffy()),
 ```
 
-The Vexo `AlignSelf::Auto` variant maps to returning `None` from the conversion (the `Option` already handles this — `align_self` is `Option<AlignSelf>` on Vexo's `Layout`, and `Auto` maps to `None`).
+Vexo's `Layout.align_self` is `Option<AlignSelf>`. When it's `None`, Taffy gets `None` (which means "auto" in 0.11). When it's `Some(AlignSelf::Auto)`, we also map to `None`. When it's `Some(AlignSelf::Start)`, etc., we call `to_taffy()` which returns an `AlignItems` constant.
 
-The `to_taffy()` impl for `AlignSelf` changes from returning `AlignSelf` variants to returning `AlignItems` constants:
+The `to_taffy()` impl for `AlignSelf` changes from returning `AlignSelf` variants to returning `AlignItems` constants. The `Auto` variant is never actually reached in practice (it's filtered to `None` before calling `to_taffy()`), but must still be handled in the match for exhaustiveness:
 ```rust
 // Before
 AlignSelf::Auto => TaffyAlign::Stretch,
 AlignSelf::Start => TaffyAlign::Start,
 
 // After
-AlignSelf::Auto => unreachable!(), // handled by Option::None
+AlignSelf::Auto => TaffyAlign::STRETCH,  // unreachable in practice; Auto is filtered to None before to_taffy()
 AlignSelf::Start => TaffyAlign::START,
 ```
 
