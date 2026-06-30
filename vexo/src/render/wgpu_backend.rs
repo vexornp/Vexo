@@ -116,9 +116,9 @@ impl WgpuBackend {
         let size = window.surface_size();
         let scale_factor = window.scale_factor();
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle_from_env()
         });
         let surface = instance.create_surface(window.clone()).unwrap();
 
