@@ -1,20 +1,20 @@
 //! Grid widget - CSS Grid layout container.
 
-use super::{Element, Widget};
-use super::super::key::WidgetKey;
-use crate::style::Style;
 #[allow(unused_imports)]
-use crate::core::Color;
+use super::super::core::{Logical, Size};
+use super::super::key::WidgetKey;
 #[allow(unused_imports)]
 use super::super::layout::{
     AlignContent, AlignItems, AlignSelf, Dimension, Display, EdgeInsets, FlexDirection, FlexWrap,
     GridAutoFlow, GridPlacement, Inset, JustifyContent, Layout, Overflow, Position, TrackSizing,
 };
-#[allow(unused_imports)]
-use super::super::core::{Logical, Size};
-use crate::layout_builder_methods;
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
+use super::{Element, Widget};
+#[allow(unused_imports)]
+use crate::core::Color;
+use crate::layout_builder_methods;
+use crate::style::Style;
 
 /// Default layout for Grid: display grid.
 fn grid_layout() -> Layout {
@@ -161,7 +161,10 @@ impl Widget for Grid {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_with_style(self.layout.clone(), self.style.clone()))
+        Box::new(ContainerRenderObject::new_with_style(
+            self.layout.clone(),
+            self.style.clone(),
+        ))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -209,9 +212,7 @@ mod tests {
 
     #[test]
     fn test_grid_columns_method() {
-        let grid = Grid::new()
-            .columns(vec![TrackSizing::Auto; 3])
-            .gap(8.0);
+        let grid = Grid::new().columns(vec![TrackSizing::Auto; 3]).gap(8.0);
         assert_eq!(grid.layout.display, Some(Display::Grid));
         assert!(grid.layout.grid_template_columns.is_some());
         assert!(grid.layout.gap.is_some());

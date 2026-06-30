@@ -1,7 +1,7 @@
 //! Flex widget - a flexbox container that arranges children along a direction.
 
-use super::{Element, Widget};
 use super::super::key::WidgetKey;
+use super::{Element, Widget};
 use crate::layout_builder_methods;
 
 /// Trait for types that can be pushed as children into a container.
@@ -26,27 +26,31 @@ impl ChildPush for Option<Box<dyn Widget>> {
         }
     }
 }
-use crate::style::Style;
-#[allow(unused_imports)]
-use crate::core::Color;
-#[allow(unused_imports)]
-use super::super::layout::{
-    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap,
-    Inset, JustifyContent, Layout, Overflow, Position,
-};
 #[allow(unused_imports)]
 use super::super::core::{Logical, Size};
+#[allow(unused_imports)]
+use super::super::layout::{
+    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap, Inset,
+    JustifyContent, Layout, Overflow, Position,
+};
 use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
+#[allow(unused_imports)]
+use crate::core::Color;
+use crate::style::Style;
 
 /// Default layout for a column: vertical flex with stretch alignment.
 fn column_layout() -> Layout {
-    Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch)
+    Layout::default()
+        .flex_direction(FlexDirection::Column)
+        .align(AlignItems::Stretch)
 }
 
 /// Default layout for a row: horizontal flex with stretch alignment.
 fn row_layout() -> Layout {
-    Layout::default().flex_direction(FlexDirection::Row).align(AlignItems::Stretch)
+    Layout::default()
+        .flex_direction(FlexDirection::Row)
+        .align(AlignItems::Stretch)
 }
 
 /// Flex widget - a flexbox container that arranges children along a direction.
@@ -176,7 +180,10 @@ impl Widget for Flex {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_with_style(self.layout.clone(), self.style.clone()))
+        Box::new(ContainerRenderObject::new_with_style(
+            self.layout.clone(),
+            self.style.clone(),
+        ))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -188,7 +195,10 @@ impl Widget for Flex {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(container_ro) = render_object.as_any_mut().downcast_mut::<ContainerRenderObject>() {
+        if let Some(container_ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<ContainerRenderObject>()
+        {
             let layout_changed = container_ro.set_layout(self.layout.clone());
             let style_changed = container_ro.set_style(self.style.clone());
             if layout_changed {
@@ -207,7 +217,6 @@ impl Widget for Flex {
         Box::new(self.clone())
     }
 }
-
 
 /// A vertical flex container — the web developer's default layout.
 ///
@@ -251,9 +260,9 @@ impl Row {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::Text;
-    use super::super::{Key, GlobalKey};
+    use super::super::{GlobalKey, Key};
+    use super::*;
 
     #[test]
     fn test_flex_column_creation() {
@@ -266,9 +275,7 @@ mod tests {
 
     #[test]
     fn test_flex_row_creation() {
-        let row = Flex::row()
-            .push(Text::new("Left"))
-            .push(Text::new("Right"));
+        let row = Flex::row().push(Text::new("Left")).push(Text::new("Right"));
 
         assert_eq!(row.children().len(), 2);
     }
@@ -387,7 +394,10 @@ mod tests {
 
     #[test]
     fn row_supports_builder_methods() {
-        let row = Row::new().gap(8.0).push(Text::new("A")).push(Text::new("B"));
+        let row = Row::new()
+            .gap(8.0)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
         assert_eq!(row.children().len(), 2);
         assert_eq!(row.layout.flex_direction, Some(FlexDirection::Row));
     }

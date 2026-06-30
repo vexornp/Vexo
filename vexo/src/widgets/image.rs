@@ -1,5 +1,7 @@
 //! Image widget - displays an image from ImageData.
 
+use crate::element::Element;
+use crate::elements::LeafElement;
 use crate::image_data::{ImageData, ImageDataError};
 use crate::key::WidgetKey;
 use crate::layout::Layout;
@@ -9,8 +11,6 @@ use crate::render_objects::ImageRenderObject;
 use crate::style::Style;
 use crate::update_result::UpdateResult;
 use crate::widgets::Widget;
-use crate::elements::LeafElement;
-use crate::element::Element;
 
 /// Image widget - displays an image from ImageData.
 pub struct Image {
@@ -86,7 +86,10 @@ impl Widget for Image {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(ro) = render_object.as_any_mut().downcast_mut::<ImageRenderObject>() {
+        if let Some(ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<ImageRenderObject>()
+        {
             let mut result = UpdateResult::NONE;
             if ro.set_image_data(&self.image_data) {
                 result |= UpdateResult::PAINT;
@@ -110,8 +113,8 @@ impl Widget for Image {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{GlobalKey, Key};
     use super::*;
-    use super::super::{Key, GlobalKey};
 
     fn make_test_image_data() -> ImageData {
         ImageData {

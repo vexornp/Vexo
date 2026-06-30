@@ -90,12 +90,18 @@ impl RenderObject for TransformRenderObject {
             Some(existing) => {
                 ctx.engine().set_style(existing, &layout);
                 ctx.engine().set_children(existing, child_nodes);
-                LayoutResult { node: existing, size: crate::core::Size::zero() }
+                LayoutResult {
+                    node: existing,
+                    size: crate::core::Size::zero(),
+                }
             }
             None => {
                 let node = ctx.engine().create_container(&layout, child_nodes);
                 self.layout_node = Some(node);
-                LayoutResult { node, size: crate::core::Size::zero() }
+                LayoutResult {
+                    node,
+                    size: crate::core::Size::zero(),
+                }
             }
         }
     }
@@ -458,7 +464,10 @@ impl Widget for Transform {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(TransformRenderObject::new(self.transform, self.transform_hit_tests))
+        Box::new(TransformRenderObject::new(
+            self.transform,
+            self.transform_hit_tests,
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -496,7 +505,7 @@ impl Widget for Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Text, GlobalKey, Key};
+    use crate::{GlobalKey, Key, Text};
 
     #[test]
     fn test_transform_creation() {
@@ -522,7 +531,10 @@ mod tests {
     fn test_transform_render_object_creation() {
         let t = Transform::rotate(Text::new("Hello"), 0.5);
         let ro = t.create_render_object();
-        assert!(ro.as_any().downcast_ref::<TransformRenderObject>().is_some());
+        assert!(ro
+            .as_any()
+            .downcast_ref::<TransformRenderObject>()
+            .is_some());
     }
 
     #[test]

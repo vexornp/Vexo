@@ -15,7 +15,7 @@ use crate::editor::Editor;
 use crate::input::{ButtonState, InputEvent, Key, MouseCursor, NamedKey, SystemCursorKind};
 
 use super::super::key::WidgetKey;
-use super::super::stateful_widget::{RenderContext, ComponentState, LifecycleContext, Component};
+use super::super::stateful_widget::{Component, ComponentState, LifecycleContext, RenderContext};
 use super::super::EventContext;
 use super::Widget;
 
@@ -48,7 +48,13 @@ impl TextEditingController {
         let metrics = Metrics::new(16.0, 20.0);
         let mut raw_editor = glyphon::Editor::new(Buffer::new_empty(metrics));
         raw_editor.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, initial_text, &Attrs::new(), Shaping::Advanced, None);
+            buffer.set_text(
+                font_system,
+                initial_text,
+                &Attrs::new(),
+                Shaping::Advanced,
+                None,
+            );
         });
         raw_editor.with_buffer_mut(|buffer| {
             buffer.shape_until_scroll(font_system, true);
@@ -300,7 +306,9 @@ impl ComponentState for TextEditState {
                 let adjusted_y = local.y - vertical_offset;
                 let physical_x = (local.x * scale.factor()) as i32;
                 let physical_y = (adjusted_y * scale.factor()) as i32;
-                text_edit.controller.click_at(physical_x, physical_y, ctx.font_system);
+                text_edit
+                    .controller
+                    .click_at(physical_x, physical_y, ctx.font_system);
 
                 Some(Box::new(()))
             }

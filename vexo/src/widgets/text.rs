@@ -1,10 +1,10 @@
 //! Text widget - displays a string.
 
-use super::{Element, Widget};
 use super::super::key::WidgetKey;
-use super::super::RenderObject;
 use super::super::render_objects::TextRenderObject;
+use super::super::RenderObject;
 use super::super::UpdateResult;
+use super::{Element, Widget};
 use crate::layout::Layout;
 use crate::modifier_methods;
 use crate::style::Style;
@@ -79,10 +79,12 @@ impl Widget for Text {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(TextRenderObject::new(&self.content)
-            .with_font_size(self.font_size)
-            .with_style(self.style.clone())
-            .with_layout(self.layout.clone()))
+        Box::new(
+            TextRenderObject::new(&self.content)
+                .with_font_size(self.font_size)
+                .with_style(self.style.clone())
+                .with_layout(self.layout.clone()),
+        )
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -90,7 +92,10 @@ impl Widget for Text {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(text_ro) = render_object.as_any_mut().downcast_mut::<TextRenderObject>() {
+        if let Some(text_ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<TextRenderObject>()
+        {
             let mut result = UpdateResult::NONE;
             if text_ro.set_content(&self.content) {
                 result |= UpdateResult::LAYOUT;
@@ -117,8 +122,8 @@ impl Widget for Text {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{GlobalKey, Key};
     use super::*;
-    use super::super::{Key, GlobalKey};
 
     #[test]
     fn test_text_widget_creation() {

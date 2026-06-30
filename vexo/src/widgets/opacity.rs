@@ -10,9 +10,7 @@ use std::any::Any;
 
 use crate::elements::{OpacityElement, RenderObjectElement};
 use crate::render_objects::OpacityRenderObject;
-use crate::{
-    Element, RenderObject, UpdateResult, Widget, WidgetKey,
-};
+use crate::{Element, RenderObject, UpdateResult, Widget, WidgetKey};
 
 /// A widget that applies an opacity multiplier to its child.
 ///

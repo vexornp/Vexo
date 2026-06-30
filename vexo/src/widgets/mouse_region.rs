@@ -29,15 +29,14 @@ use crate::core::{Bounds, Logical, Point, Size};
 use crate::input::{MouseCursor, MouseTrackerAnnotation};
 use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 
-use super::{Element, Widget};
-use super::super::key::WidgetKey;
-use super::super::{
-    ElementContext, ElementKey, EventContext,
-    LayoutContext, LayoutResult, PaintContext, HitTestContext,
-    RenderObject, RenderObjectKey,
-};
 use super::super::elements::RenderObjectElement;
 use super::super::focus::attachment::FocusAttachment;
+use super::super::key::WidgetKey;
+use super::super::{
+    ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
+    PaintContext, RenderObject, RenderObjectKey,
+};
+use super::{Element, Widget};
 
 // ============================================================================
 // MOUSE REGION WIDGET
@@ -109,8 +108,16 @@ impl MouseRegion {
     /// Build the annotation from current configuration.
     fn build_annotation(&self) -> MouseTrackerAnnotation {
         MouseTrackerAnnotation::new(self.cursor)
-            .with_on_enter(self.on_enter.clone().unwrap_or_else(|| Rc::new(RefCell::new(|| {}))))
-            .with_on_exit(self.on_exit.clone().unwrap_or_else(|| Rc::new(RefCell::new(|| {}))))
+            .with_on_enter(
+                self.on_enter
+                    .clone()
+                    .unwrap_or_else(|| Rc::new(RefCell::new(|| {}))),
+            )
+            .with_on_exit(
+                self.on_exit
+                    .clone()
+                    .unwrap_or_else(|| Rc::new(RefCell::new(|| {}))),
+            )
             .with_opaque(self.opaque)
     }
 }
@@ -205,10 +212,20 @@ impl MouseRegionElement {
     fn register_annotation(&self, context: &mut ElementContext) {
         if let Some(ro_key) = self.render_object {
             let annotation = MouseTrackerAnnotation::new(self.cursor)
-                .with_on_enter(self.on_enter.clone().unwrap_or_else(|| Rc::new(RefCell::new(|| {}))))
-                .with_on_exit(self.on_exit.clone().unwrap_or_else(|| Rc::new(RefCell::new(|| {}))))
+                .with_on_enter(
+                    self.on_enter
+                        .clone()
+                        .unwrap_or_else(|| Rc::new(RefCell::new(|| {}))),
+                )
+                .with_on_exit(
+                    self.on_exit
+                        .clone()
+                        .unwrap_or_else(|| Rc::new(RefCell::new(|| {}))),
+                )
                 .with_opaque(self.opaque);
-            context.render_objects.set_cursor_annotation(ro_key, annotation);
+            context
+                .render_objects
+                .set_cursor_annotation(ro_key, annotation);
         }
     }
 }
@@ -264,7 +281,9 @@ impl Element for MouseRegionElement {
     fn mount(&mut self, context: &mut ElementContext) {
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -322,11 +341,7 @@ impl Element for MouseRegionElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             if let Some(mr) = widget.as_any().downcast_ref::<MouseRegion>() {
                 self.cursor = mr.cursor;
@@ -360,7 +375,12 @@ impl Element for MouseRegionElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }

@@ -35,15 +35,14 @@ use crate::core::{Bounds, Logical, Point, Size};
 use crate::input::{ButtonState, InputEvent};
 use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 
-use super::{Element, Widget};
-use super::super::key::WidgetKey;
-use super::super::{
-    ElementContext, ElementKey, EventContext,
-    LayoutContext, LayoutResult, PaintContext, HitTestContext,
-    RenderObject, RenderObjectKey,
-};
 use super::super::elements::RenderObjectElement;
 use super::super::focus::attachment::FocusAttachment;
+use super::super::key::WidgetKey;
+use super::super::{
+    ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
+    PaintContext, RenderObject, RenderObjectKey,
+};
+use super::{Element, Widget};
 
 // ============================================================================
 // GESTURE DETECTOR WIDGET
@@ -244,7 +243,9 @@ impl Element for GestureDetectorElement {
         // when it mounts, so it must exist before child mounting begins.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -314,11 +315,7 @@ impl Element for GestureDetectorElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         // Downcast and store the new widget
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             // Update callbacks from the new widget
@@ -354,7 +351,12 @@ impl Element for GestureDetectorElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
@@ -482,8 +484,8 @@ impl RenderObject for GestureDetectorRenderObject {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::Key;
+    use super::*;
     use crate::Text;
     use std::cell::Cell;
     use std::sync::Arc;
@@ -502,8 +504,7 @@ mod tests {
 
     #[test]
     fn test_gesture_detector_with_key() {
-        let gd = GestureDetector::new(Text::new("Click Me"))
-            .with_key("my-gesture");
+        let gd = GestureDetector::new(Text::new("Click Me")).with_key("my-gesture");
         assert_eq!(gd.key(), Some(WidgetKey::Local(Key::new("my-gesture"))));
     }
 
@@ -643,8 +644,7 @@ mod tests {
 
     #[test]
     fn test_gesture_detector_clone() {
-        let gd = GestureDetector::new(Text::new("Hello"))
-            .on_press(|| {});
+        let gd = GestureDetector::new(Text::new("Hello")).on_press(|| {});
 
         let cloned = gd.clone();
         assert!(cloned.on_press.is_some());

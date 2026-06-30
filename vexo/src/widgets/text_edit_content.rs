@@ -8,12 +8,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::editor::Editor;
+use crate::elements::LeafRenderObjectElement;
 use crate::key::WidgetKey;
 use crate::layout::Layout;
 use crate::modifier_methods;
 use crate::render_objects::TextEditRenderObject;
 use crate::style::Style;
-use crate::elements::LeafRenderObjectElement;
 use crate::{Element, RenderObject, UpdateResult, Widget};
 
 /// Leaf widget that creates a TextEditRenderObject.
@@ -136,7 +136,10 @@ impl Widget for TextEditContent {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(ro) = render_object.as_any_mut().downcast_mut::<TextEditRenderObject>() {
+        if let Some(ro) = render_object
+            .as_any_mut()
+            .downcast_mut::<TextEditRenderObject>()
+        {
             let mut result = UpdateResult::NONE;
 
             if ro.set_content(&self.content) {
@@ -171,8 +174,8 @@ impl Widget for TextEditContent {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{GlobalKey, Key};
     use super::*;
-    use super::super::{Key, GlobalKey};
     use glyphon::Metrics;
 
     fn create_test_editor() -> Rc<RefCell<Editor>> {
