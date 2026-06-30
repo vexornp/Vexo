@@ -55,3 +55,9 @@ slotmap = "1.0"
 
 # Reactive State
 futures-signals = "0.3"
+
+# Patch glyphon to fix Y-axis TextBounds clamping bug (uses resolution.height
+# instead of resolution.width). Remove once upstream merges the fix.
+# See: https://github.com/grovesNL/glyphon/blob/main/src/text_render.rs
+[patch."https://github.com/grovesNL/glyphon.git"]
+glyphon = { git = "https://github.com/vexorsis/glyphon.git", branch = "fix/resolution-height-y-axis-v0.9" }

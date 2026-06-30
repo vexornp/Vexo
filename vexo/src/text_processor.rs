@@ -101,13 +101,22 @@ impl TextProcessor {
                 let physical_pos = req.position.to_physical(scale);
 
                 // Use the clip group's bounds for text clipping (via glyphon TextArea.bounds),
-                // or fall back to full screen if no clip is active.
+                // or fall back to viewport bounds if no clip is active.
+                //
+                // The fallback uses (0, 0, viewport_width, viewport_height) — the full
+                // viewport — rather than a viewport-sized region starting at the text
+                // position. Starting at the text position would create bounds like
+                // (text_x, text_y, text_x + vp_w, text_y + vp_h), which pushes the
+                // bottom far past the viewport. glyphon internally clamps bounds to
+                // the resolution, and a large bottom value interacts badly with that
+                // clamping (especially with the upstream bug where resolution.width is
+                // used for the Y-axis max instead of resolution.height).
                 let bounds = if let Some(clip) = &group.clip_bounds {
                     clip.to_physical(scale)
                 } else {
                     Bounds::<Physical>::from_xywh(
-                        physical_pos.x,
-                        physical_pos.y,
+                        0.0,
+                        0.0,
                         viewport_physical.width,
                         viewport_physical.height,
                     )
