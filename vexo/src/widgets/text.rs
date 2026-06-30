@@ -5,6 +5,7 @@ use super::super::render_objects::TextRenderObject;
 use super::super::RenderObject;
 use super::super::UpdateResult;
 use super::{Element, Widget};
+use crate::core::Color;
 use crate::layout::Layout;
 use crate::modifier_methods;
 use crate::style::Style;
@@ -14,6 +15,7 @@ pub struct Text {
     key: Option<WidgetKey>,
     content: String,
     font_size: f32,
+    color: Color,
     style: Style,
     layout: Layout,
 }
@@ -25,6 +27,7 @@ impl Text {
             key: None,
             content: content.into(),
             font_size: 24.0,
+            color: Color::BLACK,
             style: Style::default(),
             layout: Layout::default(),
         }
@@ -42,6 +45,12 @@ impl Text {
         self
     }
 
+    /// Set the text color.
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
     /// Get the text content.
     pub fn content(&self) -> &str {
         &self.content
@@ -50,6 +59,11 @@ impl Text {
     /// Get the font size.
     pub fn font_size(&self) -> f32 {
         self.font_size
+    }
+
+    /// Get the text color.
+    pub fn color(&self) -> Color {
+        self.color
     }
 
     modifier_methods!();
@@ -61,6 +75,7 @@ impl Clone for Text {
             key: self.key.clone(),
             content: self.content.clone(),
             font_size: self.font_size,
+            color: self.color,
             style: self.style.clone(),
             layout: self.layout.clone(),
         }
@@ -82,6 +97,7 @@ impl Widget for Text {
         Box::new(
             TextRenderObject::new(&self.content)
                 .with_font_size(self.font_size)
+                .with_color(self.color)
                 .with_style(self.style.clone())
                 .with_layout(self.layout.clone()),
         )
@@ -102,6 +118,9 @@ impl Widget for Text {
             }
             if text_ro.set_font_size(self.font_size) {
                 result |= UpdateResult::LAYOUT;
+            }
+            if text_ro.set_color(self.color) {
+                result |= UpdateResult::PAINT;
             }
             if text_ro.set_style(self.style.clone()) {
                 result |= UpdateResult::PAINT;
@@ -183,6 +202,62 @@ mod tests {
         assert!(w.layout.padding.is_some());
         assert!(w.layout.margin.is_some());
         assert_eq!(w.content(), "Hello");
+    }
+
+    #[test]
+    fn test_text_widget_with_font_size() {
+        let widget = Text::new("Hello").with_font_size(32.0);
+        assert_eq!(widget.font_size(), 32.0);
+    }
+
+    #[test]
+    fn test_text_widget_default_color_is_black() {
+        let widget = Text::new("Hello");
+        assert_eq!(widget.color(), crate::core::Color::BLACK);
+    }
+
+    #[test]
+    fn test_text_widget_with_color() {
+        let widget = Text::new("Hello").with_color(crate::core::Color::RED);
+        assert_eq!(widget.color(), crate::core::Color::RED);
+    }
+
+    #[test]
+    fn test_text_widget_clone_preserves_color() {
+        let widget = Text::new("Hello").with_color(crate::core::Color::RED);
+        let cloned = widget.clone();
+        assert_eq!(cloned.color(), crate::core::Color::RED);
+    }
+
+    #[test]
+    fn test_text_widget_modifier_preserves_color() {
+        let w = Text::new("Hello")
+            .with_color(crate::core::Color::RED)
+            .padding(8.0)
+            .background(crate::core::Color::BLUE);
+        assert_eq!(w.color(), crate::core::Color::RED);
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_color_change() {
+        let widget = Text::new("Hello").with_color(crate::core::Color::RED);
+        let mut ro = TextRenderObject::new("Hello"); // default BLACK
+        let result = widget.update_render_object(&mut ro);
+        // Color change is paint-only
+        assert!(result.contains(UpdateResult::PAINT));
+        assert!(!result.contains(UpdateResult::LAYOUT));
+        assert_eq!(ro.color(), crate::core::Color::RED);
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_color_no_change() {
+        // Both widget and RO default to BLACK
+        let widget = Text::new("Hello");
+        let mut ro = TextRenderObject::new("Hello");
+        ro.set_font_size(24.0); // match widget default
+        let result = widget.update_render_object(&mut ro);
+        // Color didn't change → no PAINT flag from color
+        assert!(!result.contains(UpdateResult::PAINT));
     }
 
     #[test]

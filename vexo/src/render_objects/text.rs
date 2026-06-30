@@ -22,6 +22,7 @@ use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObj
 pub struct TextRenderObject {
     content: String,
     font_size: f32,
+    color: Color,
     style: Style,
     layout: Layout,
     computed_bounds: Option<Bounds<Logical>>,
@@ -34,6 +35,7 @@ impl TextRenderObject {
         Self {
             content: content.to_string(),
             font_size: 24.0,
+            color: Color::BLACK,
             style: Style::default(),
             layout: Layout::default(),
             computed_bounds: None,
@@ -44,6 +46,12 @@ impl TextRenderObject {
     /// Set the font size.
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    /// Set the text color.
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
         self
     }
 
@@ -69,6 +77,11 @@ impl TextRenderObject {
         self.font_size
     }
 
+    /// Get the text color.
+    pub fn color(&self) -> Color {
+        self.color
+    }
+
     /// Get the computed bounds.
     pub fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
@@ -91,6 +104,18 @@ impl TextRenderObject {
     pub fn set_font_size(&mut self, size: f32) -> bool {
         if (self.font_size - size).abs() > f32::EPSILON {
             self.font_size = size;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the text color.
+    ///
+    /// Returns true if the color changed.
+    pub fn set_color(&mut self, color: Color) -> bool {
+        if self.color != color {
+            self.color = color;
             true
         } else {
             false
@@ -144,10 +169,7 @@ impl RenderObject for TextRenderObject {
             }
             None => {
                 // First frame: create new node
-                let node = ctx.engine().create_leaf_with_context(
-                    &layout,
-                    measure_ctx,
-                );
+                let node = ctx.engine().create_leaf_with_context(&layout, measure_ctx);
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,
@@ -215,7 +237,7 @@ impl RenderObject for TextRenderObject {
                     content: self.content.clone(),
                     position: text_pos,
                     font_size: self.font_size,
-                    color: Color::BLACK,
+                    color: self.color,
                     max_width: Some(bounds.width()),
                 });
 
@@ -280,6 +302,45 @@ mod tests {
     fn test_text_render_object_with_font_size() {
         let obj = TextRenderObject::new("Hello").with_font_size(24.0);
         assert_eq!(obj.font_size(), 24.0);
+    }
+
+    #[test]
+    fn test_text_render_object_default_color_is_black() {
+        let obj = TextRenderObject::new("Hello");
+        assert_eq!(obj.color(), Color::BLACK);
+    }
+
+    #[test]
+    fn test_text_render_object_with_color() {
+        let obj = TextRenderObject::new("Hello").with_color(Color::RED);
+        assert_eq!(obj.color(), Color::RED);
+    }
+
+    #[test]
+    fn test_text_render_object_set_color_change_detection() {
+        let mut ro = TextRenderObject::new("Hello");
+        // default is BLACK, setting RED should report changed
+        assert!(ro.set_color(Color::RED));
+        // setting same value again should report unchanged
+        assert!(!ro.set_color(Color::RED));
+        // setting back to BLACK should report changed
+        assert!(ro.set_color(Color::BLACK));
+    }
+
+    #[test]
+    fn test_text_render_object_paint_emits_color() {
+        let mut ro = TextRenderObject::new("Hello").with_color(Color::BLUE);
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        // Find the Text command and verify its color
+        let text_cmd = cmds.iter().find_map(|c| match c {
+            RenderCommand::Text { color, .. } => Some(*color),
+            _ => None,
+        });
+        assert_eq!(text_cmd, Some(Color::BLUE));
     }
 
     #[test]
@@ -351,7 +412,11 @@ mod tests {
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
         let cmds = ro.paint(&mut ctx);
-        assert!(cmds.len() >= 2, "expected at least 2 commands, got {}", cmds.len());
+        assert!(
+            cmds.len() >= 2,
+            "expected at least 2 commands, got {}",
+            cmds.len()
+        );
     }
 
     #[test]
