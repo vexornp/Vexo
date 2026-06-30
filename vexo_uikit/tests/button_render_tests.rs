@@ -214,3 +214,67 @@ fn button_disabled_applies_opacity() {
         .expect("expected an Opacity layer for disabled state");
     assert_eq!(op.opacity_value(), tokens::button::DISABLED_OPACITY);
 }
+
+// ============================================================================
+// Text color tests — verify each variant applies its token color to the
+// Text leaf via Text::with_color.
+// ============================================================================
+
+/// Extract the Text leaf from a rendered Button tree.
+fn text_leaf_from_tree(tree: &Box<dyn Widget>) -> &Text {
+    let dc = find_in_chain::<DecoratedContainer>(tree.as_ref(), 8)
+        .expect("expected a DecoratedContainer");
+    dc.child()
+        .as_any()
+        .downcast_ref::<Text>()
+        .expect("DecoratedContainer's child should be a Text leaf")
+}
+
+#[test]
+fn button_primary_text_color_matches_token() {
+    let tree = render_button(Button::new("Submit").variant(ButtonVariant::Primary));
+    let text = text_leaf_from_tree(&tree);
+    assert_eq!(text.color(), tokens::button::PRIMARY_TEXT);
+}
+
+#[test]
+fn button_secondary_text_color_matches_token() {
+    let tree = render_button(Button::new("Cancel").variant(ButtonVariant::Secondary));
+    let text = text_leaf_from_tree(&tree);
+    assert_eq!(text.color(), tokens::button::SECONDARY_TEXT);
+}
+
+#[test]
+fn button_destructive_text_color_matches_token() {
+    let tree = render_button(Button::new("Delete").variant(ButtonVariant::Destructive));
+    let text = text_leaf_from_tree(&tree);
+    assert_eq!(text.color(), tokens::button::DESTRUCTIVE_TEXT);
+}
+
+#[test]
+fn button_ghost_text_color_matches_token() {
+    let tree = render_button(Button::new("More").variant(ButtonVariant::Ghost));
+    let text = text_leaf_from_tree(&tree);
+    assert_eq!(text.color(), tokens::button::GHOST_TEXT);
+}
+
+#[test]
+fn button_ghost_hover_uses_hover_text_color() {
+    // Simulate hover by rendering with is_hovered=true. We can't use
+    // render_button (it uses a fresh state), so render manually like the
+    // hover_state_render_does_not_panic test does.
+    let button = Button::new("More")
+        .variant(ButtonVariant::Ghost)
+        .platform(Platform::Desktop);
+    let mut state = ButtonState::default();
+    state.is_hovered.set(true);
+    let element_id = make_element_key();
+    let mut dirty = DirtyTracking::new();
+    let mut render_objects = RenderObjectRegistry::new();
+    let build_owner = BuildOwner::new();
+    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let tree = button.render(&mut state, &mut ctx);
+
+    let text = text_leaf_from_tree(&tree);
+    assert_eq!(text.color(), tokens::button::GHOST_TEXT_HOVER);
+}

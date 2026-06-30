@@ -200,8 +200,7 @@ impl Component for Button {
 
         let bg = self.resolve_bg(is_pressed, is_hovered);
         let (border_color, border_width) = self.resolve_border();
-        // TODO: apply text_color when vexo Text widget supports text color
-        let _text_color = self.resolve_text_color(is_hovered);
+        let text_color = self.resolve_text_color(is_hovered);
         let corner_radius = self.resolve_corner_radius();
         let (pt, pr, pb, pl) = self.resolve_padding();
         let opacity = if self.disabled {
@@ -222,7 +221,9 @@ impl Component for Button {
         // with_font_size(24.0) is explicit to preserve current behavior
         // (Text::new() defaults to 24.0); insulates Button from future
         // changes to Text's default.
-        let text = Text::new(&self.label).with_font_size(24.0);
+        let text = Text::new(&self.label)
+            .with_font_size(24.0)
+            .with_color(text_color);
 
         // All decoration on the container. DecoratedContainer defaults to
         // align_self(Start).flex_shrink(0.0), so the container sizes to its
