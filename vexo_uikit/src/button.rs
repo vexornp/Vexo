@@ -1,7 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use vexo::{Color, Component, ComponentState, RenderContext, Signal, Text, Widget};
+use vexo::{
+    AlignSelf, Color, Component, ComponentState, DecoratedContainer, RenderContext, Signal, Text,
+    Widget,
+};
 
 use crate::platform::Platform;
 use crate::theme::tokens;
@@ -215,16 +218,26 @@ impl Component for Button {
         let is_hovered_signal = state.is_hovered.clone();
         let is_hovered_signal_exit = state.is_hovered.clone();
 
-        let mut text = Text::new(&self.label)
+        // Plain leaf — no modifiers on Text itself.
+        // with_font_size(24.0) is explicit to preserve current behavior
+        // (Text::new() defaults to 24.0); insulates Button from future
+        // changes to Text's default.
+        let text = Text::new(&self.label).with_font_size(24.0);
+
+        // All decoration on the container. DecoratedContainer defaults to
+        // align_self(Start).flex_shrink(0.0), so the container sizes to its
+        // content (text intrinsic width + padding + border).
+        let mut container = DecoratedContainer::new(text)
             .background(bg)
             .corner_radius(corner_radius)
             .padding_each(pt, pr, pb, pl);
 
         if border_width > 0.0 {
-            text = text.border(border_color, border_width);
+            container = container.border(border_color, border_width);
         }
 
-        text.boxed()
+        container
+            .boxed()
             .on_press(move || {
                 if !disabled {
                     is_pressed_signal.set(true);
@@ -244,5 +257,6 @@ impl Component for Button {
                 is_pressed_signal_exit.set(false);
             })
             .opacity(opacity)
+            .align_self(AlignSelf::Start)
     }
 }
