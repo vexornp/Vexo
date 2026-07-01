@@ -32,7 +32,7 @@ mod quad_instance;
 pub mod render;
 pub use frame_builder::FrameBuilder;
 pub mod reactive;
-mod resource;
+pub mod resource;
 pub use component_state_derive::ComponentState;
 pub use reactive::Signal;
 mod macros;

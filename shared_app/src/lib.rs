@@ -27,7 +27,7 @@ fn demo_text_controller() -> TextEditingController {
     TEXT_CONTROLLER.with(|c| {
         let mut c = c.borrow_mut();
         if c.is_none() {
-            let mut font_system = glyphon::FontSystem::new();
+            let mut font_system = vexo::resource::new_font_system();
             *c = Some(TextEditingController::new(
                 "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
                 &mut font_system,

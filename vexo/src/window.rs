@@ -84,10 +84,8 @@ impl<A: Application + 'static> WindowState<A> {
         // Get the shared scale source from the backend
         let scale_source = backend.scale_source();
 
-        // Initialize font system with embedded font
-        let font_data = crate::resource::file::FONT.to_vec();
-        let binary = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(font_data));
-        let font_system = glyphon::FontSystem::new_with_fonts([binary]);
+        // Initialize font system with embedded font + default-family override
+        let font_system = crate::resource::new_font_system();
 
         let layout_engine = Box::new(TaffyLayoutEngine::new());
 

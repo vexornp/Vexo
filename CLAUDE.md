@@ -43,8 +43,12 @@ Before implementing:
 cargo run -p desktop_demo                    # Run desktop demo immediately
 cargo build -p vexo --release                # Build framework alone for inspection
 
-# iOS build (requires uniffi-bindgen-swift pre-built in target/debug/)
-./build_for_ios.sh                           # Builds iOS lib + generates Swift bindings
+# iOS build
+# First-time only: build the host-side bindgen binary (the [[bin]] of shared_app)
+cargo build -p shared_app                        # Produces target/debug/uniffi-bindgen-swift
+# Then either run the script manually, OR just build from Xcode (the VexoDemo
+# scheme has a Build pre-action that runs the script automatically).
+./build_for_ios.sh                               # Builds iOS lib + generates Swift bindings (location-independent)
 ```
 
 ## Architecture Overview

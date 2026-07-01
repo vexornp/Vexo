@@ -147,7 +147,7 @@ impl WgpuBackend {
             .request_device(&wgpu::wgt::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: adapter.limits(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
