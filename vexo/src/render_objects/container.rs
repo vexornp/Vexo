@@ -4,7 +4,9 @@ use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::style::Style;
-use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
+use crate::{
+    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey,
+};
 
 /// RenderObject for container widgets (Flex, Grid, DecoratedContainer).
 ///
@@ -227,14 +229,18 @@ impl RenderObject for ContainerRenderObject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{Layout, LayoutEngine, TaffyLayoutEngine, FlexDirection, AlignItems};
+    use crate::layout::{AlignItems, FlexDirection, Layout, LayoutEngine, TaffyLayoutEngine};
 
     fn column_layout() -> Layout {
-        Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch)
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
     }
 
     fn row_layout() -> Layout {
-        Layout::default().flex_direction(FlexDirection::Row).align(AlignItems::Stretch)
+        Layout::default()
+            .flex_direction(FlexDirection::Row)
+            .align(AlignItems::Stretch)
     }
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -479,7 +485,10 @@ mod tests {
         let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
         obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
         // clip is true and bounds exist
-        assert_eq!(obj.clip_bounds(), Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0)));
+        assert_eq!(
+            obj.clip_bounds(),
+            Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0))
+        );
     }
 
     #[test]

@@ -15,9 +15,9 @@
 //!    were recomputed
 
 use crate::core::{Logical, Size};
-use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::dirty::DirtyTracking;
 use crate::id::RenderObjectKey;
+use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::render_object::{LayoutContext, RenderObjectRegistry};
 
 /// Zero-sized struct holding layout-related associated functions.
@@ -129,9 +129,7 @@ impl Layouter {
         // Collect child layout nodes (now that children have been processed)
         let child_nodes: Vec<LayoutNodeKey> = children
             .iter()
-            .filter_map(|&child_key| {
-                render_objects.get(child_key).and_then(|c| c.layout_node())
-            })
+            .filter_map(|&child_key| render_objects.get(child_key).and_then(|c| c.layout_node()))
             .collect();
 
         if let Some(obj) = render_objects.get_mut(id) {
@@ -166,5 +164,4 @@ impl Layouter {
             Self::apply_layout_recursive(render_objects, child_id, ctx);
         }
     }
-
 }

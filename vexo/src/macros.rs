@@ -415,8 +415,8 @@ macro_rules! modifier_methods {
 #[cfg(test)]
 mod tests {
     use crate::core::Color;
-    use crate::layout::{AlignSelf, Overflow, Position};
     use crate::layout::Layout;
+    use crate::layout::{AlignSelf, Overflow, Position};
     use crate::Style;
 
     /// Dummy widget struct with the same fields that modifier_fields!() generates.
@@ -585,11 +585,7 @@ mod tests {
 
     #[test]
     fn test_inset_individual_modifiers() {
-        let widget = TestWidget::new()
-            .top(1.0)
-            .right(2.0)
-            .bottom(3.0)
-            .left(4.0);
+        let widget = TestWidget::new().top(1.0).right(2.0).bottom(3.0).left(4.0);
         let inset = widget.layout.inset.unwrap();
         assert_eq!(inset.top, Some(1.0));
         assert_eq!(inset.right, Some(2.0));
@@ -625,7 +621,8 @@ mod tests {
 
     #[test]
     fn children_macro_pushes_children() {
-        let col = children![crate::Flex::column(),
+        let col = children![
+            crate::Flex::column(),
             crate::Text::new("A"),
             crate::Text::new("B"),
             crate::Text::new("C"),
@@ -635,9 +632,11 @@ mod tests {
 
     #[test]
     fn children_macro_nesting() {
-        let col = children![crate::Flex::column(),
+        let col = children![
+            crate::Flex::column(),
             crate::Text::new("Title"),
-            children![crate::Flex::row(),
+            children![
+                crate::Flex::row(),
                 crate::Text::new("A"),
                 crate::Text::new("B"),
             ],
@@ -647,7 +646,8 @@ mod tests {
 
     #[test]
     fn children_macro_with_builder_methods() {
-        let col = children![crate::Flex::column().gap(16.0),
+        let col = children![
+            crate::Flex::column().gap(16.0),
             crate::Text::new("Title").padding(8.0),
             crate::Text::new("Body"),
         ];
@@ -656,7 +656,8 @@ mod tests {
 
     #[test]
     fn children_macro_with_grid() {
-        let grid = children![crate::Grid::new(),
+        let grid = children![
+            crate::Grid::new(),
             crate::Text::new("Cell 1"),
             crate::Text::new("Cell 2"),
         ];
@@ -665,9 +666,7 @@ mod tests {
 
     #[test]
     fn children_macro_single_child() {
-        let col = children![crate::Flex::column(),
-            crate::Text::new("Only child"),
-        ];
+        let col = children![crate::Flex::column(), crate::Text::new("Only child"),];
         assert_eq!(col.children().len(), 1);
     }
 

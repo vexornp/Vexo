@@ -8,10 +8,10 @@
 
 use std::any::Any;
 
-use crate::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
 use crate::elements::RenderObjectElement;
-use crate::key::WidgetKey;
 use crate::focus::attachment::FocusAttachment;
+use crate::key::WidgetKey;
+use crate::{Element, ElementContext, ElementKey, RenderObjectKey, UpdateResult, Widget};
 
 /// Element for container widgets (multiple children).
 ///
@@ -113,7 +113,9 @@ impl Element for ContainerElement {
         // when they mount, so it must exist before child mounting begins.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -125,10 +127,8 @@ impl Element for ContainerElement {
         // The pipeline will execute them after mount() returns,
         // then call child_mounted() to link each child's render object.
         if let Some(widget) = &self.widget {
-            let child_widgets: Vec<Box<dyn Widget>> = widget.children()
-                .iter()
-                .map(|c| c.clone_boxed())
-                .collect();
+            let child_widgets: Vec<Box<dyn Widget>> =
+                widget.children().iter().map(|c| c.clone_boxed()).collect();
 
             for (i, child_widget) in child_widgets.into_iter().enumerate() {
                 context.inflate_child(Some(i), child_widget);
@@ -176,11 +176,7 @@ impl Element for ContainerElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         // Downcast and store the new widget
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             self.widget = Some(*widget);
@@ -188,7 +184,11 @@ impl Element for ContainerElement {
             // Update the render object with new properties
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self
+                        .widget
+                        .as_ref()
+                        .unwrap()
+                        .update_render_object(ro.as_mut());
 
                     // Only mark dirty based on what actually changed
                     if result.contains(UpdateResult::LAYOUT) {
@@ -201,7 +201,9 @@ impl Element for ContainerElement {
             }
 
             // Get new child widgets
-            let new_child_widgets: Vec<Box<dyn Widget>> = self.widget.as_ref()
+            let new_child_widgets: Vec<Box<dyn Widget>> = self
+                .widget
+                .as_ref()
                 .map(|w| w.children().iter().map(|c| c.clone_boxed()).collect())
                 .unwrap_or_default();
 
@@ -213,7 +215,12 @@ impl Element for ContainerElement {
             let old_len = old_children.len();
             let new_len = new_child_widgets.len();
 
-            log::debug!("[ContainerElement::rebuild] element_id={:?}, old_children={}, new_children={}", context.element_id, old_len, new_len);
+            log::debug!(
+                "[ContainerElement::rebuild] element_id={:?}, old_children={}, new_children={}",
+                context.element_id,
+                old_len,
+                new_len
+            );
 
             for (i, new_child_widget) in new_child_widgets.into_iter().enumerate() {
                 if i < old_len {
@@ -238,10 +245,23 @@ impl Element for ContainerElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         // Link the child's render object to our render object
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
+
+            // Mark parent RO as needing layout so the Taffy node's children
+            // list is updated via set_children(). Without this, newly inflated
+            // children are pushed to our children Vec but never linked into
+            // the Taffy tree, leaving them orphaned (no computed layout).
+            if let Some(parent_ro) = self.render_object {
+                context.mark_needs_layout(parent_ro);
+            }
         }
     }
 
