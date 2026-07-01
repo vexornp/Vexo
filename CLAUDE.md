@@ -11,6 +11,7 @@ When analyzing tasks, especially architecture or complex logic, adhere to these 
 3. **Invert the Problem:** Identify what we want to avoid, then work backward to define the correct solution.
 4. **Prefer Simplicity:** If a simpler, more efficient approach exists, state it before implementing.
 5. **Ask "Why?":** Use the "5 Whys" approach to get to the root cause of issues, not just surface-level symptoms.
+6. **Isolate Before Theorizing:** When a bug only appears in a complex widget tree, strip the tree to the minimum repro first (e.g., a single widget in a bare Column). This narrows the search space dramatically before forming hypotheses. "Works alone, breaks in a tree" immediately points at the surrounding flex chain, not the widget itself.
 
 ## Core Design Philosophy: Everything Is a Widget
 
