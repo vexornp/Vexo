@@ -228,7 +228,7 @@ impl<A: Application + 'static> WindowState<A> {
         // Forward the current modifier state (kept in sync via ModifiersChanged).
         let modifiers = self.current_modifiers;
 
-        let (frame_needed, rebuilds_pending) = {
+        let (frame_needed, rebuilds_pending, focus_changed) = {
             let pipeline = &mut self.three_tree_pipeline;
 
             let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, &self.scale_source, &self.clipboard);
@@ -259,7 +259,8 @@ impl<A: Application + 'static> WindowState<A> {
             // Also mark the render object subtree for paint so the cursor
             // appears immediately (prepare_cursor_state() injects focus state
             // before paint, but the render object must be dirty for repaint).
-            if pipeline.take_focus_changed() {
+            let focus_changed = pipeline.take_focus_changed();
+            if focus_changed {
                 pipeline.mark_focus_needs_build();
                 pipeline.mark_focus_subtree_needs_paint();
                 // Reset cursor blink so cursor is visible immediately on focus gain
@@ -269,12 +270,34 @@ impl<A: Application + 'static> WindowState<A> {
             (
                 pipeline.take_frame_request_needed(),
                 pipeline.has_pending_rebuilds(),
+                focus_changed,
             )
         };
 
         if frame_needed || rebuilds_pending {
             self.request_frame();
         }
+
+        // On iOS, show / hide the software keyboard to match focus state.
+        // winit's UIKit backend implements UIKeyInput on its view: calling
+        // set_ime_allowed(true) makes the view become first responder, which
+        // brings up the keyboard; typed text is then delivered as
+        // WindowEvent::KeyboardInput with `text` set, which the existing
+        // TextEdit keyboard handler already inserts. When focus leaves a
+        // TextEdit (or nothing is focused), dismiss the keyboard.
+        #[cfg(target_os = "ios")]
+        if focus_changed {
+            let text_input_focused = self.three_tree_pipeline.is_text_input_focused();
+            if let Some(win) = &self.window {
+                #[allow(deprecated)]
+                let _ = win.set_ime_allowed(text_input_focused);
+            }
+        }
+
+        // On non-iOS platforms `focus_changed` is otherwise unused; drop it
+        // here so the binding doesn't trigger an unused-variable warning.
+        #[cfg(not(target_os = "ios"))]
+        let _ = focus_changed;
 
         // Update cursor icon on pointer move
         if matches!(input_event, InputEvent::PointerMoved { .. }) {

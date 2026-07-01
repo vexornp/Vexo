@@ -482,10 +482,20 @@ impl ComponentState for TextEditState {
                             // there since `cmd` already covered the Cmd case.)
                             if let Some(text) = text {
                                 for c in text.chars() {
-                                    if c.is_control() {
+                                    if c == '\n' {
+                                        // On iOS the software keyboard's Return
+                                        // key arrives as insertText:@"\n", i.e.
+                                        // a Character with text "\n". Route it
+                                        // to Action::Enter so multi-line input
+                                        // works. (Desktop Enter arrives as
+                                        // NamedKey::Enter and never hits this
+                                        // branch, so this is a no-op there.)
+                                        text_edit.controller.insert_newline(ctx.font_system);
+                                    } else if c.is_control() {
                                         continue;
+                                    } else {
+                                        text_edit.controller.insert_char(c, ctx.font_system);
                                     }
-                                    text_edit.controller.insert_char(c, ctx.font_system);
                                 }
                             }
                         }
