@@ -58,40 +58,46 @@ impl Application for State {
         let detail_closure = move |id: &&str| -> Box<dyn Widget> {
             let title_widget = Text::new(*id).with_font_size(32.0);
 
-            // The "Inbox" detail embeds the text-edit showcase so it stays
-            // exercisable from this demo.
-            let mut col = Column::new()
+            // Page-specific body, wrapped in a Column so slot 1 is always the
+            // same widget type (Column → ContainerElement) across all pages.
+            // This avoids positional-reconciliation type mismatches: when
+            // switching pages, slot 1's element is updated in place rather
+            // than being force-updated with an incompatible widget type.
+            let body: Box<dyn Widget> = if *id == "inbox" {
+                Column::new()
+                    .gap(8.0)
+                    .push(Text::new("Text Edit Showcase").with_font_size(24.0))
+                    .push(TextEdit::new(demo_text_controller()))
+                    .boxed()
+            } else {
+                Column::new()
+                    .push(Text::new(format!(
+                        "This is the detail content for \"{}\".",
+                        id
+                    )))
+                    .boxed()
+            };
+
+            let count = selection_count.clone();
+            Column::new()
                 .gap(16.0)
                 .padding(24.0)
                 .background(Color::WHITE)
-                .push(title_widget);
-
-            if *id == "inbox" {
-                col = col
-                    .push(Text::new("Text Edit Showcase").with_font_size(24.0))
-                    .push(TextEdit::new(demo_text_controller()));
-            } else {
-                col = col.push(Text::new(format!(
-                    "This is the detail content for \"{}\".",
-                    id
-                )));
-            }
-
-            // A button that bumps a counter, demonstrating state flow from
-            // the detail pane back to the application.
-            let count = selection_count.clone();
-            col = col.push(
-                Button::new("Bump counter")
-                    .variant(ButtonVariant::Primary)
-                    .on_press(move || {
-                        count.set(count.get() + 1);
-                    }),
-            );
-
-            let count_now = selection_count.get();
-            col = col.push(Text::new(format!("Counter: {}", count_now)));
-
-            col.boxed()
+                .push(title_widget) // slot 0: always Text
+                .push(body) // slot 1: always Column
+                .push(
+                    Button::new("Bump counter") // slot 2: always Button
+                        .variant(ButtonVariant::Primary)
+                        .on_press(move || {
+                            count.set(count.get() + 1);
+                        }),
+                )
+                .push(Text::new(format!(
+                    // slot 3: always Text
+                    "Counter: {}",
+                    selection_count.get()
+                )))
+                .boxed()
         };
 
         NavigationSplitView::new(items)
