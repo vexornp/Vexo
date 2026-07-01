@@ -72,7 +72,13 @@ impl<'a> TextMeasurer<'a> {
         buffer.set_size(self.font_system, available_width, available_height);
 
         // Set and shape the text
-        buffer.set_text(self.font_system, content, &Attrs::new(), Shaping::Advanced, None);
+        buffer.set_text(
+            self.font_system,
+            content,
+            &Attrs::new(),
+            Shaping::Advanced,
+            None,
+        );
         buffer.shape_until_scroll(self.font_system, true);
 
         // Calculate dimensions from layout runs
@@ -183,9 +189,25 @@ pub fn measure_text_node(
 ) -> taffy::prelude::Size<f32> {
     use taffy::prelude::{AvailableSpace, Size};
 
-    // If both dimensions are explicitly set, use them
-    if let Size { width: Some(w), height: Some(h) } = known_dimensions {
-        return Size { width: w, height: h };
+    // If both dimensions are explicitly set, use them (capped at available space
+    // to prevent overflow when known_dimensions exceed the container).
+    if let Size {
+        width: Some(w),
+        height: Some(h),
+    } = known_dimensions
+    {
+        let capped_w = match available_space.width {
+            AvailableSpace::Definite(avail) if w > avail => avail,
+            _ => w,
+        };
+        let capped_h = match available_space.height {
+            AvailableSpace::Definite(avail) if h > avail => avail,
+            _ => h,
+        };
+        return Size {
+            width: capped_w,
+            height: capped_h,
+        };
     }
 
     let Some(context) = node_context else {
@@ -198,7 +220,8 @@ pub fn measure_text_node(
             if text_ctx.content.is_empty() {
                 return Size {
                     width: known_dimensions.width.unwrap_or(0.0),
-                    height: known_dimensions.height
+                    height: known_dimensions
+                        .height
                         .unwrap_or(text_ctx.font_size * text_ctx.line_height),
                 };
             }
@@ -229,6 +252,42 @@ pub fn measure_text_node(
                 cache.insert(natural_key, size);
                 size
             };
+
+            // Handle MinContent: measure with a tiny width to force wrapping
+            // at every word boundary. The resulting widest line is the widest
+            // word — the true min-content width. This allows flex layout to
+            // shrink the item below its natural (unwrapped) width down to the
+            // widest word, enabling text wrapping in constrained containers.
+            //
+            // We return the natural (single-line) height rather than the fully
+            // wrapped height to avoid inflating the item's min-height, which
+            // would prevent vertical shrinking in a Column.
+            if matches!(available_space.width, AvailableSpace::MinContent) {
+                let min_key = MeasureCacheKey::new(
+                    &text_ctx.content,
+                    text_ctx.font_size,
+                    text_ctx.line_height,
+                    Some(1.0),
+                    None,
+                );
+                let min_width = if let Some(cached) = cache.get(&min_key) {
+                    cached.width
+                } else {
+                    let size = measurer.measure(
+                        &text_ctx.content,
+                        text_ctx.font_size,
+                        text_ctx.line_height,
+                        Some(1.0),
+                        None,
+                    );
+                    cache.insert(min_key, size);
+                    size.width
+                };
+                return Size {
+                    width: known_dimensions.width.unwrap_or(min_width),
+                    height: known_dimensions.height.unwrap_or(natural_size.height),
+                };
+            }
 
             // Determine if we need to constrain and remeasure for wrapping
             let definite_width = match available_space.width {
@@ -265,15 +324,36 @@ pub fn measure_text_node(
                 &text_ctx.content,
                 text_ctx.font_size,
                 text_ctx.line_height,
-                if measured_size.width < natural_size.width { definite_width } else { None },
+                if measured_size.width < natural_size.width {
+                    definite_width
+                } else {
+                    None
+                },
                 None,
             );
             cache.insert(cache_key, measured_size);
 
-            Size {
-                width: known_dimensions.width.unwrap_or(measured_size.width),
-                height: known_dimensions.height.unwrap_or(measured_size.height),
-            }
+            // Resolve final dimensions: prefer known_dimensions (explicit size
+            // from style or parent cross-axis), but cap at the available space
+            // to prevent overflow. Taffy may pass known_dimensions.width that
+            // exceeds available_space.width (e.g. parent's content-box width
+            // before flex shrinking); uncapped, this causes the leaf to report
+            // a size larger than its container, leading to text overflow.
+            let raw_width = known_dimensions.width.unwrap_or(measured_size.width);
+            let raw_height = known_dimensions.height.unwrap_or(measured_size.height);
+
+            let width = match available_space.width {
+                AvailableSpace::Definite(avail) if raw_width > avail => avail,
+                _ => raw_width,
+            };
+            let height = match available_space.height {
+                AvailableSpace::Definite(avail) if raw_height > avail => avail,
+                _ => raw_height,
+            };
+
+            let result = Size { width, height };
+
+            result
         }
     }
 }
@@ -301,7 +381,10 @@ mod tests {
 
         assert!(size.width > 0.0, "Width should be positive");
         assert!(size.height > 0.0, "Height should be positive");
-        assert!(size.height < 24.0 * 1.5, "Height should be close to line height");
+        assert!(
+            size.height < 24.0 * 1.5,
+            "Height should be close to line height"
+        );
     }
 
     #[test]
@@ -325,7 +408,10 @@ mod tests {
         let size = measurer.measure("Line1\nLine2\nLine3", 24.0, 1.2, None, None);
 
         // Should have height for 3 lines
-        assert!(size.height >= 24.0 * 1.2 * 3.0, "Height should accommodate 3 lines");
+        assert!(
+            size.height >= 24.0 * 1.2 * 3.0,
+            "Height should accommodate 3 lines"
+        );
     }
 
     #[test]
@@ -336,7 +422,10 @@ mod tests {
         let size = measurer.measure("", 24.0, 1.2, None, None);
 
         assert_eq!(size.width, 0.0, "Empty text should have zero width");
-        assert!(size.height > 0.0, "Empty text should still have line height");
+        assert!(
+            size.height > 0.0,
+            "Empty text should still have line height"
+        );
     }
 
     #[test]
@@ -355,9 +444,18 @@ mod tests {
         let mut cache = MeasureCache::new();
         cache.max_entries = 2;
 
-        cache.insert(MeasureCacheKey::new("a", 24.0, 1.2, None, None), Size::new(1.0, 1.0));
-        cache.insert(MeasureCacheKey::new("b", 24.0, 1.2, None, None), Size::new(2.0, 2.0));
-        cache.insert(MeasureCacheKey::new("c", 24.0, 1.2, None, None), Size::new(3.0, 3.0));
+        cache.insert(
+            MeasureCacheKey::new("a", 24.0, 1.2, None, None),
+            Size::new(1.0, 1.0),
+        );
+        cache.insert(
+            MeasureCacheKey::new("b", 24.0, 1.2, None, None),
+            Size::new(2.0, 2.0),
+        );
+        cache.insert(
+            MeasureCacheKey::new("c", 24.0, 1.2, None, None),
+            Size::new(3.0, 3.0),
+        );
 
         // Cache should have been cleared when exceeding max_entries
         assert_eq!(cache.entries.len(), 1);

@@ -63,11 +63,7 @@ impl TextCache {
     /// Get a cached buffer or create and cache a new one.
     ///
     /// Returns a shaped text buffer ready for rendering.
-    pub fn get_or_create(
-        &mut self,
-        font_system: &mut FontSystem,
-        request: &TextRequest,
-    ) -> Buffer {
+    pub fn get_or_create(&mut self, font_system: &mut FontSystem, request: &TextRequest) -> Buffer {
         self.generation += 1;
         let current_gen = self.generation;
         let cache_key = TextCacheKey::from_request(request);
@@ -79,10 +75,7 @@ impl TextCache {
         }
 
         // Create and shape new buffer
-        let mut buffer = Buffer::new(
-            font_system,
-            Metrics::new(request.size, request.size * 1.2),
-        );
+        let mut buffer = Buffer::new(font_system, Metrics::new(request.size, request.size * 1.2));
 
         // Set wrapping width before shaping so text wraps at the widget's width.
         // Add a small tolerance to avoid spurious wrapping caused by subpixel
@@ -120,7 +113,8 @@ impl TextCache {
     /// Entries unused for more than `MAX_STALE_FRAMES` are removed.
     pub fn evict_stale(&mut self) {
         let current_gen = self.generation;
-        self.cache.retain(|_, cached| current_gen - cached.generation < MAX_STALE_FRAMES);
+        self.cache
+            .retain(|_, cached| current_gen - cached.generation < MAX_STALE_FRAMES);
     }
 }
 

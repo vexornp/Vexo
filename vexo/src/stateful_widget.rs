@@ -3,18 +3,20 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use super::id::ElementKey;
-use super::id::RenderObjectKey;
-use super::dirty::DirtyTracking;
-use super::render_object::{RenderObject, RenderObjectRegistry, LayoutContext, LayoutResult, PaintContext, HitTestContext};
 use super::build_owner::BuildOwner;
+use super::dirty::DirtyTracking;
 use super::element::Element;
 use super::element_context::ElementContext;
-use super::key::WidgetKey;
-use super::widgets::Widget;
 use super::elements::RenderObjectElement;
-use super::EventContext;
 use super::focus::attachment::FocusAttachment;
+use super::id::ElementKey;
+use super::id::RenderObjectKey;
+use super::key::WidgetKey;
+use super::render_object::{
+    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
+};
+use super::widgets::Widget;
+use super::EventContext;
 use crate::animation::AnimationTicker;
 use crate::input::InputEvent;
 use crate::render::RenderCommand;
@@ -115,7 +117,12 @@ pub trait ComponentState: 'static {
     /// downcasting. Returns `Some(..)` if the event was consumed.
     ///
     /// The default implementation does nothing and returns `None`.
-    fn on_event(&mut self, _widget: &dyn Any, _event: &InputEvent, _ctx: &mut crate::EventContext) -> Option<Box<dyn Any>> {
+    fn on_event(
+        &mut self,
+        _widget: &dyn Any,
+        _event: &InputEvent,
+        _ctx: &mut crate::EventContext,
+    ) -> Option<Box<dyn Any>> {
         None
     }
 
@@ -485,7 +492,9 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         // when they mount, so it must exist before child mounting begins.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -645,7 +654,12 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         widget.downcast_ref::<W>().is_some()
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         // Link the child's render object to our ProxyRenderObject
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
@@ -702,7 +716,11 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         state_ref.on_event(&self.widget, event, context)
     }
 
-    fn animate(&mut self, now: std::time::Instant, context: &mut crate::element_context::ElementContext) {
+    fn animate(
+        &mut self,
+        now: std::time::Instant,
+        context: &mut crate::element_context::ElementContext,
+    ) {
         let element_id = match self.id {
             Some(id) => id,
             None => return,
@@ -758,7 +776,11 @@ impl Default for ProxyRenderObject {
 }
 
 impl RenderObject for ProxyRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[crate::layout::LayoutNodeKey]) -> LayoutResult {
+    fn layout(
+        &mut self,
+        ctx: &mut LayoutContext,
+        child_nodes: &[crate::layout::LayoutNodeKey],
+    ) -> LayoutResult {
         let layout = crate::layout::Layout::default()
             .flex_direction(crate::layout::FlexDirection::Column)
             .align(crate::layout::AlignItems::Stretch);
@@ -782,7 +804,11 @@ impl RenderObject for ProxyRenderObject {
         Vec::new()
     }
 
-    fn hit_test(&self, position: crate::core::Point<crate::core::Logical>, _ctx: &HitTestContext) -> bool {
+    fn hit_test(
+        &self,
+        position: crate::core::Point<crate::core::Logical>,
+        _ctx: &HitTestContext,
+    ) -> bool {
         match &self.computed_bounds {
             Some(bounds) => bounds.contains(&position),
             None => false,
@@ -859,9 +885,12 @@ mod tests {
     }
 
     use super::*;
-    use crate::{DirtyTracking, StateStorage, RenderObjectRegistry, ElementRegistry, ElementContext, Text, BuildOwner, ChildOps, FocusManager};
     use crate::reactive::Signal;
     use crate::ComponentState;
+    use crate::{
+        BuildOwner, ChildOps, DirtyTracking, ElementContext, ElementRegistry, FocusManager,
+        RenderObjectRegistry, StateStorage, Text,
+    };
 
     #[derive(Clone)]
     struct TestCounter {
@@ -874,7 +903,9 @@ mod tests {
 
     impl Default for TestCounterState {
         fn default() -> Self {
-            Self { count: Signal::new(0) }
+            Self {
+                count: Signal::new(0),
+            }
         }
     }
 
@@ -887,7 +918,11 @@ mod tests {
     impl Component for TestCounter {
         type State = TestCounterState;
 
-        fn render(&self, state: &mut TestCounterState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        fn render(
+            &self,
+            state: &mut TestCounterState,
+            _ctx: &mut RenderContext,
+        ) -> Box<dyn Widget> {
             Box::new(Text::new(format!("{}: {}", self.label, state.count.get())))
         }
     }
@@ -919,10 +954,22 @@ mod tests {
 
     #[test]
     fn test_stateful_element_mount_creates_state() {
-        let widget = TestCounter { label: "Count".to_string() };
+        let widget = TestCounter {
+            label: "Count".to_string(),
+        };
         let element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
+        let (
+            element_id,
+            mut state,
+            mut dirty,
+            mut render_objects,
+            _element_registry,
+            build_owner,
+            dirty_sender,
+            mut child_ops,
+            mut focus_manager,
+        ) = create_test_context();
 
         // Mount the element
         let mut ctx = ElementContext::new(
@@ -945,15 +992,34 @@ mod tests {
 
         // State should be created with default value
         assert!(state.get::<TestCounterState>(element_id).is_some());
-        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count.get(), 0);
+        assert_eq!(
+            state
+                .get::<TestCounterState>(element_id)
+                .unwrap()
+                .count
+                .get(),
+            0
+        );
     }
 
     #[test]
     fn test_stateful_element_update_preserves_state() {
-        let widget = TestCounter { label: "Count".to_string() };
+        let widget = TestCounter {
+            label: "Count".to_string(),
+        };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
+        let (
+            element_id,
+            mut state,
+            mut dirty,
+            mut render_objects,
+            _element_registry,
+            build_owner,
+            dirty_sender,
+            mut child_ops,
+            mut focus_manager,
+        ) = create_test_context();
 
         // Mount
         {
@@ -975,10 +1041,16 @@ mod tests {
         }
 
         // Modify state
-        state.get_mut::<TestCounterState>(element_id).unwrap().count.set(5);
+        state
+            .get_mut::<TestCounterState>(element_id)
+            .unwrap()
+            .count
+            .set(5);
 
         // Update with new widget
-        let new_widget = TestCounter { label: "Updated".to_string() };
+        let new_widget = TestCounter {
+            label: "Updated".to_string(),
+        };
         {
             let mut ctx = ElementContext::new(
                 element_id,
@@ -998,15 +1070,34 @@ mod tests {
         }
 
         // State should be preserved
-        assert_eq!(state.get::<TestCounterState>(element_id).unwrap().count.get(), 5);
+        assert_eq!(
+            state
+                .get::<TestCounterState>(element_id)
+                .unwrap()
+                .count
+                .get(),
+            5
+        );
     }
 
     #[test]
     fn test_stateful_element_unmount_removes_state() {
-        let widget = TestCounter { label: "Count".to_string() };
+        let widget = TestCounter {
+            label: "Count".to_string(),
+        };
         let mut element = StatefulElement::new(widget);
 
-        let (element_id, mut state, mut dirty, mut render_objects, _element_registry, build_owner, dirty_sender, mut child_ops, mut focus_manager) = create_test_context();
+        let (
+            element_id,
+            mut state,
+            mut dirty,
+            mut render_objects,
+            _element_registry,
+            build_owner,
+            dirty_sender,
+            mut child_ops,
+            mut focus_manager,
+        ) = create_test_context();
 
         // Mount
         {
@@ -1055,10 +1146,14 @@ mod tests {
 
     #[test]
     fn test_stateful_element_can_update_same_type() {
-        let widget = TestCounter { label: "Count".to_string() };
+        let widget = TestCounter {
+            label: "Count".to_string(),
+        };
         let element = StatefulElement::new(widget);
 
-        let new_widget = TestCounter { label: "Updated".to_string() };
+        let new_widget = TestCounter {
+            label: "Updated".to_string(),
+        };
         // Create a reference to the widget for can_update
         let widget_ref: &dyn Any = &new_widget;
 
@@ -1067,7 +1162,17 @@ mod tests {
 
     #[test]
     fn test_render_context_request_rebuild() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
+        let (
+            element_id,
+            _state,
+            mut dirty,
+            mut render_objects,
+            _,
+            build_owner,
+            _dirty_sender,
+            _child_ops,
+            _focus_manager,
+        ) = create_test_context();
 
         let mut ctx = RenderContext {
             element_id,
@@ -1083,7 +1188,17 @@ mod tests {
 
     #[test]
     fn test_render_context_is_focused() {
-        let (element_id, _state, mut dirty, mut render_objects, _, build_owner, _dirty_sender, _child_ops, _focus_manager) = create_test_context();
+        let (
+            element_id,
+            _state,
+            mut dirty,
+            mut render_objects,
+            _,
+            build_owner,
+            _dirty_sender,
+            _child_ops,
+            _focus_manager,
+        ) = create_test_context();
 
         // Not focused initially
         let ctx = RenderContext {

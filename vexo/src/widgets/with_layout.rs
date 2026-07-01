@@ -251,7 +251,19 @@ pub struct WithLayout {
 
 impl WithLayout {
     /// Create a new WithLayout wrapper with a child and layout properties.
+    ///
+    /// Defaults to `FlexDirection::Column` with `AlignItems::Stretch` so the
+    /// wrapper acts as a transparent passthrough for width constraints: the
+    /// child stretches to fill the wrapper's cross-axis (width) size. This
+    /// ensures that when `WithLayout` is used to apply `flex_grow`/`padding`
+    /// etc. to a `Box<dyn Widget>`, definite width constraints propagate
+    /// down to the child (enabling text wrapping, for example).
     pub fn new(child: impl Widget + 'static, layout: Layout) -> Self {
+        let layout = Layout {
+            flex_direction: Some(layout.flex_direction.unwrap_or(FlexDirection::Column)),
+            align_items: Some(layout.align_items.unwrap_or(AlignItems::Stretch)),
+            ..layout
+        };
         Self {
             key: None,
             child: Box::new(child),
@@ -396,7 +408,14 @@ mod tests {
 
         let widget1 = WithLayout::new(Text::new("Hello"), layout1);
         let widget2 = WithLayout::new(Text::new("Hello"), layout2);
-        let mut ro = ContainerRenderObject::new(Layout::default().padding(10.0));
+        // Use the same Column+Stretch defaults that WithLayout::new applies
+        // so the initial render object matches widget1's layout exactly.
+        let mut ro = ContainerRenderObject::new(
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .align(AlignItems::Stretch)
+                .padding(10.0),
+        );
 
         // Same layout = NONE
         let result = widget1.update_render_object(&mut ro);

@@ -191,7 +191,7 @@ impl RenderObject for TextEditRenderObject {
             line_height: 1.2,
         });
 
-        let layout = self.layout.clone().flex_shrink(0.0);
+        let layout = self.layout.clone();
 
         match self.layout_node {
             Some(existing) => {
