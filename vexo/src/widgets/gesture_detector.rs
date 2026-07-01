@@ -486,6 +486,10 @@ impl RenderObject for GestureDetectorRenderObject {
 mod tests {
     use super::super::Key;
     use super::*;
+fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+}
+
     use crate::Text;
     use std::cell::Cell;
     use std::sync::Arc;
@@ -548,6 +552,7 @@ mod tests {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {
@@ -586,6 +591,7 @@ mod tests {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {
@@ -621,6 +627,7 @@ mod tests {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {

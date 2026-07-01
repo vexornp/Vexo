@@ -16,6 +16,13 @@ use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObj
 /// Accent blue cursor color.
 const CURSOR_COLOR: Color = Color::rgb(0.3, 0.67, 0.97);
 
+/// Semi-transparent blue used for the text selection highlight.
+///
+/// Drawn behind the text (all quads render before all text in the GPU pass,
+/// so this naturally appears underneath the glyphs). The caret is emitted
+/// after this rect in the command stream, so the caret renders on top.
+const SELECTION_COLOR: Color = Color::rgb(0.3, 0.5, 0.85).with_alpha(0.3);
+
 /// RenderObject for editable text with cursor painting.
 ///
 /// This render object extends the text rendering pattern with cursor support.
@@ -198,10 +205,7 @@ impl RenderObject for TextEditRenderObject {
             }
             None => {
                 // First frame: create new node
-                let node = ctx.engine().create_leaf_with_context(
-                    &layout,
-                    measure_ctx,
-                );
+                let node = ctx.engine().create_leaf_with_context(&layout, measure_ctx);
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,
@@ -221,7 +225,9 @@ impl RenderObject for TextEditRenderObject {
                 // mutations, so cursor_position() stays correct for wrapped text.
                 let width = computed.bounds.width();
                 if width > 0.0 {
-                    self.editor.borrow_mut().set_layout_width(ctx.font_system(), width);
+                    self.editor
+                        .borrow_mut()
+                        .set_layout_width(ctx.font_system(), width);
                 }
             }
         }
@@ -283,6 +289,96 @@ impl RenderObject for TextEditRenderObject {
         // 4. Pop corner radius
         if self.style.corner_radius.is_some() {
             commands.push(RenderCommand::PopCornerRadius);
+        }
+
+        // 4.5. Draw selection highlight (behind text, above background/border).
+        //
+        // The algorithm mirrors cosmic_text::Editor::render's selection pass:
+        // for each layout run overlapping the selection, walk the glyphs and
+        // accumulate the x-range that intersects the selection on that line,
+        // then emit one RenderCommand::Rect per line.
+        //
+        // Coordinate space: glyph.x/w and run.line_top/line_height are in the
+        // buffer's layout space, which (because the buffer's scale is 1.0)
+        // equals logical pixels. We add pos (logical) and vertical_offset
+        // (logical) the same way the caret code does below.
+        {
+            let editor = self.editor.borrow();
+            if let Some((start, end)) = editor.selection_bounds() {
+                let buffer = editor.buffer();
+                // Buffer layout width — used to extend the highlight to the end
+                // of the line when the selection spans multiple lines.
+                let buffer_width = buffer.size().0.unwrap_or(bounds.width()) as i32;
+
+                for run in buffer.layout_runs() {
+                    let line_i = run.line_i;
+                    if line_i < start.line || line_i > end.line {
+                        continue;
+                    }
+
+                    let mut range_opt: Option<(i32, i32)> = None;
+                    for glyph in run.glyphs {
+                        let cluster = &run.text[glyph.start..glyph.end];
+                        // NOTE: cosmic-text uses grapheme_indices here for precise
+                        // emoji/grapheme-cluster boundaries. We use char_indices
+                        // (std) to avoid a direct unicode-segmentation dependency;
+                        // this is slightly less precise for multi-codepoint grapheme
+                        // clusters (e.g. family emoji) but correct for all BMP text.
+                        let total = cluster.char_indices().count().max(1);
+                        let mut c_x = glyph.x;
+                        let c_w = glyph.w / total as f32;
+                        for (i, c) in cluster.char_indices() {
+                            let c_start = glyph.start + i;
+                            let c_end = glyph.start + i + c.len_utf8();
+                            let in_sel = (start.line != line_i || c_end > start.index)
+                                && (end.line != line_i || c_start < end.index);
+                            if in_sel {
+                                range_opt = Some(match range_opt.take() {
+                                    Some((min, max)) => {
+                                        (min.min(c_x as i32), max.max((c_x + c_w) as i32))
+                                    }
+                                    None => (c_x as i32, (c_x + c_w) as i32),
+                                });
+                            } else if let Some((min, max)) = range_opt.take() {
+                                // Gap in the selection on this line — flush.
+                                emit_selection_rect(
+                                    &mut commands,
+                                    pos,
+                                    vertical_offset,
+                                    min,
+                                    max,
+                                    run.line_top,
+                                    run.line_height,
+                                );
+                            }
+                            c_x += c_w;
+                        }
+                    }
+
+                    // Highlight empty lines that are inside a multi-line selection.
+                    if run.glyphs.is_empty() && end.line > line_i {
+                        range_opt = Some((0, buffer_width));
+                    }
+
+                    if let Some((mut min, mut max)) = range_opt.take() {
+                        // If the selection continues past this line, extend the
+                        // highlight to the end of the line. (RTL special-casing
+                        // is skipped for v1 — we always extend `max`.)
+                        if end.line > line_i {
+                            max = buffer_width;
+                        }
+                        emit_selection_rect(
+                            &mut commands,
+                            pos,
+                            vertical_offset,
+                            min,
+                            max,
+                            run.line_top,
+                            run.line_height,
+                        );
+                    }
+                }
+            }
         }
 
         // 5. Emit text render command (vertically centered)
@@ -347,10 +443,42 @@ impl RenderObject for TextEditRenderObject {
         }
     }
 }
+
+/// Emit a single selection-highlight rectangle.
+///
+/// `min_x`/`max_x` are in the buffer's layout space (== logical pixels, since
+/// the buffer scale is 1.0). `line_top` and `line_height` are likewise in
+/// buffer space. They are offset by the render object's absolute `pos` and
+/// the text vertical-centering `vertical_offset` to produce absolute logical
+/// coordinates — the same convention used by the caret.
+fn emit_selection_rect(
+    commands: &mut Vec<RenderCommand>,
+    pos: Position<Logical, Absolute>,
+    vertical_offset: f32,
+    min_x: i32,
+    max_x: i32,
+    line_top: f32,
+    line_height: f32,
+) {
+    let w = (max_x - min_x).max(0) as f32;
+    if w <= 0.0 || line_height <= 0.0 {
+        return;
+    }
+    let x = pos.x + min_x as f32;
+    let y = pos.y + vertical_offset + line_top;
+    commands.push(RenderCommand::Rect {
+        bounds: Bounds::from_xywh(x, y, w, line_height),
+        fill: SELECTION_COLOR,
+        stroke: None,
+        corner_radius: 0.0,
+    });
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use glyphon::{Attrs, Edit, Shaping};
     use crate::layout::{LayoutEngine, TaffyLayoutEngine};
+    use glyphon::{Attrs, Edit, Shaping};
 
     fn create_test_font_system() -> glyphon::FontSystem {
         let font_data = include_bytes!("../../font.ttf").to_vec();
@@ -496,9 +624,17 @@ mod tests {
         let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should only have Text command, no Caret
-        let caret_count = result.iter().filter(|c| matches!(c, RenderCommand::Caret { .. })).count();
+        let caret_count = result
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::Caret { .. }))
+            .count();
         assert_eq!(caret_count, 0, "Should not emit Caret when not focused");
-        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
+        assert!(
+            result
+                .iter()
+                .any(|c| matches!(c, RenderCommand::Text { .. })),
+            "Should emit Text"
+        );
     }
 
     #[test]
@@ -526,9 +662,20 @@ mod tests {
         let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should only have Text command, no Caret
-        let caret_count = result.iter().filter(|c| matches!(c, RenderCommand::Caret { .. })).count();
-        assert_eq!(caret_count, 0, "Should not emit Caret when blink not visible");
-        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
+        let caret_count = result
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::Caret { .. }))
+            .count();
+        assert_eq!(
+            caret_count, 0,
+            "Should not emit Caret when blink not visible"
+        );
+        assert!(
+            result
+                .iter()
+                .any(|c| matches!(c, RenderCommand::Text { .. })),
+            "Should emit Text"
+        );
     }
 
     #[test]
@@ -556,11 +703,24 @@ mod tests {
         let mut ctx = PaintContext::new(&mut commands);
         let result = obj.paint(&mut ctx);
         // Should have Text + Caret commands
-        assert!(result.iter().any(|c| matches!(c, RenderCommand::Text { .. })), "Should emit Text");
-        assert!(result.iter().any(|c| matches!(c, RenderCommand::Caret { .. })), "Should emit Caret when focused and blink visible");
+        assert!(
+            result
+                .iter()
+                .any(|c| matches!(c, RenderCommand::Text { .. })),
+            "Should emit Text"
+        );
+        assert!(
+            result
+                .iter()
+                .any(|c| matches!(c, RenderCommand::Caret { .. })),
+            "Should emit Caret when focused and blink visible"
+        );
 
         // Verify the Caret command
-        if let Some(RenderCommand::Caret { color, .. }) = result.iter().find(|c| matches!(c, RenderCommand::Caret { .. })) {
+        if let Some(RenderCommand::Caret { color, .. }) = result
+            .iter()
+            .find(|c| matches!(c, RenderCommand::Caret { .. }))
+        {
             assert_eq!(*color, CURSOR_COLOR);
         } else {
             panic!("Expected Caret command");

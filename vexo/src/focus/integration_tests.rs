@@ -12,16 +12,17 @@ use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::TaffyLayoutEngine;
 use crate::{Flex, Focus, Text, ThreeTreePipeline};
 
+fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+}
+
 fn create_test_font_system() -> glyphon::FontSystem {
     let font_data = crate::resource::file::FONT.to_vec();
     let binary = glyphon::fontdb::Source::Binary(Arc::new(font_data));
     glyphon::FontSystem::new_with_fonts([binary])
 }
 
-fn layout_pipeline(
-    pipeline: &mut ThreeTreePipeline,
-    font_system: &mut glyphon::FontSystem,
-) {
+fn layout_pipeline(pipeline: &mut ThreeTreePipeline, font_system: &mut glyphon::FontSystem) {
     let mut engine = TaffyLayoutEngine::new();
     pipeline.layout(Size::new(800.0, 600.0), &mut engine, font_system);
 }
@@ -75,6 +76,7 @@ fn test_click_outside_clears_focus() {
         Modifiers::default(),
         &mut font_system,
         &ScaleSource::default(),
+        &test_clipboard(),
     );
 
     // Focus should be cleared
@@ -155,6 +157,7 @@ fn test_click_inside_hit_succeeds_then_unfocuses() {
         Modifiers::default(),
         &mut font_system,
         &ScaleSource::default(),
+        &test_clipboard(),
     );
 
     // Focus is cleared because no element handled the event
@@ -225,6 +228,7 @@ fn test_click_to_focus_with_stateful_element() {
         Modifiers::default(),
         &mut font_system,
         &ScaleSource::default(),
+        &test_clipboard(),
     );
 
     // Focus should be set (TextEdit requested focus)
@@ -272,9 +276,7 @@ fn test_mount_creates_focus_node_for_every_element() {
 fn test_unmount_removes_all_focus_nodes() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    let widget = Flex::column()
-        .push(Text::new("a"))
-        .push(Text::new("b"));
+    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
@@ -318,9 +320,7 @@ fn test_rebuild_adds_focus_node_for_new_child() {
     assert_eq!(pipeline.focus_manager().app_node_count(), 2);
 
     // Flex::column() [ Text("a"), Text("b") ]
-    let updated = Flex::column()
-        .push(Text::new("a"))
-        .push(Text::new("b"));
+    let updated = Flex::column().push(Text::new("a")).push(Text::new("b"));
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -336,9 +336,7 @@ fn test_rebuild_removes_focus_node_for_removed_child() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("a"), Text("b") ]
-    let widget = Flex::column()
-        .push(Text::new("a"))
-        .push(Text::new("b"));
+    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
@@ -359,21 +357,27 @@ fn test_focus_tree_mirrors_element_tree_structure() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     // Flex::column() [ Text("a"), Text("b") ]
-    let widget = Flex::column()
-        .push(Text::new("a"))
-        .push(Text::new("b"));
+    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
     pipeline.reconcile(Box::new(widget));
 
     let fm = pipeline.focus_manager();
 
     // Root should have one child (Flex)
     let root_node = fm.get(fm.root_scope()).unwrap();
-    assert_eq!(root_node.children.len(), 1, "Root should have one child (Flex)");
+    assert_eq!(
+        root_node.children.len(),
+        1,
+        "Root should have one child (Flex)"
+    );
 
     // Flex's node should have 2 children (Texts)
     let column_id = root_node.children[0];
     let column_node = fm.get(column_id).unwrap();
-    assert_eq!(column_node.children.len(), 2, "Flex focus node should have 2 children");
+    assert_eq!(
+        column_node.children.len(),
+        2,
+        "Flex focus node should have 2 children"
+    );
 }
 
 /// A focused element that gets unmounted should not leave a dangling focus reference.
@@ -395,9 +399,11 @@ fn test_unmount_focused_element_clears_focus() {
         let root_node = fm.get(fm.root_scope()).unwrap();
         let column_id = root_node.children[0];
         let column_node = fm.get(column_id).unwrap();
-        column_node.children.first().and_then(|id| {
-            fm.get(*id).and_then(|n| n.element_key)
-        }).expect("Should have a Focus element")
+        column_node
+            .children
+            .first()
+            .and_then(|id| fm.get(*id).and_then(|n| n.element_key))
+            .expect("Should have a Focus element")
     };
 
     pipeline.set_focus(Some(focus_element_key));
@@ -476,12 +482,11 @@ mod on_focus_change_tests {
         let callback_fired = Arc::new(AtomicBool::new(false));
         let callback_fired_clone = callback_fired.clone();
 
-        let focus_widget = Focus::new(Text::new("Hello"))
-            .on_focus_change(move |focused| {
-                if !focused {
-                    callback_fired_clone.store(true, Ordering::Relaxed);
-                }
-            });
+        let focus_widget = Focus::new(Text::new("Hello")).on_focus_change(move |focused| {
+            if !focused {
+                callback_fired_clone.store(true, Ordering::Relaxed);
+            }
+        });
 
         pipeline.reconcile(Box::new(focus_widget));
         layout_pipeline(&mut pipeline, &mut font_system);
@@ -490,9 +495,11 @@ mod on_focus_change_tests {
         let focus_element_key = {
             let fm = pipeline.focus_manager();
             let root_node = fm.get(fm.root_scope()).unwrap();
-            root_node.children.first().and_then(|id| {
-                fm.get(*id).and_then(|n| n.element_key)
-            }).expect("Should have a Focus element")
+            root_node
+                .children
+                .first()
+                .and_then(|id| fm.get(*id).and_then(|n| n.element_key))
+                .expect("Should have a Focus element")
         };
 
         // Focus the FocusElement
@@ -507,6 +514,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // The on_focus_change callback should have fired with false
@@ -520,8 +528,8 @@ mod on_focus_change_tests {
     /// ScrollView gains and loses focus.
     #[test]
     fn test_on_focus_change_with_scrollview_descendant() {
-        use crate::ScrollView;
         use crate::widgets::Widget;
+        use crate::ScrollView;
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut font_system = create_test_font_system();
@@ -532,12 +540,13 @@ mod on_focus_change_tests {
         let focus_lost_clone = focus_lost.clone();
 
         let focus_widget = Focus::new(
-            ScrollView::new(Flex::column()
-                .push(Text::new("Line 1"))
-                .push(Text::new("Line 2"))
+            ScrollView::new(
+                Flex::column()
+                    .push(Text::new("Line 1"))
+                    .push(Text::new("Line 2")),
             )
             .width(200.0)
-            .height(100.0)
+            .height(100.0),
         )
         .on_focus_change(move |focused| {
             if focused {
@@ -558,6 +567,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         assert!(
@@ -573,6 +583,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         assert!(
@@ -587,10 +598,10 @@ mod on_focus_change_tests {
     #[test]
     fn test_stateful_widget_focus_loss_updates_state() {
         use crate::reactive::Signal;
+        use crate::widgets::Widget;
         use crate::Component;
         use crate::ComponentState;
         use crate::ScrollView;
-        use crate::widgets::Widget;
         use std::sync::atomic::{AtomicI32, Ordering};
 
         // Use a thread-local to observe focus changes from inside the state
@@ -628,17 +639,21 @@ mod on_focus_change_tests {
         impl Component for FocusableScrollList {
             type State = FocusableScrollListState;
 
-            fn render(&self, state: &mut Self::State, _ctx: &mut crate::RenderContext) -> Box<dyn Widget> {
+            fn render(
+                &self,
+                state: &mut Self::State,
+                _ctx: &mut crate::RenderContext,
+            ) -> Box<dyn Widget> {
                 let is_focused_clone = state.is_focused.clone();
                 let fs = state.focus_state.clone();
                 Focus::new(
                     ScrollView::new(
                         Flex::column()
                             .push(Text::new("Line 1"))
-                            .push(Text::new("Line 2"))
+                            .push(Text::new("Line 2")),
                     )
                     .width(200.0)
-                    .height(100.0)
+                    .height(100.0),
                 )
                 .on_focus_change(move |focused| {
                     is_focused_clone.set(focused);
@@ -666,6 +681,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         assert!(
@@ -673,7 +689,8 @@ mod on_focus_change_tests {
             "Focus should be gained after clicking inside ScrollView"
         );
         assert_eq!(
-            focus_state.load(Ordering::Relaxed), 1,
+            focus_state.load(Ordering::Relaxed),
+            1,
             "on_focus_change(true) should have fired"
         );
 
@@ -685,6 +702,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         assert!(
@@ -692,7 +710,8 @@ mod on_focus_change_tests {
             "Focus should be cleared after clicking outside ScrollView"
         );
         assert_eq!(
-            focus_state.load(Ordering::Relaxed), -1,
+            focus_state.load(Ordering::Relaxed),
+            -1,
             "on_focus_change(false) should have been called when clicking outside"
         );
     }
@@ -704,8 +723,8 @@ mod on_focus_change_tests {
     /// ScrollViewElement.
     #[test]
     fn test_scrollview_focus_after_scroll() {
-        use crate::ScrollView;
         use crate::widgets::Widget;
+        use crate::ScrollView;
         use std::sync::atomic::Ordering;
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -720,16 +739,12 @@ mod on_focus_change_tests {
             column = column.push(Text::new(&format!("Item {}", i)));
         }
 
-        let focus_widget = Focus::new(
-            ScrollView::new(column)
-                .width(200.0)
-                .height(100.0)
-        )
-        .on_focus_change(move |focused| {
-            if focused {
-                focus_gained_clone.store(true, Ordering::Relaxed);
-            }
-        });
+        let focus_widget = Focus::new(ScrollView::new(column).width(200.0).height(100.0))
+            .on_focus_change(move |focused| {
+                if focused {
+                    focus_gained_clone.store(true, Ordering::Relaxed);
+                }
+            });
 
         pipeline.reconcile(Box::new(focus_widget));
         layout_pipeline(&mut pipeline, &mut font_system);
@@ -747,6 +762,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // Process rebuilds triggered by scroll offset change and re-layout,
@@ -765,6 +781,7 @@ mod on_focus_change_tests {
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         assert!(

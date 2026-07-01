@@ -19,3 +19,8 @@ bitflags = { workspace = true }
 futures-signals = { workspace = true }
 image = { workspace = true }
 component_state_derive = { path = "component_state_derive" }
+
+# Clipboard backend for desktop platforms (macOS/Linux/Windows).
+# iOS uses a stub backend instead — see src/platform/stub_clipboard.rs.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+arboard = { workspace = true }

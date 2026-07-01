@@ -1,4 +1,7 @@
-use vexo::{Application, Color, Column, ComponentState, Signal, Text, Widget};
+use vexo::{
+    Application, Color, Column, ComponentState, Signal, Text, TextEdit, TextEditingController,
+    Widget,
+};
 use vexo_uikit::{Button, ButtonVariant};
 
 uniffi::setup_scaffolding!();
@@ -6,6 +9,32 @@ uniffi::setup_scaffolding!();
 #[derive(ComponentState, Default)]
 pub struct State {
     count: Signal<u32>,
+}
+
+/// Lazily create a `TextEditingController` for the demo's TextEdit.
+///
+/// `TextEditingController::new` needs a `FontSystem` for initial text shaping,
+/// but `Application::view()` doesn't receive one. We use a `thread_local!` to
+/// create the controller exactly once on the main thread (with its own
+/// throwaway `FontSystem`); subsequent calls cheaply clone the `Rc<RefCell<Editor>>`.
+/// All later editing operations use the pipeline's `FontSystem` via `ctx.font_system`.
+thread_local! {
+    static TEXT_CONTROLLER: std::cell::RefCell<Option<TextEditingController>> =
+        std::cell::RefCell::new(None);
+}
+
+fn demo_text_controller() -> TextEditingController {
+    TEXT_CONTROLLER.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.is_none() {
+            let mut font_system = glyphon::FontSystem::new();
+            *c = Some(TextEditingController::new(
+                "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
+                &mut font_system,
+            ));
+        }
+        c.as_ref().unwrap().clone()
+    })
 }
 
 impl Application for State {
@@ -39,6 +68,12 @@ impl Application for State {
         let semi_transparent = Text::new("Semi-transparent red (alpha 0.5)")
             .with_color(Color::new(1.0, 0.0, 0.0, 0.5));
 
+        // TextEdit showcase: click to focus, type to edit, try Shift+arrows
+        // for selection, Cmd/Ctrl+A for select-all, Cmd/Ctrl+C/X/V for
+        // copy/cut/paste.
+        let edit_section_title = Text::new("Text Edit Showcase").with_font_size(24.0);
+        let text_edit = TextEdit::new(demo_text_controller());
+
         let count = state.count.clone();
 
         Column::new()
@@ -60,6 +95,8 @@ impl Application for State {
             .push(from_hex_teal)
             .push(from_hex_coral)
             .push(semi_transparent)
+            .push(edit_section_title)
+            .push(text_edit)
             .push(
                 Button::new("Submit")
                     .variant(ButtonVariant::Primary)

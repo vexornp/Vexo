@@ -48,6 +48,10 @@ pub use winit::dpi::PhysicalPosition;
 
 pub use layout::{AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Overflow};
 
+/// Platform service abstractions (clipboard, etc.).
+pub mod platform;
+pub use platform::Clipboard;
+
 // --- Former retain/ modules (flattened) ---
 
 mod build_owner;

@@ -56,3 +56,6 @@ slotmap = "1.0"
 # Reactive State
 futures-signals = "0.3"
 
+# Clipboard (desktop platforms; iOS uses a stub backend)
+arboard = "3"
+

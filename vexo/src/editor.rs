@@ -78,8 +78,74 @@ impl Editor {
         self.raw.cursor_position()
     }
 
+    /// Get the current cursor.
+    pub fn cursor(&self) -> glyphon::Cursor {
+        self.raw.cursor()
+    }
+
     /// Set the cursor position from a Cursor object.
     pub fn set_cursor(&mut self, cursor: glyphon::Cursor) {
         self.raw.set_cursor(cursor);
+    }
+
+    /// Get the current selection.
+    pub fn selection(&self) -> glyphon::cosmic_text::Selection {
+        self.raw.selection()
+    }
+
+    /// Set the current selection.
+    pub fn set_selection(&mut self, selection: glyphon::cosmic_text::Selection) {
+        self.raw.set_selection(selection);
+    }
+
+    /// Get the bounds of the current selection as `(start, end)` cursors.
+    /// Returns `None` if there is no selection.
+    pub fn selection_bounds(&self) -> Option<(glyphon::Cursor, glyphon::Cursor)> {
+        self.raw.selection_bounds()
+    }
+
+    /// Copy the selected text, returning it as a `String`.
+    /// Returns `None` if there is no selection.
+    pub fn copy_selection(&self) -> Option<String> {
+        self.raw.copy_selection()
+    }
+
+    /// Delete the current selection. Returns `true` if a selection was deleted.
+    /// After deletion, automatically re-applies the layout width constraint.
+    pub fn delete_selection(&mut self, font_system: &mut FontSystem) -> bool {
+        let deleted = self.raw.delete_selection();
+        if deleted {
+            self.apply_width_and_shape(font_system);
+        }
+        deleted
+    }
+
+    /// Insert a string at the cursor, replacing any current selection.
+    /// After insertion, automatically re-applies the layout width constraint.
+    pub fn insert_string(&mut self, font_system: &mut FontSystem, text: &str) {
+        // cosmic-text's insert_string takes an optional AttrsList; pass None
+        // to use default attributes (matches how set_text is used elsewhere).
+        self.raw.insert_string(text, None);
+        self.apply_width_and_shape(font_system);
+    }
+
+    /// Select the entire document.
+    ///
+    /// Sets the selection anchor to the start of the buffer (line 0, index 0)
+    /// and moves the cursor to the end of the last line.
+    pub fn select_all(&mut self, font_system: &mut FontSystem) {
+        let (last_line, last_index) = self.raw.with_buffer(|buffer| {
+            let last_line = buffer.lines.len().saturating_sub(1);
+            let last_index = buffer.lines.get(last_line).map_or(0, |l| l.text().len());
+            (last_line, last_index)
+        });
+
+        self.raw
+            .set_selection(glyphon::cosmic_text::Selection::Normal(
+                glyphon::Cursor::new(0, 0),
+            ));
+        self.raw
+            .set_cursor(glyphon::Cursor::new(last_line, last_index));
+        self.apply_width_and_shape(font_system);
     }
 }

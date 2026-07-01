@@ -9,8 +9,8 @@
 use crate::core::{Bounds, Logical, Point, Scale, ScaleSource};
 use crate::input::Modifiers;
 
-use super::id::ElementKey;
 use super::build_owner::BuildOwner;
+use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
 
 /// Context provided to elements during event handling.
@@ -42,6 +42,13 @@ pub struct EventContext<'a> {
     /// Required by TextEdit for editor actions (insert, delete, cursor movement)
     /// which need font_system for text shaping.
     pub font_system: &'a mut glyphon::FontSystem,
+
+    /// Clipboard access for copy/paste/cut operations.
+    ///
+    /// Shared via `Arc` so that the same backend (arboard on desktop, stub on iOS)
+    /// can be cheaply cloned into every `EventContext` constructed during event
+    /// dispatch without taking ownership of the underlying platform handle.
+    pub clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
 
     /// Build owner for marking elements dirty from event handlers.
     ///
@@ -92,6 +99,7 @@ impl<'a> EventContext<'a> {
         scale_source: ScaleSource,
         font_system: &'a mut glyphon::FontSystem,
         render_objects: Option<&'a RenderObjectRegistry>,
+        clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
     ) -> Self {
         Self {
             element_id,
@@ -102,6 +110,7 @@ impl<'a> EventContext<'a> {
             modifiers,
             scale_source,
             font_system,
+            clipboard,
             build_owner: None,
             dirty_sender: None,
             render_objects,
@@ -123,6 +132,7 @@ impl<'a> EventContext<'a> {
         build_owner: &'a BuildOwner,
         dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
         render_objects: Option<&'a RenderObjectRegistry>,
+        clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
     ) -> Self {
         Self {
             element_id,
@@ -133,6 +143,7 @@ impl<'a> EventContext<'a> {
             modifiers,
             scale_source,
             font_system,
+            clipboard,
             build_owner: Some(build_owner),
             dirty_sender: Some(dirty_sender),
             render_objects,
@@ -233,6 +244,10 @@ impl<'a> EventContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+}
+
     use crate::core::{Bounds, ScaleSource};
     use std::sync::Arc;
 
@@ -268,6 +283,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
         assert_eq!(ctx.element_id(), element);
     }
@@ -286,6 +302,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
         assert!(ctx.is_pointer_inside());
 
@@ -300,6 +317,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
         assert!(!ctx.is_pointer_inside());
     }
@@ -318,6 +336,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
         assert!(ctx.is_focused_self());
 
@@ -332,6 +351,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
         assert!(!ctx.is_focused_self());
     }
@@ -350,6 +370,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         let target = make_key();
@@ -372,6 +393,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         ctx.clear_focus();
@@ -393,6 +415,7 @@ mod tests {
             ScaleSource::default(),
             &mut font_system,
             None,
+        test_clipboard(),
         );
 
         assert!(ctx.is_control_pressed());

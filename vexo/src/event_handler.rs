@@ -5,19 +5,20 @@
 //! used as a namespace for associated functions.
 
 use std::any::Any;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
 use crate::core::{Absolute, Bounds, Logical, Point, Position, ScaleSource};
 use crate::input::{ButtonState, InputEvent, Modifiers};
+use crate::platform::Clipboard;
 
 use super::build_owner::BuildOwner;
 use super::element::ElementRegistry;
+use super::element_state::StateStorage;
 use super::event_context::EventContext;
 use super::focus::FocusManager;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
-use super::element_state::StateStorage;
 
 /// Zero-sized struct that serves as a namespace for event handling logic.
 ///
@@ -47,6 +48,7 @@ impl EventHandler {
         event: &InputEvent,
         modifiers: Modifiers,
         scale_source: &ScaleSource,
+        clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         match event {
             InputEvent::PointerMoved { position } => Self::handle_pointer_event(
@@ -61,6 +63,7 @@ impl EventHandler {
                 event,
                 modifiers,
                 scale_source,
+                clipboard,
             ),
             InputEvent::PointerButton { position, .. } => Self::handle_pointer_event(
                 element_registry,
@@ -74,6 +77,7 @@ impl EventHandler {
                 event,
                 modifiers,
                 scale_source,
+                clipboard,
             ),
             InputEvent::Scroll { .. } => Self::handle_scroll_event(
                 element_registry,
@@ -87,6 +91,7 @@ impl EventHandler {
                 event,
                 modifiers,
                 scale_source,
+                clipboard,
             ),
             InputEvent::Keyboard { .. } => Self::handle_keyboard_event(
                 element_registry,
@@ -99,6 +104,7 @@ impl EventHandler {
                 event,
                 modifiers,
                 scale_source,
+                clipboard,
             ),
             _ => None,
         }
@@ -126,6 +132,7 @@ impl EventHandler {
         event: &InputEvent,
         modifiers: Modifiers,
         scale_source: &ScaleSource,
+        clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
@@ -162,7 +169,8 @@ impl EventHandler {
                 // Each element gets its own bounds from the hit test,
                 // so is_pointer_inside() works correctly even for
                 // ancestors of scrolled content.
-                let bounds = hit_result.bounds_for_element(element_id)
+                let bounds = hit_result
+                    .bounds_for_element(element_id)
                     .unwrap_or_default();
 
                 let mut ctx = EventContext::with_build_owner(
@@ -177,15 +185,16 @@ impl EventHandler {
                     build_owner,
                     dirty_sender,
                     Some(render_objects),
+                    clipboard.clone(),
                 );
 
                 let message = element.on_event(event, &mut ctx, state);
 
                 // Handle focus requests from this element
                 if let Some(focus_element) = ctx.focus_request() {
-                    let node_id = focus_manager
-                        .node_for_element(focus_element)
-                        .expect("Focus node must exist — all mounted elements have FocusAttachments");
+                    let node_id = focus_manager.node_for_element(focus_element).expect(
+                        "Focus node must exist — all mounted elements have FocusAttachments",
+                    );
                     focus_manager.request_focus(node_id);
                 } else if ctx.should_clear_focus() {
                     focus_manager.unfocus();
@@ -224,6 +233,7 @@ impl EventHandler {
         event: &InputEvent,
         modifiers: Modifiers,
         scale_source: &ScaleSource,
+        clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         // Get focused element
         let focused = focus_manager.primary_focus_element()?;
@@ -243,6 +253,7 @@ impl EventHandler {
             build_owner,
             dirty_sender,
             Some(render_objects),
+            clipboard.clone(),
         );
 
         let any_message = element_registry
@@ -279,6 +290,7 @@ impl EventHandler {
         event: &InputEvent,
         modifiers: Modifiers,
         scale_source: &ScaleSource,
+        clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
         let hit_result = render_objects.hit_test(absolute_position);
@@ -293,11 +305,14 @@ impl EventHandler {
         for (&ro_key, &element_id) in ro_path.iter().zip(element_path.iter()).rev() {
             if let Some(ro) = render_objects.get(ro_key) {
                 if ro.scroll_offset().is_some() {
-                    let bounds = hit_result.bounds_for_element(element_id)
+                    let bounds = hit_result
+                        .bounds_for_element(element_id)
                         .unwrap_or_default();
                     let local_position = hit_result
                         .inner_bounds()
-                        .map(|b| Point::new(position.x - b.position().x, position.y - b.position().y))
+                        .map(|b| {
+                            Point::new(position.x - b.position().x, position.y - b.position().y)
+                        })
                         .unwrap_or(position);
 
                     if let Some(element) = element_registry.get_mut(element_id) {
@@ -313,6 +328,7 @@ impl EventHandler {
                             build_owner,
                             dirty_sender,
                             Some(render_objects),
+                            clipboard.clone(),
                         );
 
                         return element.on_event(event, &mut ctx, state);

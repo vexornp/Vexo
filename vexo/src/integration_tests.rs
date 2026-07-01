@@ -2,6 +2,10 @@
 
 use super::*;
 
+fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+}
+
 #[test]
 fn test_full_reconciliation_flow() {
     // 1. Create registries
@@ -15,10 +19,7 @@ fn test_full_reconciliation_flow() {
         .push(Text::new("First"))
         .push(Text::new("Second"));
 
-    let root_element = element_registry.insert(
-        root_widget.create_element(),
-        None,
-    );
+    let root_element = element_registry.insert(root_widget.create_element(), None);
 
     assert_eq!(element_registry.len(), 1);
 
@@ -69,9 +70,9 @@ fn test_key_preserves_identity() {
 
 #[cfg(test)]
 mod full_pipeline_tests {
+    use crate::animation::AnimationTicker;
     use crate::core::{Position, Size};
     use crate::layout::TaffyLayoutEngine;
-    use crate::animation::AnimationTicker;
     use crate::{Flex, Text, ThreeTreePipeline};
     use std::sync::Arc;
 
@@ -83,7 +84,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_full_frame_flow() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -111,7 +113,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_hit_test_through_pipeline() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -139,7 +142,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_keyed_reconciliation() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First frame with a keyed widget
         let widget = Text::new("A").with_key("first");
@@ -163,7 +167,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_paint_cycle() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -181,7 +186,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_different_widget_types_cause_remount() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First frame with Text
         pipeline.reconcile(Box::new(Text::new("Text content")));
@@ -202,7 +208,8 @@ mod full_pipeline_tests {
 
     #[test]
     fn test_pipeline_clear_dirty() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile creates dirty elements
         pipeline.reconcile(Box::new(Text::new("Test")));
@@ -224,10 +231,11 @@ mod full_pipeline_tests {
 
 #[cfg(test)]
 mod event_handling_tests {
+    use super::test_clipboard;
+    use crate::animation::AnimationTicker;
     use crate::core::{Point, ScaleSource, Size};
     use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use crate::layout::TaffyLayoutEngine;
-    use crate::animation::AnimationTicker;
     use crate::{Text, ThreeTreePipeline};
     use std::sync::Arc;
 
@@ -239,7 +247,8 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_handle_event_no_root() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         let event = InputEvent::PointerButton {
             position: Point::new(10.0, 10.0),
@@ -248,13 +257,21 @@ mod event_handling_tests {
         };
 
         let mut font_system = create_test_font_system();
-        let message = pipeline.handle_event(Point::new(10.0, 10.0), &event, Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let message = pipeline.handle_event(
+            Point::new(10.0, 10.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
         assert!(message.is_none());
     }
 
     #[test]
     fn test_pipeline_handle_event_with_text_widget() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Reconcile a text widget
         pipeline.reconcile(Box::new(Text::new("Hello")));
@@ -273,7 +290,14 @@ mod event_handling_tests {
 
         // Text element doesn't handle events, so should return None
         let mut font_system = create_test_font_system();
-        let message = pipeline.handle_event(Point::new(5.0, 5.0), &event, Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let message = pipeline.handle_event(
+            Point::new(5.0, 5.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // Text element returns None by default
         assert!(message.is_none());
@@ -281,7 +305,8 @@ mod event_handling_tests {
 
     #[test]
     fn test_pipeline_focus_management() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initially no focus
         assert!(pipeline.focused_element().is_none());
@@ -306,14 +331,15 @@ mod event_handling_tests {
 
 #[cfg(test)]
 mod targeted_rebuild_tests {
-    use std::sync::Arc;
     use crate::animation::AnimationTicker;
     use crate::{Text, ThreeTreePipeline};
+    use std::sync::Arc;
 
     #[test]
     fn test_targeted_rebuild_single_element() {
         // Test that marking a single element dirty only rebuilds that element
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial: single text
         pipeline.update(Box::new(Text::new("Hello")));
@@ -333,7 +359,8 @@ mod targeted_rebuild_tests {
     fn test_update_vs_reconcile() {
         // Test that update() is more efficient than reconcile()
         // after initial mount
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // First update: should trigger full reconcile
         pipeline.update(Box::new(Text::new("First")));
@@ -354,10 +381,10 @@ mod targeted_rebuild_tests {
 
 #[cfg(test)]
 mod global_key_tests {
-    use std::sync::Arc;
     use crate::animation::AnimationTicker;
-    use crate::{Text, Widget, ThreeTreePipeline};
     use crate::key::{GlobalKey, WidgetKey};
+    use crate::{Text, ThreeTreePipeline, Widget};
+    use std::sync::Arc;
 
     #[test]
     fn test_global_key_widget_creation() {
@@ -384,10 +411,16 @@ mod global_key_tests {
         let element_id = sm.insert(());
 
         // Register a key
-        build_owner.global_keys_mut().register(key.clone(), element_id).unwrap();
+        build_owner
+            .global_keys_mut()
+            .register(key.clone(), element_id)
+            .unwrap();
 
         // Look it up
-        assert_eq!(build_owner.global_keys().get_element(&key), Some(element_id));
+        assert_eq!(
+            build_owner.global_keys().get_element(&key),
+            Some(element_id)
+        );
     }
 
     #[test]
@@ -412,12 +445,12 @@ mod global_key_tests {
     }
 
     use super::*;
-    use crate::core::{Size as CoreSize, Position, Absolute, Logical};
+    use crate::core::{Absolute, Logical, Position, Size as CoreSize};
     use crate::layout::TaffyLayoutEngine;
-    use crate::ScrollView;
-    use crate::Flex;
-    use crate::Color;
     use crate::render_objects::ScrollViewRenderObject;
+    use crate::Color;
+    use crate::Flex;
+    use crate::ScrollView;
 
     fn create_test_font_system() -> glyphon::FontSystem {
         let font_data = crate::resource::file::FONT.to_vec();
@@ -427,7 +460,8 @@ mod global_key_tests {
 
     #[test]
     fn test_scroll_view_cross_axis_stretching() {
-        let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -435,16 +469,10 @@ mod global_key_tests {
         let mut column = Flex::column().gap(0.0);
         for i in 0..5 {
             let label = format!("Item {}", i + 1);
-            column = column.push(
-                Text::new(&label)
-                    .padding(16.0)
-                    .background(Color::WHITE)
-            );
+            column = column.push(Text::new(&label).padding(16.0).background(Color::WHITE));
         }
 
-        let scroll_view = ScrollView::new(column.boxed())
-            .width(200.0)
-            .height(300.0);
+        let scroll_view = ScrollView::new(column.boxed()).width(200.0).height(300.0);
 
         pipeline.reconcile(Box::new(scroll_view));
         pipeline.layout(CoreSize::new(800.0, 600.0), &mut engine, &mut font_system);
@@ -453,30 +481,48 @@ mod global_key_tests {
         // even with overflow_y: Scroll (which causes Taffy to use max-content sizing).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("should have root");
-        fn find_sv_bounds(ro_reg: &RenderObjectRegistry, id: RenderObjectKey) -> Option<crate::core::Bounds<crate::core::Logical>> {
+        fn find_sv_bounds(
+            ro_reg: &RenderObjectRegistry,
+            id: RenderObjectKey,
+        ) -> Option<crate::core::Bounds<crate::core::Logical>> {
             let ro = ro_reg.get(id)?;
-            if ro.as_any().downcast_ref::<ScrollViewRenderObject>().is_some() {
+            if ro
+                .as_any()
+                .downcast_ref::<ScrollViewRenderObject>()
+                .is_some()
+            {
                 return ro.computed_bounds();
             }
-            ro.children().iter().find_map(|&c| find_sv_bounds(ro_reg, c))
+            ro.children()
+                .iter()
+                .find_map(|&c| find_sv_bounds(ro_reg, c))
         }
-        let sv_bounds = find_sv_bounds(ro_reg, root)
-            .expect("ScrollView should have computed bounds");
+        let sv_bounds =
+            find_sv_bounds(ro_reg, root).expect("ScrollView should have computed bounds");
 
-        assert!(sv_bounds.width() >= 200.0,
+        assert!(
+            sv_bounds.width() >= 200.0,
             "ScrollView should be 200px wide but is {}px",
-            sv_bounds.width());
+            sv_bounds.width()
+        );
 
         // Hit test at a position to the right of the text content but inside the 200px viewport.
         // This should include the ScrollViewElement in the hit path so it can request focus.
         let result = pipeline.hit_test(Position::<Logical, Absolute>::new(150.0, 30.0));
-        assert!(result.is_hit(), "Hit test should find elements inside the ScrollView viewport");
+        assert!(
+            result.is_hit(),
+            "Hit test should find elements inside the ScrollView viewport"
+        );
 
         let has_scroll_view = result.path().iter().any(|&ro_key| {
-            ro_reg.get(ro_key)
+            ro_reg
+                .get(ro_key)
                 .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
                 .is_some()
         });
-        assert!(has_scroll_view, "ScrollView should be in the hit path for taps inside the viewport");
+        assert!(
+            has_scroll_view,
+            "ScrollView should be in the hit path for taps inside the viewport"
+        );
     }
 }

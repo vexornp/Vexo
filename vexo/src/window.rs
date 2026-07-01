@@ -11,6 +11,7 @@ use crate::animation::AnimationTicker;
 use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
+use crate::platform::{self, Clipboard};
 use crate::render::{RenderBackend, WgpuBackend};
 use crate::text_pipeline::TextPipeline;
 use crate::ThreeTreePipeline;
@@ -65,6 +66,14 @@ pub struct WindowState<A: Application + 'static> {
 
     /// Animation ticker that fires per-frame callbacks for active animations.
     animation_ticker: Arc<AnimationTicker>,
+
+    /// Current keyboard modifier state, updated from winit ModifiersChanged events.
+    /// Passed to the pipeline with every input event so widgets see real modifiers.
+    current_modifiers: Modifiers,
+
+    /// Platform clipboard backend (arboard on desktop, stub on iOS).
+    /// Shared via `Arc` so EventContexts can cheaply clone it during dispatch.
+    clipboard: Arc<dyn Clipboard>,
 }
 
 
@@ -84,6 +93,8 @@ impl<A: Application + 'static> WindowState<A> {
 
         let animation_ticker = Arc::new(AnimationTicker::new());
 
+        let clipboard: Arc<dyn Clipboard> = platform::default_clipboard();
+
         Ok(Self {
             backend,
             window: Some(window),
@@ -98,6 +109,8 @@ impl<A: Application + 'static> WindowState<A> {
             current_cursor: SystemCursorKind::Arrow,
             last_pointer_position: Point::new(0.0, 0.0),
             animation_ticker,
+            current_modifiers: Modifiers::default(),
+            clipboard,
         })
     }
 
@@ -176,6 +189,24 @@ impl<A: Application + 'static> WindowState<A> {
                 }
             }
 
+            // Track modifier state so it can be forwarded with subsequent events.
+            // (We still let from_winit produce a ModifiersChanged InputEvent too,
+            // but the authoritative state lives here on WindowState.)
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let mods = modifiers.state();
+                self.current_modifiers = Modifiers {
+                    shift: mods.shift_key(),
+                    control: mods.control_key(),
+                    alt: mods.alt_key(),
+                    super_key: mods.meta_key(),
+                };
+                if let Some(input_event) =
+                    InputEvent::from_winit(event, &self.scale_source, self.last_pointer_position)
+                {
+                    self.process_input_event(input_event);
+                }
+            }
+
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
@@ -196,13 +227,13 @@ impl<A: Application + 'static> WindowState<A> {
             _ => Point::new(0.0, 0.0),
         };
 
-        // Get current modifiers - use default for now
-        let modifiers = Modifiers::default();
+        // Forward the current modifier state (kept in sync via ModifiersChanged).
+        let modifiers = self.current_modifiers;
 
         let (frame_needed, rebuilds_pending) = {
             let pipeline = &mut self.three_tree_pipeline;
 
-            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, &self.scale_source);
+            let _message = pipeline.handle_event(position, &input_event, modifiers, &mut self.font_system, &self.scale_source, &self.clipboard);
 
             // Drain the dirty channel so that elements whose dirty callbacks
             // fired during event handling (e.g., AnimationController::forward())

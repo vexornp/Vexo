@@ -10,7 +10,7 @@
 //! - Enable testing of input handling
 //! - Provide a clean, minimal event model
 
-use crate::core::{Point, Logical, Physical, ScaleSource};
+use crate::core::{Logical, Physical, Point, ScaleSource};
 
 // ============================================================================
 // INPUT EVENT
@@ -196,17 +196,26 @@ impl Modifiers {
 
     /// Create a modifier state with shift held.
     pub fn shift() -> Self {
-        Self { shift: true, ..Self::default() }
+        Self {
+            shift: true,
+            ..Self::default()
+        }
     }
 
     /// Create a modifier state with control held.
     pub fn control() -> Self {
-        Self { control: true, ..Self::default() }
+        Self {
+            control: true,
+            ..Self::default()
+        }
     }
 
     /// Create a modifier state with alt held.
     pub fn alt() -> Self {
-        Self { alt: true, ..Self::default() }
+        Self {
+            alt: true,
+            ..Self::default()
+        }
     }
 
     /// Check if any modifier is held.
@@ -217,6 +226,22 @@ impl Modifiers {
     /// Check if no modifiers are held.
     pub fn none(&self) -> bool {
         !self.any()
+    }
+
+    /// Check if the platform-native command modifier is held.
+    ///
+    /// On macOS/iOS this is the Command (super) key; on other platforms
+    /// it is Control. Use this for clipboard shortcuts (copy/paste/cut/select-all)
+    /// so they match the host platform's native UX.
+    pub fn is_command(&self) -> bool {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            self.super_key
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        {
+            self.control
+        }
     }
 }
 
@@ -241,9 +266,7 @@ impl InputEvent {
             WindowEvent::PointerMoved { position, .. } => {
                 let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
                 let logical = physical.to_logical(scale);
-                Some(InputEvent::PointerMoved {
-                    position: logical,
-                })
+                Some(InputEvent::PointerMoved { position: logical })
             }
 
             WindowEvent::PointerButton {
@@ -306,12 +329,14 @@ impl InputEvent {
                             WinitNamedKey::Meta | WinitNamedKey::Super => NamedKey::Meta,
                             WinitNamedKey::CapsLock => NamedKey::CapsLock,
                             WinitNamedKey::NumLock => NamedKey::NumLock,
-                            _ => return Some(InputEvent::Keyboard {
-                                key: crate::input::Key::Unknown,
-                                text: None,
-                                state: ButtonState::Released,
-                                modifiers: Modifiers::default(),
-                            }),
+                            _ => {
+                                return Some(InputEvent::Keyboard {
+                                    key: crate::input::Key::Unknown,
+                                    text: None,
+                                    state: ButtonState::Released,
+                                    modifiers: Modifiers::default(),
+                                })
+                            }
                         };
                         crate::input::Key::Named(named_key)
                     }
@@ -346,9 +371,7 @@ impl InputEvent {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => {
                         (*x * 20.0, *y * 20.0) // Approximate line height
                     }
-                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                        (pos.x as f32, pos.y as f32)
-                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                 };
                 Some(InputEvent::Scroll {
                     position: pointer_position,
@@ -356,11 +379,7 @@ impl InputEvent {
                 })
             }
 
-            WindowEvent::Focused(focused) => {
-                Some(InputEvent::WindowFocus {
-                    focused: *focused,
-                })
-            }
+            WindowEvent::Focused(focused) => Some(InputEvent::WindowFocus { focused: *focused }),
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 let mods = modifiers.state();
@@ -369,7 +388,7 @@ impl InputEvent {
                         shift: mods.shift_key(),
                         control: mods.control_key(),
                         alt: mods.alt_key(),
-                        super_key: false, // winit 0.31 doesn't expose this directly
+                        super_key: mods.meta_key(),
                     },
                 })
             }
@@ -384,13 +403,11 @@ impl InputEvent {
     /// position information.
     pub fn with_position(self, position: Point<Logical>) -> Self {
         match self {
-            InputEvent::PointerButton { button, state, .. } => {
-                InputEvent::PointerButton {
-                    position,
-                    button,
-                    state,
-                }
-            }
+            InputEvent::PointerButton { button, state, .. } => InputEvent::PointerButton {
+                position,
+                button,
+                state,
+            },
             _ => self,
         }
     }
@@ -398,14 +415,14 @@ impl InputEvent {
     /// Set the modifiers for keyboard events.
     pub fn with_modifiers(self, modifiers: Modifiers) -> Self {
         match self {
-            InputEvent::Keyboard { key, text, state, .. } => {
-                InputEvent::Keyboard {
-                    key,
-                    text,
-                    state,
-                    modifiers,
-                }
-            }
+            InputEvent::Keyboard {
+                key, text, state, ..
+            } => InputEvent::Keyboard {
+                key,
+                text,
+                state,
+                modifiers,
+            },
             _ => self,
         }
     }

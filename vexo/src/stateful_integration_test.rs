@@ -2,17 +2,21 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{ComponentState, Component, RenderContext, ThreeTreePipeline, Widget, Text, Flex};
     use crate::animation::AnimationTicker;
-    use crate::widgets::{GestureDetector, DecoratedContainer};
-    use crate::Style;
-    use crate::reactive::Signal;
     use crate::core::Size;
-    use crate::layout::TaffyLayoutEngine;
-    use crate::input::{InputEvent, ButtonState, PointerButton};
     use crate::core::{Point, ScaleSource};
-    use std::sync::Arc;
+    use crate::input::{ButtonState, InputEvent, PointerButton};
+    use crate::layout::TaffyLayoutEngine;
+    use crate::reactive::Signal;
+    use crate::widgets::{DecoratedContainer, GestureDetector};
+    use crate::Style;
+    use crate::{Component, ComponentState, Flex, RenderContext, Text, ThreeTreePipeline, Widget};
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+        std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
 
     fn create_test_font_system() -> glyphon::FontSystem {
         let font_data = crate::resource::file::FONT.to_vec();
@@ -54,7 +58,9 @@ mod tests {
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Create a stateful widget
-        let counter = Counter { label: "Count".to_string() };
+        let counter = Counter {
+            label: "Count".to_string(),
+        };
 
         // Reconcile with the stateful widget
         pipeline.reconcile(Box::new(counter));
@@ -68,14 +74,18 @@ mod tests {
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // Initial reconcile
-        let counter = Counter { label: "Count".to_string() };
+        let counter = Counter {
+            label: "Count".to_string(),
+        };
         pipeline.reconcile(Box::new(counter));
 
         // Get the root element ID
         let root_id = pipeline.element_registry().root().unwrap();
 
         // Update with new widget (same type, different label)
-        let counter_updated = Counter { label: "Updated".to_string() };
+        let counter_updated = Counter {
+            label: "Updated".to_string(),
+        };
         pipeline.reconcile(Box::new(counter_updated));
 
         // Root element should be the same (updated, not remounted)
@@ -86,7 +96,9 @@ mod tests {
     fn test_stateful_widget_layout_and_paint() {
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-        let counter = Counter { label: "Count".to_string() };
+        let counter = Counter {
+            label: "Count".to_string(),
+        };
         pipeline.reconcile(Box::new(counter));
 
         // Layout
@@ -131,9 +143,7 @@ mod tests {
 
         fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
             let count = state.count.get();
-            Box::new(Flex::column()
-                .push(Text::new(format!("Count: {}", count)))
-            )
+            Box::new(Flex::column().push(Text::new(format!("Count: {}", count))))
         }
     }
 
@@ -159,8 +169,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(initial_text, Some("Count: 0".to_string()),
-            "Initial text should be 'Count: 0'");
+        assert_eq!(
+            initial_text,
+            Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'"
+        );
 
         // 3. Find the StatefulElement's element ID
         let root_id = pipeline.element_registry().root().unwrap();
@@ -189,8 +202,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(after_update_text, Some("Count: 0".to_string()),
-            "After update with no state change, text should still be 'Count: 0'");
+        assert_eq!(
+            after_update_text,
+            Some("Count: 0".to_string()),
+            "After update with no state change, text should still be 'Count: 0'"
+        );
     }
 
     /// Test the full event → rebuild → render flow using a GestureDetector.
@@ -234,15 +250,19 @@ mod tests {
                 let count_clone = state.count.clone();
                 let click_count = self.click_count.clone();
 
-                Box::new(Flex::column()
-                    .push(Text::new(format!("Count: {}", count)))
-                    .push(GestureDetector::new(
-                        DecoratedContainer::new(Text::new("Click Me"))
-                        .style(Style::new().corner_radius(4.0)))
-                    .on_press(move || {
-                        count_clone.set(count_clone.get() + 1);
-                        click_count.fetch_add(1, Ordering::SeqCst);
-                    }))
+                Box::new(
+                    Flex::column()
+                        .push(Text::new(format!("Count: {}", count)))
+                        .push(
+                            GestureDetector::new(
+                                DecoratedContainer::new(Text::new("Click Me"))
+                                    .style(Style::new().corner_radius(4.0)),
+                            )
+                            .on_press(move || {
+                                count_clone.set(count_clone.get() + 1);
+                                click_count.fetch_add(1, Ordering::SeqCst);
+                            }),
+                        ),
                 )
             }
         }
@@ -250,7 +270,9 @@ mod tests {
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
         // 1. Initial reconcile
-        let widget = ClickableCounter { click_count: click_count.clone() };
+        let widget = ClickableCounter {
+            click_count: click_count.clone(),
+        };
         pipeline.reconcile(Box::new(widget));
 
         // 2. Layout and paint to get initial state
@@ -260,19 +282,25 @@ mod tests {
         let initial_commands = pipeline.paint();
 
         // Find the "Count: 0" text
-        let count_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                if content.starts_with("Count:") {
-                    Some(content.clone())
+        let count_texts: Vec<String> = initial_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    if content.starts_with("Count:") {
+                        Some(content.clone())
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        }).collect();
-        assert!(count_texts.contains(&"Count: 0".to_string()),
-            "Initial text should include 'Count: 0', got: {:?}", count_texts);
+            })
+            .collect();
+        assert!(
+            count_texts.contains(&"Count: 0".to_string()),
+            "Initial text should include 'Count: 0', got: {:?}",
+            count_texts
+        );
 
         // 3. Simulate a click event on the GestureDetector
         let click_position = Point::new(400.0, 300.0);
@@ -283,7 +311,14 @@ mod tests {
         };
 
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // 4. Check if the click was handled
         let clicks = click_count.load(Ordering::SeqCst);
@@ -297,29 +332,37 @@ mod tests {
         pipeline.perform_rebuilds();
 
         // 7. Update with the same widget tree (simulates what render_retain does)
-        pipeline.update(Box::new(ClickableCounter { click_count: click_count.clone() }));
+        pipeline.update(Box::new(ClickableCounter {
+            click_count: click_count.clone(),
+        }));
 
         // 8. Layout and paint
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let after_click_commands = pipeline.paint();
 
         // Find the count text
-        let after_count_texts: Vec<String> = after_click_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                if content.starts_with("Count:") {
-                    Some(content.clone())
+        let after_count_texts: Vec<String> = after_click_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    if content.starts_with("Count:") {
+                        Some(content.clone())
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        }).collect();
+            })
+            .collect();
         eprintln!("test: after click, count texts: {:?}", after_count_texts);
 
         if clicks > 0 {
-            assert!(after_count_texts.contains(&"Count: 1".to_string()),
-                "After click, text should be 'Count: 1', got: {:?}", after_count_texts);
+            assert!(
+                after_count_texts.contains(&"Count: 1".to_string()),
+                "After click, text should be 'Count: 1', got: {:?}",
+                after_count_texts
+            );
         } else {
             log::warn!("test: click was not handled (hit test may have missed)");
             eprintln!("test: click was not handled (hit test may have missed)");
@@ -329,8 +372,8 @@ mod tests {
     /// Test that StatefulElement appears in the hit test element_path.
     #[test]
     fn test_stateful_element_in_hit_test_path() {
+        use crate::core::{Absolute, Logical, Position};
         use crate::SimpleState;
-        use crate::core::{Position, Logical, Absolute};
 
         // Create a simple Component that wraps Text
         #[derive(Clone)]
@@ -338,7 +381,11 @@ mod tests {
 
         impl Component for SimpleStateful {
             type State = SimpleState<()>;
-            fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+            fn render(
+                &self,
+                _state: &mut Self::State,
+                _ctx: &mut RenderContext,
+            ) -> Box<dyn Widget> {
                 Box::new(Text::new("Stateful"))
             }
         }
@@ -360,11 +407,17 @@ mod tests {
         // The StatefulElement (root) should be in the element path
         let root_id = pipeline.element_registry().root().unwrap();
         let element_path = result.element_path();
-        assert!(element_path.contains(&root_id),
-            "StatefulElement should appear in hit test element path. Path: {:?}", element_path);
+        assert!(
+            element_path.contains(&root_id),
+            "StatefulElement should appear in hit test element path. Path: {:?}",
+            element_path
+        );
 
-        assert!(element_path.len() >= 2,
-            "Element path should have at least StatefulElement + child. Got: {:?}", element_path);
+        assert!(
+            element_path.len() >= 2,
+            "Element path should have at least StatefulElement + child. Got: {:?}",
+            element_path
+        );
     }
 
     /// Test that directly exercises the state → rebuild → render path
@@ -422,8 +475,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(initial_text, Some("Count: 0".to_string()),
-            "Initial text should be 'Count: 0'");
+        assert_eq!(
+            initial_text,
+            Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'"
+        );
 
         // 3. Test the state update flow via pipeline update.
         pipeline.update(Box::new(SimpleReactive));
@@ -439,8 +495,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(after_update_text, Some("Count: 0".to_string()),
-            "After update with no state change, text should still be 'Count: 0'");
+        assert_eq!(
+            after_update_text,
+            Some("Count: 0".to_string()),
+            "After update with no state change, text should still be 'Count: 0'"
+        );
 
         // 4. Test the Signal callback mechanism.
         let callback_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -452,8 +511,10 @@ mod tests {
         }));
 
         mutable.set(43);
-        assert!(callback_fired.load(Ordering::SeqCst),
-            "Signal::set() should fire the dirty callback");
+        assert!(
+            callback_fired.load(Ordering::SeqCst),
+            "Signal::set() should fire the dirty callback"
+        );
 
         // 5. Test that cloning a Signal preserves the dirty callback.
         let callback2_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -467,8 +528,10 @@ mod tests {
         let cloned = original.clone();
         cloned.set(1);
 
-        assert!(callback2_fired.load(Ordering::SeqCst),
-            "Cloned Signal should preserve the dirty callback");
+        assert!(
+            callback2_fired.load(Ordering::SeqCst),
+            "Cloned Signal should preserve the dirty callback"
+        );
     }
 
     // ========================================================================
@@ -478,9 +541,9 @@ mod tests {
     /// Verify that TextEdit click-to-focus works without Phase 2.
     #[test]
     fn test_textedit_click_to_focus_without_phase2() {
-        use crate::{TextEdit, TextEditingController};
-        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::{TextEdit, TextEditingController};
 
         let mut fs = create_test_font_system();
         let controller = TextEditingController::new("editable", &mut fs);
@@ -494,8 +557,10 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
 
         // Initially no focus
-        assert!(pipeline.focused_element().is_none(),
-            "No element should be focused initially");
+        assert!(
+            pipeline.focused_element().is_none(),
+            "No element should be focused initially"
+        );
 
         // Click inside the TextEdit bounds
         let click_position = Point::new(5.0, 5.0);
@@ -506,15 +571,27 @@ mod tests {
         };
 
         let mut fs = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, Modifiers::default(), &mut fs, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            Modifiers::default(),
+            &mut fs,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // After clicking, the TextEdit's StatefulElement should be focused
-        assert!(pipeline.focused_element().is_some(),
-            "TextEdit should be focused after click (via Phase 1 bubbling, no Phase 2 needed)");
+        assert!(
+            pipeline.focused_element().is_some(),
+            "TextEdit should be focused after click (via Phase 1 bubbling, no Phase 2 needed)"
+        );
 
         let root = pipeline.element_registry().root().unwrap();
-        assert_eq!(pipeline.focused_element(), Some(root),
-            "The focused element should be the TextEdit's StatefulElement");
+        assert_eq!(
+            pipeline.focused_element(),
+            Some(root),
+            "The focused element should be the TextEdit's StatefulElement"
+        );
     }
 
     /// Test that modifying a parent's Signal triggers a rebuild
@@ -535,7 +612,9 @@ mod tests {
 
         impl Default for ParentState {
             fn default() -> Self {
-                Self { count: Signal::new(0) }
+                Self {
+                    count: Signal::new(0),
+                }
             }
         }
 
@@ -572,8 +651,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(initial_text, Some("Count: 0".to_string()),
-            "Initial text should be 'Count: 0'");
+        assert_eq!(
+            initial_text,
+            Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'"
+        );
 
         // 3. Get the root element ID
         let root_id = pipeline.element_registry().root().unwrap();
@@ -597,8 +679,11 @@ mod tests {
         });
         // Since we didn't change the Signal value, it should still be "Count: 0"
         // But this test verifies that mark_needs_build + perform_rebuilds + render works
-        assert_eq!(after_text, Some("Count: 0".to_string()),
-            "After rebuild with no state change, text should still be 'Count: 0'");
+        assert_eq!(
+            after_text,
+            Some("Count: 0".to_string()),
+            "After rebuild with no state change, text should still be 'Count: 0'"
+        );
     }
 
     /// Test that a child Component modifying a parent's Signal triggers
@@ -624,7 +709,9 @@ mod tests {
 
         impl Default for ParentState {
             fn default() -> Self {
-                Self { count: Signal::new(0) }
+                Self {
+                    count: Signal::new(0),
+                }
             }
         }
 
@@ -644,7 +731,7 @@ mod tests {
                 GestureDetector::new(
                     Flex::column()
                         .push(Text::new(format!("Count: {}", count)))
-                        .push(Text::new("Increment"))
+                        .push(Text::new("Increment")),
                 )
                 .on_press(move || {
                     count_clone.set(count_clone.get() + 1);
@@ -675,8 +762,11 @@ mod tests {
                 None
             }
         });
-        assert_eq!(initial_text, Some("Count: 0".to_string()),
-            "Initial text should be 'Count: 0'");
+        assert_eq!(
+            initial_text,
+            Some("Count: 0".to_string()),
+            "Initial text should be 'Count: 0'"
+        );
 
         // 3. Click at (5, 5) which should be inside the GestureDetector's bounds
         let click_position = Point::new(5.0, 5.0);
@@ -687,11 +777,21 @@ mod tests {
         };
 
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // 4. Drain the dirty channel (like process_input_event does)
         pipeline.drain_dirty_to_build_owner();
-        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+        eprintln!(
+            "test: has_pending_rebuilds after drain: {}",
+            pipeline.has_pending_rebuilds()
+        );
 
         // 5. Perform rebuilds
         pipeline.perform_rebuilds();
@@ -712,8 +812,12 @@ mod tests {
             }
         });
         eprintln!("test: after click, text: {:?}", after_text);
-        assert_eq!(after_text, Some("Count: 1".to_string()),
-            "After click, text should be 'Count: 1', got: {:?}", after_text);
+        assert_eq!(
+            after_text,
+            Some("Count: 1".to_string()),
+            "After click, text should be 'Count: 1', got: {:?}",
+            after_text
+        );
     }
 
     /// Test that a nested child Component's on_press can update a parent's Signal
@@ -737,7 +841,9 @@ mod tests {
 
         impl Default for ChildButtonState {
             fn default() -> Self {
-                Self { is_pressed: Signal::new(false) }
+                Self {
+                    is_pressed: Signal::new(false),
+                }
             }
         }
 
@@ -769,7 +875,9 @@ mod tests {
 
         impl Default for ParentState {
             fn default() -> Self {
-                Self { count: Signal::new(0) }
+                Self {
+                    count: Signal::new(0),
+                }
             }
         }
 
@@ -789,7 +897,9 @@ mod tests {
                 GestureDetector::new(
                     Flex::column()
                         .push(Text::new(format!("Count: {}", count)))
-                        .push(ChildButton { label: format!("Clicked {} times", count) })
+                        .push(ChildButton {
+                            label: format!("Clicked {} times", count),
+                        }),
                 )
                 .on_press(move || {
                     count_clone.set(count_clone.get() + 1);
@@ -809,17 +919,24 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let initial_commands = pipeline.paint();
 
-        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else {
-                None
-            }
-        }).collect();
-        assert!(initial_texts.iter().any(|t| t == "Count: 0"),
-            "Initial texts should include 'Count: 0'");
-        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"),
-            "Initial texts should include 'Clicked 0 times'");
+        let initial_texts: Vec<String> = initial_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            initial_texts.iter().any(|t| t == "Count: 0"),
+            "Initial texts should include 'Count: 0'"
+        );
+        assert!(
+            initial_texts.iter().any(|t| t == "Clicked 0 times"),
+            "Initial texts should include 'Clicked 0 times'"
+        );
 
         // 3. Click
         let click_position = Point::new(5.0, 5.0);
@@ -829,7 +946,14 @@ mod tests {
             state: ButtonState::Pressed,
         };
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // 4. Drain and rebuild
         pipeline.drain_dirty_to_build_owner();
@@ -840,17 +964,26 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let after_commands = pipeline.paint();
 
-        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else {
-                None
-            }
-        }).collect();
-        assert!(after_texts.iter().any(|t| t == "Count: 1"),
-            "After click, texts should include 'Count: 1', got: {:?}", after_texts);
-        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
-            "After click, texts should include 'Clicked 1 times', got: {:?}", after_texts);
+        let after_texts: Vec<String> = after_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            after_texts.iter().any(|t| t == "Count: 1"),
+            "After click, texts should include 'Count: 1', got: {:?}",
+            after_texts
+        );
+        assert!(
+            after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click, texts should include 'Clicked 1 times', got: {:?}",
+            after_texts
+        );
     }
 
     /// Test that exactly mirrors the real app pattern:
@@ -880,7 +1013,9 @@ mod tests {
 
         impl Default for ButtonLikeState {
             fn default() -> Self {
-                Self { is_pressed: Signal::new(false) }
+                Self {
+                    is_pressed: Signal::new(false),
+                }
             }
         }
 
@@ -900,11 +1035,10 @@ mod tests {
                 let on_press_cb = self.on_press.clone();
                 // This mimics real Button's render: creates a GestureDetector
                 // whose on_press sets is_pressed THEN calls the user callback
-                Text::new(&self.label).boxed()
-                    .on_press(move || {
-                        is_pressed_signal.set(true);  // marks child dirty
-                        (on_press_cb.borrow_mut())(); // calls user callback (marks parent dirty)
-                    })
+                Text::new(&self.label).boxed().on_press(move || {
+                    is_pressed_signal.set(true); // marks child dirty
+                    (on_press_cb.borrow_mut())(); // calls user callback (marks parent dirty)
+                })
             }
         }
 
@@ -918,7 +1052,9 @@ mod tests {
 
         impl Default for ParentState {
             fn default() -> Self {
-                Self { count: Signal::new(0) }
+                Self {
+                    count: Signal::new(0),
+                }
             }
         }
 
@@ -951,7 +1087,7 @@ mod tests {
                 GestureDetector::new(
                     Flex::column()
                         .push(Text::new(format!("Count: {}", count)))
-                        .push(button)
+                        .push(button),
                 )
                 .on_press({
                     let on_press = on_press.clone();
@@ -974,13 +1110,24 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let initial_commands = pipeline.paint();
 
-        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
-        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
-        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+        let initial_texts: Vec<String> = initial_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            initial_texts.iter().any(|t| t == "Count: 0"),
+            "Initial: should have 'Count: 0'"
+        );
+        assert!(
+            initial_texts.iter().any(|t| t == "Clicked 0 times"),
+            "Initial: should have 'Clicked 0 times'"
+        );
 
         // 3. Simulate click
         let click_position = Point::new(5.0, 5.0);
@@ -990,7 +1137,14 @@ mod tests {
             state: ButtonState::Pressed,
         };
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
 
         // 4. Drain and rebuild
         pipeline.drain_dirty_to_build_owner();
@@ -1000,15 +1154,26 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let after_commands = pipeline.paint();
 
-        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
-        assert!(after_texts.iter().any(|t| t == "Count: 1"),
-            "After click: should have 'Count: 1', got: {:?}", after_texts);
-        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
-            "After click: should have 'Clicked 1 times', got: {:?}", after_texts);
+        let after_texts: Vec<String> = after_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}",
+            after_texts
+        );
+        assert!(
+            after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click: should have 'Clicked 1 times', got: {:?}",
+            after_texts
+        );
     }
 
     /// Test that exactly mirrors the real shared_app pattern:
@@ -1019,8 +1184,8 @@ mod tests {
     /// The events must be caught by the Button's inner GestureDetector.
     #[test]
     fn test_real_button_pattern_in_column_no_outer_gesture() {
+        use crate::core::{Absolute, Logical, Position};
         use crate::Component;
-        use crate::core::{Position, Logical, Absolute};
         use std::cell::RefCell;
         use std::rc::Rc;
 
@@ -1065,7 +1230,8 @@ mod tests {
                 let on_press_cb = self.on_press.clone();
 
                 // Exactly mirrors real Button::render()
-                Text::new(&self.label).boxed()
+                Text::new(&self.label)
+                    .boxed()
                     .on_press(move || {
                         if !disabled {
                             is_pressed_signal.set(true);
@@ -1097,7 +1263,9 @@ mod tests {
 
         impl Default for AppState {
             fn default() -> Self {
-                Self { click_count: Signal::new(0) }
+                Self {
+                    click_count: Signal::new(0),
+                }
             }
         }
 
@@ -1118,14 +1286,12 @@ mod tests {
                 Flex::column()
                     .gap(16.0)
                     .push(Text::new(format!("Count: {}", count)))
-                    .push(
-                        ButtonLike {
-                            label: format!("Clicked {} times", count),
-                            on_press: Rc::new(RefCell::new(move || {
-                                count_clone.set(count_clone.get() + 1);
-                            })),
-                        }
-                    )
+                    .push(ButtonLike {
+                        label: format!("Clicked {} times", count),
+                        on_press: Rc::new(RefCell::new(move || {
+                            count_clone.set(count_clone.get() + 1);
+                        })),
+                    })
                     .boxed()
             }
         }
@@ -1141,14 +1307,25 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let initial_commands = pipeline.paint();
 
-        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
+        let initial_texts: Vec<String> = initial_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         eprintln!("test: initial texts: {:?}", initial_texts);
-        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
-        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+        assert!(
+            initial_texts.iter().any(|t| t == "Count: 0"),
+            "Initial: should have 'Count: 0'"
+        );
+        assert!(
+            initial_texts.iter().any(|t| t == "Clicked 0 times"),
+            "Initial: should have 'Clicked 0 times'"
+        );
 
         // 3. Hit test to verify the element path
         // The Column has: Text("Count: 0") at top, ButtonLike below with 16px gap.
@@ -1157,13 +1334,23 @@ mod tests {
         let root_ro = pipeline.render_objects().root();
         eprintln!("test: root render object: {:?}", root_ro);
         if let Some(root) = root_ro {
-            fn dump_render_tree(ro_registry: &crate::RenderObjectRegistry, ro_key: crate::RenderObjectKey, depth: usize) {
+            fn dump_render_tree(
+                ro_registry: &crate::RenderObjectRegistry,
+                ro_key: crate::RenderObjectKey,
+                depth: usize,
+            ) {
                 let ro = ro_registry.get(ro_key);
                 let bounds = ro.and_then(|r| r.computed_bounds());
                 let elem = ro_registry.element_for(ro_key);
                 let children = ro.map(|r| r.children().to_vec()).unwrap_or_default();
-                eprintln!("test: {}ro={:?} elem={:?} bounds={:?} children={}",
-                    "  ".repeat(depth), ro_key, elem, bounds, children.len());
+                eprintln!(
+                    "test: {}ro={:?} elem={:?} bounds={:?} children={}",
+                    "  ".repeat(depth),
+                    ro_key,
+                    elem,
+                    bounds,
+                    children.len()
+                );
                 for child in children {
                     dump_render_tree(ro_registry, child, depth + 1);
                 }
@@ -1176,12 +1363,24 @@ mod tests {
         // Click at (5, 50) which should be inside the Button area.
         let hit_pos = Position::<Logical, Absolute>::new(5.0, 50.0);
         let hit_result = pipeline.hit_test(hit_pos);
-        eprintln!("test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
-            hit_result.is_hit(), hit_result.path().len(), hit_result.element_path().len());
-        for (i, (&ro_key, &elem_key)) in hit_result.path().iter().zip(hit_result.element_path().iter()).enumerate() {
+        eprintln!(
+            "test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
+            hit_result.is_hit(),
+            hit_result.path().len(),
+            hit_result.element_path().len()
+        );
+        for (i, (&ro_key, &elem_key)) in hit_result
+            .path()
+            .iter()
+            .zip(hit_result.element_path().iter())
+            .enumerate()
+        {
             let ro = pipeline.render_objects().get(ro_key);
             let bounds = ro.and_then(|r| r.computed_bounds());
-            eprintln!("test:   hit_path[{}]: ro={:?}, elem={:?}, bounds={:?}", i, ro_key, elem_key, bounds);
+            eprintln!(
+                "test:   hit_path[{}]: ro={:?}, elem={:?}, bounds={:?}",
+                i, ro_key, elem_key, bounds
+            );
         }
 
         // 4. Simulate click at the Button position
@@ -1192,28 +1391,49 @@ mod tests {
             state: ButtonState::Pressed,
         };
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
         eprintln!("test: handle_event returned: {:?}", _result.is_some());
 
         // 5. Drain and rebuild
         pipeline.drain_dirty_to_build_owner();
-        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+        eprintln!(
+            "test: has_pending_rebuilds after drain: {}",
+            pipeline.has_pending_rebuilds()
+        );
         pipeline.perform_rebuilds();
 
         // 6. Layout and paint
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let after_commands = pipeline.paint();
 
-        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
+        let after_texts: Vec<String> = after_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         eprintln!("test: after click, texts: {:?}", after_texts);
-        assert!(after_texts.iter().any(|t| t == "Count: 1"),
-            "After click: should have 'Count: 1', got: {:?}", after_texts);
-        assert!(after_texts.iter().any(|t| t == "Clicked 1 times"),
-            "After click: should have 'Clicked 1 times', got: {:?}", after_texts);
+        assert!(
+            after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}",
+            after_texts
+        );
+        assert!(
+            after_texts.iter().any(|t| t == "Clicked 1 times"),
+            "After click: should have 'Clicked 1 times', got: {:?}",
+            after_texts
+        );
     }
 
     /// Test that mirrors the real shared_app pattern where Button.on_press().boxed()
@@ -1223,8 +1443,8 @@ mod tests {
     /// from Button::render().
     #[test]
     fn test_real_app_button_with_outer_on_press() {
+        use crate::core::{Absolute, Logical, Position};
         use crate::Component;
-        use crate::core::{Position, Logical, Absolute};
         use std::cell::RefCell;
         use std::rc::Rc;
 
@@ -1269,7 +1489,8 @@ mod tests {
                 let on_press_cb = self.on_press.clone();
 
                 // Exactly mirrors real Button::render()
-                Text::new(&self.label).boxed()
+                Text::new(&self.label)
+                    .boxed()
                     .on_press(move || {
                         if !disabled {
                             is_pressed_signal.set(true);
@@ -1301,7 +1522,9 @@ mod tests {
 
         impl Default for AppState {
             fn default() -> Self {
-                Self { click_count: Signal::new(0) }
+                Self {
+                    click_count: Signal::new(0),
+                }
             }
         }
 
@@ -1340,7 +1563,7 @@ mod tests {
                                 count_clone.set(count_clone.get() + 1);
                             }
                         })
-                        .boxed()
+                        .boxed(),
                     )
                     .boxed()
             }
@@ -1357,25 +1580,46 @@ mod tests {
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let initial_commands = pipeline.paint();
 
-        let initial_texts: Vec<String> = initial_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
+        let initial_texts: Vec<String> = initial_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         eprintln!("test: initial texts: {:?}", initial_texts);
-        assert!(initial_texts.iter().any(|t| t == "Count: 0"), "Initial: should have 'Count: 0'");
-        assert!(initial_texts.iter().any(|t| t == "Clicked 0 times"), "Initial: should have 'Clicked 0 times'");
+        assert!(
+            initial_texts.iter().any(|t| t == "Count: 0"),
+            "Initial: should have 'Count: 0'"
+        );
+        assert!(
+            initial_texts.iter().any(|t| t == "Clicked 0 times"),
+            "Initial: should have 'Clicked 0 times'"
+        );
 
         // 3. Dump render tree and find Button position
         let root_ro = pipeline.render_objects().root();
         if let Some(root) = root_ro {
-            fn dump_render_tree(ro_registry: &crate::RenderObjectRegistry, ro_key: crate::RenderObjectKey, depth: usize) {
+            fn dump_render_tree(
+                ro_registry: &crate::RenderObjectRegistry,
+                ro_key: crate::RenderObjectKey,
+                depth: usize,
+            ) {
                 let ro = ro_registry.get(ro_key);
                 let bounds = ro.and_then(|r| r.computed_bounds());
                 let elem = ro_registry.element_for(ro_key);
                 let children = ro.map(|r| r.children().to_vec()).unwrap_or_default();
-                eprintln!("test: {}ro={:?} elem={:?} bounds={:?} children={}",
-                    "  ".repeat(depth), ro_key, elem, bounds, children.len());
+                eprintln!(
+                    "test: {}ro={:?} elem={:?} bounds={:?} children={}",
+                    "  ".repeat(depth),
+                    ro_key,
+                    elem,
+                    bounds,
+                    children.len()
+                );
                 for child in children {
                     dump_render_tree(ro_registry, child, depth + 1);
                 }
@@ -1386,8 +1630,12 @@ mod tests {
         // 4. Hit test at Button position
         let hit_pos = Position::<Logical, Absolute>::new(5.0, 50.0);
         let hit_result = pipeline.hit_test(hit_pos);
-        eprintln!("test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
-            hit_result.is_hit(), hit_result.path().len(), hit_result.element_path().len());
+        eprintln!(
+            "test: hit_result.is_hit()={}, path_len={}, element_path_len={}",
+            hit_result.is_hit(),
+            hit_result.path().len(),
+            hit_result.element_path().len()
+        );
 
         // 5. Simulate click
         let click_position = Point::new(5.0, 50.0);
@@ -1397,25 +1645,43 @@ mod tests {
             state: ButtonState::Pressed,
         };
         let mut font_system = create_test_font_system();
-        let _result = pipeline.handle_event(click_position, &event, crate::input::Modifiers::default(), &mut font_system, &ScaleSource::default());
+        let _result = pipeline.handle_event(
+            click_position,
+            &event,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
         eprintln!("test: handle_event returned: {:?}", _result.is_some());
 
         // 6. Drain and rebuild
         pipeline.drain_dirty_to_build_owner();
-        eprintln!("test: has_pending_rebuilds after drain: {}", pipeline.has_pending_rebuilds());
+        eprintln!(
+            "test: has_pending_rebuilds after drain: {}",
+            pipeline.has_pending_rebuilds()
+        );
         pipeline.perform_rebuilds();
 
         // 7. Layout and paint
         pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
         let after_commands = pipeline.paint();
 
-        let after_texts: Vec<String> = after_commands.iter().filter_map(|cmd| {
-            if let crate::render::RenderCommand::Text { content, .. } = cmd {
-                Some(content.clone())
-            } else { None }
-        }).collect();
+        let after_texts: Vec<String> = after_commands
+            .iter()
+            .filter_map(|cmd| {
+                if let crate::render::RenderCommand::Text { content, .. } = cmd {
+                    Some(content.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         eprintln!("test: after click, texts: {:?}", after_texts);
-        assert!(after_texts.iter().any(|t| t == "Count: 1"),
-            "After click: should have 'Count: 1', got: {:?}", after_texts);
+        assert!(
+            after_texts.iter().any(|t| t == "Count: 1"),
+            "After click: should have 'Count: 1', got: {:?}",
+            after_texts
+        );
     }
 }

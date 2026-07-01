@@ -37,19 +37,19 @@
 //! - `paint()` recursively collects commands from the root
 
 use std::any::Any;
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 use crate::animation::AnimationTicker;
 use crate::core::{Absolute, Logical, Point, Position, ScaleSource, Size};
-use crate::mouse_tracker::MouseTracker;
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
+use crate::mouse_tracker::MouseTracker;
 use crate::render::RenderCommand;
 
-use crate::state::CursorBlinkState;
 use super::build_owner::BuildOwner;
 use super::child_ops::ChildOps;
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
+use super::element_state::StateStorage;
 use super::event_handler::EventHandler;
 use super::focus::FocusManager;
 use super::hit_test::HitTestResult;
@@ -58,8 +58,8 @@ use super::layouter::Layouter;
 use super::painter::Painter;
 use super::reconciler::Reconciler;
 use super::render_object::RenderObjectRegistry;
-use super::element_state::StateStorage;
 use super::widgets::Widget;
+use crate::state::CursorBlinkState;
 
 // ============================================================================
 // THREE-TREE PIPELINE
@@ -167,7 +167,8 @@ impl ThreeTreePipeline {
 
     /// Sync focused_element to BuildOwner so Component::render() can access it.
     fn sync_focus_to_build_owner(&self) {
-        self.build_owner.set_focused_element(self.focus_manager.primary_focus_element());
+        self.build_owner
+            .set_focused_element(self.focus_manager.primary_focus_element());
     }
 
     /// Reconcile a new widget tree with the existing element tree.
@@ -324,7 +325,13 @@ impl ThreeTreePipeline {
         engine: &mut dyn crate::layout::LayoutEngine,
         font_system: &mut glyphon::FontSystem,
     ) {
-        Layouter::layout(&mut self.render_objects, &mut self.dirty, available_size, engine, font_system);
+        Layouter::layout(
+            &mut self.render_objects,
+            &mut self.dirty,
+            available_size,
+            engine,
+            font_system,
+        );
         self.cached_commands = None;
     }
 
@@ -381,7 +388,7 @@ impl ThreeTreePipeline {
         EventHandler::hit_test(&self.render_objects, position)
     }
 
-/// Resolve the cursor at the given position using Flutter's
+    /// Resolve the cursor at the given position using Flutter's
     /// `firstNonDeferred()` annotation traversal.
     ///
     /// Also dispatches hover enter/exit callbacks for MouseRegion widgets.
@@ -423,7 +430,8 @@ impl ThreeTreePipeline {
             })
             .collect();
 
-        self.mouse_tracker.dispatch_hover_exit_for(&exit_annotations);
+        self.mouse_tracker
+            .dispatch_hover_exit_for(&exit_annotations);
     }
 
     /// Post-frame cursor update. Re-hit-tests at the last mouse position
@@ -435,7 +443,10 @@ impl ThreeTreePipeline {
         if let Some(position) = self.mouse_tracker.last_mouse_position() {
             let hit_result = self.render_objects.hit_test(position);
             let (new_cursor, annotations) = if hit_result.is_hit() {
-                (MouseTracker::resolve_cursor(hit_result.annotations()), hit_result.annotations().to_vec())
+                (
+                    MouseTracker::resolve_cursor(hit_result.annotations()),
+                    hit_result.annotations().to_vec(),
+                )
             } else {
                 (SystemCursorKind::Arrow, Vec::new())
             };
@@ -469,6 +480,7 @@ impl ThreeTreePipeline {
         modifiers: Modifiers,
         font_system: &mut glyphon::FontSystem,
         scale_source: &ScaleSource,
+        clipboard: &std::sync::Arc<dyn crate::platform::Clipboard>,
     ) -> Option<Box<dyn Any>> {
         let result = EventHandler::handle_event(
             &mut self.element_registry,
@@ -482,6 +494,7 @@ impl ThreeTreePipeline {
             event,
             modifiers,
             scale_source,
+            clipboard,
         );
 
         // Commit deferred focus changes
@@ -502,7 +515,8 @@ impl ThreeTreePipeline {
     /// Pass `None` to clear focus.
     pub fn set_focus(&mut self, element: Option<ElementKey>) {
         if let Some(element_key) = element {
-            let node_id = self.focus_manager
+            let node_id = self
+                .focus_manager
                 .node_for_element(element_key)
                 .expect("Focus node must exist — all mounted elements have FocusAttachments");
             self.focus_manager.request_focus(node_id);
@@ -560,7 +574,11 @@ impl ThreeTreePipeline {
     pub fn mark_focus_subtree_needs_paint(&mut self) {
         // Mark currently focused subtree (cursor appears)
         if let Some(focused_el) = self.focus_manager.primary_focus_element() {
-            if let Some(ro_id) = self.element_registry.with_element(focused_el, &mut (), |el, _| el.render_object()).flatten() {
+            if let Some(ro_id) = self
+                .element_registry
+                .with_element(focused_el, &mut (), |el, _| el.render_object())
+                .flatten()
+            {
                 self.dirty.mark_needs_paint(ro_id);
                 Self::mark_subtree_needs_paint(&self.render_objects, ro_id, &mut self.dirty);
             }
@@ -568,7 +586,11 @@ impl ThreeTreePipeline {
 
         // Mark previously focused subtree (cursor disappears)
         if let Some(prev_el) = self.focus_manager.previous_primary_focus() {
-            if let Some(ro_id) = self.element_registry.with_element(prev_el, &mut (), |el, _| el.render_object()).flatten() {
+            if let Some(ro_id) = self
+                .element_registry
+                .with_element(prev_el, &mut (), |el, _| el.render_object())
+                .flatten()
+            {
                 self.dirty.mark_needs_paint(ro_id);
                 Self::mark_subtree_needs_paint(&self.render_objects, ro_id, &mut self.dirty);
             }
@@ -623,7 +645,10 @@ impl ThreeTreePipeline {
             }
             if let Some(prev_node) = self.focus_manager.previous_primary_focus_node() {
                 if self.focus_manager.primary_focus() != Some(prev_node) {
-                    result.extend(self.focus_manager.ancestor_elements_with_callbacks(prev_node));
+                    result.extend(
+                        self.focus_manager
+                            .ancestor_elements_with_callbacks(prev_node),
+                    );
                 }
             }
             result
@@ -656,7 +681,11 @@ impl ThreeTreePipeline {
             // Only the focused TextEditRenderObject needs repaint for blink,
             // not its parent containers.
             if let Some(focused_el) = self.focus_manager.primary_focus_element() {
-                if let Some(ro_id) = self.element_registry.with_element(focused_el, &mut (), |el, _| el.render_object()).flatten() {
+                if let Some(ro_id) = self
+                    .element_registry
+                    .with_element(focused_el, &mut (), |el, _| el.render_object())
+                    .flatten()
+                {
                     self.dirty.mark_needs_paint(ro_id);
                 }
             }
@@ -683,7 +712,10 @@ impl ThreeTreePipeline {
 
         // First pass: set all TextEditRenderObjects to unfocused with current blink state
         for (_, ro) in self.render_objects.iter_mut() {
-            if let Some(text_edit_ro) = ro.as_any_mut().downcast_mut::<crate::render_objects::TextEditRenderObject>() {
+            if let Some(text_edit_ro) = ro
+                .as_any_mut()
+                .downcast_mut::<crate::render_objects::TextEditRenderObject>()
+            {
                 text_edit_ro.set_focused(false);
                 text_edit_ro.set_cursor_blink_visible(blink_visible);
             }
@@ -692,9 +724,9 @@ impl ThreeTreePipeline {
         // If an element is focused, find its subtree's TextEditRenderObject and set focused=true
         if let Some(focused_key) = focused_element {
             // Get the focused element's render object key
-            let focused_ro = self.element_registry.with_element(focused_key, &mut (), |element, _| {
-                element.render_object()
-            });
+            let focused_ro =
+                self.element_registry
+                    .with_element(focused_key, &mut (), |element, _| element.render_object());
 
             if let Some(ro_key) = focused_ro.flatten() {
                 Self::set_cursor_focus_in_subtree(&mut self.render_objects, ro_key, blink_visible);
@@ -710,7 +742,10 @@ impl ThreeTreePipeline {
     ) {
         // Try to downcast the root render object
         if let Some(ro) = render_objects.get_mut(root) {
-            if let Some(text_edit_ro) = ro.as_any_mut().downcast_mut::<crate::render_objects::TextEditRenderObject>() {
+            if let Some(text_edit_ro) = ro
+                .as_any_mut()
+                .downcast_mut::<crate::render_objects::TextEditRenderObject>()
+            {
                 text_edit_ro.set_focused(true);
                 text_edit_ro.set_cursor_blink_visible(blink_visible);
                 return;
@@ -718,7 +753,8 @@ impl ThreeTreePipeline {
         }
 
         // Recurse into children
-        let children: Vec<_> = render_objects.get(root)
+        let children: Vec<_> = render_objects
+            .get(root)
             .map(|r| r.children().to_vec())
             .unwrap_or_default();
         for child in children {

@@ -185,6 +185,74 @@ impl TextEditingController {
         drop(editor);
         self.notify();
     }
+
+    /// Move the cursor, optionally extending the current selection.
+    ///
+    /// When `shift` is `true` and there is no existing selection, the current
+    /// cursor position becomes the selection anchor (via `Selection::Normal`).
+    /// The cursor is then moved by `motion`. `cosmic_text` computes
+    /// `selection_bounds()` from the (anchor, cursor) pair, so the visible
+    /// highlight automatically tracks the new cursor.
+    ///
+    /// When `shift` is `false`, any existing selection is cleared first.
+    pub fn move_cursor_with_selection(
+        &self,
+        motion: Motion,
+        shift: bool,
+        font_system: &mut glyphon::FontSystem,
+    ) {
+        let mut editor = self.editor.borrow_mut();
+        if shift {
+            // Anchor at the current cursor if no selection exists yet.
+            if matches!(editor.selection(), glyphon::cosmic_text::Selection::None) {
+                let anchor = editor.cursor();
+                editor.set_selection(glyphon::cosmic_text::Selection::Normal(anchor));
+            }
+        } else {
+            editor.set_selection(glyphon::cosmic_text::Selection::None);
+        }
+        editor.action(font_system, Action::Motion(motion));
+        drop(editor);
+        self.notify();
+    }
+
+    /// Copy the currently selected text. Returns `None` if nothing is selected.
+    pub fn copy(&self) -> Option<String> {
+        self.editor.borrow().copy_selection()
+    }
+
+    /// Delete the current selection and return its text.
+    /// Returns `None` if there was no selection.
+    pub fn cut(&self, font_system: &mut glyphon::FontSystem) -> Option<String> {
+        let text = self.editor.borrow().copy_selection();
+        if text.is_some() {
+            let mut editor = self.editor.borrow_mut();
+            editor.delete_selection(font_system);
+            drop(editor);
+            self.notify();
+        }
+        text
+    }
+
+    /// Paste text at the cursor, replacing any current selection.
+    pub fn paste(&self, text: &str, font_system: &mut glyphon::FontSystem) {
+        let mut editor = self.editor.borrow_mut();
+        // delete_selection is a no-op if there is no selection, so this is safe
+        // to call unconditionally — it handles both "replace selection" and
+        // "insert at cursor" cases.
+        editor.delete_selection(font_system);
+        editor.insert_string(font_system, text);
+        drop(editor);
+        self.notify();
+    }
+
+    /// Select the entire document.
+    pub fn select_all(&self, font_system: &mut glyphon::FontSystem) {
+        let mut editor = self.editor.borrow_mut();
+        editor.select_all(font_system);
+        drop(editor);
+        self.notify();
+    }
 }
 
 impl Clone for TextEditingController {
@@ -317,40 +385,56 @@ impl ComponentState for TextEditState {
                 key,
                 state: ButtonState::Pressed,
                 text,
-                modifiers,
+                ..
             } => {
-                let ctrl_pressed = modifiers.control;
+                // Use ctx.modifiers as the single source of truth — it is kept
+                // in sync by WindowState and threaded through EventHandler.
+                let modifiers = ctx.modifiers;
+                let cmd = modifiers.is_command();
+                let shift = modifiers.shift;
 
                 match key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::Left, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::Left,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::Right, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::Right,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::Up, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::Up,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::Down, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::Down,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::Home) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::Home, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::Home,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::End) => {
-                        text_edit
-                            .controller
-                            .move_cursor(Motion::End, ctx.font_system);
+                        text_edit.controller.move_cursor_with_selection(
+                            Motion::End,
+                            shift,
+                            ctx.font_system,
+                        );
                     }
                     Key::Named(NamedKey::Backspace) => {
                         text_edit.controller.delete_backward(ctx.font_system);
@@ -364,8 +448,38 @@ impl ComponentState for TextEditState {
                     Key::Named(NamedKey::Escape) => {
                         return None;
                     }
-                    Key::Character(_ch) => {
-                        if !ctrl_pressed {
+                    Key::Character(ch) => {
+                        if cmd {
+                            // Platform-native clipboard shortcuts.
+                            // Match case-insensitively so both Ctrl+C and Ctrl+Shift+C work.
+                            match ch.to_lowercase().as_str() {
+                                "a" => {
+                                    text_edit.controller.select_all(ctx.font_system);
+                                }
+                                "c" => {
+                                    if let Some(s) = text_edit.controller.copy() {
+                                        ctx.clipboard.set_text(&s);
+                                    }
+                                }
+                                "x" => {
+                                    if let Some(s) = text_edit.controller.cut(ctx.font_system) {
+                                        ctx.clipboard.set_text(&s);
+                                    }
+                                }
+                                "v" => {
+                                    if let Some(s) = ctx.clipboard.get_text() {
+                                        text_edit.controller.paste(&s, ctx.font_system);
+                                    }
+                                }
+                                _ => {
+                                    // Other command+letter combos: no-op (suppress insertion).
+                                }
+                            }
+                        } else if !modifiers.control {
+                            // No command/Ctrl modifier: insert the character.
+                            // (On non-macOS, control is the command key — handled above.
+                            // On macOS, bare Ctrl is rare for typing; this guard is a no-op
+                            // there since `cmd` already covered the Cmd case.)
                             if let Some(text) = text {
                                 for c in text.chars() {
                                     if c.is_control() {
@@ -438,74 +552,6 @@ impl TextEdit {
     pub fn controller(&self) -> &TextEditingController {
         &self.controller
     }
-
-    /// Handle an input event.
-    ///
-    /// Called by StatefulElement::on_event() for:
-    /// - Keyboard events when this element is focused
-    /// - Pointer button press events when pointer is inside (click-to-focus)
-    pub fn handle_event(&self, event: &InputEvent, ctx: &mut EventContext) -> Option<Box<dyn Any>> {
-        match event {
-            InputEvent::Keyboard {
-                key,
-                state: ButtonState::Pressed,
-                text,
-                modifiers,
-            } => {
-                let ctrl_pressed = modifiers.control;
-
-                match key {
-                    Key::Named(NamedKey::ArrowLeft) => {
-                        self.controller.move_cursor(Motion::Left, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::ArrowRight) => {
-                        self.controller.move_cursor(Motion::Right, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::ArrowUp) => {
-                        self.controller.move_cursor(Motion::Up, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        self.controller.move_cursor(Motion::Down, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::Home) => {
-                        self.controller.move_cursor(Motion::Home, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::End) => {
-                        self.controller.move_cursor(Motion::End, ctx.font_system);
-                    }
-                    Key::Named(NamedKey::Backspace) => {
-                        self.controller.delete_backward(ctx.font_system);
-                    }
-                    Key::Named(NamedKey::Delete) => {
-                        self.controller.delete_forward(ctx.font_system);
-                    }
-                    Key::Named(NamedKey::Enter) => {
-                        self.controller.insert_newline(ctx.font_system);
-                    }
-                    Key::Named(NamedKey::Escape) => {
-                        return None;
-                    }
-                    Key::Character(_ch) => {
-                        if !ctrl_pressed {
-                            if let Some(text) = text {
-                                for c in text.chars() {
-                                    if c.is_control() {
-                                        continue;
-                                    }
-                                    self.controller.insert_char(c, ctx.font_system);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-
-                // Event was handled
-                Some(Box::new(()))
-            }
-            _ => None,
-        }
-    }
 }
 
 impl Component for TextEdit {
@@ -537,6 +583,10 @@ impl Component for TextEdit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+        std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
+
     use std::sync::atomic::{AtomicBool, Ordering};
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -841,6 +891,7 @@ mod tests {
             Modifiers::default(),
             &mut fs,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // The TextEdit's StatefulElement should now be focused
@@ -883,6 +934,7 @@ mod tests {
             Modifiers::default(),
             &mut fs,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // Verify TextEdit is focused
@@ -903,6 +955,7 @@ mod tests {
             Modifiers::default(),
             &mut fs,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // Focus should be cleared because no element handled the click
@@ -953,6 +1006,7 @@ mod tests {
             Modifiers::default(),
             &mut fs,
             &ScaleSource::default(),
+            &test_clipboard(),
         );
 
         // The TextEdit's StatefulElement should now be focused
@@ -965,6 +1019,170 @@ mod tests {
             focused,
             Some(text_edit_element_id),
             "The focused element should be the TextEdit's StatefulElement"
+        );
+    }
+
+    // ========================================================================
+    // Selection + clipboard tests
+    // ========================================================================
+
+    #[test]
+    fn test_shift_arrow_extends_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        // Move cursor to start
+        controller.move_cursor(Motion::Home, &mut fs);
+
+        // Shift+Right should select 1 char and extend the selection
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        let copied = controller.copy();
+        assert_eq!(
+            copied.as_deref(),
+            Some("H"),
+            "Shift+Right should select 'H'"
+        );
+
+        // Another Shift+Right extends the selection to 2 chars
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        let copied = controller.copy();
+        assert_eq!(
+            copied.as_deref(),
+            Some("He"),
+            "Second Shift+Right should extend to 'He'"
+        );
+    }
+
+    #[test]
+    fn test_arrow_without_shift_clears_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        controller.move_cursor(Motion::Home, &mut fs);
+
+        // Select "He" with shift+Right x2
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        assert_eq!(controller.copy().as_deref(), Some("He"));
+
+        // Plain Right (no shift) should clear the selection
+        controller.move_cursor_with_selection(Motion::Right, false, &mut fs);
+        assert!(
+            controller.copy().is_none(),
+            "Selection should be cleared after non-shift arrow"
+        );
+    }
+
+    #[test]
+    fn test_select_all() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello World", &mut fs);
+        controller.select_all(&mut fs);
+        let copied = controller.copy();
+        assert_eq!(
+            copied.as_deref(),
+            Some("Hello World"),
+            "select_all should select entire text"
+        );
+    }
+
+    #[test]
+    fn test_copy_returns_selected_text() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        controller.move_cursor(Motion::Home, &mut fs);
+        // Select first 3 chars
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        assert_eq!(controller.copy().as_deref(), Some("Hel"));
+        // Copy does not modify text
+        assert_eq!(controller.text(), "Hello");
+    }
+
+    #[test]
+    fn test_cut_deletes_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        controller.move_cursor(Motion::Home, &mut fs);
+        // Select first 2 chars
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+
+        let cut_text = controller.cut(&mut fs);
+        assert_eq!(cut_text.as_deref(), Some("He"));
+        assert_eq!(
+            controller.text(),
+            "llo",
+            "Cut should remove the selected text"
+        );
+    }
+
+    #[test]
+    fn test_paste_replaces_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        controller.move_cursor(Motion::Home, &mut fs);
+        // Select "Hel"
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+        controller.move_cursor_with_selection(Motion::Right, true, &mut fs);
+
+        controller.paste("XYZ", &mut fs);
+        assert_eq!(
+            controller.text(),
+            "XYZlo",
+            "Paste should replace the selection"
+        );
+    }
+
+    #[test]
+    fn test_paste_without_selection_inserts_at_cursor() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("ab", &mut fs);
+        // Cursor is at start by default
+        controller.paste("XY", &mut fs);
+        assert_eq!(
+            controller.text(),
+            "XYab",
+            "Paste without selection should insert at cursor"
+        );
+    }
+
+    #[test]
+    fn test_paste_multiline() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        controller.move_cursor(Motion::End, &mut fs);
+        controller.paste("\nWorld", &mut fs);
+        assert_eq!(
+            controller.text(),
+            "Hello\nWorld",
+            "Paste should handle newlines"
+        );
+    }
+
+    #[test]
+    fn test_copy_returns_none_without_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        assert!(
+            controller.copy().is_none(),
+            "copy() with no selection should return None"
+        );
+    }
+
+    #[test]
+    fn test_cut_returns_none_without_selection() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let result = controller.cut(&mut fs);
+        assert!(
+            result.is_none(),
+            "cut() with no selection should return None"
+        );
+        assert_eq!(
+            controller.text(),
+            "Hello",
+            "cut() with no selection should not modify text"
         );
     }
 }
