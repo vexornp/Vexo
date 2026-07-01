@@ -164,7 +164,9 @@ fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn W
 - `padding_each(pt, pr, pb, pl)` keeps the same TRBL call signature as today.
   `DecoratedContainer` inherits `padding_each` from `layout_builder_methods!()`
   (`vexo/src/widgets/decorated_container.rs:329`), which delegates to
-  `Layout::padding_each(left, right, top, bottom)`. Token values are unchanged.
+  `Layout::padding_each(left, right, top, bottom)`. Token values are aligned
+  to SwiftUI `.bordered` (regular control size): Desktop H=12/V=4, radius=5;
+  Mobile H=16/V=8, radius=8.
 - `.border()` on `DecoratedContainer`
   (`vexo/src/widgets/decorated_container.rs:337-350`) automatically adds
   border-width to padding so the child insets from the border. Existing
@@ -175,10 +177,9 @@ fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn W
   so the whole subtree escapes Column's stretch.
 - The callback bodies are unchanged from the current implementation — only
   the widget structure around them changes.
-- `with_font_size(24.0)` is explicit to preserve current behavior. The
-  current `Button` does not set font_size explicitly, so `Text::new()`'s
-  default of 24.0 (`vexo/src/widgets/text.rs:27`) was in effect. Making it
-  explicit insulates Button from future changes to `Text`'s default.
+- `with_font_size(self.resolve_font_size())` is platform-adaptive to match
+  SwiftUI `.bordered` defaults: 13pt on macOS (system body), 17pt on iOS
+  (system body). Sourced from `FONT_SIZE_DESKTOP` / `FONT_SIZE_MOBILE` tokens.
 
 ### vexo public API change
 
@@ -296,7 +297,11 @@ fallible operations introduced.
   `Column + AlignItems::Stretch`. Changing those defaults would affect every
   consumer and is out of scope. The outermost `align_self(Start)` on
   `Button::render()`'s return value neutralizes them for the Button case.
-- **Button font size:** Preserved at 24.0 explicitly. Adjusting button
-  typography is a separate design decision.
-- **Platform token values:** Desktop H=16/V=8 and Mobile H=20/V=12 are
-  unchanged.
+- **Button font size:** Platform-adaptive via `resolve_font_size()` — 13pt
+  on macOS, 17pt on iOS — matching SwiftUI `.bordered` regular control size.
+- **Platform token values:** Aligned to SwiftUI `.bordered` regular control
+  size: Desktop H=12/V=4, radius=5, font=13; Mobile H=16/V=8, radius=8,
+  font=17.
+- **`Text::new()` default (24.0):** Intentionally left untouched in
+  `vexo/src/widgets/text.rs:29`; unrelated to Button's platform-adaptive
+  sizing.

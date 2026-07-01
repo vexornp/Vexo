@@ -172,6 +172,13 @@ impl Button {
         }
     }
 
+    fn resolve_font_size(&self) -> f32 {
+        match self.effective_platform() {
+            Platform::Desktop => tokens::button::FONT_SIZE_DESKTOP,
+            Platform::Mobile => tokens::button::FONT_SIZE_MOBILE,
+        }
+    }
+
     /// Returns (top, right, bottom, left) for padding_each (TRBL order).
     fn resolve_padding(&self) -> (f32, f32, f32, f32) {
         match self.effective_platform() {
@@ -218,11 +225,10 @@ impl Component for Button {
         let is_hovered_signal_exit = state.is_hovered.clone();
 
         // Plain leaf — no modifiers on Text itself.
-        // with_font_size(24.0) is explicit to preserve current behavior
-        // (Text::new() defaults to 24.0); insulates Button from future
-        // changes to Text's default.
+        // Font size is platform-adaptive to match SwiftUI .bordered defaults
+        // (macOS 13pt body, iOS 17pt body).
         let text = Text::new(&self.label)
-            .with_font_size(24.0)
+            .with_font_size(self.resolve_font_size())
             .with_color(text_color);
 
         // All decoration on the container. DecoratedContainer defaults to

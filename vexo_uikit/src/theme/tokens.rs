@@ -26,15 +26,17 @@ pub mod button {
     // Disabled
     pub const DISABLED_OPACITY: f32 = 0.5;
 
-    // Desktop sizing
-    pub const CORNER_RADIUS_DESKTOP: f32 = 6.0;
-    pub const PADDING_H_DESKTOP: f32 = 16.0;
-    pub const PADDING_V_DESKTOP: f32 = 8.0;
+    // Desktop sizing (matches macOS SwiftUI .bordered, regular control size)
+    pub const CORNER_RADIUS_DESKTOP: f32 = 5.0;
+    pub const PADDING_H_DESKTOP: f32 = 12.0;
+    pub const PADDING_V_DESKTOP: f32 = 4.0;
+    pub const FONT_SIZE_DESKTOP: f32 = 13.0;
 
-    // Mobile sizing
-    pub const CORNER_RADIUS_MOBILE: f32 = 12.0;
-    pub const PADDING_H_MOBILE: f32 = 20.0;
-    pub const PADDING_V_MOBILE: f32 = 12.0;
+    // Mobile sizing (matches iOS SwiftUI .bordered, regular control size)
+    pub const CORNER_RADIUS_MOBILE: f32 = 8.0;
+    pub const PADDING_H_MOBILE: f32 = 16.0;
+    pub const PADDING_V_MOBILE: f32 = 8.0;
+    pub const FONT_SIZE_MOBILE: f32 = 17.0;
 }
 
 pub mod navigation {
