@@ -5,10 +5,10 @@
 //! based on the current platform (Desktop vs Mobile).
 
 // Re-exports from vexo that uikit consumers commonly need
+pub use vexo::Color;
 pub use vexo::Component;
 pub use vexo::ComponentState;
 pub use vexo::Signal;
-pub use vexo::Color;
 pub use vexo::Widget;
 
 pub mod platform;
@@ -17,4 +17,7 @@ pub use platform::Platform;
 pub mod theme;
 
 pub mod button;
-pub use button::{Button, ButtonVariant, ButtonState};
+pub use button::{Button, ButtonState, ButtonVariant};
+
+pub mod navigation;
+pub use navigation::{NavigationItem, NavigationSplitView, NavigationSplitViewState};

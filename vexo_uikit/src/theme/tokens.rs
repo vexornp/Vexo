@@ -36,3 +36,32 @@ pub mod button {
     pub const PADDING_H_MOBILE: f32 = 20.0;
     pub const PADDING_V_MOBILE: f32 = 12.0;
 }
+
+pub mod navigation {
+    use vexo::Color;
+
+    // Sidebar
+    pub const SIDEBAR_BG: Color = Color::rgb(0.95, 0.95, 0.97);
+    pub const SIDEBAR_WIDTH: f32 = 240.0;
+    pub const COLLAPSED_WIDTH: f32 = 44.0;
+
+    // Sidebar header
+    pub const HEADER_BG: Color = Color::rgb(0.9, 0.9, 0.92);
+    pub const HEADER_TEXT_COLOR: Color = Color::rgb(0.2, 0.2, 0.2);
+    pub const HEADER_PADDING: f32 = 12.0;
+    pub const HEADER_FONT_SIZE: f32 = 16.0;
+
+    // Sidebar rows
+    pub const ROW_PADDING: f32 = 10.0;
+    pub const ROW_FONT_SIZE: f32 = 16.0;
+    pub const ROW_BG: Color = Color::TRANSPARENT;
+    pub const ROW_TEXT_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
+    pub const SELECTED_BG: Color = Color::rgb(0.0, 0.478, 1.0);
+    pub const SELECTED_TEXT_COLOR: Color = Color::WHITE;
+
+    // Detail pane
+    pub const DETAIL_BG: Color = Color::WHITE;
+    pub const DIVIDER_COLOR: Color = Color::rgb(0.85, 0.85, 0.85);
+    pub const PLACEHOLDER_TEXT_COLOR: Color = Color::rgb(0.6, 0.6, 0.6);
+    pub const PLACEHOLDER_FONT_SIZE: f32 = 16.0;
+}
