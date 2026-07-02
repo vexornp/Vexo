@@ -352,11 +352,19 @@ impl ComponentState for TextEditState {
             } => {
                 ctx.request_focus(ctx.element_id());
 
-                // Position cursor at click location (Flutter's selectPositionAt pattern)
-                // Account for vertical centering offset: the editor's coordinate system
-                // starts at the text origin, not the box top-left.
+                // Position cursor at click location (Flutter's selectPositionAt pattern).
+                //
+                // The glyphon buffer is laid out in *logical* pixels: apply_layout
+                // calls set_layout_width(computed.bounds.width()) with a logical
+                // width, so cursor_position() returns logical pixels and the paint
+                // code does cursor_x + pos.x (logical + logical). Click coordinates
+                // must therefore be in the same logical space — do NOT multiply by
+                // scale.factor(), or the click lands at 2× the intended position on
+                // Retina displays and the cursor jumps too far right / clamps to end.
+                //
+                // Account for vertical centering offset: the editor's coordinate
+                // system starts at the text origin, not the box top-left.
                 let local = ctx.local_position();
-                let scale = ctx.scale();
                 let text_height = {
                     let editor = text_edit.controller.editor();
                     let editor = editor.borrow();
@@ -372,11 +380,11 @@ impl ComponentState for TextEditState {
                 };
                 let vertical_offset = ((ctx.bounds.height() - text_height) / 2.0).max(0.0);
                 let adjusted_y = local.y - vertical_offset;
-                let physical_x = (local.x * scale.factor()) as i32;
-                let physical_y = (adjusted_y * scale.factor()) as i32;
+                let buffer_x = local.x as i32;
+                let buffer_y = adjusted_y as i32;
                 text_edit
                     .controller
-                    .click_at(physical_x, physical_y, ctx.font_system);
+                    .click_at(buffer_x, buffer_y, ctx.font_system);
 
                 Some(Box::new(()))
             }
