@@ -1,7 +1,7 @@
 //! TextRenderObject implementation.
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
-use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext};
+use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext, TextMeasurer};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -26,6 +26,10 @@ pub struct TextRenderObject {
     style: Style,
     layout: Layout,
     computed_bounds: Option<Bounds<Logical>>,
+    /// Actual height of the text when wrapped at the computed box width.
+    /// Measured during `apply_layout` so `paint` can vertically center the
+    /// (possibly multi-line) text correctly instead of assuming a single line.
+    measured_text_height: Option<f32>,
     layout_node: Option<LayoutNodeKey>,
 }
 
@@ -39,6 +43,7 @@ impl TextRenderObject {
             style: Style::default(),
             layout: Layout::default(),
             computed_bounds: None,
+            measured_text_height: None,
             layout_node: None,
         }
     }
@@ -183,6 +188,20 @@ impl RenderObject for TextRenderObject {
         if let Some(node) = self.layout_node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);
+                // Measure the actual (possibly wrapped) text height at the
+                // final box width. Paint tells glyphon to wrap at
+                // `bounds.width()`, so the centered text must use the same
+                // wrapped height — otherwise multi-line text is centered as a
+                // single line and overflows the box, overlapping siblings.
+                let mut measurer = TextMeasurer::new(ctx.font_system());
+                let size = measurer.measure(
+                    &self.content,
+                    self.font_size,
+                    1.2,
+                    Some(computed.bounds.width()),
+                    None,
+                );
+                self.measured_text_height = Some(size.height);
             }
         }
     }
@@ -195,8 +214,10 @@ impl RenderObject for TextRenderObject {
                 let pos: Position<Logical, Absolute> = ctx.absolute_position();
 
                 // Compute vertical centering offset when the layout box is taller
-                // than the text's intrinsic height (font_size * line_height multiplier).
-                let text_height = self.font_size * 1.2;
+                // than the text's actual height. Use the wrapped height measured
+                // in `apply_layout` (at `bounds.width()`), falling back to a
+                // single line if measurement is unavailable.
+                let text_height = self.measured_text_height.unwrap_or(self.font_size * 1.2);
                 let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
 
                 let absolute_bounds = Bounds::new(
