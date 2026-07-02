@@ -538,8 +538,21 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         );
         state.on_mount(&mut lifecycle_ctx);
 
+        // Tag this element's focus node as a text input if its state requests
+        // focus on click (e.g. TextEdit). The pipeline consults this flag to
+        // decide whether to show the software keyboard / paint the cursor,
+        // instead of walking the render-object subtree (which would wrongly
+        // match when an ancestor like a ScrollView is focused).
+        let is_text_input = state.requests_focus_on_click();
+
         // Store state in StateStorage
         context.insert_state(element_id, state);
+
+        if let Some(attachment) = &self.focus_attachment {
+            if let Some(node) = context.focus_manager().get_mut(attachment.node_id()) {
+                node.is_text_input = is_text_input;
+            }
+        }
 
         // Build the child widget tree using RenderContext
         let child_widget = {

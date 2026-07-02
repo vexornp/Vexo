@@ -721,6 +721,12 @@ impl ThreeTreePipeline {
     pub fn prepare_cursor_state(&mut self) {
         let focused_element = self.focus_manager.primary_focus_element();
         let blink_visible = self.cursor_blink.is_visible();
+        // Only the text input's own element (tagged via
+        // `ComponentState::requests_focus_on_click()`) should paint a focused
+        // cursor. An ancestor (e.g. a ScrollView) that merely contains a
+        // TextEdit must not — otherwise clicking anywhere inside it would
+        // light up the cursor (and, via `is_text_input_focused`, the keyboard).
+        let focused_is_text_input = self.focus_manager.is_primary_focus_text_input();
 
         // First pass: set all TextEditRenderObjects to unfocused with current blink state
         for (_, ro) in self.render_objects.iter_mut() {
@@ -733,15 +739,24 @@ impl ThreeTreePipeline {
             }
         }
 
-        // If an element is focused, find its subtree's TextEditRenderObject and set focused=true
-        if let Some(focused_key) = focused_element {
-            // Get the focused element's render object key
-            let focused_ro =
-                self.element_registry
-                    .with_element(focused_key, &mut (), |element, _| element.render_object());
+        // If a text-input element is focused, find its subtree's
+        // TextEditRenderObject and set focused=true. Because the focused
+        // element *is* the text input, its subtree contains exactly the one
+        // TextEditRenderObject to light up.
+        if focused_is_text_input {
+            if let Some(focused_key) = focused_element {
+                // Get the focused element's render object key
+                let focused_ro =
+                    self.element_registry
+                        .with_element(focused_key, &mut (), |element, _| element.render_object());
 
-            if let Some(ro_key) = focused_ro.flatten() {
-                Self::set_cursor_focus_in_subtree(&mut self.render_objects, ro_key, blink_visible);
+                if let Some(ro_key) = focused_ro.flatten() {
+                    Self::set_cursor_focus_in_subtree(
+                        &mut self.render_objects,
+                        ro_key,
+                        blink_visible,
+                    );
+                }
             }
         }
     }
@@ -774,49 +789,19 @@ impl ThreeTreePipeline {
         }
     }
 
-    /// Returns true if the currently-focused element's render-object subtree
-    /// contains a `TextEditRenderObject`.
+    /// Returns true if the currently-focused element is itself a text input.
     ///
     /// Used on iOS to decide whether the software keyboard should be shown:
     /// tapping a `TextEdit` focuses it → this returns true → `set_ime_allowed(true)`.
     /// Tapping elsewhere (or nothing focused) → returns false → `set_ime_allowed(false)`.
     ///
-    /// This mirrors the subtree walk in `prepare_cursor_state` /
-    /// `set_cursor_focus_in_subtree` but is read-only.
+    /// This is an O(1) check of the primary focus node's `is_text_input` flag
+    /// (set from `ComponentState::requests_focus_on_click()`). It deliberately
+    /// does *not* walk the render-object subtree: an ancestor of a TextEdit
+    /// (e.g. a ScrollView) that happens to contain one must not trigger the
+    /// keyboard, which the previous subtree walk did.
     pub fn is_text_input_focused(&mut self) -> bool {
-        let Some(focused_el) = self.focus_manager.primary_focus_element() else {
-            return false;
-        };
-        let focused_ro = self
-            .element_registry
-            .with_element(focused_el, &mut (), |el, _| el.render_object());
-        let Some(ro_key) = focused_ro.flatten() else {
-            return false;
-        };
-        Self::has_text_edit_in_subtree(&self.render_objects, ro_key)
-    }
-
-    /// Recursively check whether a render-object subtree contains a
-    /// `TextEditRenderObject`.
-    fn has_text_edit_in_subtree(
-        render_objects: &RenderObjectRegistry,
-        root: crate::id::RenderObjectKey,
-    ) -> bool {
-        if let Some(ro) = render_objects.get(root) {
-            if ro
-                .as_any()
-                .downcast_ref::<crate::render_objects::TextEditRenderObject>()
-                .is_some()
-            {
-                return true;
-            }
-            for child in ro.children() {
-                if Self::has_text_edit_in_subtree(render_objects, *child) {
-                    return true;
-                }
-            }
-        }
-        false
+        self.focus_manager.is_primary_focus_text_input()
     }
 
     /// Register any unregistered images with the GPU backend.

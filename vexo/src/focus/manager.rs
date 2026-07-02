@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use slotmap::SlotMap;
 
+use super::node::{FocusNodeData, FocusNodeId};
 use crate::id::ElementKey;
-use super::node::{FocusNodeId, FocusNodeData};
 
 // ---------------------------------------------------------------------------
 // FocusManager
@@ -53,6 +53,7 @@ impl FocusManager {
             children: Vec::new(),
             can_request_focus: false,
             skip_traversal: true,
+            is_text_input: false,
             on_focus_change: None,
         });
 
@@ -106,6 +107,7 @@ impl FocusManager {
             children: Vec::new(),
             can_request_focus: true,
             skip_traversal: false,
+            is_text_input: false,
             on_focus_change: None,
         });
 
@@ -149,6 +151,19 @@ impl FocusManager {
         self.primary_focus
             .and_then(|id| self.nodes.get(id))
             .and_then(|n| n.element_key)
+    }
+
+    /// Return whether the currently focused node is itself a text input.
+    ///
+    /// This is an O(1) check on the primary focus node's `is_text_input` flag
+    /// (set from `ComponentState::requests_focus_on_click()`). Unlike a subtree
+    /// walk, it returns `true` only when the text input's *own* element holds
+    /// focus — never when an ancestor (e.g. a `ScrollView` containing a
+    /// `TextEdit`) is focused.
+    pub fn is_primary_focus_text_input(&self) -> bool {
+        self.primary_focus
+            .and_then(|id| self.nodes.get(id))
+            .is_some_and(|n| n.is_text_input)
     }
 
     // -----------------------------------------------------------------------
@@ -216,9 +231,8 @@ impl FocusManager {
 
     /// Returns the element key of the node that previously held primary focus.
     pub fn previous_primary_focus(&self) -> Option<ElementKey> {
-        self.previous_primary_focus.and_then(|id| {
-            self.nodes.get(id).and_then(|n| n.element_key)
-        })
+        self.previous_primary_focus
+            .and_then(|id| self.nodes.get(id).and_then(|n| n.element_key))
     }
 
     /// Returns the node id that previously held primary focus.
@@ -387,8 +401,8 @@ impl Default for FocusManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_focus_manager_new() {
@@ -629,9 +643,7 @@ mod tests {
         let parent_key = elem_map.insert(());
         let child_key = elem_map.insert(());
 
-        let parent_id = mgr
-            .create_node_for_element(parent_key, None)
-            .unwrap();
+        let parent_id = mgr.create_node_for_element(parent_key, None).unwrap();
         let _child_id = mgr
             .create_node_for_element(child_key, Some(parent_id))
             .unwrap();
@@ -701,7 +713,9 @@ mod tests {
         let parent_key = elem_map.insert(());
         let child_key = elem_map.insert(());
         let parent_id = mgr.create_node_for_element(parent_key, None).unwrap();
-        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+        let child_id = mgr
+            .create_node_for_element(child_key, Some(parent_id))
+            .unwrap();
 
         // Track ancestor's last focus value
         let ancestor_value = Arc::new(AtomicI32::new(0));
@@ -730,7 +744,9 @@ mod tests {
         let parent_key = elem_map.insert(());
         let child_key = elem_map.insert(());
         let parent_id = mgr.create_node_for_element(parent_key, None).unwrap();
-        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+        let child_id = mgr
+            .create_node_for_element(child_key, Some(parent_id))
+            .unwrap();
 
         let call_count = Arc::new(AtomicI32::new(0));
         let call_count_clone = call_count.clone();
@@ -763,8 +779,12 @@ mod tests {
         let child_key = elem_map.insert(());
 
         let grandparent_id = mgr.create_node_for_element(grandparent_key, None).unwrap();
-        let parent_id = mgr.create_node_for_element(parent_key, Some(grandparent_id)).unwrap();
-        let child_id = mgr.create_node_for_element(child_key, Some(parent_id)).unwrap();
+        let parent_id = mgr
+            .create_node_for_element(parent_key, Some(grandparent_id))
+            .unwrap();
+        let child_id = mgr
+            .create_node_for_element(child_key, Some(parent_id))
+            .unwrap();
 
         // Only parent has a callback
         if let Some(node) = mgr.get_mut(parent_id) {

@@ -292,6 +292,15 @@ impl Default for TextEditState {
 }
 
 impl ComponentState for TextEditState {
+    /// TextEdit is a text input: focus gained on click should show the
+    /// software keyboard (iOS) and paint the editing cursor. Returning
+    /// `true` tags this element's focus node so the pipeline can distinguish
+    /// "the TextEdit itself is focused" from "an ancestor of a TextEdit is
+    /// focused" (e.g. a ScrollView).
+    fn requests_focus_on_click(&self) -> bool {
+        true
+    }
+
     /// Wire the TextEditingController's dirty callback during initialization.
     ///
     /// Equivalent to Flutter's `initState()` where EditableTextState subscribes

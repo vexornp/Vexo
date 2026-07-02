@@ -3,8 +3,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use slotmap::new_key_type;
 use crate::id::ElementKey;
+use slotmap::new_key_type;
 
 new_key_type! {
     /// Opaque slotmap key for focus nodes.
@@ -28,6 +28,15 @@ pub struct FocusNodeData {
     /// Whether this node should be skipped during directional traversal
     /// (Tab / Shift+Tab). Defaults to `false`.
     pub skip_traversal: bool,
+    /// Whether the element owning this node is a text input (e.g. `TextEdit`).
+    ///
+    /// Set from `ComponentState::requests_focus_on_click()` when a
+    /// `StatefulElement` mounts. Used by the pipeline to decide whether the
+    /// software keyboard should be shown: only the text input's *own* focus
+    /// node returns `true`, never an ancestor (like a `ScrollView`) that merely
+    /// *contains* a text input. This avoids an unbounded subtree walk that would
+    /// incorrectly find a `TextEditRenderObject` beneath any focused ancestor.
+    pub is_text_input: bool,
     /// Callback invoked when this node or a descendant gains/loses primary focus.
     /// Called with `true` when focus is gained, `false` when lost.
     /// Set by the Focus widget during mount.
@@ -42,7 +51,11 @@ impl fmt::Debug for FocusNodeData {
             .field("children", &self.children)
             .field("can_request_focus", &self.can_request_focus)
             .field("skip_traversal", &self.skip_traversal)
-            .field("on_focus_change", &self.on_focus_change.as_ref().map(|_| "..."))
+            .field("is_text_input", &self.is_text_input)
+            .field(
+                "on_focus_change",
+                &self.on_focus_change.as_ref().map(|_| "..."),
+            )
             .finish()
     }
 }
@@ -56,6 +69,7 @@ impl FocusNodeData {
             children: Vec::new(),
             can_request_focus: true,
             skip_traversal: false,
+            is_text_input: false,
             on_focus_change: None,
         }
     }
