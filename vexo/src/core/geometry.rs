@@ -34,8 +34,8 @@
 //! ```
 
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // MARKER TYPES: Logical vs Physical
@@ -130,7 +130,10 @@ impl Point<Logical> {
 
     /// Convert to Taffy's Point type.
     pub fn to_taffy(self) -> taffy::Point<f32> {
-        taffy::Point { x: self.x, y: self.y }
+        taffy::Point {
+            x: self.x,
+            y: self.y,
+        }
     }
 }
 
@@ -330,7 +333,10 @@ impl Size<Logical> {
 
     /// Convert to Taffy's Size type.
     pub fn to_taffy(self) -> taffy::Size<f32> {
-        taffy::Size { width: self.width, height: self.height }
+        taffy::Size {
+            width: self.width,
+            height: self.height,
+        }
     }
 }
 
@@ -632,6 +638,70 @@ impl Default for ScaleSource {
 }
 
 // ============================================================================
+// SAFE AREA SOURCE
+// ============================================================================
+
+/// Shared handle to the device safe-area insets (logical pixels).
+///
+/// Wraps four `AtomicU64`-backed floats (one per edge) behind a single `Arc`
+/// so all consumers read from the same memory. One `set()` call updates the
+/// value for every holder of a clone — mirroring [`ScaleSource`] but for the
+/// four-edge safe area (status bar / notch / home indicator on mobile).
+///
+/// On desktop the underlying insets are always zero, so this is a no-op.
+#[derive(Clone)]
+pub struct SafeAreaSource {
+    inner: Arc<SafeAreaInner>,
+}
+
+struct SafeAreaInner {
+    left: AtomicU32,
+    right: AtomicU32,
+    top: AtomicU32,
+    bottom: AtomicU32,
+}
+
+impl SafeAreaSource {
+    /// Create a new source with the given logical insets.
+    pub fn new(left: f32, right: f32, top: f32, bottom: f32) -> Self {
+        Self {
+            inner: Arc::new(SafeAreaInner {
+                left: AtomicU32::new(left.to_bits()),
+                right: AtomicU32::new(right.to_bits()),
+                top: AtomicU32::new(top.to_bits()),
+                bottom: AtomicU32::new(bottom.to_bits()),
+            }),
+        }
+    }
+
+    /// Read the current insets as an [`EdgeInsets`] (logical pixels).
+    ///
+    /// Field order matches `crate::layout::EdgeInsets` (`left, right, top, bottom`).
+    pub fn get(&self) -> crate::layout::EdgeInsets {
+        crate::layout::EdgeInsets {
+            left: f32::from_bits(self.inner.left.load(Ordering::Relaxed)),
+            right: f32::from_bits(self.inner.right.load(Ordering::Relaxed)),
+            top: f32::from_bits(self.inner.top.load(Ordering::Relaxed)),
+            bottom: f32::from_bits(self.inner.bottom.load(Ordering::Relaxed)),
+        }
+    }
+
+    /// Update the insets. Visible to all holders immediately.
+    pub fn set(&self, left: f32, right: f32, top: f32, bottom: f32) {
+        self.inner.left.store(left.to_bits(), Ordering::Relaxed);
+        self.inner.right.store(right.to_bits(), Ordering::Relaxed);
+        self.inner.top.store(top.to_bits(), Ordering::Relaxed);
+        self.inner.bottom.store(bottom.to_bits(), Ordering::Relaxed);
+    }
+}
+
+impl Default for SafeAreaSource {
+    fn default() -> Self {
+        Self::new(0.0, 0.0, 0.0, 0.0)
+    }
+}
+
+// ============================================================================
 // AFFINE TRANSFORM
 // ============================================================================
 
@@ -659,34 +729,76 @@ pub struct AffineTransform {
 impl AffineTransform {
     /// Identity transform (no-op).
     pub const fn identity() -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// Translation by (dx, dy).
     pub fn translation(dx: f32, dy: f32) -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: dx, f: dy }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: dx,
+            f: dy,
+        }
     }
 
     /// Rotation by `radians` around the origin.
     pub fn rotation(radians: f32) -> Self {
         let cos = radians.cos();
         let sin = radians.sin();
-        Self { a: cos, b: sin, c: -sin, d: cos, e: 0.0, f: 0.0 }
+        Self {
+            a: cos,
+            b: sin,
+            c: -sin,
+            d: cos,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// Uniform or non-uniform scale.
     pub fn scale(sx: f32, sy: f32) -> Self {
-        Self { a: sx, b: 0.0, c: 0.0, d: sy, e: 0.0, f: 0.0 }
+        Self {
+            a: sx,
+            b: 0.0,
+            c: 0.0,
+            d: sy,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// Skew by the given angles (in radians).
     pub fn skew(sx: f32, sy: f32) -> Self {
-        Self { a: 1.0, b: sy.tan(), c: sx.tan(), d: 1.0, e: 0.0, f: 0.0 }
+        Self {
+            a: 1.0,
+            b: sy.tan(),
+            c: sx.tan(),
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// Create from a [a, b, c, d, e, f] array.
     pub fn from_array(arr: [f32; 6]) -> Self {
-        Self { a: arr[0], b: arr[1], c: arr[2], d: arr[3], e: arr[4], f: arr[5] }
+        Self {
+            a: arr[0],
+            b: arr[1],
+            c: arr[2],
+            d: arr[3],
+            e: arr[4],
+            f: arr[5],
+        }
     }
 
     /// Convert to [a, b, c, d, e, f] array.
@@ -923,6 +1035,95 @@ mod scale_source_tests {
         window_source.set(3.0);
         assert_eq!(backend_source.get().factor_f64(), 3.0);
         assert_eq!(context_source.get().factor_f64(), 3.0);
+    }
+}
+
+#[cfg(test)]
+mod safe_area_source_tests {
+    use super::SafeAreaSource;
+    use crate::layout::EdgeInsets;
+
+    #[test]
+    fn test_safe_area_source_get_returns_initial_values() {
+        let source = SafeAreaSource::new(10.0, 20.0, 30.0, 40.0);
+        let insets = source.get();
+        assert_eq!(
+            insets,
+            EdgeInsets {
+                left: 10.0,
+                right: 20.0,
+                top: 30.0,
+                bottom: 40.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_safe_area_source_set_updates_values() {
+        let source = SafeAreaSource::new(0.0, 0.0, 0.0, 0.0);
+        source.set(5.0, 15.0, 25.0, 35.0);
+        let insets = source.get();
+        assert_eq!(
+            insets,
+            EdgeInsets {
+                left: 5.0,
+                right: 15.0,
+                top: 25.0,
+                bottom: 35.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_safe_area_source_clones_share_state() {
+        let source = SafeAreaSource::new(0.0, 0.0, 0.0, 0.0);
+        let clone = source.clone();
+        source.set(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(
+            clone.get(),
+            EdgeInsets {
+                left: 1.0,
+                right: 2.0,
+                top: 3.0,
+                bottom: 4.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_safe_area_source_default_is_zero() {
+        let source = SafeAreaSource::default();
+        let insets = source.get();
+        assert_eq!(
+            insets,
+            EdgeInsets {
+                left: 0.0,
+                right: 0.0,
+                top: 0.0,
+                bottom: 0.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_safe_area_source_multi_holder_propagation() {
+        // Simulates: WindowState owns the source, BuildOwner holds a clone.
+        let window_source = SafeAreaSource::new(0.0, 0.0, 0.0, 0.0);
+        let build_owner_source = window_source.clone();
+
+        // WindowState updates insets each frame (e.g., after rotation)
+        window_source.set(44.0, 0.0, 44.0, 34.0);
+
+        // BuildOwner (and thus RenderContext::safe_area()) sees the update
+        assert_eq!(
+            build_owner_source.get(),
+            EdgeInsets {
+                left: 44.0,
+                right: 0.0,
+                top: 44.0,
+                bottom: 34.0
+            }
+        );
     }
 }
 
@@ -1243,8 +1444,14 @@ mod tests {
         let width = result.width();
         let height = result.height();
         let expected = 100.0 * std::f32::consts::SQRT_2;
-        assert!((width - expected).abs() < 1.0, "width should be ~{expected}, got {width}");
-        assert!((height - expected).abs() < 1.0, "height should be ~{expected}, got {height}");
+        assert!(
+            (width - expected).abs() < 1.0,
+            "width should be ~{expected}, got {width}"
+        );
+        assert!(
+            (height - expected).abs() < 1.0,
+            "height should be ~{expected}, got {height}"
+        );
     }
 
     #[test]

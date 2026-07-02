@@ -14,7 +14,7 @@
 //! RenderObjects persist across frames and are only updated when marked dirty.
 //! They are created during element inflation and destroyed during element unmounting.
 
-use slotmap::{SlotMap, SecondaryMap};
+use slotmap::{SecondaryMap, SlotMap};
 
 use crate::core::{Point, Size};
 use crate::input::MouseTrackerAnnotation;
@@ -48,12 +48,17 @@ pub struct LayoutResult {
 pub struct LayoutContext<'a> {
     engine: &'a mut dyn LayoutEngine,
     font_system: &'a mut glyphon::FontSystem,
+    safe_area_source: crate::core::SafeAreaSource,
 }
 
 impl<'a> LayoutContext<'a> {
     /// Create a new layout context.
     pub fn new(engine: &'a mut dyn LayoutEngine, font_system: &'a mut glyphon::FontSystem) -> Self {
-        Self { engine, font_system }
+        Self {
+            engine,
+            font_system,
+            safe_area_source: crate::core::SafeAreaSource::default(),
+        }
     }
 
     /// Get the layout engine (mutable for creating nodes).
@@ -69,6 +74,19 @@ impl<'a> LayoutContext<'a> {
     /// Get the font system.
     pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
         self.font_system
+    }
+
+    /// Install the shared safe-area source so render objects (e.g. `SafeArea`)
+    /// can resolve live insets during [`RenderObject::layout`]. Set once per
+    /// layout pass by the [`Layouter`](crate::layouter::Layouter); defaults to
+    /// all-zero (desktop / tests).
+    pub fn set_safe_area_source(&mut self, source: crate::core::SafeAreaSource) {
+        self.safe_area_source = source;
+    }
+
+    /// Get a clone of the safe-area source.
+    pub fn safe_area_source(&self) -> crate::core::SafeAreaSource {
+        self.safe_area_source.clone()
     }
 }
 
@@ -142,12 +160,17 @@ impl<'a> PaintContext<'a> {
     ///
     /// This is the top-left corner of this render object in window coordinates.
     /// The position already includes the render object's position within its parent.
-    pub fn absolute_position(&self) -> crate::core::Position<crate::core::Logical, crate::core::Absolute> {
+    pub fn absolute_position(
+        &self,
+    ) -> crate::core::Position<crate::core::Logical, crate::core::Absolute> {
         self.absolute_position
     }
 
     /// Set the absolute position (used by pipeline during traversal).
-    pub fn set_absolute_position(&mut self, position: crate::core::Position<crate::core::Logical, crate::core::Absolute>) {
+    pub fn set_absolute_position(
+        &mut self,
+        position: crate::core::Position<crate::core::Logical, crate::core::Absolute>,
+    ) {
         self.absolute_position = position;
     }
 
@@ -360,7 +383,6 @@ pub trait RenderObject {
     /// backend. The render object stores the key for use during paint()
     /// to emit `RenderCommand::Image`.
     fn set_image_key(&mut self, _key: crate::image_atlas::ImageKey) {}
-
 }
 
 // ============================================================================
@@ -470,7 +492,9 @@ impl RenderObjectRegistry {
     }
 
     /// Iterate mutably over all render objects.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (RenderObjectKey, &mut Box<dyn RenderObject>)> {
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (RenderObjectKey, &mut Box<dyn RenderObject>)> {
         self.objects.iter_mut()
     }
 
@@ -502,7 +526,11 @@ impl RenderObjectRegistry {
     ///
     /// MouseRegion elements call this during mount to register their
     /// annotation (cursor intent + enter/exit callbacks).
-    pub fn set_cursor_annotation(&mut self, key: RenderObjectKey, annotation: MouseTrackerAnnotation) {
+    pub fn set_cursor_annotation(
+        &mut self,
+        key: RenderObjectKey,
+        annotation: MouseTrackerAnnotation,
+    ) {
         self.cursor_annotations.insert(key, annotation);
     }
 
@@ -518,7 +546,10 @@ impl RenderObjectRegistry {
     ///
     /// Used by hover dispatch to look up on_exit callbacks for elements
     /// leaving hover (which are no longer in the hit path).
-    pub fn cursor_annotation_for_element(&self, element_key: ElementKey) -> Option<&MouseTrackerAnnotation> {
+    pub fn cursor_annotation_for_element(
+        &self,
+        element_key: ElementKey,
+    ) -> Option<&MouseTrackerAnnotation> {
         // Walk the element→render-object map to find the annotation
         for (ro_key, &e_key) in &self.element_map {
             if e_key == element_key {
@@ -559,7 +590,11 @@ mod tests {
     }
 
     impl RenderObject for MockRenderObject {
-        fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+        fn layout(
+            &mut self,
+            _ctx: &mut LayoutContext,
+            _child_nodes: &[LayoutNodeKey],
+        ) -> LayoutResult {
             self.layout_count.set(self.layout_count.get() + 1);
             // Return a dummy result for registry testing
             unimplemented!("MockRenderObject::layout requires a real LayoutEngine")
@@ -726,14 +761,26 @@ mod tests {
     fn test_render_object_opacity_default() {
         struct TestRO;
         impl RenderObject for TestRO {
-            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
                 unimplemented!()
             }
             fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
-            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> { vec![] }
-            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool { true }
-            fn as_any(&self) -> &dyn std::any::Any { self }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
         }
         let ro = TestRO;
         assert!(ro.opacity().is_none());
@@ -747,7 +794,11 @@ mod tests {
         }
 
         impl RenderObject for MockParentObject {
-            fn layout(&mut self, _ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
                 unimplemented!("MockParentObject::layout requires a real LayoutEngine")
             }
 

@@ -191,8 +191,8 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::Style;
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Column, DecoratedContainer, Flex, Grid, Image, Opacity, Row, ScrollView, Text, TextEdit,
-    TextEditState, TextEditingController, Widget, WithLayout,
+    Column, DecoratedContainer, Flex, Grid, Image, Opacity, Row, SafeArea, ScrollView, Text,
+    TextEdit, TextEditState, TextEditingController, Widget, WithLayout,
 };
 
 extern crate alloc;

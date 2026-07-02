@@ -171,6 +171,17 @@ impl ThreeTreePipeline {
             .set_focused_element(self.focus_manager.primary_focus_element());
     }
 
+    /// Install the shared safe-area source on the [`BuildOwner`].
+    ///
+    /// Called once at window init by
+    /// [`WindowState`](crate::window::WindowState) so the same atomics are
+    /// shared between the window (which writes insets each frame) and the
+    /// element tree (which reads them via
+    /// [`RenderContext::safe_area()`](crate::stateful_widget::RenderContext::safe_area)).
+    pub fn set_safe_area_source(&mut self, source: crate::core::SafeAreaSource) {
+        self.build_owner.set_safe_area_source(source);
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
@@ -331,6 +342,7 @@ impl ThreeTreePipeline {
             available_size,
             engine,
             font_system,
+            self.build_owner.safe_area_source(),
         );
         self.cached_commands = None;
     }

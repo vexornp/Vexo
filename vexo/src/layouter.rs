@@ -14,7 +14,7 @@
 //! 3. Apply computed layouts to all render objects whose Taffy nodes
 //!    were recomputed
 
-use crate::core::{Logical, Size};
+use crate::core::{Logical, SafeAreaSource, Size};
 use crate::dirty::DirtyTracking;
 use crate::id::RenderObjectKey;
 use crate::layout::{LayoutEngine, LayoutNodeKey};
@@ -38,6 +38,7 @@ impl Layouter {
         available_size: Size<Logical>,
         engine: &mut dyn LayoutEngine,
         font_system: &mut glyphon::FontSystem,
+        safe_area_source: SafeAreaSource,
     ) {
         // Clean up orphaned layout nodes from render objects removed during reconciliation
         let orphaned_nodes = render_objects.drain_orphaned_layout_nodes();
@@ -70,6 +71,7 @@ impl Layouter {
         // create/update their own Taffy nodes.
         {
             let mut ctx = LayoutContext::new(engine, font_system);
+            ctx.set_safe_area_source(safe_area_source.clone());
             let dirty_keys: Vec<RenderObjectKey> = dirty.drain_layout().collect();
             Self::layout_dirty_recursive(render_objects, root_id, &dirty_keys, &mut ctx);
         }
@@ -85,6 +87,7 @@ impl Layouter {
         // TODO: optimize to only apply to recomputed subtrees
         {
             let mut ctx = LayoutContext::new(engine, font_system);
+            ctx.set_safe_area_source(safe_area_source);
             Self::apply_layout_recursive(render_objects, root_id, &mut ctx);
         }
 

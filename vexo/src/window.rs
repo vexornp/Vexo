@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, Size};
+use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, SafeAreaSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::platform::{self, Clipboard};
@@ -44,6 +44,13 @@ pub struct WindowState<A: Application + 'static> {
     font_system: glyphon::FontSystem,
     // Shared scale factor source (single source of truth)
     scale_source: ScaleSource,
+
+    /// Shared safe-area insets source (logical pixels).
+    ///
+    /// Updated each frame from `Window::safe_area()`; read by the element tree
+    /// via `RenderContext::safe_area()`. On desktop the underlying insets are
+    /// always zero, so this is a no-op.
+    safe_area_source: SafeAreaSource,
 
     _phantom: std::marker::PhantomData<A>,
 
@@ -93,6 +100,13 @@ impl<A: Application + 'static> WindowState<A> {
 
         let clipboard: Arc<dyn Clipboard> = platform::default_clipboard();
 
+        let safe_area_source = SafeAreaSource::default();
+
+        let mut three_tree_pipeline = ThreeTreePipeline::new(animation_ticker.clone());
+        // Share the same atomics so per-frame `safe_area_source.set()` calls
+        // below are visible to RenderContext::safe_area() during render.
+        three_tree_pipeline.set_safe_area_source(safe_area_source.clone());
+
         Ok(Self {
             backend,
             window: Some(window),
@@ -100,9 +114,10 @@ impl<A: Application + 'static> WindowState<A> {
             layout_engine,
             font_system,
             scale_source,
+            safe_area_source,
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
-            three_tree_pipeline: ThreeTreePipeline::new(animation_ticker.clone()),
+            three_tree_pipeline,
             needs_redraw: true,
             current_cursor: SystemCursorKind::Arrow,
             last_pointer_position: Point::new(0.0, 0.0),
@@ -348,6 +363,14 @@ impl<A: Application + 'static> WindowState<A> {
         self.scale_source.clone()
     }
 
+    /// Get a clone of the safe-area source.
+    ///
+    /// Cheap (`SafeAreaSource` is `Arc`-based); useful for subsystems that
+    /// want to observe insets outside the widget tree.
+    pub fn safe_area_source(&self) -> SafeAreaSource {
+        self.safe_area_source.clone()
+    }
+
     /// Check if cursor blink has toggled. Returns true if visibility changed
     /// (caller should request a frame).
     pub fn check_cursor_blink(&mut self) -> bool {
@@ -420,6 +443,28 @@ impl<A: Application + 'static> WindowState<A> {
         let logical_width = self.backend.width() as f32 / scale.factor();
         let logical_height = self.backend.height() as f32 / scale.factor();
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
+
+        // 6.5. Refresh safe-area insets (logical pixels) from the platform.
+        //      winit polls UIKit's `safeAreaInsets` here; on desktop this is
+        //      always zero. Done before layout so SafeArea widgets resolve the
+        //      current insets during the upcoming render pass. A change marks
+        //      the tree dirty so layout re-runs (e.g. on device rotation).
+        {
+            let prev = self.safe_area_source.get();
+            if let Some(win) = &self.window {
+                let insets = win.safe_area();
+                let f = scale.factor();
+                self.safe_area_source.set(
+                    insets.left as f32 / f,
+                    insets.right as f32 / f,
+                    insets.top as f32 / f,
+                    insets.bottom as f32 / f,
+                );
+            }
+            if self.safe_area_source.get() != prev {
+                self.three_tree_pipeline.mark_all_needs_layout();
+            }
+        }
 
         // 7. Layout dirty render objects
         self.three_tree_pipeline.layout(

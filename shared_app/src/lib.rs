@@ -1,6 +1,6 @@
 use vexo::{
-    Application, Color, Column, ComponentState, Signal, Text, TextEdit, TextEditingController,
-    Widget,
+    Application, Color, Column, ComponentState, SafeArea, Signal, Text, TextEdit,
+    TextEditingController, Widget,
 };
 use vexo_uikit::{Button, ButtonVariant, NavigationItem, NavigationSplitView};
 
@@ -100,13 +100,15 @@ impl Application for State {
                 .boxed()
         };
 
-        NavigationSplitView::new(items)
-            .default_selection("inbox")
-            .detail(detail_closure)
-            .on_selection_change(|id| {
-                log::debug!("NavigationSplitView selection changed: {}", id);
-            })
-            .boxed()
+        SafeArea::new(
+            NavigationSplitView::new(items)
+                .default_selection("inbox")
+                .detail(detail_closure)
+                .on_selection_change(|id| {
+                    log::debug!("NavigationSplitView selection changed: {}", id);
+                }),
+        )
+        .boxed()
     }
 }
 

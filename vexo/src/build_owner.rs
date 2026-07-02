@@ -23,6 +23,7 @@ use std::collections::HashSet;
 
 use super::global_key_registry::GlobalKeyRegistry;
 use super::id::ElementKey;
+use crate::core::SafeAreaSource;
 
 /// Tracks dirty elements and drives targeted rebuilds.
 ///
@@ -67,6 +68,16 @@ pub struct BuildOwner {
     /// `set_focused_element()` can be called from event handlers
     /// that only have `&BuildOwner`.
     focused_element: RefCell<Option<ElementKey>>,
+
+    /// Device safe-area insets (logical pixels), shared with all
+    /// [`RenderContext`](crate::stateful_widget::RenderContext)s so widgets
+    /// like `SafeArea` can read live values during `Component::render()`.
+    ///
+    /// Backed by atomics inside [`SafeAreaSource`], so updates from
+    /// `WindowState` (each frame) are visible here without additional locking.
+    /// Defaults to all-zero (desktop / pre-init), which makes safe-area a no-op
+    /// for tests and desktop builds.
+    safe_area_source: SafeAreaSource,
 }
 
 impl BuildOwner {
@@ -78,6 +89,7 @@ impl BuildOwner {
             building: HashSet::new(),
             global_keys: RefCell::new(GlobalKeyRegistry::new()),
             focused_element: RefCell::new(None),
+            safe_area_source: SafeAreaSource::default(),
         }
     }
 
@@ -125,7 +137,9 @@ impl BuildOwner {
     where
         F: FnMut(ElementKey) -> usize,
     {
-        self.dirty_elements.borrow_mut().sort_by_key(|id| depth(*id));
+        self.dirty_elements
+            .borrow_mut()
+            .sort_by_key(|id| depth(*id));
     }
 
     /// Drain dirty elements in depth order.
@@ -200,6 +214,26 @@ impl BuildOwner {
     /// Set the currently focused element.
     pub fn set_focused_element(&self, element: Option<ElementKey>) {
         *self.focused_element.borrow_mut() = element;
+    }
+
+    /// Get a clone of the shared safe-area source.
+    ///
+    /// Returns a cheaply-clonable handle ([`SafeAreaSource`] is `Arc`-based)
+    /// whose [`SafeAreaSource::get()`] always reads the latest insets set by
+    /// [`WindowState`](crate::window::WindowState). Used by
+    /// [`RenderContext::safe_area()`](crate::stateful_widget::RenderContext::safe_area)
+    /// so widgets such as `SafeArea` can resolve insets during render.
+    pub fn safe_area_source(&self) -> SafeAreaSource {
+        self.safe_area_source.clone()
+    }
+
+    /// Replace the safe-area source.
+    ///
+    /// Called once at window init so the [`BuildOwner`] shares the same
+    /// atomics as [`WindowState`](crate::window::WindowState); subsequent
+    /// per-frame updates happen via [`SafeAreaSource::set()`] on either clone.
+    pub fn set_safe_area_source(&mut self, source: SafeAreaSource) {
+        self.safe_area_source = source;
     }
 }
 
