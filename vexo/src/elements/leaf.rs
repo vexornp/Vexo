@@ -8,10 +8,10 @@
 
 use std::any::Any;
 
-use crate::{Element, ElementContext, ElementKey, RenderObjectKey, Widget};
 use crate::elements::RenderObjectElement;
-use crate::key::WidgetKey;
 use crate::focus::attachment::FocusAttachment;
+use crate::key::WidgetKey;
+use crate::{Element, ElementContext, ElementKey, RenderObjectKey, Widget};
 
 /// Element for leaf widgets (no children).
 ///
@@ -120,7 +120,9 @@ impl Element for LeafRenderObjectElement {
         // This ensures children (if any later change) can find our focus node.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -153,8 +155,11 @@ impl Element for LeafRenderObjectElement {
         self.key.clone()
     }
 
-    fn can_update(&self, _widget: &dyn Any) -> bool {
-        true
+    fn can_update(&self, widget: &dyn Any) -> bool {
+        self.widget
+            .as_ref()
+            .map(|old| old.as_any().type_id() == widget.type_id())
+            .unwrap_or(false)
     }
 
     fn on_event(
@@ -184,11 +189,13 @@ pub type LeafElement = LeafRenderObjectElement;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc;
-    use std::sync::Arc;
-    use crate::{DirtyTracking, StateStorage, RenderObjectRegistry, Text, Key, BuildOwner, ChildOps};
     use crate::animation::AnimationTicker;
     use crate::focus::FocusManager;
+    use crate::{
+        BuildOwner, ChildOps, DirtyTracking, Key, RenderObjectRegistry, StateStorage, Text,
+    };
+    use std::sync::mpsc;
+    use std::sync::Arc;
 
     fn make_element_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -345,9 +352,15 @@ mod tests {
 
     #[test]
     fn test_leaf_element_can_update() {
-        let element = LeafRenderObjectElement::new();
+        use crate::widgets::Text;
+        let mut element = LeafRenderObjectElement::new();
+        element.widget = Some(Text::new("hello").boxed());
 
-        assert!(element.can_update(&"any widget" as &dyn Any));
+        // Same widget type → can update
+        assert!(element.can_update(Text::new("world").as_any()));
+
+        // Different widget type → cannot update
+        assert!(!element.can_update(&42i32 as &dyn Any));
     }
 
     #[test]

@@ -326,8 +326,11 @@ impl Element for MouseRegionElement {
         self.key.clone()
     }
 
-    fn can_update(&self, _widget: &dyn Any) -> bool {
-        true
+    fn can_update(&self, widget: &dyn Any) -> bool {
+        self.widget
+            .as_ref()
+            .map(|old| old.as_any().type_id() == widget.type_id())
+            .unwrap_or(false)
     }
 
     fn on_event(

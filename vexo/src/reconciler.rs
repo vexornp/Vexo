@@ -5,19 +5,19 @@
 //! associated functions that take explicit parameters instead of accessing
 //! `self` fields on a pipeline.
 
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
-use crate::animation::AnimationTicker;
 use super::build_owner::BuildOwner;
 use super::child_ops::{ChildOp, ChildOps};
 use super::dirty::DirtyTracking;
 use super::element::ElementRegistry;
 use super::element_context::ElementContext;
+use super::element_state::StateStorage;
 use super::focus::{FocusManager, FocusNodeId};
 use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
-use super::element_state::StateStorage;
 use super::widgets::Widget;
+use crate::animation::AnimationTicker;
 
 /// Zero-sized struct that serves as a namespace for reconciliation logic.
 ///
@@ -357,7 +357,8 @@ impl Reconciler {
 
             // Get parent and render_object for context
             let parent = element_registry.parent(element_id);
-            let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, element_id);
+            let parent_focus_node_id =
+                Self::resolve_parent_focus_node_id(element_registry, element_id);
 
             // Create context for the element
             let mut ctx = ElementContext::new(
@@ -516,10 +517,7 @@ impl Reconciler {
         // After mount, the element may have created a render object.
         // If this is the root element (no parent), set it as the render object root.
         if parent.is_none() {
-            if let Some(ro_key) = element_registry
-                .get(key)
-                .and_then(|el| el.render_object())
-            {
+            if let Some(ro_key) = element_registry.get(key).and_then(|el| el.render_object()) {
                 render_objects.set_root(ro_key);
             }
         }
@@ -542,10 +540,7 @@ impl Reconciler {
         // (e.g., StatefulElement delegates to its child's render object via child_mounted).
         // Re-check the root render object if this is the root element.
         if parent.is_none() {
-            if let Some(ro_key) = element_registry
-                .get(key)
-                .and_then(|el| el.render_object())
-            {
+            if let Some(ro_key) = element_registry.get(key).and_then(|el| el.render_object()) {
                 render_objects.set_root(ro_key);
             }
         }
@@ -675,8 +670,11 @@ impl Reconciler {
     /// Rebuild a single element with a new widget.
     ///
     /// This is used by execute_child_ops to handle ChildOp::Update.
-    /// It calls element.rebuild() via with_element and then executes
-    /// any child ops emitted during the rebuild.
+    ///
+    /// If `can_update()` returns true, calls `element.rebuild()` in place.
+    /// If `can_update()` returns false (widget type changed), unmounts the
+    /// old element and mounts a new one in its place — matching Flutter's
+    /// `updateChild` semantics where a type mismatch triggers replacement.
     pub(crate) fn rebuild_element(
         element_registry: &mut ElementRegistry,
         render_objects: &mut RenderObjectRegistry,
@@ -690,6 +688,31 @@ impl Reconciler {
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
+        // Check can_update before rebuilding. If the widget type changed
+        // (e.g. ScrollView → WithLayout), the old element cannot be reused
+        // and must be replaced.
+        let can_update = element_registry
+            .get(element_id)
+            .map(|el| el.can_update(widget.as_any()))
+            .unwrap_or(false);
+
+        if !can_update {
+            Self::replace_element(
+                element_registry,
+                render_objects,
+                state,
+                dirty,
+                build_owner,
+                child_ops,
+                dirty_sender,
+                focus_manager,
+                animation_ticker,
+                element_id,
+                widget,
+            );
+            return;
+        }
+
         let parent = element_registry.parent(element_id);
         let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, element_id);
 
@@ -713,6 +736,108 @@ impl Reconciler {
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
             element.rebuild(widget_as_any, ctx);
         });
+    }
+
+    /// Replace an element with a new one built from `widget`.
+    ///
+    /// Called by `rebuild_element` when `can_update()` returns false.
+    /// Unmounts the old element tree, mounts a new one at the same slot,
+    /// and links it into the parent's render object tree.
+    fn replace_element(
+        element_registry: &mut ElementRegistry,
+        render_objects: &mut RenderObjectRegistry,
+        state: &mut StateStorage,
+        dirty: &mut DirtyTracking,
+        build_owner: &mut BuildOwner,
+        child_ops: &mut ChildOps,
+        dirty_sender: &mpsc::Sender<ElementKey>,
+        focus_manager: &mut FocusManager,
+        animation_ticker: &Arc<AnimationTicker>,
+        element_id: ElementKey,
+        widget: Box<dyn Widget>,
+    ) {
+        // Find the parent and slot before unmounting.
+        let parent = match element_registry.parent(element_id) {
+            Some(p) => p,
+            None => return,
+        };
+        let slot = element_registry
+            .children(parent)
+            .iter()
+            .position(|&c| c == element_id);
+
+        log::debug!(
+            "[replace_element] replacing element {:?} at slot {:?} under parent {:?}",
+            element_id,
+            slot,
+            parent
+        );
+
+        // Unmount the old element tree.
+        Self::unmount_element_tree(
+            element_registry,
+            render_objects,
+            state,
+            dirty,
+            build_owner,
+            child_ops,
+            dirty_sender,
+            focus_manager,
+            animation_ticker,
+            element_id,
+        );
+
+        // Mount the new element tree with the same parent.
+        let new_child_key = Self::mount_element_tree(
+            element_registry,
+            render_objects,
+            state,
+            dirty,
+            build_owner,
+            child_ops,
+            dirty_sender,
+            focus_manager,
+            animation_ticker,
+            Some(parent),
+            widget,
+        );
+
+        // Add the new child to the parent's children list at the same slot.
+        element_registry.add_child(parent, new_child_key, slot);
+
+        // Link the new child's render object into the parent's render object tree.
+        let child_ro = element_registry
+            .get(new_child_key)
+            .and_then(|el| el.render_object());
+
+        let parent_parent = element_registry.parent(parent);
+        let mut ctx = ElementContext::new(
+            parent,
+            parent_parent,
+            element_registry.children(parent).to_vec(),
+            state,
+            dirty,
+            render_objects,
+            build_owner,
+            dirty_sender,
+            child_ops,
+            focus_manager,
+            None,
+            animation_ticker.clone(),
+        );
+
+        element_registry.with_element(parent, &mut ctx, |element, ctx| {
+            element.child_mounted(slot, child_ro, ctx);
+        });
+
+        // Mark the parent's render object for layout so the new child's
+        // Taffy node gets linked into the layout tree.
+        if let Some(parent_ro) = element_registry
+            .get(parent)
+            .and_then(|el| el.render_object())
+        {
+            dirty.mark_needs_layout(parent_ro);
+        }
     }
 
     /// Drain dirty signals from the channel and mark elements for rebuild.

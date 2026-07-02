@@ -284,8 +284,11 @@ impl Element for GestureDetectorElement {
         self.key.clone()
     }
 
-    fn can_update(&self, _widget: &dyn Any) -> bool {
-        true
+    fn can_update(&self, widget: &dyn Any) -> bool {
+        self.widget
+            .as_ref()
+            .map(|old| old.as_any().type_id() == widget.type_id())
+            .unwrap_or(false)
     }
 
     fn on_event(
@@ -486,9 +489,9 @@ impl RenderObject for GestureDetectorRenderObject {
 mod tests {
     use super::super::Key;
     use super::*;
-fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
-    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
-}
+    fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+        std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
 
     use crate::Text;
     use std::cell::Cell;
@@ -552,7 +555,7 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {
@@ -591,7 +594,7 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {
@@ -627,7 +630,7 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
             crate::core::ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
 
         let event = InputEvent::PointerButton {

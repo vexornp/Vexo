@@ -25,6 +25,7 @@ use vexo::{
 };
 
 use crate::button::{Button, ButtonVariant};
+use crate::platform::Platform;
 use crate::theme::tokens;
 
 /// Default no-op for `on_selection_change` — a named function so it satisfies
@@ -85,6 +86,10 @@ pub struct NavigationSplitViewState<T: 'static> {
     pub selected: Signal<Option<T>>,
     /// Whether the sidebar is collapsed to a thin strip.
     pub sidebar_collapsed: Signal<bool>,
+    /// Whether the mobile detail page is currently shown (pushed) over the
+    /// sidebar. Only consulted on `Platform::Mobile`. On desktop this is
+    /// always ignored — the sidebar and detail render side-by-side.
+    pub detail_visible: Signal<bool>,
 }
 
 impl<T: 'static> Default for NavigationSplitViewState<T> {
@@ -92,6 +97,8 @@ impl<T: 'static> Default for NavigationSplitViewState<T> {
         Self {
             selected: Signal::new(None),
             sidebar_collapsed: Signal::new(false),
+            // Mobile starts on the sidebar; selecting an item pushes the detail.
+            detail_visible: Signal::new(false),
         }
     }
 }
@@ -99,7 +106,8 @@ impl<T: 'static> Default for NavigationSplitViewState<T> {
 impl<T: 'static> ComponentState for NavigationSplitViewState<T> {
     fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
         self.selected.set_dirty_callback(callback.clone());
-        self.sidebar_collapsed.set_dirty_callback(callback);
+        self.sidebar_collapsed.set_dirty_callback(callback.clone());
+        self.detail_visible.set_dirty_callback(callback);
     }
 }
 
@@ -122,6 +130,7 @@ pub struct NavigationSplitView<T: Hash + Eq + Clone + 'static> {
     preferred_sidebar_width: f32,
     default_selection: Option<T>,
     placeholder: Option<Box<dyn Widget>>,
+    platform: Option<Platform>,
 }
 
 impl<T: Hash + Eq + Clone + 'static> Clone for NavigationSplitView<T> {
@@ -133,6 +142,7 @@ impl<T: Hash + Eq + Clone + 'static> Clone for NavigationSplitView<T> {
             preferred_sidebar_width: self.preferred_sidebar_width,
             default_selection: self.default_selection.clone(),
             placeholder: self.placeholder.as_ref().map(|w| w.clone_boxed()),
+            platform: self.platform,
         }
     }
 }
@@ -147,6 +157,7 @@ impl<T: Hash + Eq + Clone + 'static> NavigationSplitView<T> {
             preferred_sidebar_width: tokens::navigation::SIDEBAR_WIDTH,
             default_selection: None,
             placeholder: None,
+            platform: None,
         }
     }
 
@@ -191,6 +202,20 @@ impl<T: Hash + Eq + Clone + 'static> NavigationSplitView<T> {
     pub fn placeholder(mut self, widget: Box<dyn Widget>) -> Self {
         self.placeholder = Some(widget);
         self
+    }
+
+    /// Override the platform for this view.
+    ///
+    /// If not set, uses `Platform::current()`. On `Platform::Mobile` the view
+    /// renders as two separate full-screen pages (sidebar, then pushed detail
+    /// page with a back button) instead of a side-by-side split.
+    pub fn platform(mut self, platform: Platform) -> Self {
+        self.platform = Some(platform);
+        self
+    }
+
+    fn effective_platform(&self) -> Platform {
+        self.platform.unwrap_or_else(Platform::current)
     }
 
     fn default_placeholder() -> Box<dyn Widget> {
@@ -313,6 +338,8 @@ impl<T: Hash + Eq + Clone + 'static> NavigationSplitView<T> {
         let selected_signal = state.selected.clone();
         let on_change_cb = self.on_selection_change.clone();
         let item_id = item.id.clone();
+        let is_mobile = self.effective_platform() == Platform::Mobile;
+        let detail_visible_signal = state.detail_visible.clone();
 
         DecoratedContainer::new(row)
             .background(bg)
@@ -320,21 +347,117 @@ impl<T: Hash + Eq + Clone + 'static> NavigationSplitView<T> {
             .boxed()
             .on_press(move || {
                 selected_signal.set_from(&Some(item_id.clone()));
+                if is_mobile {
+                    detail_visible_signal.set_from(&true);
+                }
                 let id = item_id.clone();
                 (on_change_cb)(&id);
             })
     }
 
-    fn build_detail(&self, selected: &Option<T>) -> Box<dyn Widget> {
-        let content: Box<dyn Widget> = match selected {
+    fn build_detail_content(&self, selected: &Option<T>) -> Box<dyn Widget> {
+        match selected {
             Some(id) => (self.detail_builder)(id),
             None => self
                 .placeholder
                 .as_ref()
                 .map(|p| p.clone_boxed())
                 .unwrap_or_else(Self::default_placeholder),
-        };
-        content.flex_grow(1.0)
+        }
+    }
+
+    // ========================================================================
+    // Mobile builders
+    // ========================================================================
+    //
+    // On mobile the sidebar and detail never render side-by-side. The sidebar
+    // fills the screen; selecting an item pushes the detail page (which has a
+    // back button). This matches iOS NavigationStack semantics.
+
+    fn build_mobile_sidebar(
+        &self,
+        state: &mut NavigationSplitViewState<T>,
+        selected: &Option<T>,
+    ) -> Box<dyn Widget> {
+        let title = Text::new("Navigation")
+            .with_font_size(tokens::navigation::HEADER_FONT_SIZE)
+            .with_color(tokens::navigation::HEADER_TEXT_COLOR);
+
+        // Minimal header: title only, no collapse toggle (collapse is a
+        // desktop concept). Fixed height to match the mobile detail header.
+        let header = Flex::row()
+            .align(AlignItems::Center)
+            .padding(tokens::navigation::MOBILE_HEADER_PADDING)
+            .background(tokens::navigation::MOBILE_HEADER_BG)
+            .height(tokens::navigation::MOBILE_HEADER_HEIGHT)
+            .flex_shrink(0.0)
+            .push(title)
+            .boxed();
+
+        let items_column = self.build_items_column(state, selected);
+        let scroll = ScrollView::new(items_column).flex_grow(1.0);
+
+        Flex::column()
+            .background(tokens::navigation::SIDEBAR_BG)
+            .flex_grow(1.0)
+            .push(header)
+            .push(scroll)
+            .boxed()
+    }
+
+    fn build_mobile_detail_page(
+        &self,
+        state: &mut NavigationSplitViewState<T>,
+        selected: &Option<T>,
+    ) -> Box<dyn Widget> {
+        let title = selected
+            .as_ref()
+            .and_then(|id| self.items.iter().find(|i| &i.id == id))
+            .map(|i| i.label.clone())
+            .unwrap_or_default();
+
+        let header = self.build_mobile_detail_header(state, &title);
+        let body = self.build_detail_content(selected);
+        let scroll = ScrollView::new(body).flex_grow(1.0);
+
+        Flex::column()
+            .background(tokens::navigation::DETAIL_BG)
+            .flex_grow(1.0)
+            .push(header)
+            .push(scroll)
+            .boxed()
+    }
+
+    fn build_mobile_detail_header(
+        &self,
+        state: &mut NavigationSplitViewState<T>,
+        title: &str,
+    ) -> Box<dyn Widget> {
+        let back_signal = state.detail_visible.clone();
+        let back_label = format!(
+            "{} {}",
+            tokens::navigation::BACK_CHEVRON,
+            tokens::navigation::BACK_LABEL
+        );
+        let back_button = Button::new(back_label)
+            .variant(ButtonVariant::Ghost)
+            .on_press(move || back_signal.set_from(&false))
+            .boxed();
+
+        let title_text = Text::new(title)
+            .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
+            .with_color(tokens::navigation::MOBILE_TITLE_COLOR);
+
+        Flex::row()
+            .align(AlignItems::Center)
+            .gap(8.0)
+            .padding(tokens::navigation::MOBILE_HEADER_PADDING)
+            .background(tokens::navigation::MOBILE_HEADER_BG)
+            .height(tokens::navigation::MOBILE_HEADER_HEIGHT)
+            .flex_shrink(0.0)
+            .push(back_button)
+            .push(title_text)
+            .boxed()
     }
 }
 
@@ -342,22 +465,32 @@ impl<T: Hash + Eq + Clone + 'static> Component for NavigationSplitView<T> {
     type State = NavigationSplitViewState<T>;
 
     fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let collapsed = state.sidebar_collapsed.get();
         let signal_selected = state.selected.get_cloned();
         let selected = self.effective_selection(&signal_selected);
 
-        let sidebar = if collapsed {
-            self.build_collapsed_strip(state)
-        } else {
-            self.build_sidebar(state, &selected)
-        };
+        match self.effective_platform() {
+            Platform::Desktop => {
+                let collapsed = state.sidebar_collapsed.get();
+                let sidebar = if collapsed {
+                    self.build_collapsed_strip(state)
+                } else {
+                    self.build_sidebar(state, &selected)
+                };
+                let detail = self.build_detail_content(&selected).flex_grow(1.0);
 
-        let detail = self.build_detail(&selected);
-
-        Flex::row()
-            .background(tokens::navigation::DETAIL_BG)
-            .push(sidebar)
-            .push(detail)
-            .boxed()
+                Flex::row()
+                    .background(tokens::navigation::DETAIL_BG)
+                    .push(sidebar)
+                    .push(detail)
+                    .boxed()
+            }
+            Platform::Mobile => {
+                if state.detail_visible.get() {
+                    self.build_mobile_detail_page(state, &selected)
+                } else {
+                    self.build_mobile_sidebar(state, &selected)
+                }
+            }
+        }
     }
 }

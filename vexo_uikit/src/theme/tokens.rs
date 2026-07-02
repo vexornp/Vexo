@@ -66,4 +66,23 @@ pub mod navigation {
     pub const DIVIDER_COLOR: Color = Color::rgb(0.85, 0.85, 0.85);
     pub const PLACEHOLDER_TEXT_COLOR: Color = Color::rgb(0.6, 0.6, 0.6);
     pub const PLACEHOLDER_FONT_SIZE: f32 = 16.0;
+
+    // Mobile (push/pop) detail page header.
+    // On mobile the sidebar and detail are never shown side-by-side; selecting
+    // an item pushes the detail page, which has its own header with a back
+    // chevron + label and a title reflecting the selected item.
+    pub const MOBILE_HEADER_BG: Color = Color::rgb(0.98, 0.98, 0.98);
+    pub const MOBILE_HEADER_HEIGHT: f32 = 44.0;
+    pub const MOBILE_HEADER_PADDING: f32 = 8.0;
+    pub const MOBILE_HEADER_DIVIDER: Color = Color::rgb(0.85, 0.85, 0.85);
+
+    // Back chevron + label (iOS-style tint blue, matches SELECTED_BG)
+    pub const BACK_CHEVRON: &str = "\u{2039}"; // ‹
+    pub const BACK_LABEL: &str = "Back";
+    pub const BACK_FONT_SIZE: f32 = 17.0;
+    pub const BACK_COLOR: Color = Color::rgb(0.0, 0.478, 1.0);
+
+    // Detail page title (selected item's label)
+    pub const MOBILE_TITLE_FONT_SIZE: f32 = 17.0;
+    pub const MOBILE_TITLE_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
 }
