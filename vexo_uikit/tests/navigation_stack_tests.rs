@@ -246,6 +246,29 @@ fn all_text(w: &dyn Widget) -> Vec<String> {
     out
 }
 
+/// Recursively check whether the tree contains any `Button` widget.
+///
+/// Used to detect the NavBar back button: `Button` stores its label as a
+/// private `String` (only converted to `Text` inside its own `render()`), so
+/// the back button's label is NOT visible to `collect_text`. Walking for
+/// `Button` widgets instead is the reliable detector.
+fn contains_button(w: &dyn Widget) -> bool {
+    if w.as_any().downcast_ref::<vexo_uikit::Button>().is_some() {
+        return true;
+    }
+    if let Some(child) = w.child() {
+        if contains_button(child) {
+            return true;
+        }
+    }
+    for child in w.children() {
+        if contains_button(child.as_ref()) {
+            return true;
+        }
+    }
+    false
+}
+
 #[test]
 fn stack_render_root_does_not_panic() {
     let controller: NavigationController<&'static str> = NavigationController::new();
@@ -279,11 +302,9 @@ fn stack_root_has_no_back_button() {
     let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
     let tree = render_stack(view, &mut state);
 
-    let texts = all_text(tree.as_ref());
     assert!(
-        !texts.iter().any(|t| t.contains("Back")),
-        "root must NOT show a back button, got: {:?}",
-        texts
+        !contains_button(tree.as_ref()),
+        "root must NOT render a back button (NavBar should have title only)"
     );
 }
 
@@ -315,4 +336,96 @@ fn stack_navbar_title_is_empty_when_root_title_unset() {
         .downcast_ref::<Flex>()
         .expect("top-level should be Flex");
     assert_eq!(flex.children().len(), 2);
+}
+
+#[test]
+fn stack_render_pushed_page_does_not_panic() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("detail");
+    let view = NavigationStackView::new(controller, Text::new("Root page"))
+        .root_title("Home")
+        .title(|d| format!("Title-{}", d))
+        .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let _tree = render_stack(view, &mut state);
+}
+
+#[test]
+fn stack_pushed_page_has_back_button() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("detail");
+    let view = NavigationStackView::new(controller, Text::new("Root page"))
+        .root_title("Home")
+        .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    assert!(
+        contains_button(tree.as_ref()),
+        "pushed page NavBar must render a back Button (got no Button in tree)"
+    );
+}
+
+fn make_counted_destination<T: std::fmt::Display>(
+) -> (Arc<AtomicU32>, impl Fn(&T) -> Box<dyn Widget>) {
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    let closure = move |d: &T| {
+        c.fetch_add(1, Ordering::SeqCst);
+        Text::new(format!("Body: {}", d)).boxed()
+    };
+    (counter, closure)
+}
+
+#[test]
+fn stack_destination_not_invoked_at_root() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let (counter, dest) = make_counted_destination::<&'static str>();
+    let view = NavigationStackView::new(controller, Text::new("Root")).destination(dest);
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let _tree = render_stack(view, &mut state);
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        0,
+        "destination builder must NOT run at root"
+    );
+}
+
+#[test]
+fn stack_destination_invoked_once_per_render_when_pushed() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a");
+    let (counter, dest) = make_counted_destination::<&'static str>();
+    let view = NavigationStackView::new(controller, Text::new("Root")).destination(dest);
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let _tree = render_stack(view, &mut state);
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "destination builder must run exactly once when pushed"
+    );
+}
+
+#[test]
+fn stack_navbar_title_uses_destination_title_when_pushed() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("detail");
+    let view = NavigationStackView::new(controller, Text::new("Root"))
+        .root_title("Home")
+        .title(|d| format!("Title-{}", d))
+        .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    let texts = all_text(tree.as_ref());
+    assert!(
+        texts.iter().any(|t| t == "Title-detail"),
+        "pushed NavBar must use destination title 'Title-detail', got: {:?}",
+        texts
+    );
+    assert!(
+        !texts.iter().any(|t| t == "Home"),
+        "pushed NavBar must NOT show root_title 'Home', got: {:?}",
+        texts
+    );
 }
