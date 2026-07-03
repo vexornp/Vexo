@@ -76,3 +76,99 @@ fn controller_depth_tracks_path_length() {
     controller.pop_to_root();
     assert_eq!(controller.depth(), 0);
 }
+
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
+
+#[test]
+fn controller_notify_fires_dirty_callback_on_push() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    controller.push("a");
+    controller.push("b");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        2,
+        "push must fire dirty callback"
+    );
+}
+
+#[test]
+fn controller_notify_fires_dirty_callback_on_pop_only_when_nonempty() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    controller.push("a");
+    controller.pop();
+    assert_eq!(counter.load(Ordering::SeqCst), 2);
+    controller.pop(); // at root — no fire
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        2,
+        "pop at root must NOT fire"
+    );
+}
+
+#[test]
+fn controller_pop_to_root_does_not_fire_when_already_at_root() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    controller.pop_to_root();
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        0,
+        "pop_to_root at root must NOT fire"
+    );
+}
+
+#[test]
+fn controller_clear_dirty_callback_silences_notify() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    controller.clear_dirty_callback();
+    controller.push("a");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        0,
+        "after clear, push must NOT fire"
+    );
+}
+
+#[test]
+fn controller_clone_shares_path_and_callback() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+    let clone = controller.clone();
+    clone.push("a"); // mutate via clone
+    assert_eq!(
+        controller.path(),
+        vec!["a"],
+        "clone must share path storage"
+    );
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "clone must fire shared callback"
+    );
+}
