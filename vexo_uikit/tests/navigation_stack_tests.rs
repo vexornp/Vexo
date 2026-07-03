@@ -172,3 +172,18 @@ fn controller_clone_shares_path_and_callback() {
         "clone must fire shared callback"
     );
 }
+
+use vexo::{Text, Widget};
+use vexo_uikit::NavigationStackView;
+
+#[test]
+fn stack_view_can_be_constructed_with_builder_methods() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root"))
+        .root_title("Home")
+        .title(|d| format!("{}", d))
+        .destination(|d| Text::new(format!("Page: {}", d)).boxed())
+        .platform(vexo_uikit::Platform::Mobile);
+    // No assertion on render yet — just that construction compiles and does not panic.
+    let _ = view;
+}

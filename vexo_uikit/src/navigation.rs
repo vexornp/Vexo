@@ -614,3 +614,77 @@ impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationController<Dest> {
         Self::new()
     }
 }
+
+/// A stack navigation component: a root page plus a LIFO stack of pushed pages.
+///
+/// Modeled on SwiftUI's `NavigationStack`. The caller owns a
+/// `NavigationController<Dest>` and mutates the path via `push`/`pop`/etc.;
+/// the controller's dirty callback (wired during mount) triggers rebuilds so
+/// the view always reflects the current top-of-stack.
+///
+/// The component renders a NavBar (title + optional back button) above either
+/// the root widget (empty path) or the destination closure's output (non-empty
+/// path). No `ScrollView`, padding, or background is applied to the page —
+/// callers wrap their page content as desired.
+pub struct NavigationStackView<Dest: Hash + Eq + Clone + 'static> {
+    controller: NavigationController<Dest>,
+    root: Box<dyn Widget>,
+    destination: Rc<dyn Fn(&Dest) -> Box<dyn Widget>>,
+    title: Rc<dyn Fn(&Dest) -> String>,
+    root_title: Option<String>,
+    platform: Option<Platform>,
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> Clone for NavigationStackView<Dest> {
+    fn clone(&self) -> Self {
+        Self {
+            controller: self.controller.clone(),
+            root: self.root.clone_boxed(),
+            destination: self.destination.clone(),
+            title: self.title.clone(),
+            root_title: self.root_title.clone(),
+            platform: self.platform,
+        }
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
+    /// Create a stack view with the given controller and root page widget.
+    pub fn new(controller: NavigationController<Dest>, root: impl Widget + 'static) -> Self {
+        Self {
+            controller,
+            root: Box::new(root),
+            destination: Rc::new(|_| Text::new("").boxed()),
+            title: Rc::new(|_| String::new()),
+            root_title: None,
+            platform: None,
+        }
+    }
+
+    /// Provide a closure that builds the page widget for a pushed destination.
+    /// Called at most once per rebuild, with `path.last()`.
+    pub fn destination<F: Fn(&Dest) -> Box<dyn Widget> + 'static>(mut self, f: F) -> Self {
+        self.destination = Rc::new(f);
+        self
+    }
+
+    /// Provide a closure returning the NavBar title for a pushed destination.
+    /// Default: returns an empty string.
+    pub fn title<F: Fn(&Dest) -> String + 'static>(mut self, f: F) -> Self {
+        self.title = Rc::new(f);
+        self
+    }
+
+    /// Set the NavBar title shown when at root. Default: `None` (empty title).
+    pub fn root_title(mut self, title: impl Into<String>) -> Self {
+        self.root_title = Some(title.into());
+        self
+    }
+
+    /// Override the platform. Currently a no-op (rendering is identical on all
+    /// platforms); reserved for future desktop adaptation.
+    pub fn platform(mut self, p: Platform) -> Self {
+        self.platform = Some(p);
+        self
+    }
+}
