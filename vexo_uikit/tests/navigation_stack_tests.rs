@@ -187,3 +187,9 @@ fn stack_view_can_be_constructed_with_builder_methods() {
     // No assertion on render yet — just that construction compiles and does not panic.
     let _ = view;
 }
+
+#[test]
+fn stack_view_state_default_compiles() {
+    fn assert_default<T: Default>() {}
+    assert_default::<vexo_uikit::navigation::NavigationStackViewState<&'static str>>();
+}

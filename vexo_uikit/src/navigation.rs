@@ -14,15 +14,17 @@
 //!     .boxed()
 //! ```
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    AlignItems, Component, ComponentState, DecoratedContainer, Flex, RenderContext, ScrollView,
-    Signal, Text, Widget,
+    AlignItems, Component, ComponentState, DecoratedContainer, Flex, LifecycleContext,
+    RenderContext, ScrollView, Signal, Text, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -686,5 +688,50 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
     pub fn platform(mut self, p: Platform) -> Self {
         self.platform = Some(p);
         self
+    }
+}
+
+/// State for the NavigationStackView component.
+///
+/// Has NO controller field. The controller lives on the widget (caller-supplied).
+/// Lifecycle hooks read it off `ctx.widget()` and wire/unwire its dirty callback
+/// — exactly like `TextEditState`. The state exists only to host the lifecycle
+/// hooks; `set_dirty_callback` is a no-op (no state-owned Signals).
+pub struct NavigationStackViewState<Dest: Hash + Eq + Clone + 'static> {
+    _marker: PhantomData<Dest>,
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationStackViewState<Dest> {
+    fn default() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewState<Dest> {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        if let Some(nav) = ctx.widget().downcast_ref::<NavigationStackView<Dest>>() {
+            nav.controller.set_dirty_callback(ctx.dirty_callback());
+        }
+    }
+
+    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
+        let old = old_widget.downcast_ref::<NavigationStackView<Dest>>();
+        let new = ctx.widget().downcast_ref::<NavigationStackView<Dest>>();
+        if let (Some(old), Some(new)) = (old, new) {
+            // Re-wire only if the controller instance changed. Identity is
+            // determined by Rc::ptr_eq on the shared path cell.
+            if !Rc::ptr_eq(&old.controller.path, &new.controller.path) {
+                old.controller.clear_dirty_callback();
+                new.controller.set_dirty_callback(ctx.dirty_callback());
+            }
+        }
+    }
+
+    fn on_unmount(&mut self, ctx: &mut LifecycleContext) {
+        if let Some(nav) = ctx.widget().downcast_ref::<NavigationStackView<Dest>>() {
+            nav.controller.clear_dirty_callback();
+        }
     }
 }

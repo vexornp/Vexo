@@ -22,5 +22,5 @@ pub use button::{Button, ButtonState, ButtonVariant};
 pub mod navigation;
 pub use navigation::{
     NavigationController, NavigationItem, NavigationSplitView, NavigationSplitViewState,
-    NavigationStackView,
+    NavigationStackView, NavigationStackViewState,
 };
