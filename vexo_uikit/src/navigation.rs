@@ -14,6 +14,7 @@
 //!     .boxed()
 //! ```
 
+use std::cell::RefCell;
 use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -492,5 +493,60 @@ impl<T: Hash + Eq + Clone + 'static> Component for NavigationSplitView<T> {
                 }
             }
         }
+    }
+}
+
+// ============================================================================
+// NAVIGATION STACK VIEW
+// ============================================================================
+
+/// External controller that owns the navigation path for a NavigationStackView.
+///
+/// Inspired by SwiftUI's `NavigationPath` + Flutter's `TextEditingController`:
+/// the caller creates and owns this controller, passing it into
+/// NavigationStackView. The controller holds the LIFO stack of pushed
+/// destinations; mutating methods (`push`, `pop`, etc.) fire a dirty callback
+/// wired by the framework during mount, triggering a rebuild.
+///
+/// The path and dirty callback are shared via `Rc<RefCell<...>>` so that
+/// clones captured in closures *before* wiring still observe mutations and
+/// fire the callback once wired. This mirrors `TextEditingController`.
+pub struct NavigationController<Dest: Hash + Eq + Clone + 'static> {
+    path: Rc<RefCell<Vec<Dest>>>,
+    dirty_callback: Rc<RefCell<Option<Arc<dyn Fn() + Send + Sync>>>>,
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> NavigationController<Dest> {
+    /// Create a new controller with an empty path (at root).
+    pub fn new() -> Self {
+        Self {
+            path: Rc::new(RefCell::new(Vec::new())),
+            dirty_callback: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Snapshot the current path for inspection.
+    pub fn path(&self) -> Vec<Dest> {
+        self.path.borrow().clone()
+    }
+
+    /// Current stack depth (path length). `0` means at root.
+    pub fn depth(&self) -> usize {
+        self.path.borrow().len()
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> Clone for NavigationController<Dest> {
+    fn clone(&self) -> Self {
+        Self {
+            path: Rc::clone(&self.path),
+            dirty_callback: Rc::clone(&self.dirty_callback),
+        }
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationController<Dest> {
+    fn default() -> Self {
+        Self::new()
     }
 }
