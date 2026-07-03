@@ -429,3 +429,67 @@ fn stack_navbar_title_uses_destination_title_when_pushed() {
         texts
     );
 }
+
+#[test]
+fn stack_pop_via_controller_round_trip_shows_root_again() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("detail");
+
+    let view = NavigationStackView::new(controller.clone(), Text::new("Root page"))
+        .root_title("Home")
+        .title(|d| format!("Title-{}", d))
+        .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+    // First render: pushed page visible.
+    let tree = render_stack(view.clone(), &mut state);
+    let texts = all_text(tree.as_ref());
+    assert!(
+        texts.iter().any(|t| t == "Body-detail"),
+        "first render must show pushed page body, got: {:?}",
+        texts
+    );
+
+    // Simulate the rebuild triggered by the controller's dirty callback:
+    // pop via the controller, then re-render.
+    controller.pop();
+
+    let tree2 = render_stack(view, &mut state);
+    let texts2 = all_text(tree2.as_ref());
+    assert!(
+        texts2.iter().any(|t| t == "Root page"),
+        "after pop, root must be visible again, got: {:?}",
+        texts2
+    );
+    assert!(
+        !texts2.iter().any(|t| t == "Body-detail"),
+        "after pop, pushed body must NOT be visible, got: {:?}",
+        texts2
+    );
+}
+
+#[test]
+fn stack_push_then_pop_to_root_round_trip() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a");
+    controller.push("b");
+    controller.push("c");
+
+    let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+        .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+    // Top is "c".
+    let tree = render_stack(view.clone(), &mut state);
+    let texts = all_text(tree.as_ref());
+    assert!(texts.iter().any(|t| t == "Body-c"));
+
+    controller.pop_to_root();
+    let tree2 = render_stack(view, &mut state);
+    let texts2 = all_text(tree2.as_ref());
+    assert!(
+        texts2.iter().any(|t| t == "Root"),
+        "after pop_to_root, root must be visible, got: {:?}",
+        texts2
+    );
+}
