@@ -735,3 +735,65 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
         }
     }
 }
+
+impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> {
+    type State = NavigationStackViewState<Dest>;
+
+    fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let path = self.controller.path();
+        let (title, can_pop) = if let Some(top) = path.last() {
+            ((self.title)(top), true)
+        } else {
+            (self.root_title.clone().unwrap_or_default(), false)
+        };
+
+        let nav_bar = self.build_nav_bar(&title, can_pop);
+
+        let page: Box<dyn Widget> = if let Some(top) = path.last() {
+            (self.destination)(top)
+        } else {
+            self.root.clone_boxed()
+        };
+
+        Flex::column().push(nav_bar).push(page).boxed()
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
+    /// Build the NavBar chrome: title text + optional back button.
+    ///
+    /// `can_pop == false` (at root) → no back button, title occupies the row.
+    /// `can_pop == true` → back button on the left, title after it.
+    fn build_nav_bar(&self, title: &str, can_pop: bool) -> Box<dyn Widget> {
+        let mut row = Flex::row()
+            .align(AlignItems::Center)
+            .gap(8.0)
+            .padding(tokens::navigation::MOBILE_HEADER_PADDING)
+            .background(tokens::navigation::MOBILE_HEADER_BG)
+            .height(tokens::navigation::MOBILE_HEADER_HEIGHT)
+            .flex_shrink(0.0);
+
+        if can_pop {
+            let controller = self.controller.clone();
+            let back_label = format!(
+                "{} {}",
+                tokens::navigation::BACK_CHEVRON,
+                tokens::navigation::BACK_LABEL
+            );
+            let back_button = Button::new(back_label)
+                .variant(ButtonVariant::Ghost)
+                .on_press(move || {
+                    controller.pop();
+                })
+                .boxed();
+            row = row.push(back_button);
+        }
+
+        let title_text = Text::new(title)
+            .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
+            .with_color(tokens::navigation::MOBILE_TITLE_COLOR);
+        row = row.push(title_text);
+
+        row.boxed()
+    }
+}

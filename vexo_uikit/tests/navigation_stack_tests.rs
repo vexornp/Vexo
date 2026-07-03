@@ -1,3 +1,4 @@
+use vexo_uikit::Component;
 use vexo_uikit::NavigationController;
 
 #[test]
@@ -192,4 +193,126 @@ fn stack_view_can_be_constructed_with_builder_methods() {
 fn stack_view_state_default_compiles() {
     fn assert_default<T: Default>() {}
     assert_default::<vexo_uikit::navigation::NavigationStackViewState<&'static str>>();
+}
+
+use vexo::{BuildOwner, DirtyTracking, ElementKey, Flex, RenderContext, RenderObjectRegistry};
+
+fn make_element_key() -> ElementKey {
+    let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+    sm.insert(())
+}
+
+fn create_render_context<'a>(
+    element_id: ElementKey,
+    dirty: &'a mut DirtyTracking,
+    render_objects: &'a mut RenderObjectRegistry,
+    build_owner: &'a BuildOwner,
+) -> RenderContext<'a> {
+    RenderContext {
+        element_id,
+        dirty,
+        render_objects,
+        build_owner,
+    }
+}
+
+fn render_stack<Dest: std::hash::Hash + Eq + Clone + 'static>(
+    view: NavigationStackView<Dest>,
+    state: &mut vexo_uikit::NavigationStackViewState<Dest>,
+) -> Box<dyn Widget> {
+    let element_id = make_element_key();
+    let mut dirty = DirtyTracking::new();
+    let mut render_objects = RenderObjectRegistry::new();
+    let build_owner = BuildOwner::new();
+    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    view.render(state, &mut ctx)
+}
+
+fn collect_text(w: &dyn Widget, out: &mut Vec<String>) {
+    if let Some(t) = w.as_any().downcast_ref::<Text>() {
+        out.push(t.content().to_string());
+    }
+    if let Some(child) = w.child() {
+        collect_text(child, out);
+    }
+    for child in w.children() {
+        collect_text(child.as_ref(), out);
+    }
+}
+
+fn all_text(w: &dyn Widget) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_text(w, &mut out);
+    out
+}
+
+#[test]
+fn stack_render_root_does_not_panic() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root page")).root_title("Home");
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let _tree = render_stack(view, &mut state);
+}
+
+#[test]
+fn stack_root_top_level_is_flex_column_with_two_children() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root page")).root_title("Home");
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    let flex = tree
+        .as_any()
+        .downcast_ref::<Flex>()
+        .expect("top-level widget should be a Flex");
+    assert_eq!(
+        flex.children().len(),
+        2,
+        "root layout must have NavBar + root = 2 children"
+    );
+}
+
+#[test]
+fn stack_root_has_no_back_button() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root page")).root_title("Home");
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    let texts = all_text(tree.as_ref());
+    assert!(
+        !texts.iter().any(|t| t.contains("Back")),
+        "root must NOT show a back button, got: {:?}",
+        texts
+    );
+}
+
+#[test]
+fn stack_navbar_title_uses_root_title_at_root() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root page")).root_title("Home");
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    let texts = all_text(tree.as_ref());
+    assert!(
+        texts.iter().any(|t| t == "Home"),
+        "root NavBar must show root_title 'Home', got: {:?}",
+        texts
+    );
+}
+
+#[test]
+fn stack_navbar_title_is_empty_when_root_title_unset() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    let view = NavigationStackView::new(controller, Text::new("Root page"));
+    let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+    let tree = render_stack(view, &mut state);
+
+    // Should not panic and should still have 2 children (NavBar with empty title + root).
+    let flex = tree
+        .as_any()
+        .downcast_ref::<Flex>()
+        .expect("top-level should be Flex");
+    assert_eq!(flex.children().len(), 2);
 }
