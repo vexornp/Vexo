@@ -534,6 +534,70 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationController<Dest> {
     pub fn depth(&self) -> usize {
         self.path.borrow().len()
     }
+
+    /// Push a new destination onto the stack. The next render shows its page.
+    pub fn push(&self, dest: Dest) {
+        self.path.borrow_mut().push(dest);
+        self.notify();
+    }
+
+    /// Pop the top destination. No-op at root (returns `None`).
+    /// Returns the popped value when the path was non-empty.
+    pub fn pop(&self) -> Option<Dest> {
+        let popped = self.path.borrow_mut().pop();
+        if popped.is_some() {
+            self.notify();
+        }
+        popped
+    }
+
+    /// Clear the entire path, returning to root. Idempotent: a no-op (and no
+    /// dirty fire) if the path is already empty.
+    pub fn pop_to_root(&self) {
+        let mut p = self.path.borrow_mut();
+        if p.is_empty() {
+            return;
+        }
+        p.clear();
+        drop(p);
+        self.notify();
+    }
+
+    /// Replace the top of the stack with `dest`. At root (empty path), behaves
+    /// as `push(dest)` — documented, not an error.
+    pub fn replace(&self, dest: Dest) {
+        let mut p = self.path.borrow_mut();
+        if let Some(top) = p.last_mut() {
+            *top = dest;
+        } else {
+            p.push(dest);
+        }
+        drop(p);
+        self.notify();
+    }
+
+    // --- Framework wiring (called by NavigationStackViewState lifecycle) ---
+
+    /// Wire the dirty callback. Called from `ComponentState::on_mount` (and
+    /// `on_update` when the widget's controller instance changes), reading the
+    /// controller off `ctx.widget()`. Takes `&self` because the callback cell
+    /// is a `RefCell`.
+    pub fn set_dirty_callback(&self, callback: Arc<dyn Fn() + Send + Sync>) {
+        *self.dirty_callback.borrow_mut() = Some(callback);
+    }
+
+    /// Clear the dirty callback. Called from `ComponentState::on_unmount`.
+    pub fn clear_dirty_callback(&self) {
+        *self.dirty_callback.borrow_mut() = None;
+    }
+
+    /// Fire the dirty callback if set. Called by `push`/`pop`/etc. after
+    /// mutating the path.
+    fn notify(&self) {
+        if let Some(cb) = self.dirty_callback.borrow().as_ref() {
+            cb();
+        }
+    }
 }
 
 impl<Dest: Hash + Eq + Clone + 'static> Clone for NavigationController<Dest> {
