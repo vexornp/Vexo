@@ -12,11 +12,11 @@ pub enum Platform {
 impl Platform {
     /// Detect the current platform at runtime.
     pub fn current() -> Self {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         {
             Platform::Mobile
         }
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             Platform::Desktop
         }

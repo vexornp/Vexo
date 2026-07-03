@@ -272,3 +272,39 @@ pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>
     // event_loop.run_app(&mut app)?;
     Result::Ok(event_loop.run_app(app)?)
 }
+
+/// Run the framework on Android.
+///
+/// Mirrors [`run_desktop_demo`] except for `EventLoop` construction: on
+/// Android, winit requires the [`AndroidApp`] handle (delivered to
+/// `android_main`) to be associated with the `EventLoopBuilder` via
+/// [`EventLoopBuilderExtAndroid::with_android_app`]. After that, the
+/// `VexoApp` event handler and the three-tree pipeline are reused
+/// unchanged from the desktop path.
+///
+/// Logging is routed to logcat via `android_logger` (the `log` facade
+/// is shared with desktop's `env_logger` — only the init differs).
+///
+/// [`AndroidApp`]: android_activity::AndroidApp
+/// [`EventLoopBuilderExtAndroid::with_android_app`]: winit::platform::android::EventLoopBuilderExtAndroid::with_android_app
+#[cfg(target_os = "android")]
+pub fn run_android_demo<A: Application + 'static>(
+    app: android_activity::AndroidApp,
+) -> Result<(), Box<dyn Error>> {
+    use winit::platform::android::EventLoopBuilderExtAndroid;
+
+    // Route `log::` output to logcat. `init_once` is idempotent so this
+    // is safe even if the host crate already initialized a logger.
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_tag("vexo")
+            .with_filter(android_logger::FilterBuilder::new().parse("debug").build()),
+    );
+
+    let event_loop = EventLoop::builder()
+        .with_android_app(app)
+        .build()?;
+    let (sender, receiver) = mpsc::channel();
+    let app = VexoApp::<A>::new(&event_loop, receiver, sender);
+    Ok(event_loop.run_app(app)?)
+}

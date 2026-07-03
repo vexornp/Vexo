@@ -293,14 +293,15 @@ impl<A: Application + 'static> WindowState<A> {
             self.request_frame();
         }
 
-        // On iOS, show / hide the software keyboard to match focus state.
-        // winit's UIKit backend implements UIKeyInput on its view: calling
-        // set_ime_allowed(true) makes the view become first responder, which
-        // brings up the keyboard; typed text is then delivered as
-        // WindowEvent::KeyboardInput with `text` set, which the existing
-        // TextEdit keyboard handler already inserts. When focus leaves a
-        // TextEdit (or nothing is focused), dismiss the keyboard.
-        #[cfg(target_os = "ios")]
+        // On mobile (iOS + Android), show / hide the software keyboard to
+        // match focus state. winit's UIKit backend implements UIKeyInput on
+        // its view; winit's Android backend (GameActivity) implements a
+        // BaseInputConnection on its activity. In both cases calling
+        // set_ime_allowed(true) brings up the keyboard; typed text is then
+        // delivered as WindowEvent::KeyboardInput with `text` set, which the
+        // existing TextEdit keyboard handler already inserts. When focus
+        // leaves a TextEdit (or nothing is focused), dismiss the keyboard.
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         if focus_changed {
             let text_input_focused = self.three_tree_pipeline.is_text_input_focused();
             if let Some(win) = &self.window {
@@ -309,9 +310,9 @@ impl<A: Application + 'static> WindowState<A> {
             }
         }
 
-        // On non-iOS platforms `focus_changed` is otherwise unused; drop it
-        // here so the binding doesn't trigger an unused-variable warning.
-        #[cfg(not(target_os = "ios"))]
+        // On non-mobile platforms `focus_changed` is otherwise unused; drop
+        // it here so the binding doesn't trigger an unused-variable warning.
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         let _ = focus_changed;
 
         // Update cursor icon on pointer move

@@ -21,8 +21,10 @@ image = { workspace = true }
 component_state_derive = { path = "component_state_derive" }
 
 # Clipboard backend for desktop platforms (macOS/Linux/Windows).
-# iOS uses a stub backend instead — see src/platform/stub_clipboard.rs.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+# iOS uses UIPasteboard (objc2); Android uses a stub for now (see
+# src/platform/mod.rs). Both mobile platforms are excluded here because
+# `arboard` does not build for them.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 arboard = { workspace = true }
 
 # Clipboard backend for iOS: talks to UIPasteboard via objc2.
@@ -32,3 +34,14 @@ arboard = { workspace = true }
 objc2 = { version = ">=0.6.2, <0.8.0", default-features = false, features = ["std"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSString"] }
 objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["UIPasteboard"] }
+
+# Android runtime deps:
+#  - `android-activity` provides `AndroidApp`, the handle passed to
+#    `android_main` and forwarded to winit's `EventLoopBuilder`.
+#    Exactly one of `game-activity` / `native-activity` must be enabled
+#    graph-wide; we pick `game-activity` (software keyboard works for
+#    `TextEdit`; IME composition supported).
+#  - `android_logger` routes the `log` facade to logcat.
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { workspace = true, features = ["game-activity"] }
+android_logger = { workspace = true }

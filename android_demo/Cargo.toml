@@ -1,0 +1,24 @@
+[package]
+name = "android_demo"
+version = "0.1.0"
+edition = "2021"
+
+# Android loads the library by name from the APK's `lib/<abi>/` folder.
+# `libmain.so` is the default that GameActivity looks for, so we name the
+# lib target `main` to produce `libmain.so` from `cargo-ndk`.
+[lib]
+name = "main"
+crate-type = ["cdylib"]
+
+[dependencies]
+vexo = { path = "../vexo" }
+shared_app = { path = "../shared_app" }
+log = { workspace = true }
+
+# `winit` and `android-activity` are only needed on Android. Gating them
+# behind `cfg(target_os = "android")` lets the rest of the workspace
+# (`cargo test --workspace`, `cargo check`) build on desktop hosts without
+# pulling in `ndk-sys` (which only compiles for Android).
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { workspace = true, features = ["android-game-activity"] }
+android-activity = { workspace = true, features = ["game-activity"] }

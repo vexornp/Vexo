@@ -16,6 +16,9 @@ members = [
 
     # 5. Rich UI component library built on vexo
     "vexo_uikit",
+
+    # 6. Android cdylib loaded by GameActivity; produces `libmain.so`
+    "android_demo",
 ]
 
 # ------------------------------------------------------------------------
@@ -46,6 +49,12 @@ glyphon = "0.11"
 
 # Foreign Function Interface (for mobile exports)
 uniffi = {version = "0.30.0", features = ["cli"] }
+
+# Android activity glue (GameActivity / NativeActivity) — used by vexo and android_demo
+android-activity = "0.6"
+
+# Android logging (routes `log::` to logcat)
+android_logger = "0.14"
 
 # Image Decoding
 image = { version = "0.25", default-features = false, features = ["jpeg"] }

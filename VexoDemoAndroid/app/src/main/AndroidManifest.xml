@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Vexo renders to a Vulkan surface; orientation is locked to portrait
+         for the minimal bring-up (the demo's NavigationSplitView was
+         designed for phone form factors). -->
+    <application
+        android:label="Vexo Demo"
+        android:hasCode="true"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.NoActionBar">
+
+        <!-- GameActivity loads `libmain.so` (the cdylib produced by the
+             `android_demo` Rust crate) and spawns a native thread that
+             invokes our `#[no_mangle] fn android_main(app: AndroidApp)`.
+             The `android.app.lib_name` meta-data tells GameActivity which
+             library to load. -->
+        <activity
+            android:name="com.google.androidgamesdk.GameActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|density|uiMode|navigation|keyboard|touchscreen|layoutDirection|locale|fontScale"
+            android:exported="true"
+            android:screenOrientation="portrait">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="main" />
+        </activity>
+    </application>
+
+</manifest>

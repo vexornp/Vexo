@@ -5,3 +5,16 @@
 **/*.xcuserdata
 **/xcuserdata/
 .worktrees/
+
+# Android build artifacts
+# - libmain.so is rebuilt from source by build_for_android.sh; do not commit.
+# - local.properties contains machine-specific SDK paths.
+/VexoDemoAndroid/app/src/main/jniLibs/
+/VexoDemoAndroid/.gradle/
+/VexoDemoAndroid/build/
+/VexoDemoAndroid/app/build/
+/VexoDemoAndroid/local.properties
+/VexoDemoAndroid/captures/
+*.apk
+*.aab
+*.keystore
