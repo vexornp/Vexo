@@ -1,27 +1,46 @@
+use std::rc::Rc;
+
 use vexo::{
-    Application, Color, Column, ComponentState, SafeArea, Signal, Text, TextEdit,
-    TextEditingController, Widget,
+    Application, Color, Column, ComponentState, DecoratedContainer, Flex, SafeArea, ScrollView,
+    Signal, Text, TextEdit, TextEditingController, Widget,
 };
-use vexo_uikit::{
-    Button, ButtonVariant, NavigationController, NavigationItem, NavigationSplitView,
-    NavigationStackView,
-};
+use vexo_uikit::{Button, ButtonVariant, NavigationController, NavigationStackView, Platform};
 
 uniffi::setup_scaffolding!();
+
+/// Mobile navigation destinations: drilling into a sidebar item, or pushing
+/// a numbered "page-N" page from a detail's "Next page" button.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+enum Dest {
+    Item(&'static str),
+    Page(u32),
+}
+
+const ITEMS: &[(&str, &str)] = &[
+    ("inbox", "Inbox"),
+    ("starred", "Starred"),
+    ("sent", "Sent"),
+    ("drafts", "Drafts"),
+    ("archive", "Archive"),
+    ("trash", "Trash"),
+];
+
+fn item_label(id: &str) -> String {
+    ITEMS
+        .iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, l)| l.to_string())
+        .unwrap_or_else(|| id.to_string())
+}
 
 #[derive(ComponentState, Default)]
 pub struct State {
     selection_log: Signal<u32>,
-    nav_controller: NavigationController<String>,
+    /// Desktop sidebar selection (mobile uses the nav stack for everything).
+    selected: Signal<Option<&'static str>>,
+    nav_controller: NavigationController<Dest>,
 }
 
-/// Lazily create a `TextEditingController` for the demo's TextEdit.
-///
-/// `TextEditingController::new` needs a `FontSystem` for initial text shaping,
-/// but `Application::view()` doesn't receive one. We use a `thread_local!` to
-/// create the controller exactly once on the main thread (with its own
-/// throwaway `FontSystem`); subsequent calls cheaply clone the `Rc<RefCell<Editor>>`.
-/// All later editing operations use the pipeline's `FontSystem` via `ctx.font_system`.
 thread_local! {
     static TEXT_CONTROLLER: std::cell::RefCell<Option<TextEditingController>> =
         std::cell::RefCell::new(None);
@@ -45,120 +64,222 @@ impl Application for State {
     type State = Self;
 
     fn new() -> Self::State {
-        Self::State::default()
+        let state = Self::State::default();
+        state.selected.set(Some("inbox"));
+        state
     }
 
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
-        let items = vec![
-            NavigationItem::new("inbox", "Inbox"),
-            NavigationItem::new("starred", "Starred"),
-            NavigationItem::new("sent", "Sent"),
-            NavigationItem::new("drafts", "Drafts"),
-            NavigationItem::new("archive", "Archive"),
-            NavigationItem::new("trash", "Trash"),
-        ];
-
-        let selection_count = state.selection_log.clone();
+        let selected_signal = state.selected.clone();
         let nav_controller = state.nav_controller.clone();
-        let nav_for_selection_change = state.nav_controller.clone();
-        let detail_closure = move |id: &&str| -> Box<dyn Widget> {
-            let title_widget = Text::new(*id).with_font_size(32.0);
+        let selection_count = state.selection_log.clone();
 
-            // Page-specific body, wrapped in a Column so slot 1 is always the
-            // same widget type (Column → ContainerElement) across all pages.
-            // This avoids positional-reconciliation type mismatches: when
-            // switching pages, slot 1's element is updated in place rather
-            // than being force-updated with an incompatible widget type.
-            let body: Box<dyn Widget> = if *id == "inbox" {
-                Column::new()
-                    .gap(8.0)
-                    .push(Text::new("Text Edit Showcase").with_font_size(24.0))
-                    .push(TextEdit::new(demo_text_controller()))
+        match Platform::current() {
+            Platform::Desktop => {
+                let current = selected_signal.get_cloned();
+
+                let selected_for_cb = selected_signal.clone();
+                let nav_for_cb = nav_controller.clone();
+                let sidebar = build_sidebar(
+                    current,
+                    Rc::new(move |id| {
+                        selected_for_cb.set(Some(id));
+                        nav_for_cb.pop_to_root();
+                    }),
+                    false,
+                );
+
+                let detail_root = match current {
+                    Some(id) => {
+                        build_detail_content(id, selection_count.clone(), nav_controller.clone())
+                    }
+                    None => Text::new("Select an item").boxed(),
+                };
+                let root_title = current
+                    .as_ref()
+                    .map(|id| item_label(id))
+                    .unwrap_or_default();
+
+                let nav_for_dest = nav_controller.clone();
+                let detail = NavigationStackView::new(nav_controller, detail_root)
+                    .root_title(root_title)
+                    .title(|d| match d {
+                        Dest::Page(n) => format!("Page: {}", n),
+                        _ => String::new(),
+                    })
+                    .destination(move |d| match d {
+                        Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                        _ => Text::new("").boxed(),
+                    })
                     .boxed()
-            } else {
-                Column::new()
-                    .push(Text::new(format!(
-                        "This is the detail content for \"{}\".",
-                        id
-                    )))
-                    .boxed()
-            };
+                    .flex_grow(1.0);
 
-            let count = selection_count.clone();
-            let root_nav = nav_controller.clone();
-            let detail_column = Column::new()
-                .gap(16.0)
-                .padding(24.0)
-                .background(Color::WHITE)
-                .push(title_widget) // slot 0: always Text
-                .push(body) // slot 1: always Column
-                .push(
-                    Button::new("Bump counter") // slot 2: always Button
-                        .variant(ButtonVariant::Primary)
-                        .on_press(move || {
-                            count.set(count.get() + 1);
-                        }),
+                SafeArea::new(
+                    Flex::row()
+                        .background(Color::WHITE)
+                        .push(sidebar)
+                        .push(detail),
                 )
-                .push(Text::new(format!(
-                    // slot 3: always Text
-                    "Counter: {}",
-                    selection_count.get()
-                )))
-                .push(
-                    // slot 4: always Button — push the first stack page
-                    Button::new("Next page")
-                        .variant(ButtonVariant::Primary)
-                        .on_press(move || {
-                            root_nav.push("page-1".to_string());
-                        }),
-                )
-                .boxed();
-
-            // Embed the detail page in a NavigationStackView so the detail
-            // pane has its own LIFO stack of pushed pages. The controller
-            // shares its path (Rc<RefCell>) with the destination closure
-            // below and the one reset on sidebar switch, so pushes from any
-            // page reach the same stack the view reads.
-            let dest_nav = nav_controller.clone();
-            NavigationStackView::new(nav_controller.clone(), detail_column)
-                .root_title(*id)
-                .title(|d: &String| format!("Page: {}", d))
-                .destination(move |d: &String| {
-                    // "page-N" → "page-(N+1)"; anything else → "page-1"
-                    let next = d
-                        .strip_prefix("page-")
-                        .and_then(|n| n.parse::<u32>().ok())
-                        .map(|n| format!("page-{}", n + 1))
-                        .unwrap_or_else(|| "page-1".to_string());
-                    let ctrl = dest_nav.clone();
-                    Column::new()
-                        .gap(16.0)
-                        .padding(24.0)
-                        .push(Text::new(format!("Page: {}", d)).with_font_size(24.0))
-                        .push(Text::new(format!("You are on pushed page \"{}\".", d)))
-                        .push(
-                            Button::new("Next page")
-                                .variant(ButtonVariant::Primary)
-                                .on_press(move || {
-                                    ctrl.push(next.clone());
-                                }),
-                        )
-                        .boxed()
-                })
                 .boxed()
-        };
+            }
+            Platform::Mobile => {
+                let nav_for_select = nav_controller.clone();
+                let sidebar = build_sidebar(
+                    None,
+                    Rc::new(move |id| {
+                        nav_for_select.push(Dest::Item(id));
+                    }),
+                    true,
+                );
 
-        SafeArea::new(
-            NavigationSplitView::new(items)
-                .default_selection("inbox")
-                .detail(detail_closure)
-                .on_selection_change(move |id| {
-                    nav_for_selection_change.pop_to_root();
-                    log::debug!("NavigationSplitView selection changed: {}", id);
+                let nav_for_dest = state.nav_controller.clone();
+                let count_for_dest = selection_count.clone();
+
+                SafeArea::new(
+                    NavigationStackView::new(state.nav_controller.clone(), sidebar)
+                        .root_title("Navigation")
+                        .title(|d| match d {
+                            Dest::Item(id) => item_label(*id),
+                            Dest::Page(n) => format!("Page: {}", n),
+                        })
+                        .destination(move |d| match d {
+                            Dest::Item(id) => build_detail_content(
+                                *id,
+                                count_for_dest.clone(),
+                                nav_for_dest.clone(),
+                            ),
+                            Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                        }),
+                )
+                .boxed()
+            }
+        }
+    }
+}
+
+fn build_sidebar(
+    selected: Option<&str>,
+    on_select: Rc<dyn Fn(&'static str)>,
+    full_width: bool,
+) -> Box<dyn Widget> {
+    let header = Flex::row()
+        .padding(12.0)
+        .background(Color::rgb(0.9, 0.9, 0.92))
+        .push(
+            Text::new("Navigation")
+                .with_font_size(16.0)
+                .with_color(Color::rgb(0.2, 0.2, 0.2)),
+        )
+        .boxed();
+
+    let mut list = Flex::column();
+    for &(id, label) in ITEMS {
+        let is_selected = selected == Some(id);
+        let on_select = on_select.clone();
+        let row = build_item_row(label, is_selected, move || on_select(id));
+        list = list.push(row);
+    }
+
+    let mut sidebar = Flex::column().background(Color::rgb(0.95, 0.95, 0.97));
+    if full_width {
+        sidebar = sidebar.flex_grow(1.0);
+    } else {
+        sidebar = sidebar.width(240.0).flex_shrink(0.0);
+    }
+    sidebar
+        .push(header)
+        .push(ScrollView::new(list.boxed()).flex_grow(1.0))
+        .boxed()
+}
+
+fn build_item_row(
+    label: &str,
+    is_selected: bool,
+    on_press: impl FnMut() + 'static,
+) -> Box<dyn Widget> {
+    let text_color = if is_selected {
+        Color::WHITE
+    } else {
+        Color::rgb(0.1, 0.1, 0.1)
+    };
+    let bg = if is_selected {
+        Color::rgb(0.0, 0.478, 1.0)
+    } else {
+        Color::TRANSPARENT
+    };
+
+    let label_text = Text::new(label).with_font_size(16.0).with_color(text_color);
+
+    DecoratedContainer::new(label_text)
+        .background(bg)
+        .padding(10.0)
+        .boxed()
+        .on_press(on_press)
+}
+
+fn build_detail_content(
+    id: &str,
+    selection_count: Signal<u32>,
+    nav_controller: NavigationController<Dest>,
+) -> Box<dyn Widget> {
+    let title_widget = Text::new(id).with_font_size(32.0);
+
+    let body: Box<dyn Widget> = if id == "inbox" {
+        Column::new()
+            .gap(8.0)
+            .push(Text::new("Text Edit Showcase").with_font_size(24.0))
+            .push(TextEdit::new(demo_text_controller()))
+            .boxed()
+    } else {
+        Column::new()
+            .push(Text::new(format!(
+                "This is the detail content for \"{}\".",
+                id
+            )))
+            .boxed()
+    };
+
+    let count = selection_count.clone();
+    let root_nav = nav_controller.clone();
+    Column::new()
+        .gap(16.0)
+        .padding(24.0)
+        .background(Color::WHITE)
+        .push(title_widget)
+        .push(body)
+        .push(
+            Button::new("Bump counter")
+                .variant(ButtonVariant::Primary)
+                .on_press(move || {
+                    count.set(count.get() + 1);
+                }),
+        )
+        .push(Text::new(format!("Counter: {}", selection_count.get())))
+        .push(
+            Button::new("Next page")
+                .variant(ButtonVariant::Primary)
+                .on_press(move || {
+                    root_nav.push(Dest::Page(1));
                 }),
         )
         .boxed()
-    }
+}
+
+fn build_page_content(n: u32, nav_controller: NavigationController<Dest>) -> Box<dyn Widget> {
+    let ctrl = nav_controller.clone();
+    Column::new()
+        .gap(16.0)
+        .padding(24.0)
+        .push(Text::new(format!("Page: {}", n)).with_font_size(24.0))
+        .push(Text::new(format!("You are on pushed page \"{}\".", n)))
+        .push(
+            Button::new("Next page")
+                .variant(ButtonVariant::Primary)
+                .on_press(move || {
+                    ctrl.push(Dest::Page(n + 1));
+                }),
+        )
+        .boxed()
 }
 
 #[derive(uniffi::Object)]
