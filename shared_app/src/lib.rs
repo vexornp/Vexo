@@ -185,9 +185,9 @@ fn build_sidebar(
         sidebar = sidebar.flex_grow(1.0);
     } else {
         sidebar = sidebar.width(240.0).flex_shrink(0.0);
+        sidebar = sidebar.push(header);
     }
     sidebar
-        .push(header)
         .push(ScrollView::new(list.boxed()).flex_grow(1.0))
         .boxed()
 }
