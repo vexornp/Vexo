@@ -2,13 +2,17 @@ use vexo::{
     Application, Color, Column, ComponentState, SafeArea, Signal, Text, TextEdit,
     TextEditingController, Widget,
 };
-use vexo_uikit::{Button, ButtonVariant, NavigationItem, NavigationSplitView};
+use vexo_uikit::{
+    Button, ButtonVariant, NavigationController, NavigationItem, NavigationSplitView,
+    NavigationStackView,
+};
 
 uniffi::setup_scaffolding!();
 
 #[derive(ComponentState, Default)]
 pub struct State {
     selection_log: Signal<u32>,
+    nav_controller: NavigationController<String>,
 }
 
 /// Lazily create a `TextEditingController` for the demo's TextEdit.
@@ -55,6 +59,8 @@ impl Application for State {
         ];
 
         let selection_count = state.selection_log.clone();
+        let nav_controller = state.nav_controller.clone();
+        let nav_for_selection_change = state.nav_controller.clone();
         let detail_closure = move |id: &&str| -> Box<dyn Widget> {
             let title_widget = Text::new(*id).with_font_size(32.0);
 
@@ -79,7 +85,8 @@ impl Application for State {
             };
 
             let count = selection_count.clone();
-            Column::new()
+            let root_nav = nav_controller.clone();
+            let detail_column = Column::new()
                 .gap(16.0)
                 .padding(24.0)
                 .background(Color::WHITE)
@@ -97,6 +104,47 @@ impl Application for State {
                     "Counter: {}",
                     selection_count.get()
                 )))
+                .push(
+                    // slot 4: always Button — push the first stack page
+                    Button::new("Next page")
+                        .variant(ButtonVariant::Primary)
+                        .on_press(move || {
+                            root_nav.push("page-1".to_string());
+                        }),
+                )
+                .boxed();
+
+            // Embed the detail page in a NavigationStackView so the detail
+            // pane has its own LIFO stack of pushed pages. The controller
+            // shares its path (Rc<RefCell>) with the destination closure
+            // below and the one reset on sidebar switch, so pushes from any
+            // page reach the same stack the view reads.
+            let dest_nav = nav_controller.clone();
+            NavigationStackView::new(nav_controller.clone(), detail_column)
+                .root_title(*id)
+                .title(|d: &String| format!("Page: {}", d))
+                .destination(move |d: &String| {
+                    // "page-N" → "page-(N+1)"; anything else → "page-1"
+                    let next = d
+                        .strip_prefix("page-")
+                        .and_then(|n| n.parse::<u32>().ok())
+                        .map(|n| format!("page-{}", n + 1))
+                        .unwrap_or_else(|| "page-1".to_string());
+                    let ctrl = dest_nav.clone();
+                    Column::new()
+                        .gap(16.0)
+                        .padding(24.0)
+                        .push(Text::new(format!("Page: {}", d)).with_font_size(24.0))
+                        .push(Text::new(format!("You are on pushed page \"{}\".", d)))
+                        .push(
+                            Button::new("Next page")
+                                .variant(ButtonVariant::Primary)
+                                .on_press(move || {
+                                    ctrl.push(next.clone());
+                                }),
+                        )
+                        .boxed()
+                })
                 .boxed()
         };
 
@@ -104,7 +152,8 @@ impl Application for State {
             NavigationSplitView::new(items)
                 .default_selection("inbox")
                 .detail(detail_closure)
-                .on_selection_change(|id| {
+                .on_selection_change(move |id| {
+                    nav_for_selection_change.pop_to_root();
                     log::debug!("NavigationSplitView selection changed: {}", id);
                 }),
         )
