@@ -3,13 +3,13 @@
 //! Elements are the middle tree in the three-tree architecture.
 //! They bridge Widget (configuration) and RenderObject (layout/paint).
 
+use slotmap::{SecondaryMap, SlotMap};
 use std::any::Any;
-use slotmap::{SlotMap, SecondaryMap};
 
-use super::id::ElementKey;
-use super::key::WidgetKey;
 use super::element_context::ElementContext;
 use super::focus::attachment::FocusAttachment;
+use super::id::ElementKey;
+use super::key::WidgetKey;
 /// Persistent element with state and lifecycle.
 ///
 /// Elements represent the "live" state of the UI tree. They:
@@ -47,11 +47,7 @@ pub trait Element {
     }
 
     /// Rebuild this element with a new widget.
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         self.update(new_widget, context);
     }
 
@@ -63,7 +59,13 @@ pub trait Element {
     ///
     /// The `child_ro` parameter is the child's render object key (if any).
     /// The `slot` parameter indicates the position for multi-child elements.
-    fn child_mounted(&mut self, _slot: Option<usize>, _child_ro: Option<super::id::RenderObjectKey>, _context: &mut ElementContext) {}
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        _child_ro: Option<super::id::RenderObjectKey>,
+        _context: &mut ElementContext,
+    ) {
+    }
 
     /// Rebuild this element from its current state (without a new widget).
     fn rebuild_from_state(&mut self, _context: &mut ElementContext) {}
@@ -107,11 +109,7 @@ impl ElementRegistry {
     /// Insert an element into the registry and set up parent metadata.
     /// Does NOT call element.mount() — the pipeline handles lifecycle.
     /// Does NOT add to parent's children list — the pipeline calls add_child() separately.
-    pub fn insert(
-        &mut self,
-        element: Box<dyn Element>,
-        parent: Option<ElementKey>,
-    ) -> ElementKey {
+    pub fn insert(&mut self, element: Box<dyn Element>, parent: Option<ElementKey>) -> ElementKey {
         let key = self.slots.insert(element);
         self.parent_map.insert(key, parent);
         if parent.is_none() {
@@ -123,7 +121,11 @@ impl ElementRegistry {
     /// Add a child to a parent's children list at the given slot position.
     /// Called by the reconciler after executing a ChildOp::Inflate.
     pub fn add_child(&mut self, parent: ElementKey, child: ElementKey, slot: Option<usize>) {
-        let children = self.children_map.entry(parent).expect("entry for existing parent key").or_default();
+        let children = self
+            .children_map
+            .entry(parent)
+            .expect("entry for existing parent key")
+            .or_default();
         if let Some(idx) = slot {
             if idx >= children.len() {
                 children.resize(idx + 1, child);
@@ -133,6 +135,26 @@ impl ElementRegistry {
         } else {
             children.push(child);
         }
+    }
+
+    /// Replace the child at the given slot with a new child key.
+    ///
+    /// Called by the reconciler during `replace_element` to swap an old element
+    /// key for a new one at the same position, BEFORE unmounting the old element.
+    /// This avoids the slot-shift corruption that would occur if the old element
+    /// were unmounted first (which removes it from the children list, shifting
+    /// subsequent elements left and invalidating the slot index).
+    ///
+    /// Also sets the new child's parent.
+    pub fn replace_child_at(&mut self, parent: ElementKey, slot: usize, new_child: ElementKey) {
+        if let Some(siblings) = self.children_map.get_mut(parent) {
+            if slot < siblings.len() {
+                siblings[slot] = new_child;
+            } else {
+                siblings.resize(slot + 1, new_child);
+            }
+        }
+        self.parent_map.insert(new_child, Some(parent));
     }
 
     /// Call a closure with mutable access to an element and an external context.
@@ -198,7 +220,10 @@ impl ElementRegistry {
 
     /// Get the children of an element.
     pub fn children(&self, key: ElementKey) -> &[ElementKey] {
-        self.children_map.get(key).map(|v| v.as_slice()).unwrap_or_default()
+        self.children_map
+            .get(key)
+            .map(|v| v.as_slice())
+            .unwrap_or_default()
     }
 
     /// Set the children of an element.

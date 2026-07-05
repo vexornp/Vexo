@@ -209,6 +209,14 @@ impl RenderObject for ContainerRenderObject {
         self.children.push(child);
     }
 
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        if let Some(pos) = self.children.iter().position(|&c| c == old) {
+            self.children[pos] = new;
+        } else {
+            self.children.push(new);
+        }
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }

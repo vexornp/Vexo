@@ -8,9 +8,7 @@ use std::any::Any;
 
 use crate::core::{Bounds, Logical, Point};
 use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
-use crate::{
-    LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey,
-};
+use crate::{LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey};
 
 /// Render object for Opacity — applies an alpha multiplier to its child subtree.
 ///
@@ -66,12 +64,18 @@ impl RenderObject for OpacityRenderObject {
             Some(existing) => {
                 ctx.engine().set_style(existing, &layout);
                 ctx.engine().set_children(existing, child_nodes);
-                LayoutResult { node: existing, size: crate::core::Size::zero() }
+                LayoutResult {
+                    node: existing,
+                    size: crate::core::Size::zero(),
+                }
             }
             None => {
                 let node = ctx.engine().create_container(&layout, child_nodes);
                 self.layout_node = Some(node);
-                LayoutResult { node, size: crate::core::Size::zero() }
+                LayoutResult {
+                    node,
+                    size: crate::core::Size::zero(),
+                }
             }
         }
     }
@@ -113,6 +117,12 @@ impl RenderObject for OpacityRenderObject {
 
     fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
+    }
+
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        if self.child == Some(old) {
+            self.child = Some(new);
+        }
     }
 
     fn layout_node(&self) -> Option<LayoutNodeKey> {

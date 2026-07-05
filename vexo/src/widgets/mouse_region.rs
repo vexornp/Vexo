@@ -492,6 +492,12 @@ impl RenderObject for MouseRegionRenderObject {
         self.child = Some(child);
     }
 
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        if self.child == Some(old) {
+            self.child = Some(new);
+        }
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }

@@ -298,6 +298,20 @@ pub trait RenderObject {
         // Default: no-op (leaf nodes and single-child modifiers don't use this)
     }
 
+    /// Replace an existing child render object with a new one at the same position.
+    ///
+    /// Called during element replacement (`replace_element`) when a child element
+    /// changes type (e.g., Column → Text). The old child's render object has been
+    /// removed from the registry; this method swaps the stale key for the new key
+    /// in the parent's children list, preserving position so layout order is correct.
+    ///
+    /// Default implementation appends the new child (fallback for render objects
+    /// that don't track ordered children). Container render objects override this
+    /// to replace in-place.
+    fn replace_child(&mut self, _old: RenderObjectKey, _new: RenderObjectKey) {
+        // Default: no-op (leaf nodes and single-child modifiers don't use this)
+    }
+
     /// Clear all children.
     ///
     /// Only relevant for container render objects (e.g., Flex).

@@ -171,6 +171,10 @@ impl RenderObject for SafeAreaRenderObject {
         self.inner.add_child(child);
     }
 
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        self.inner.replace_child(old, new);
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.inner.layout_node()
     }

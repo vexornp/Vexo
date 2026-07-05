@@ -741,8 +741,15 @@ impl Reconciler {
     /// Replace an element with a new one built from `widget`.
     ///
     /// Called by `rebuild_element` when `can_update()` returns false.
-    /// Unmounts the old element tree, mounts a new one at the same slot,
-    /// and links it into the parent's render object tree.
+    /// Mounts the new element, replaces the old element key at the same slot
+    /// in the parent's children list, swaps the render object key at the same
+    /// position in the parent render object's children list, then unmounts
+    /// the old element tree.
+    ///
+    /// The replacement happens BEFORE unmounting so the slot index remains
+    /// valid. If we unmounted first, the old element would be removed from
+    /// the parent's children list (shifting subsequent elements left), making
+    /// the computed slot index point at the wrong element.
     fn replace_element(
         element_registry: &mut ElementRegistry,
         render_objects: &mut RenderObjectRegistry,
@@ -756,7 +763,7 @@ impl Reconciler {
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
-        // Find the parent and slot before unmounting.
+        // Find the parent and slot.
         let parent = match element_registry.parent(element_id) {
             Some(p) => p,
             None => return,
@@ -773,21 +780,14 @@ impl Reconciler {
             parent
         );
 
-        // Unmount the old element tree.
-        Self::unmount_element_tree(
-            element_registry,
-            render_objects,
-            state,
-            dirty,
-            build_owner,
-            child_ops,
-            dirty_sender,
-            focus_manager,
-            animation_ticker,
-            element_id,
-        );
+        // Capture the old child's render object key for RO replacement.
+        let old_child_ro = element_registry
+            .get(element_id)
+            .and_then(|el| el.render_object());
 
         // Mount the new element tree with the same parent.
+        // mount_element_tree inserts the element into the registry and sets
+        // parent_map, but does NOT add it to the parent's children list.
         let new_child_key = Self::mount_element_tree(
             element_registry,
             render_objects,
@@ -802,33 +802,47 @@ impl Reconciler {
             widget,
         );
 
-        // Add the new child to the parent's children list at the same slot.
-        element_registry.add_child(parent, new_child_key, slot);
+        // Replace the old element key with the new key at the same slot
+        // in the parent's children list. This must happen BEFORE unmounting
+        // the old element, otherwise the slot index would be stale (the old
+        // element's removal would shift subsequent siblings left).
+        if let Some(idx) = slot {
+            element_registry.replace_child_at(parent, idx, new_child_key);
+        }
 
-        // Link the new child's render object into the parent's render object tree.
-        let child_ro = element_registry
+        // Replace the old render object key with the new one at the same
+        // position in the parent render object's children list. This preserves
+        // the correct layout/paint order. Without this, the new RO would be
+        // appended at the end (via add_child), causing wrong visual order.
+        let new_child_ro = element_registry
             .get(new_child_key)
             .and_then(|el| el.render_object());
+        if let (Some(old_ro), Some(new_ro)) = (old_child_ro, new_child_ro) {
+            if let Some(parent_ro) = element_registry
+                .get(parent)
+                .and_then(|el| el.render_object())
+            {
+                if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
+                    parent_obj.replace_child(old_ro, new_ro);
+                }
+            }
+        }
 
-        let parent_parent = element_registry.parent(parent);
-        let mut ctx = ElementContext::new(
-            parent,
-            parent_parent,
-            element_registry.children(parent).to_vec(),
+        // Now unmount the old element tree. The old element's key has already
+        // been replaced in the parent's children list, so the retain() inside
+        // element_registry.unmount() is a no-op — no further shifting occurs.
+        Self::unmount_element_tree(
+            element_registry,
+            render_objects,
             state,
             dirty,
-            render_objects,
             build_owner,
-            dirty_sender,
             child_ops,
+            dirty_sender,
             focus_manager,
-            None,
-            animation_ticker.clone(),
+            animation_ticker,
+            element_id,
         );
-
-        element_registry.with_element(parent, &mut ctx, |element, ctx| {
-            element.child_mounted(slot, child_ro, ctx);
-        });
 
         // Mark the parent's render object for layout so the new child's
         // Taffy node gets linked into the layout tree.

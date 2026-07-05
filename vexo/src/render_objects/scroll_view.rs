@@ -4,10 +4,12 @@ use std::any::Any;
 use std::cell::Cell;
 
 use crate::core::{Bounds, Logical, Point, Size};
-use crate::layout::{FlexDirection, AlignItems, Layout, LayoutNodeKey, Overflow};
-use crate::render::RenderCommand;
-use crate::render_object::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
 use crate::id::RenderObjectKey;
+use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey, Overflow};
+use crate::render::RenderCommand;
+use crate::render_object::{
+    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject,
+};
 
 pub struct ScrollViewRenderObject {
     child: Option<RenderObjectKey>,
@@ -74,12 +76,18 @@ impl RenderObject for ScrollViewRenderObject {
             Some(existing) => {
                 ctx.engine().set_style(existing, &layout);
                 ctx.engine().set_children(existing, child_nodes);
-                LayoutResult { node: existing, size: Size::zero() }
+                LayoutResult {
+                    node: existing,
+                    size: Size::zero(),
+                }
             }
             None => {
                 let node = ctx.engine().create_container(&layout, child_nodes);
                 self.layout_node = Some(node);
-                LayoutResult { node, size: Size::zero() }
+                LayoutResult {
+                    node,
+                    size: Size::zero(),
+                }
             }
         }
     }
@@ -112,7 +120,8 @@ impl RenderObject for ScrollViewRenderObject {
     }
 
     fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
-        self.computed_bounds.map_or(false, |b| b.contains(&position))
+        self.computed_bounds
+            .map_or(false, |b| b.contains(&position))
     }
 
     fn children(&self) -> &[RenderObjectKey] {
@@ -122,15 +131,29 @@ impl RenderObject for ScrollViewRenderObject {
         }
     }
 
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 
     fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
     }
 
-    fn layout_node(&self) -> Option<LayoutNodeKey> { self.layout_node }
-    fn computed_bounds(&self) -> Option<Bounds<Logical>> { self.computed_bounds }
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        if self.child == Some(old) {
+            self.child = Some(new);
+        }
+    }
+
+    fn layout_node(&self) -> Option<LayoutNodeKey> {
+        self.layout_node
+    }
+    fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+        self.computed_bounds
+    }
 
     fn clip_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds

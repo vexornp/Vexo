@@ -859,6 +859,12 @@ impl RenderObject for ProxyRenderObject {
         self.child = Some(child);
     }
 
+    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
+        if self.child == Some(old) {
+            self.child = Some(new);
+        }
+    }
+
     fn layout_node(&self) -> Option<crate::layout::LayoutNodeKey> {
         self.layout_node
     }
