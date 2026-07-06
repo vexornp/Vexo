@@ -4,8 +4,8 @@
 //! `Paint::paint()` and the existing `FrameBuilder` renderer.
 
 use crate::core::{AffineTransform, Bounds, Logical, Point, Stroke};
-use crate::render::RenderCommand;
 use crate::frame_builder::FrameBuilder;
+use crate::render::RenderCommand;
 
 /// Process a list of render commands into FrameBuilder calls.
 ///
@@ -50,7 +50,8 @@ pub fn process_commands(
                 corner_radius,
             } => {
                 let fill = fill.with_alpha(fill.a * current_opacity);
-                let stroke = stroke.map(|s| Stroke::new(s.color.with_alpha(s.color.a * current_opacity), s.width));
+                let stroke = stroke
+                    .map(|s| Stroke::new(s.color.with_alpha(s.color.a * current_opacity), s.width));
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
@@ -67,14 +68,13 @@ pub fn process_commands(
                 position,
                 font_size,
                 color,
+                font_family,
                 max_width,
             } => {
                 let color = color.with_alpha(color.a * current_opacity);
                 // Apply offset to text position
-                let offset_pos = Point::new(
-                    position.x + current_offset.x,
-                    position.y + current_offset.y,
-                );
+                let offset_pos =
+                    Point::new(position.x + current_offset.x, position.y + current_offset.y);
                 // For text, apply center-relative transform: rotate around the origin,
                 // not around the text's own position or the window origin.
                 // T(origin) * transform * T(-origin) maps the position correctly.
@@ -82,11 +82,24 @@ pub fn process_commands(
                     offset_pos
                 } else {
                     // Translate to origin, apply transform, translate back
-                    let relative = Point::new(offset_pos.x - current_origin.x, offset_pos.y - current_origin.y);
+                    let relative = Point::new(
+                        offset_pos.x - current_origin.x,
+                        offset_pos.y - current_origin.y,
+                    );
                     let transformed = current_transform.transform_point(relative);
-                    Point::new(transformed.x + current_origin.x, transformed.y + current_origin.y)
+                    Point::new(
+                        transformed.x + current_origin.x,
+                        transformed.y + current_origin.y,
+                    )
                 };
-                frame_builder.add_text(content, final_pos, *font_size, color, *max_width);
+                frame_builder.add_text(
+                    content,
+                    final_pos,
+                    *font_size,
+                    color,
+                    font_family.clone(),
+                    *max_width,
+                );
             }
             RenderCommand::Caret {
                 position,
@@ -95,24 +108,32 @@ pub fn process_commands(
             } => {
                 let color = color.with_alpha(color.a * current_opacity);
                 // Apply offset to caret position
-                let offset_pos: Point<Logical> = Point::new(
-                    position.x + current_offset.x,
-                    position.y + current_offset.y,
-                );
+                let offset_pos: Point<Logical> =
+                    Point::new(position.x + current_offset.x, position.y + current_offset.y);
                 // Same center-relative transform as text
                 let final_pos = if current_transform.is_identity() {
                     offset_pos
                 } else {
-                    let relative = Point::new(offset_pos.x - current_origin.x, offset_pos.y - current_origin.y);
+                    let relative = Point::new(
+                        offset_pos.x - current_origin.x,
+                        offset_pos.y - current_origin.y,
+                    );
                     let transformed = current_transform.transform_point(relative);
-                    Point::new(transformed.x + current_origin.x, transformed.y + current_origin.y)
+                    Point::new(
+                        transformed.x + current_origin.x,
+                        transformed.y + current_origin.y,
+                    )
                 };
                 let bounds = Bounds::from_xywh(final_pos.x, final_pos.y, 2.0, *height);
                 frame_builder.push_transform(current_transform);
                 frame_builder.add_rect(bounds, color, None, 0.0);
                 frame_builder.pop_transform();
             }
-            RenderCommand::Image { bounds, image_key, corner_radius } => {
+            RenderCommand::Image {
+                bounds,
+                image_key,
+                corner_radius,
+            } => {
                 let offset_bounds: Bounds<Logical> = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
@@ -156,10 +177,7 @@ pub fn process_commands(
             }
             RenderCommand::PushOffset { offset: off } => {
                 offset_stack.push(current_offset);
-                current_offset = Point::new(
-                    current_offset.x + off.x,
-                    current_offset.y + off.y,
-                );
+                current_offset = Point::new(current_offset.x + off.x, current_offset.y + off.y);
             }
             RenderCommand::PopOffset => {
                 if let Some(prev_offset) = offset_stack.pop() {
@@ -307,7 +325,9 @@ mod tests {
         let mut frame_builder = FrameBuilder::new();
         let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
         let commands = vec![
-            RenderCommand::PushClip { bounds: clip_bounds },
+            RenderCommand::PushClip {
+                bounds: clip_bounds,
+            },
             RenderCommand::rect(Bounds::from_xywh(10.0, 10.0, 50.0, 50.0), Color::RED),
             RenderCommand::PopClip,
         ];
@@ -322,7 +342,9 @@ mod tests {
     fn test_process_clip_with_offset() {
         let mut frame_builder = FrameBuilder::new();
         let clip_bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
-        let commands = vec![RenderCommand::PushClip { bounds: clip_bounds }];
+        let commands = vec![RenderCommand::PushClip {
+            bounds: clip_bounds,
+        }];
 
         process_commands(&commands, &mut frame_builder, Point::new(50.0, 25.0));
 

@@ -191,6 +191,7 @@ impl RenderObject for TextEditRenderObject {
             content: self.content.clone(),
             font_size: self.font_size,
             line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
+            font_family: None,
         });
 
         let layout = self.layout.clone();
@@ -390,6 +391,7 @@ impl RenderObject for TextEditRenderObject {
             position: text_pos,
             font_size: self.font_size,
             color: Color::BLACK,
+            font_family: None,
             max_width: Some(bounds.width()),
         });
 

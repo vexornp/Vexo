@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use glyphon::{cosmic_text, Attrs, Buffer, FontSystem, Metrics, Shaping};
+use glyphon::{cosmic_text, Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
 
 use crate::frame_builder::TextRequest;
 use crate::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER;
@@ -20,6 +20,7 @@ struct TextCacheKey {
     content: String,
     font_size_bits: u32,
     color_bits: [u32; 4],
+    font_family: Option<String>,
     max_width_bits: Option<u32>,
 }
 
@@ -34,6 +35,7 @@ impl TextCacheKey {
                 req.color.b.to_bits(),
                 req.color.a.to_bits(),
             ],
+            font_family: req.font_family.clone(),
             max_width_bits: req.max_width.map(|w| w.to_bits()),
         }
     }
@@ -91,10 +93,14 @@ impl TextCache {
 
         let color_rgba_u8: cosmic_text::Color = request.color.into();
 
+        let mut attrs = Attrs::new().color(color_rgba_u8);
+        if let Some(fam) = &request.font_family {
+            attrs = attrs.family(Family::Name(fam));
+        }
         buffer.set_text(
             font_system,
             &request.content,
-            &Attrs::new().color(color_rgba_u8),
+            &attrs,
             Shaping::Advanced,
             None,
         );
@@ -125,5 +131,72 @@ impl TextCache {
 impl Default for TextCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{Color, Logical, Point};
+
+    fn make_request(content: &str, family: Option<&str>) -> TextRequest {
+        TextRequest {
+            content: content.to_string(),
+            position: Point::<Logical>::new(0.0, 0.0),
+            size: 24.0,
+            color: Color::BLACK,
+            font_family: family.map(|s| s.to_string()),
+            max_width: None,
+        }
+    }
+
+    #[test]
+    fn cache_key_differs_by_font_family() {
+        // Same content/size/color, different family → distinct keys.
+        let r1 = make_request("\u{e001}", Some("iconfont"));
+        let r2 = make_request("\u{e001}", Some("other"));
+        let r3 = make_request("\u{e001}", None);
+        let k1 = TextCacheKey::from_request(&r1);
+        let k2 = TextCacheKey::from_request(&r2);
+        let k3 = TextCacheKey::from_request(&r3);
+        assert_ne!(k1, k2, "different family names must produce different keys");
+        assert_ne!(k1, k3, "family set vs None must produce different keys");
+        assert_ne!(k2, k3);
+    }
+
+    #[test]
+    fn cache_key_equal_when_family_matches() {
+        let r1 = make_request("\u{e001}", Some("iconfont"));
+        let r2 = make_request("\u{e001}", Some("iconfont"));
+        assert_eq!(
+            TextCacheKey::from_request(&r1),
+            TextCacheKey::from_request(&r2)
+        );
+    }
+
+    #[test]
+    fn cache_key_differs_by_content() {
+        let r1 = make_request("\u{e001}", Some("iconfont"));
+        let r2 = make_request("\u{e002}", Some("iconfont"));
+        assert_ne!(
+            TextCacheKey::from_request(&r1),
+            TextCacheKey::from_request(&r2)
+        );
+    }
+
+    #[test]
+    fn get_or_create_returns_distinct_buffers_for_different_families() {
+        // Two texts with the same codepoint but different families must not
+        // share a cached buffer — otherwise the second one would render with
+        // the first one's glyphs.
+        let mut fs = crate::resource::new_font_system();
+        let mut cache = TextCache::new();
+        let r1 = make_request("A", Some("Roboto"));
+        let r2 = make_request("A", None);
+        let _b1 = cache.get_or_create(&mut fs, &r1);
+        let _b2 = cache.get_or_create(&mut fs, &r2);
+        // Both requests shared content/size/color but differed in family, so
+        // the cache must hold two distinct entries.
+        assert_eq!(cache.cache.len(), 2);
     }
 }

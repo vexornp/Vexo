@@ -25,3 +25,57 @@ pub fn new_font_system() -> glyphon::FontSystem {
     db.set_monospace_family(EMBEDDED_FONT_FAMILY);
     font_system
 }
+
+/// Register an additional font (e.g. an icon font) with an existing
+/// `FontSystem`.
+///
+/// The font's family name (read from its name table) is what
+/// [`crate::widgets::Text::with_font_family`] references. The bytes are
+/// copied into an `Arc<Vec<u8>>` owned by the font database, so the caller's
+/// `bytes` slice need not be kept alive after this call returns.
+///
+/// # Example
+///
+/// ```ignore
+/// impl Application for MyApp {
+///     fn register_fonts(fs: &mut glyphon::FontSystem) {
+///         vexo::resource::register_font(fs, include_bytes!("../assets/iconfont.ttf"));
+///     }
+/// }
+/// ```
+pub fn register_font(font_system: &mut glyphon::FontSystem, bytes: &[u8]) {
+    let source = glyphon::fontdb::Source::Binary(alloc::sync::Arc::new(bytes.to_vec()));
+    font_system.db_mut().load_font_source(source);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_font_increases_face_count() {
+        let mut fs = new_font_system();
+        let before = fs.db().faces().count();
+        // Register the embedded font again as an additional source. It's a
+        // valid TTF, so the face count must grow.
+        register_font(&mut fs, file::FONT);
+        let after = fs.db().faces().count();
+        assert!(after > before, "register_font must add a face to the db");
+    }
+
+    #[test]
+    fn register_font_makes_family_resolvable() {
+        // The embedded font's family is "Roboto". Registering it and then
+        // querying for that family must yield at least one match.
+        let mut fs = glyphon::FontSystem::new();
+        register_font(&mut fs, file::FONT);
+        let query = glyphon::fontdb::Query {
+            families: &[glyphon::fontdb::Family::Name(EMBEDDED_FONT_FAMILY)],
+            weight: glyphon::fontdb::Weight::NORMAL,
+            stretch: glyphon::fontdb::Stretch::Normal,
+            style: glyphon::fontdb::Style::Normal,
+        };
+        let id = fs.db().query(&query);
+        assert!(id.is_some(), "registered family must be resolvable");
+    }
+}

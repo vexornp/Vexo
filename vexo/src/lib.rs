@@ -5,6 +5,7 @@ use winit::event_loop::EventLoop;
 
 pub use core::AffineTransform;
 pub use core::Color;
+pub use glyphon;
 pub use image_data::{ImageData, ImageDataError};
 pub use uniffi;
 
@@ -207,6 +208,17 @@ pub trait Application: Sized + 'static {
 
     /// Returns a widget tree for the three-tree architecture.
     fn view(state: &mut Self::State) -> Box<dyn Widget>;
+
+    /// Register additional fonts (e.g. icon fonts) with the window's
+    /// `FontSystem`.
+    ///
+    /// Called once during window initialization, after the embedded default
+    /// font has been loaded. The default implementation is a no-op.
+    ///
+    /// Use [`crate::resource::register_font`] to add font bytes; the family
+    /// name embedded in the font file is what
+    /// [`crate::Text::with_font_family`] references.
+    fn register_fonts(_font_system: &mut glyphon::FontSystem) {}
 }
 
 /// Root component that bridges the `Application` trait into the widget tree.

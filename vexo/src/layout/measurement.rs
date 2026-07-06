@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use glyphon::{Attrs, Buffer, FontSystem, Metrics, Shaping};
+use glyphon::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
 
 use crate::core::{Logical, Size};
 
@@ -23,6 +23,9 @@ pub struct TextMeasureContext {
     pub font_size: f32,
     /// Line height multiplier (default 1.2).
     pub line_height: f32,
+    /// Optional font family name. When set, text is shaped against this
+    /// family; when `None`, the framework default is used.
+    pub font_family: Option<String>,
 }
 
 /// Context for nodes that need custom measurement.
@@ -55,6 +58,7 @@ impl<'a> TextMeasurer<'a> {
     /// - `content`: Text to measure
     /// - `font_size`: Font size in logical pixels
     /// - `line_height`: Line height multiplier
+    /// - `font_family`: Optional font family name (e.g. an icon font family)
     /// - `available_width`: Available width for wrapping (None = infinite)
     /// - `available_height`: Available height (None = infinite)
     pub fn measure(
@@ -62,6 +66,7 @@ impl<'a> TextMeasurer<'a> {
         content: &str,
         font_size: f32,
         line_height: f32,
+        font_family: Option<&str>,
         available_width: Option<f32>,
         available_height: Option<f32>,
     ) -> Size<Logical> {
@@ -72,13 +77,11 @@ impl<'a> TextMeasurer<'a> {
         buffer.set_size(self.font_system, available_width, available_height);
 
         // Set and shape the text
-        buffer.set_text(
-            self.font_system,
-            content,
-            &Attrs::new(),
-            Shaping::Advanced,
-            None,
-        );
+        let mut attrs = Attrs::new();
+        if let Some(fam) = font_family {
+            attrs = attrs.family(Family::Name(fam));
+        }
+        buffer.set_text(self.font_system, content, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(self.font_system, true);
 
         // Calculate dimensions from layout runs
@@ -104,6 +107,7 @@ pub struct MeasureCacheKey {
     content_hash: u64,
     font_size_bits: u32,
     line_height_bits: u32,
+    font_family_hash: u64,
     available_width_bits: Option<u32>,
     available_height_bits: Option<u32>,
 }
@@ -114,6 +118,7 @@ impl MeasureCacheKey {
         content: &str,
         font_size: f32,
         line_height: f32,
+        font_family: Option<&str>,
         available_width: Option<f32>,
         available_height: Option<f32>,
     ) -> Self {
@@ -121,10 +126,20 @@ impl MeasureCacheKey {
         content.hash(&mut hasher);
         let content_hash = hasher.finish();
 
+        let font_family_hash = match font_family {
+            Some(fam) => {
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                fam.hash(&mut h);
+                h.finish()
+            }
+            None => 0,
+        };
+
         Self {
             content_hash,
             font_size_bits: font_size.to_bits(),
             line_height_bits: line_height.to_bits(),
+            font_family_hash,
             available_width_bits: available_width.map(|f| f.to_bits()),
             available_height_bits: available_height.map(|f| f.to_bits()),
         }
@@ -233,6 +248,7 @@ pub fn measure_text_node(
                 &text_ctx.content,
                 text_ctx.font_size,
                 text_ctx.line_height,
+                text_ctx.font_family.as_deref(),
                 None,
                 None,
             );
@@ -246,6 +262,7 @@ pub fn measure_text_node(
                     &text_ctx.content,
                     text_ctx.font_size,
                     text_ctx.line_height,
+                    text_ctx.font_family.as_deref(),
                     None,
                     None,
                 );
@@ -267,6 +284,7 @@ pub fn measure_text_node(
                     &text_ctx.content,
                     text_ctx.font_size,
                     text_ctx.line_height,
+                    text_ctx.font_family.as_deref(),
                     Some(1.0),
                     None,
                 );
@@ -277,6 +295,7 @@ pub fn measure_text_node(
                         &text_ctx.content,
                         text_ctx.font_size,
                         text_ctx.line_height,
+                        text_ctx.font_family.as_deref(),
                         Some(1.0),
                         None,
                     );
@@ -310,6 +329,7 @@ pub fn measure_text_node(
                         &text_ctx.content,
                         text_ctx.font_size,
                         text_ctx.line_height,
+                        text_ctx.font_family.as_deref(),
                         Some(max_w),
                         available_height,
                     )
@@ -324,6 +344,7 @@ pub fn measure_text_node(
                 &text_ctx.content,
                 text_ctx.font_size,
                 text_ctx.line_height,
+                text_ctx.font_family.as_deref(),
                 if measured_size.width < natural_size.width {
                     definite_width
                 } else {
@@ -377,7 +398,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let size = measurer.measure("Hello", 24.0, 1.2, None, None);
+        let size = measurer.measure("Hello", 24.0, 1.2, None, None, None);
 
         assert!(size.width > 0.0, "Width should be positive");
         assert!(size.height > 0.0, "Height should be positive");
@@ -392,8 +413,8 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let size1 = measurer.measure("Hello World", 24.0, 1.2, None, None);
-        let size2 = measurer.measure("Hello World", 24.0, 1.2, Some(50.0), None);
+        let size1 = measurer.measure("Hello World", 24.0, 1.2, None, None, None);
+        let size2 = measurer.measure("Hello World", 24.0, 1.2, None, Some(50.0), None);
 
         // Wrapped text should be narrower but taller
         assert!(size2.width < size1.width, "Wrapped text should be narrower");
@@ -405,7 +426,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let size = measurer.measure("Line1\nLine2\nLine3", 24.0, 1.2, None, None);
+        let size = measurer.measure("Line1\nLine2\nLine3", 24.0, 1.2, None, None, None);
 
         // Should have height for 3 lines
         assert!(
@@ -419,7 +440,7 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut measurer = TextMeasurer::new(&mut font_system);
 
-        let size = measurer.measure("", 24.0, 1.2, None, None);
+        let size = measurer.measure("", 24.0, 1.2, None, None, None);
 
         assert_eq!(size.width, 0.0, "Empty text should have zero width");
         assert!(
@@ -432,7 +453,7 @@ mod tests {
     fn test_cache_hit() {
         let mut cache = MeasureCache::new();
 
-        let key = MeasureCacheKey::new("test", 24.0, 1.2, None, None);
+        let key = MeasureCacheKey::new("test", 24.0, 1.2, None, None, None);
         cache.insert(key.clone(), Size::new(100.0, 30.0));
 
         let result = cache.get(&key);
@@ -445,15 +466,15 @@ mod tests {
         cache.max_entries = 2;
 
         cache.insert(
-            MeasureCacheKey::new("a", 24.0, 1.2, None, None),
+            MeasureCacheKey::new("a", 24.0, 1.2, None, None, None),
             Size::new(1.0, 1.0),
         );
         cache.insert(
-            MeasureCacheKey::new("b", 24.0, 1.2, None, None),
+            MeasureCacheKey::new("b", 24.0, 1.2, None, None, None),
             Size::new(2.0, 2.0),
         );
         cache.insert(
-            MeasureCacheKey::new("c", 24.0, 1.2, None, None),
+            MeasureCacheKey::new("c", 24.0, 1.2, None, None, None),
             Size::new(3.0, 3.0),
         );
 

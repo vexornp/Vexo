@@ -8,6 +8,9 @@ pub struct TextRequest {
     pub position: Point<Logical>,
     pub size: f32,
     pub color: Color,
+    /// Optional font family name. When set, the text is shaped against this
+    /// family (e.g. an icon font); when `None`, the framework default is used.
+    pub font_family: Option<String>,
     /// Maximum width for text wrapping. If None, no wrapping.
     pub max_width: Option<f32>,
 }
@@ -108,7 +111,10 @@ impl FrameBuilder {
             let first_instance = instances.len() as u32;
             instances.extend_from_slice(&group.quads);
             let count = group.quads.len() as u32;
-            draw_ranges.push(DrawRange { first_instance, count });
+            draw_ranges.push(DrawRange {
+                first_instance,
+                count,
+            });
         }
         FlattenedQuads {
             instances,
@@ -130,12 +136,20 @@ impl FrameBuilder {
 
     /// Get all quad instances flattened across all clip groups (for testing/compat).
     pub fn quad_instances(&self) -> Vec<QuadInstance> {
-        self.clip_groups.iter().flat_map(|g| &g.quads).copied().collect()
+        self.clip_groups
+            .iter()
+            .flat_map(|g| &g.quads)
+            .copied()
+            .collect()
     }
 
     /// Get all text requests flattened across all clip groups (for testing/compat).
     pub fn text_requests(&self) -> Vec<TextRequest> {
-        self.clip_groups.iter().flat_map(|g| &g.text_requests).cloned().collect()
+        self.clip_groups
+            .iter()
+            .flat_map(|g| &g.text_requests)
+            .cloned()
+            .collect()
     }
 
     /// Get or create the ClipGroup for the current effective clip.
@@ -272,6 +286,7 @@ impl FrameBuilder {
         position: Point<Logical>,
         size: f32,
         color: impl Into<Color>,
+        font_family: Option<String>,
         max_width: Option<f32>,
     ) {
         let color: Color = color.into();
@@ -281,6 +296,7 @@ impl FrameBuilder {
             position,
             size,
             color,
+            font_family,
             max_width,
         });
     }
@@ -290,7 +306,10 @@ impl FrameBuilder {
     }
 
     pub fn image_count(&self) -> usize {
-        self.clip_groups.iter().map(|g| g.image_requests.len()).sum()
+        self.clip_groups
+            .iter()
+            .map(|g| g.image_requests.len())
+            .sum()
     }
 
     pub fn flatten_image_requests(&self) -> (Vec<ImageRequest>, Vec<DrawRange>) {
@@ -300,7 +319,10 @@ impl FrameBuilder {
             let first_instance = requests.len() as u32;
             requests.extend_from_slice(&group.image_requests);
             let count = group.image_requests.len() as u32;
-            draw_ranges.push(DrawRange { first_instance, count });
+            draw_ranges.push(DrawRange {
+                first_instance,
+                count,
+            });
         }
         (requests, draw_ranges)
     }

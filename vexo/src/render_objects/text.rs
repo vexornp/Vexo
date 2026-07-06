@@ -32,6 +32,9 @@ pub struct TextRenderObject {
     /// [`with_line_height`]: TextRenderObject::with_line_height
     line_height: f32,
     color: Color,
+    /// Optional font family name. When set, text is shaped against this
+    /// family; when `None`, the framework default is used.
+    font_family: Option<String>,
     style: Style,
     layout: Layout,
     computed_bounds: Option<Bounds<Logical>>,
@@ -56,6 +59,7 @@ impl TextRenderObject {
             font_size: 24.0,
             line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
             color: Color::BLACK,
+            font_family: None,
             style: Style::default(),
             layout: Layout::default(),
             computed_bounds: None,
@@ -85,6 +89,12 @@ impl TextRenderObject {
         self
     }
 
+    /// Set the font family. Pass `None` to use the framework default.
+    pub fn with_font_family(mut self, family: Option<String>) -> Self {
+        self.font_family = family;
+        self
+    }
+
     /// Set the style.
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
@@ -110,6 +120,11 @@ impl TextRenderObject {
     /// Get the text color.
     pub fn color(&self) -> Color {
         self.color
+    }
+
+    /// Get the font family, if any.
+    pub fn font_family(&self) -> Option<&str> {
+        self.font_family.as_deref()
     }
 
     /// Get the computed bounds.
@@ -152,6 +167,18 @@ impl TextRenderObject {
         }
     }
 
+    /// Set the font family.
+    ///
+    /// Returns true if the family changed.
+    pub fn set_font_family(&mut self, family: Option<String>) -> bool {
+        if self.font_family != family {
+            self.font_family = family;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Set the style configuration.
     ///
     /// Returns true if the style changed.
@@ -183,6 +210,7 @@ impl RenderObject for TextRenderObject {
             content: self.content.clone(),
             font_size: self.font_size,
             line_height: self.line_height,
+            font_family: self.font_family.clone(),
         });
 
         let layout = self.layout.clone();
@@ -219,8 +247,15 @@ impl RenderObject for TextRenderObject {
                 // wrapped height — otherwise multi-line text is centered as a
                 // single line and overflows the box, overlapping siblings.
                 let mut measurer = TextMeasurer::new(ctx.font_system());
-                let natural =
-                    measurer.measure(&self.content, self.font_size, self.line_height, None, None);
+                let fam = self.font_family.as_deref();
+                let natural = measurer.measure(
+                    &self.content,
+                    self.font_size,
+                    self.line_height,
+                    fam,
+                    None,
+                    None,
+                );
                 // Taffy floors layout widths to integers, so a text whose
                 // natural width is e.g. 41.51 may receive box_w=41, which
                 // would spuriously trigger wrapping. Treat the box as
@@ -235,6 +270,7 @@ impl RenderObject for TextRenderObject {
                     &self.content,
                     self.font_size,
                     self.line_height,
+                    fam,
                     effective_max,
                     None,
                 );
@@ -307,6 +343,7 @@ impl RenderObject for TextRenderObject {
                     position: text_pos,
                     font_size: self.font_size,
                     color: self.color,
+                    font_family: self.font_family.clone(),
                     max_width,
                 });
 
@@ -506,5 +543,50 @@ mod tests {
         let mut ro = TextRenderObject::new("Hello").with_layout(layout1);
         assert!(ro.set_layout(layout2));
         assert!(!ro.set_layout(layout2_dup));
+    }
+
+    #[test]
+    fn test_text_render_object_set_font_family_change_detection() {
+        let mut ro = TextRenderObject::new("\u{e001}");
+        // default is None → setting Some should report changed
+        assert!(ro.set_font_family(Some("iconfont".to_string())));
+        assert_eq!(ro.font_family(), Some("iconfont"));
+        // setting same value again should report unchanged
+        assert!(!ro.set_font_family(Some("iconfont".to_string())));
+        // clearing back to None should report changed
+        assert!(ro.set_font_family(None));
+        assert!(ro.font_family().is_none());
+    }
+
+    #[test]
+    fn test_text_render_object_paint_emits_font_family() {
+        let mut ro = TextRenderObject::new("\u{e001}")
+            .with_font_family(Some("iconfont".to_string()))
+            .with_color(Color::BLUE);
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        let family = cmds.iter().find_map(|c| match c {
+            RenderCommand::Text { font_family, .. } => Some(font_family.clone()),
+            _ => None,
+        });
+        assert_eq!(family, Some(Some("iconfont".to_string())));
+    }
+
+    #[test]
+    fn test_text_render_object_paint_emits_none_family_by_default() {
+        let mut ro = TextRenderObject::new("Hello");
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        let family = cmds.iter().find_map(|c| match c {
+            RenderCommand::Text { font_family, .. } => Some(font_family.clone()),
+            _ => None,
+        });
+        assert_eq!(family, Some(None));
     }
 }

@@ -16,6 +16,11 @@ pub struct Text {
     content: String,
     font_size: f32,
     color: Color,
+    /// Optional font family name. When set, text is shaped against this
+    /// family (e.g. an icon font registered via
+    /// [`crate::Application::register_fonts`]); when `None`, the framework
+    /// default is used.
+    font_family: Option<String>,
     style: Style,
     layout: Layout,
 }
@@ -28,6 +33,7 @@ impl Text {
             content: content.into(),
             font_size: 24.0,
             color: Color::BLACK,
+            font_family: None,
             style: Style::default(),
             layout: Layout::default(),
         }
@@ -51,6 +57,22 @@ impl Text {
         self
     }
 
+    /// Set the font family used to shape this text.
+    ///
+    /// Pass the family name embedded in the font file (e.g. `"iconfont"`).
+    /// When set, the text is shaped against this family only; this is the
+    /// primary entry point for rendering icon glyphs:
+    ///
+    /// ```ignore
+    /// Text::new("\u{e001}").with_font_family("iconfont").with_font_size(24.0)
+    /// ```
+    ///
+    /// When `None` (the default), the framework's default font is used.
+    pub fn with_font_family(mut self, family: impl Into<String>) -> Self {
+        self.font_family = Some(family.into());
+        self
+    }
+
     /// Get the text content.
     pub fn content(&self) -> &str {
         &self.content
@@ -66,6 +88,11 @@ impl Text {
         self.color
     }
 
+    /// Get the font family, if any.
+    pub fn font_family(&self) -> Option<&str> {
+        self.font_family.as_deref()
+    }
+
     modifier_methods!();
 }
 
@@ -76,6 +103,7 @@ impl Clone for Text {
             content: self.content.clone(),
             font_size: self.font_size,
             color: self.color,
+            font_family: self.font_family.clone(),
             style: self.style.clone(),
             layout: self.layout.clone(),
         }
@@ -98,6 +126,7 @@ impl Widget for Text {
             TextRenderObject::new(&self.content)
                 .with_font_size(self.font_size)
                 .with_color(self.color)
+                .with_font_family(self.font_family.clone())
                 .with_style(self.style.clone())
                 .with_layout(self.layout.clone()),
         )
@@ -121,6 +150,9 @@ impl Widget for Text {
             }
             if text_ro.set_color(self.color) {
                 result |= UpdateResult::PAINT;
+            }
+            if text_ro.set_font_family(self.font_family.clone()) {
+                result |= UpdateResult::LAYOUT;
             }
             if text_ro.set_style(self.style.clone()) {
                 result |= UpdateResult::PAINT;
@@ -264,5 +296,54 @@ mod tests {
     fn test_text_modifier_preserves_font_size() {
         let w = Text::new("Hello").with_font_size(32.0).padding(8.0);
         assert_eq!(w.font_size(), 32.0);
+    }
+
+    #[test]
+    fn test_text_widget_with_font_family() {
+        let w = Text::new("\u{e001}").with_font_family("iconfont");
+        assert_eq!(w.font_family(), Some("iconfont"));
+        // default is None
+        assert!(Text::new("x").font_family().is_none());
+    }
+
+    #[test]
+    fn test_text_widget_font_family_preserved_through_clone() {
+        let w = Text::new("\u{e001}")
+            .with_font_family("iconfont")
+            .with_font_size(24.0);
+        let cloned = w.clone();
+        assert_eq!(cloned.font_family(), Some("iconfont"));
+        assert_eq!(cloned.font_size(), 24.0);
+    }
+
+    #[test]
+    fn test_text_widget_font_family_survives_modifier() {
+        let w = Text::new("\u{e001}")
+            .with_font_family("iconfont")
+            .padding(8.0)
+            .background(crate::core::Color::RED);
+        assert_eq!(w.font_family(), Some("iconfont"));
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_family_change_flags_layout() {
+        let widget = Text::new("\u{e001}").with_font_family("iconfont");
+        let mut ro = TextRenderObject::new("\u{e001}"); // default family None
+        ro.set_font_size(24.0); // match widget default
+        let result = widget.update_render_object(&mut ro);
+        // family changed → LAYOUT
+        assert!(result.contains(UpdateResult::LAYOUT));
+        assert_eq!(ro.font_family(), Some("iconfont"));
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_family_no_change() {
+        let widget = Text::new("\u{e001}").with_font_family("iconfont");
+        let mut ro =
+            TextRenderObject::new("\u{e001}").with_font_family(Some("iconfont".to_string()));
+        ro.set_font_size(24.0);
+        let result = widget.update_render_object(&mut ro);
+        // family unchanged → no LAYOUT flag from family
+        assert!(!result.contains(UpdateResult::LAYOUT));
     }
 }

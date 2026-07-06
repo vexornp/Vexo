@@ -3,10 +3,10 @@
 //! This module provides a `LayoutEngine` implementation using the Taffy
 //! layout library (CSS Flexbox-style layout).
 
-use slotmap::{SlotMap, SecondaryMap};
+use slotmap::{SecondaryMap, SlotMap};
 
-use crate::core::{Bounds, Size};
 use crate::core::Logical;
+use crate::core::{Bounds, Size};
 
 use super::engine::LayoutEngine;
 use super::measurement::{measure_text_node, MeasureCache, MeasureContext};
@@ -84,7 +84,10 @@ impl LayoutEngine for TaffyLayoutEngine {
             .filter_map(|k| self.node_map.get(*k).copied())
             .collect();
 
-        let taffy_id = self.inner.new_with_children(style, &child_taffy_ids).unwrap();
+        let taffy_id = self
+            .inner
+            .new_with_children(style, &child_taffy_ids)
+            .unwrap();
         let key = self.node_map.insert(taffy_id);
         self.children_map.insert(key, children.to_vec());
         key
@@ -333,6 +336,7 @@ mod tests {
             content: "Hello World".to_string(),
             font_size: 24.0,
             line_height: 1.2,
+            font_family: None,
         });
 
         let text_node = engine.create_leaf_with_context(&Layout::default(), context);
@@ -361,6 +365,7 @@ mod tests {
             content: "This is a long text that should wrap when constrained".to_string(),
             font_size: 24.0,
             line_height: 1.2,
+            font_family: None,
         });
 
         let text_node = engine.create_leaf_with_context(&Layout::default(), context);
@@ -373,7 +378,10 @@ mod tests {
         // Text should wrap, so width should be constrained
         assert!(layout.width() <= 100.0, "Text should wrap to fit width");
         // Height should be multiple lines
-        assert!(layout.height() > 24.0 * 1.2, "Wrapped text should have multiple lines");
+        assert!(
+            layout.height() > 24.0 * 1.2,
+            "Wrapped text should have multiple lines"
+        );
     }
 
     // ========================================================================
@@ -418,6 +426,7 @@ mod tests {
             content: "Hello".to_string(),
             font_size: 24.0,
             line_height: 1.2,
+            font_family: None,
         });
         let node = engine.create_leaf_with_context(&Layout::default(), ctx);
         engine.compute(node, Size::new(800.0, 600.0), &mut font_system);
@@ -430,6 +439,7 @@ mod tests {
             content: "Hello World Longer Text".to_string(),
             font_size: 24.0,
             line_height: 1.2,
+            font_family: None,
         });
         engine.set_context(node, ctx2);
         assert!(engine.is_dirty(node));
@@ -438,7 +448,10 @@ mod tests {
         engine.compute(node, Size::new(800.0, 600.0), &mut font_system);
 
         let layout2 = engine.get_layout(node).unwrap();
-        assert!(layout2.width() > width1, "Longer text should have wider layout");
+        assert!(
+            layout2.width() > width1,
+            "Longer text should have wider layout"
+        );
         assert!(!engine.is_dirty(node));
     }
 

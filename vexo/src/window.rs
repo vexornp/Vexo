@@ -92,7 +92,10 @@ impl<A: Application + 'static> WindowState<A> {
         let scale_source = backend.scale_source();
 
         // Initialize font system with embedded font + default-family override
-        let font_system = crate::resource::new_font_system();
+        let mut font_system = crate::resource::new_font_system();
+        // Give the application a chance to register additional fonts (e.g.
+        // icon fonts) before any layout or shaping runs.
+        A::register_fonts(&mut font_system);
 
         let layout_engine = Box::new(TaffyLayoutEngine::new());
 

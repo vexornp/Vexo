@@ -10,8 +10,8 @@
 //! - Support different rendering strategies (batching, culling, etc.)
 //! - Allow for render command recording and replay
 
-use crate::core::{AffineTransform, Bounds, Color, Point, Stroke};
 use crate::core::Logical;
+use crate::core::{AffineTransform, Bounds, Color, Point, Stroke};
 use crate::image_atlas::ImageKey;
 
 // ============================================================================
@@ -46,6 +46,10 @@ pub enum RenderCommand {
         font_size: f32,
         /// Text color.
         color: Color,
+        /// Optional font family name. When set, the text is shaped against
+        /// this family (e.g. an icon font); when `None`, the framework
+        /// default font is used.
+        font_family: Option<String>,
         /// Maximum width for text wrapping (optional).
         max_width: Option<f32>,
     },
@@ -166,12 +170,36 @@ impl RenderCommand {
     }
 
     /// Create a text command.
-    pub fn text(content: impl Into<String>, position: Point<Logical>, font_size: f32, color: Color) -> Self {
+    pub fn text(
+        content: impl Into<String>,
+        position: Point<Logical>,
+        font_size: f32,
+        color: Color,
+    ) -> Self {
         Self::Text {
             content: content.into(),
             position,
             font_size,
             color,
+            font_family: None,
+            max_width: None,
+        }
+    }
+
+    /// Create a text command with a font family.
+    pub fn text_with_family(
+        content: impl Into<String>,
+        position: Point<Logical>,
+        font_size: f32,
+        color: Color,
+        font_family: Option<String>,
+    ) -> Self {
+        Self::Text {
+            content: content.into(),
+            position,
+            font_size,
+            color,
+            font_family,
             max_width: None,
         }
     }
@@ -199,7 +227,9 @@ pub struct RenderCommandList {
 impl RenderCommandList {
     /// Create an empty command list.
     pub fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+        }
     }
 
     /// Create a command list with pre-allocated capacity.
@@ -289,7 +319,9 @@ mod tests {
         let cmd = RenderCommand::rect_with_border(bounds, Color::WHITE, Color::BLACK, 2.0);
 
         match cmd {
-            RenderCommand::Rect { stroke: Some(s), .. } => {
+            RenderCommand::Rect {
+                stroke: Some(s), ..
+            } => {
                 assert_eq!(s.color, Color::BLACK);
                 assert_eq!(s.width, 2.0);
             }
@@ -308,12 +340,14 @@ mod tests {
                 position,
                 font_size,
                 color,
+                font_family,
                 max_width,
             } => {
                 assert_eq!(content, "Hello");
                 assert_eq!(position.x, 10.0);
                 assert_eq!(font_size, 16.0);
                 assert_eq!(color, Color::BLACK);
+                assert!(font_family.is_none());
                 assert!(max_width.is_none());
             }
             _ => panic!("Expected Text command"),
@@ -329,7 +363,12 @@ mod tests {
             Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
             Color::RED,
         ));
-        list.push(RenderCommand::text("Test", Point::new(0.0, 0.0), 12.0, Color::BLACK));
+        list.push(RenderCommand::text(
+            "Test",
+            Point::new(0.0, 0.0),
+            12.0,
+            Color::BLACK,
+        ));
 
         assert_eq!(list.len(), 2);
         assert!(!list.is_empty());
