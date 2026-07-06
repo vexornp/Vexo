@@ -46,7 +46,10 @@ pub use window::WindowState;
 pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
-pub use layout::{AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Overflow};
+pub use layout::{
+    AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Overflow,
+    DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
+};
 
 /// Platform service abstractions (clipboard, etc.).
 pub mod platform;

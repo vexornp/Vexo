@@ -8,7 +8,9 @@ use std::rc::Rc;
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
 use crate::editor::Editor;
-use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext};
+use crate::layout::{
+    Layout, LayoutNodeKey, MeasureContext, TextMeasureContext, DEFAULT_LINE_HEIGHT_MULTIPLIER,
+};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -188,7 +190,7 @@ impl RenderObject for TextEditRenderObject {
         let measure_ctx = MeasureContext::Text(TextMeasureContext {
             content: self.content.clone(),
             font_size: self.font_size,
-            line_height: 1.2,
+            line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
         });
 
         let layout = self.layout.clone();
@@ -252,7 +254,7 @@ impl RenderObject for TextEditRenderObject {
                 h = h.max(run.line_top + run.line_height);
             }
             if h == 0.0 {
-                self.font_size * 1.2
+                self.font_size * DEFAULT_LINE_HEIGHT_MULTIPLIER
             } else {
                 h
             }

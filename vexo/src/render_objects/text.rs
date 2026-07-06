@@ -1,7 +1,10 @@
 //! TextRenderObject implementation.
 
 use crate::core::{Absolute, Bounds, Color, Logical, Point, Position, Size};
-use crate::layout::{Layout, LayoutNodeKey, MeasureContext, TextMeasureContext, TextMeasurer};
+use crate::layout::{
+    Layout, LayoutNodeKey, MeasureContext, TextMeasureContext, TextMeasurer,
+    DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
+};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -22,6 +25,12 @@ use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObj
 pub struct TextRenderObject {
     content: String,
     font_size: f32,
+    /// Line-height multiplier applied to `font_size` when measuring text.
+    /// Defaults to [`DEFAULT_LINE_HEIGHT_MULTIPLIER`] (1.2); overridable via
+    /// [`with_line_height`].
+    ///
+    /// [`with_line_height`]: TextRenderObject::with_line_height
+    line_height: f32,
     color: Color,
     style: Style,
     layout: Layout,
@@ -30,6 +39,12 @@ pub struct TextRenderObject {
     /// Measured during `apply_layout` so `paint` can vertically center the
     /// (possibly multi-line) text correctly instead of assuming a single line.
     measured_text_height: Option<f32>,
+    /// Natural (unwrapped) width of the text, measured in `apply_layout`.
+    /// Used by `paint` to decide whether to pass a max_width to glyphon:
+    /// if the natural width fits within the (integer-floored) box, no wrap
+    /// constraint is emitted, avoiding spurious wrapping from Taffy's
+    /// subpixel rounding.
+    natural_text_width: Option<f32>,
     layout_node: Option<LayoutNodeKey>,
 }
 
@@ -39,11 +54,13 @@ impl TextRenderObject {
         Self {
             content: content.to_string(),
             font_size: 24.0,
+            line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
             color: Color::BLACK,
             style: Style::default(),
             layout: Layout::default(),
             computed_bounds: None,
             measured_text_height: None,
+            natural_text_width: None,
             layout_node: None,
         }
     }
@@ -51,6 +68,14 @@ impl TextRenderObject {
     /// Set the font size.
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    /// Set the line-height multiplier (applied to `font_size`).
+    ///
+    /// Defaults to [`DEFAULT_LINE_HEIGHT_MULTIPLIER`] (1.2).
+    pub fn with_line_height(mut self, line_height: f32) -> Self {
+        self.line_height = line_height;
         self
     }
 
@@ -157,7 +182,7 @@ impl RenderObject for TextRenderObject {
         let measure_ctx = MeasureContext::Text(TextMeasureContext {
             content: self.content.clone(),
             font_size: self.font_size,
-            line_height: 1.2,
+            line_height: self.line_height,
         });
 
         let layout = self.layout.clone();
@@ -194,14 +219,27 @@ impl RenderObject for TextRenderObject {
                 // wrapped height — otherwise multi-line text is centered as a
                 // single line and overflows the box, overlapping siblings.
                 let mut measurer = TextMeasurer::new(ctx.font_system());
+                let natural =
+                    measurer.measure(&self.content, self.font_size, self.line_height, None, None);
+                // Taffy floors layout widths to integers, so a text whose
+                // natural width is e.g. 41.51 may receive box_w=41, which
+                // would spuriously trigger wrapping. Treat the box as
+                // unbounded when the natural width fits within tolerance.
+                let box_w = computed.bounds.width();
+                let effective_max = if natural.width <= box_w + LAYOUT_WIDTH_TOLERANCE {
+                    None
+                } else {
+                    Some(box_w)
+                };
                 let size = measurer.measure(
                     &self.content,
                     self.font_size,
-                    1.2,
-                    Some(computed.bounds.width()),
+                    self.line_height,
+                    effective_max,
                     None,
                 );
                 self.measured_text_height = Some(size.height);
+                self.natural_text_width = Some(natural.width);
             }
         }
     }
@@ -217,7 +255,9 @@ impl RenderObject for TextRenderObject {
                 // than the text's actual height. Use the wrapped height measured
                 // in `apply_layout` (at `bounds.width()`), falling back to a
                 // single line if measurement is unavailable.
-                let text_height = self.measured_text_height.unwrap_or(self.font_size * 1.2);
+                let text_height = self
+                    .measured_text_height
+                    .unwrap_or(self.font_size * self.line_height);
                 let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
 
                 let absolute_bounds = Bounds::new(
@@ -254,12 +294,20 @@ impl RenderObject for TextRenderObject {
 
                 // 5. Draw text on top of decorations (vertically centered)
                 let text_pos = Point::new(pos.x, pos.y + vertical_offset);
+                // Match apply_layout's tolerance: Taffy floors layout widths
+                // to integers, so a box slightly narrower than the natural
+                // text width must not trigger wrapping at paint time. Pass
+                // None (no wrap) when the natural width fits within tolerance.
+                let max_width = match self.natural_text_width {
+                    Some(natural_w) if natural_w <= bounds.width() + LAYOUT_WIDTH_TOLERANCE => None,
+                    _ => Some(bounds.width()),
+                };
                 commands.push(RenderCommand::Text {
                     content: self.content.clone(),
                     position: text_pos,
                     font_size: self.font_size,
                     color: self.color,
-                    max_width: Some(bounds.width()),
+                    max_width,
                 });
 
                 commands

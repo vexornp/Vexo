@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use glyphon::{cosmic_text, Attrs, Buffer, FontSystem, Metrics, Shaping};
 
 use crate::frame_builder::TextRequest;
+use crate::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER;
 
 /// Maximum number of frames a cache entry can remain unused before eviction.
 const MAX_STALE_FRAMES: u64 = 100;
@@ -75,7 +76,10 @@ impl TextCache {
         }
 
         // Create and shape new buffer
-        let mut buffer = Buffer::new(font_system, Metrics::new(request.size, request.size * 1.2));
+        let mut buffer = Buffer::new(
+            font_system,
+            Metrics::new(request.size, request.size * DEFAULT_LINE_HEIGHT_MULTIPLIER),
+        );
 
         // Set wrapping width before shaping so text wraps at the widget's width.
         // Add a small tolerance to avoid spurious wrapping caused by subpixel
