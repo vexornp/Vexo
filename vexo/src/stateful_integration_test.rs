@@ -1684,4 +1684,226 @@ mod tests {
             after_texts
         );
     }
+
+    // ========================================================================
+    // IndexedStack / Offstage — state preservation across index changes
+    // ========================================================================
+    //
+    // The core value of IndexedStack: when the visible index changes, the
+    // offstage children's elements (and their ComponentState) are preserved,
+    // not remounted. This is what enables navigation stacks to keep
+    // intermediate page state alive across push/pop.
+    //
+    // We verify this with a Component that bumps a global mount counter in
+    // on_mount. Switching the IndexedStack index away from a child and back
+    // must NOT re-increment the counter (element updated, not remounted).
+
+    use crate::widgets::{IndexedStack, Offstage};
+
+    #[derive(Clone)]
+    struct MountCounter {
+        id: &'static str,
+        counter: Arc<AtomicU32>,
+    }
+
+    struct MountCounterState {
+        counter: Arc<AtomicU32>,
+    }
+
+    impl Default for MountCounterState {
+        fn default() -> Self {
+            // on_mount will bump the counter; state itself doesn't need init.
+            Self {
+                counter: Arc::new(AtomicU32::new(0)),
+            }
+        }
+    }
+
+    impl ComponentState for MountCounterState {
+        fn on_mount(&mut self, ctx: &mut crate::stateful_widget::LifecycleContext) {
+            // Copy the counter Arc from the widget so we bump the shared counter.
+            if let Some(w) = ctx.widget().downcast_ref::<MountCounter>() {
+                self.counter = w.counter.clone();
+            }
+            self.counter.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl Component for MountCounter {
+        type State = MountCounterState;
+
+        fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+            Text::new(format!("MountCounter-{}", self.id)).boxed()
+        }
+    }
+
+    /// IndexedStack must keep all children mounted across index changes.
+    /// Switching index 0 → 1 → 0 must NOT remount child 0 (its mount count
+    /// stays at 1).
+    #[test]
+    fn test_indexed_stack_preserves_child_state_across_index_change() {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        let mount_count_a = Arc::new(AtomicU32::new(0));
+        let mount_count_b = Arc::new(AtomicU32::new(0));
+
+        // Initial: index 0 (A visible, B offstage)
+        let stack = IndexedStack::new(0)
+            .push(MountCounter {
+                id: "A",
+                counter: mount_count_a.clone(),
+            })
+            .push(MountCounter {
+                id: "B",
+                counter: mount_count_b.clone(),
+            });
+        pipeline.reconcile(stack.boxed());
+
+        // Both children mount on first frame (A onstage, B offstage but still mounted)
+        assert_eq!(
+            mount_count_a.load(Ordering::SeqCst),
+            1,
+            "A should mount once initially"
+        );
+        assert_eq!(
+            mount_count_b.load(Ordering::SeqCst),
+            1,
+            "B should mount once initially (offstage but mounted)"
+        );
+
+        // Switch to index 1 (A offstage, B onstage)
+        let stack = IndexedStack::new(1)
+            .push(MountCounter {
+                id: "A",
+                counter: mount_count_a.clone(),
+            })
+            .push(MountCounter {
+                id: "B",
+                counter: mount_count_b.clone(),
+            });
+        pipeline.reconcile(stack.boxed());
+
+        // Neither should remount — elements updated in place (Offstage flag flipped)
+        assert_eq!(
+            mount_count_a.load(Ordering::SeqCst),
+            1,
+            "A must NOT remount when switching to index 1 (state preserved)"
+        );
+        assert_eq!(
+            mount_count_b.load(Ordering::SeqCst),
+            1,
+            "B must NOT remount when it becomes visible (state preserved)"
+        );
+
+        // Switch back to index 0
+        let stack = IndexedStack::new(0)
+            .push(MountCounter {
+                id: "A",
+                counter: mount_count_a.clone(),
+            })
+            .push(MountCounter {
+                id: "B",
+                counter: mount_count_b.clone(),
+            });
+        pipeline.reconcile(stack.boxed());
+
+        assert_eq!(
+            mount_count_a.load(Ordering::SeqCst),
+            1,
+            "A must NOT remount when switching back to index 0 (state preserved)"
+        );
+        assert_eq!(
+            mount_count_b.load(Ordering::SeqCst),
+            1,
+            "B must NOT remount when switching back to index 0 (state preserved)"
+        );
+    }
+
+    /// Offstage toggling must preserve the child element (no remount).
+    #[test]
+    fn test_offstage_toggling_preserves_child() {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mount_count = Arc::new(AtomicU32::new(0));
+
+        // Onstage
+        let w = Offstage::new(
+            MountCounter {
+                id: "X",
+                counter: mount_count.clone(),
+            },
+            false,
+        );
+        pipeline.reconcile(w.boxed());
+        assert_eq!(mount_count.load(Ordering::SeqCst), 1);
+
+        // Offstage
+        let w = Offstage::new(
+            MountCounter {
+                id: "X",
+                counter: mount_count.clone(),
+            },
+            true,
+        );
+        pipeline.reconcile(w.boxed());
+        assert_eq!(
+            mount_count.load(Ordering::SeqCst),
+            1,
+            "child must NOT remount when going offstage"
+        );
+
+        // Onstage again
+        let w = Offstage::new(
+            MountCounter {
+                id: "X",
+                counter: mount_count.clone(),
+            },
+            false,
+        );
+        pipeline.reconcile(w.boxed());
+        assert_eq!(
+            mount_count.load(Ordering::SeqCst),
+            1,
+            "child must NOT remount when going back onstage"
+        );
+    }
+
+    /// Navigation-style push/pop: pushing adds a child (mounted), popping
+    /// removes it (unmounted), and the remaining pages keep their state.
+    #[test]
+    fn test_indexed_stack_push_pop_preserves_remaining_state() {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        let mount_count_root = Arc::new(AtomicU32::new(0));
+        let mount_count_page1 = Arc::new(AtomicU32::new(0));
+
+        // Push page1: stack = [root, page1], index = 1
+        let stack = IndexedStack::new(1)
+            .push(MountCounter {
+                id: "root",
+                counter: mount_count_root.clone(),
+            })
+            .push(MountCounter {
+                id: "page1",
+                counter: mount_count_page1.clone(),
+            });
+        pipeline.reconcile(stack.boxed());
+        assert_eq!(mount_count_root.load(Ordering::SeqCst), 1);
+        assert_eq!(mount_count_page1.load(Ordering::SeqCst), 1);
+
+        // Pop page1: stack = [root], index = 0. page1 is unmounted; root preserved.
+        let stack = IndexedStack::new(0).push(MountCounter {
+            id: "root",
+            counter: mount_count_root.clone(),
+        });
+        pipeline.reconcile(stack.boxed());
+
+        assert_eq!(
+            mount_count_root.load(Ordering::SeqCst),
+            1,
+            "root must NOT remount on pop (state preserved)"
+        );
+        // page1 was unmounted; we can't easily assert its counter because the
+        // Arc is still held by us but the element is gone. The key assertion is
+        // that root's mount count stays 1.
+    }
 }

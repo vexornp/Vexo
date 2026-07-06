@@ -9,16 +9,20 @@
 //! - [`TextRenderObject`]: Renders text content
 //! - [`ContainerRenderObject`]: Container for child render objects (Flex)
 
-mod text;
 mod container;
-mod text_edit;
-mod scroll_view;
 mod image;
+mod offstage;
 mod opacity;
+mod positioned;
+mod scroll_view;
+mod text;
+mod text_edit;
 
-pub use text::TextRenderObject;
 pub use container::ContainerRenderObject;
-pub use text_edit::TextEditRenderObject;
-pub use scroll_view::ScrollViewRenderObject;
 pub use image::ImageRenderObject;
+pub use offstage::OffstageRenderObject;
 pub use opacity::OpacityRenderObject;
+pub use positioned::{PositionedInsets, PositionedRenderObject};
+pub use scroll_view::ScrollViewRenderObject;
+pub use text::TextRenderObject;
+pub use text_edit::TextEditRenderObject;

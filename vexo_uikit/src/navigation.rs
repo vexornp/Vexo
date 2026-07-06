@@ -32,7 +32,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use vexo::{
-    AlignItems, Component, ComponentState, Flex, LifecycleContext, RenderContext, Text, Widget,
+    AlignItems, Component, ComponentState, Flex, IndexedStack, LifecycleContext, RenderContext,
+    Text, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -294,13 +295,20 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
 
         let nav_bar = self.build_nav_bar(&title, can_pop);
 
-        let page: Box<dyn Widget> = if let Some(top) = path.last() {
-            (self.destination)(top)
-        } else {
-            self.root.clone_boxed()
-        };
+        // Build the full page stack so all pages stay mounted (state preserved
+        // across push/pop). IndexedStack shows only the top page; the rest are
+        // kept offstage via Offstage, so their elements — and thus their state
+        // (ComponentState, focus, TextEditingControllers) — persist.
+        //
+        // Index 0 = root; each pushed dest is index 1..=depth. The top is
+        // `path.len()` (i.e. the last pushed dest, or 0 when at root).
+        let mut stack = IndexedStack::new(path.len());
+        stack = stack.push(self.root.clone_boxed());
+        for dest in path.iter() {
+            stack = stack.push((self.destination)(dest));
+        }
 
-        Flex::column().push(nav_bar).push(page).boxed()
+        Flex::column().push(nav_bar).push(stack.boxed()).boxed()
     }
 }
 
