@@ -17,7 +17,10 @@ members = [
     # 5. Rich UI component library built on vexo
     "vexo_uikit",
 
-    # 6. Android cdylib loaded by GameActivity; produces `libmain.so`
+    # 6. FontAwesome icon widgets built on vexo (Solid style)
+    "vexo_fontawesome",
+
+    # 7. Android cdylib loaded by GameActivity; produces `libmain.so`
     "android_demo",
 ]
 

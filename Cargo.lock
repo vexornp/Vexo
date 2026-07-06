@@ -2171,6 +2171,7 @@ dependencies = [
  "pollster",
  "uniffi",
  "vexo",
+ "vexo_fontawesome",
  "vexo_uikit",
  "winit",
 ]
@@ -2772,6 +2773,16 @@ dependencies = [
  "uniffi",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "vexo_fontawesome"
+version = "0.1.0"
+dependencies = [
+ "glyphon",
+ "serde",
+ "serde_json",
+ "vexo",
 ]
 
 [[package]]

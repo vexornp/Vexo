@@ -1,0 +1,13 @@
+[package]
+name = "vexo_fontawesome"
+version = "0.1.0"
+edition = "2021"
+description = "FontAwesome (Free, Solid) icon widgets for the Vexo UI framework"
+
+[dependencies]
+vexo = { path = "../vexo" }
+glyphon = { workspace = true }
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

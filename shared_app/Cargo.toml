@@ -13,6 +13,7 @@ path = "uniffi-bindgen-swift.rs"
 [dependencies]
 vexo = { path = "../vexo" } # Depend on the framework
 vexo_uikit = { path = "../vexo_uikit" }
+vexo_fontawesome = { path = "../vexo_fontawesome" }
 glyphon = { workspace = true }
 uniffi = { workspace = true }
 winit = { workspace = true }

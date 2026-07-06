@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
 use vexo::{
-    Application, Color, Column, ComponentState, DecoratedContainer, Flex, SafeArea, ScrollView,
-    Signal, Text, TextEdit, TextEditingController, Widget,
+    Application, Color, Column, ComponentState, DecoratedContainer, Flex, Row, SafeArea,
+    ScrollView, Signal, Text, TextEdit, TextEditingController, Widget,
 };
+use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{Button, ButtonVariant, NavigationController, NavigationStackView, Platform};
 
 uniffi::setup_scaffolding!();
@@ -67,6 +68,10 @@ impl Application for State {
         let state = Self::State::default();
         state.selected.set(Some("inbox"));
         state
+    }
+
+    fn register_fonts(font_system: &mut glyphon::FontSystem) {
+        vexo_fontawesome::register_fonts(font_system);
     }
 
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
@@ -227,7 +232,16 @@ fn build_detail_content(
     let body: Box<dyn Widget> = if id == "inbox" {
         Column::new()
             .gap(8.0)
-            .push(Text::new("Text Edit Showcase").with_font_size(24.0))
+            .push(
+                Row::new()
+                    .gap(8.0)
+                    .push(
+                        Icon::new(Icons::FloppyDisk)
+                            .with_size(24.0)
+                            .with_color(Color::BLACK),
+                    )
+                    .push(Text::new("Text Edit Showcase").with_font_size(24.0)),
+            )
             .push(TextEdit::new(demo_text_controller()))
             .boxed()
     } else {

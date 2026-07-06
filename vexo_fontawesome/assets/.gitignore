@@ -1,0 +1,7 @@
+# Third-party downloads — see README.md for sources.
+# Do not commit these files.
+*.otf
+*.ttf
+*.woff
+*.woff2
+icons.json
