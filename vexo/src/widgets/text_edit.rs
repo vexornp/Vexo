@@ -605,6 +605,15 @@ impl Component for TextEdit {
             .padding(8.0)
             .cursor(MouseCursor::System(SystemCursorKind::Text))
     }
+
+    /// Return the key set via `with_key()`. Without this override, the
+    /// blanket `impl<W: Component + Clone> Widget for W` would hard-code
+    /// `None` and `with_key()` would silently no-op — leaving sibling
+    /// `TextEdit`s to reconcile positionally, which carries focus/cursor
+    /// state to the wrong editor after reorder or insert/remove.
+    fn key(&self) -> Option<crate::WidgetKey> {
+        self.key.clone()
+    }
 }
 
 #[cfg(test)]
@@ -792,6 +801,13 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller).with_key("my-editor");
         assert!(text_edit.key.is_some());
+        // The blanket `Widget` impl must delegate to `Component::key()` so
+        // that `with_key()` actually drives reconciliation identity. Without
+        // delegation, `Widget::key()` would return `None` and `can_update()`
+        // would reduce to type-only matching (sibling TextEdits would
+        // reconcile positionally and carry stale focus/cursor state).
+        use crate::Widget;
+        assert!(Widget::key(&text_edit).is_some());
     }
 
     #[test]

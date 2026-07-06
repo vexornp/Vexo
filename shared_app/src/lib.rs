@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use vexo::{
-    Application, Color, Column, ComponentState, DecoratedContainer, Flex, Row, SafeArea,
-    ScrollView, Signal, Text, TextEdit, TextEditingController, Widget,
+    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
+    LifecycleContext, RenderContext, Row, SafeArea, ScrollView, Signal, Text, TextEdit,
+    TextEditingController, Widget,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{Button, ButtonVariant, NavigationController, NavigationStackView, Platform};
@@ -40,25 +41,6 @@ pub struct State {
     /// Desktop sidebar selection (mobile uses the nav stack for everything).
     selected: Signal<Option<&'static str>>,
     nav_controller: NavigationController<Dest>,
-}
-
-thread_local! {
-    static TEXT_CONTROLLER: std::cell::RefCell<Option<TextEditingController>> =
-        std::cell::RefCell::new(None);
-}
-
-fn demo_text_controller() -> TextEditingController {
-    TEXT_CONTROLLER.with(|c| {
-        let mut c = c.borrow_mut();
-        if c.is_none() {
-            let mut font_system = vexo::resource::new_font_system();
-            *c = Some(TextEditingController::new(
-                "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
-                &mut font_system,
-            ));
-        }
-        c.as_ref().unwrap().clone()
-    })
 }
 
 impl Application for State {
@@ -227,56 +209,139 @@ fn build_detail_content(
     selection_count: Signal<u32>,
     nav_controller: NavigationController<Dest>,
 ) -> Box<dyn Widget> {
-    let title_widget = Text::new(id).with_font_size(32.0);
+    DetailPage {
+        id: id.to_string(),
+        selection_count,
+        nav_controller,
+    }
+    .boxed()
+}
 
-    let body: Box<dyn Widget> = if id == "inbox" {
+// ============================================================================
+// DETAIL PAGE COMPONENT
+// ============================================================================
+
+/// Detail page for a sidebar item. Each instance owns its own
+/// `TextEditingController` (for the "inbox" text-edit showcase), created on
+/// mount and dropped on unmount. This means every push to a fresh detail page
+/// starts with the original text, and edits do not leak across push/pop
+/// cycles — the bug that occurred when a single shared controller was reused.
+struct DetailPage {
+    id: String,
+    selection_count: Signal<u32>,
+    nav_controller: NavigationController<Dest>,
+}
+
+impl Clone for DetailPage {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            selection_count: self.selection_count.clone(),
+            nav_controller: self.nav_controller.clone(),
+        }
+    }
+}
+
+/// State for `DetailPage`. The `TextEditingController` is created in
+/// `on_mount` (not `Default`) because construction needs a `FontSystem`, and
+/// because it must be scoped to this element's lifetime — fresh on mount,
+/// dropped on unmount.
+///
+/// The framework does not expose the window's `FontSystem` in
+/// `LifecycleContext`, so we construct a throwaway one here solely for the
+/// initial `set_text`/`shape_until_scroll`. This matches the prior
+/// `demo_text_controller()` singleton approach. The initial text is ASCII,
+/// fully covered by the embedded Roboto font; subsequent typing uses the real
+/// window `FontSystem` via `EventContext` during `on_event`.
+#[derive(Default)]
+struct DetailPageState {
+    text_controller: Option<TextEditingController>,
+}
+
+impl ComponentState for DetailPageState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        if let Some(page) = ctx.widget().downcast_ref::<DetailPage>() {
+            if page.id == "inbox" {
+                let mut font_system = vexo::resource::new_font_system();
+                self.text_controller = Some(TextEditingController::new(
+                    "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
+                    &mut font_system,
+                ));
+            }
+        }
+    }
+
+    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
+        // Drop the controller. Its dirty callback was already cleared by
+        // TextEdit's on_unmount (children unmount after parent's on_unmount
+        // but before parent state is dropped).
+        self.text_controller = None;
+    }
+}
+
+impl Component for DetailPage {
+    type State = DetailPageState;
+
+    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let title_widget = Text::new(self.id.as_str()).with_font_size(32.0);
+
+        let body: Box<dyn Widget> = if self.id == "inbox" {
+            let controller = state
+                .text_controller
+                .as_ref()
+                .expect("inbox DetailPage must have a controller after on_mount")
+                .clone();
+            Column::new()
+                .gap(8.0)
+                .push(
+                    Row::new()
+                        .gap(8.0)
+                        .push(
+                            Icon::new(Icons::FloppyDisk)
+                                .with_size(24.0)
+                                .with_color(Color::BLACK),
+                        )
+                        .push(Text::new("Text Edit Showcase").with_font_size(24.0)),
+                )
+                .push(TextEdit::new(controller))
+                .boxed()
+        } else {
+            Column::new()
+                .push(Text::new(format!(
+                    "This is the detail content for \"{}\".",
+                    self.id
+                )))
+                .boxed()
+        };
+
+        let count = self.selection_count.clone();
+        let root_nav = self.nav_controller.clone();
         Column::new()
-            .gap(8.0)
+            .gap(16.0)
+            .padding(24.0)
+            .background(Color::WHITE)
+            .push(title_widget)
+            .push(body)
             .push(
-                Row::new()
-                    .gap(8.0)
-                    .push(
-                        Icon::new(Icons::FloppyDisk)
-                            .with_size(24.0)
-                            .with_color(Color::BLACK),
-                    )
-                    .push(Text::new("Text Edit Showcase").with_font_size(24.0)),
+                Button::new("Bump counter")
+                    .variant(ButtonVariant::Primary)
+                    .on_press(move || {
+                        count.set(count.get() + 1);
+                    }),
             )
-            .push(TextEdit::new(demo_text_controller()))
-            .boxed()
-    } else {
-        Column::new()
             .push(Text::new(format!(
-                "This is the detail content for \"{}\".",
-                id
+                "Counter: {}",
+                self.selection_count.get()
             )))
+            .push(
+                Button::new("Next page")
+                    .variant(ButtonVariant::Primary)
+                    .on_press(move || {
+                        root_nav.push(Dest::Page(1));
+                    }),
+            )
             .boxed()
-    };
-
-    let count = selection_count.clone();
-    let root_nav = nav_controller.clone();
-    Column::new()
-        .gap(16.0)
-        .padding(24.0)
-        .background(Color::WHITE)
-        .push(title_widget)
-        .push(body)
-        .push(
-            Button::new("Bump counter")
-                .variant(ButtonVariant::Primary)
-                .on_press(move || {
-                    count.set(count.get() + 1);
-                }),
-        )
-        .push(Text::new(format!("Counter: {}", selection_count.get())))
-        .push(
-            Button::new("Next page")
-                .variant(ButtonVariant::Primary)
-                .on_press(move || {
-                    root_nav.push(Dest::Page(1));
-                }),
-        )
-        .boxed()
+    }
 }
 
 fn build_page_content(n: u32, nav_controller: NavigationController<Dest>) -> Box<dyn Widget> {

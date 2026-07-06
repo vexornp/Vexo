@@ -402,6 +402,22 @@ pub trait Component: Sized + 'static {
     /// Called during mount, update, and state-driven rebuilds.
     /// The state is passed mutably so the widget can modify it.
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget>;
+
+    /// Optional key for identity across frames.
+    ///
+    /// Widgets of the same type with *different* keys cannot update each
+    /// other in place during reconciliation — the reconciler will unmount
+    /// the old element and mount a fresh one. This is essential when sibling
+    /// Components of the same type are reordered or inserted/removed: without
+    /// distinct keys, positional matching pairs the wrong (widget, element)
+    /// and stale per-element state (focus, cursor, blink) carries over to the
+    /// wrong logical widget.
+    ///
+    /// Default: `None` (positional matching, fine for leaf components or
+    /// static sibling sets). Override via `with_key()`-style builders.
+    fn key(&self) -> Option<WidgetKey> {
+        None
+    }
 }
 
 /// Element for Component widgets.
@@ -884,7 +900,11 @@ impl RenderObject for ProxyRenderObject {
 /// a Widget is expected.
 impl<W: Component + Clone + 'static> Widget for W {
     fn key(&self) -> Option<WidgetKey> {
-        None
+        // Delegate to the Component's `key()` so that components can opt
+        // into identity-based reconciliation (overriding `Component::key`).
+        // Without this delegation, the blanket impl would hard-code `None`
+        // and `with_key()` builders on Component types would silently no-op.
+        <Self as Component>::key(self)
     }
 
     fn create_element(&self) -> Box<dyn Element> {
