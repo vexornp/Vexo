@@ -160,18 +160,15 @@ The foundation is solid:
 
 ### 7. Animation
 
-**Exists:** CursorBlinkState (time-based), hover state animation via rebuild
+**Exists:** CursorBlinkState (time-based), hover state animation via rebuild, AnimationController + AnimationTicker + Tween (Color/Float) primitives, `Curve` trait + Linear/EaseIn/EaseOut/EaseInOut + `CurvedAnimation`, `SlideTransition` / `FadeTransition` Components, navigation page transitions (mobile slide + desktop fade) via `NavigationStackView`
 
 **Missing:**
-- Animation framework (Animation<T>, AnimationController, Tween, Curve)
 - Implicit animations (AnimatedContainer, AnimatedOpacity, AnimatedPositioned)
-- Explicit animations (AnimationController with duration/curve)
-- Transitions (FadeTransition, SlideTransition, ScaleTransition)
 - Physics animations (spring simulation)
-- Animation ticker (per-frame callback)
 - Staggered animations
 - Hero transitions
-- AnimatedBuilder / AnimatedWidget
+- `AnimatedBuilder` / `AnimatedWidget` (currently transitions are plain `Component`s reading `controller.value()` in `render()` — see `docs/superpowers/specs/2026-07-07-navigation-animation-design.md` §3.2)
+- **TODO (Path A): GlobalKey reparenting in the reconciler.** Required for state-preserving page transitions. Currently when a page moves between `IndexedStack` and the transition overlay `Stack`, it remounts (losing `ComponentState` for the 300ms transition duration). Fix: add `GlobalKey::from_hashable` + reparenting logic in `Reconciler::reconcile_element` that detects an existing element with the same GlobalKey at a different parent and moves it instead of remounting. See `docs/superpowers/specs/2026-07-07-navigation-animation-design.md` §5.
 
 ### 8. Text Handling
 
@@ -221,19 +218,19 @@ Basic iOS text input shipped (keyboard appears when a `TextEdit` gains focus, di
 
 ### 10. Navigation
 
-**Exists:** Nothing
+**Exists:** `NavigationController<Dest>` + `NavigationStackView<Dest>` (SwiftUI-style stack navigator in `vexo_uikit`), `IndexedStack` + `Offstage` for state-preserving page switching, animated page transitions (mobile slide / desktop fade) with `TransitionCtx` builder, two-phase push/pop with deferred path mutation
 
 **Missing:**
-- Navigator
-- Route
-- Page transitions
+- Navigator (Flutter-style)
+- Route / PageRoute
 - Deep linking
 - URL routing
 - NavigationBar / BottomNavigationBar
 - PageView
 - TabController / TabBarView
-- Back button handling
-- Navigation stack
+- Back button handling (system back gesture)
+- Gesture-driven swipe-back (needs gesture infrastructure tied to transition progress)
+- Queued multi-push transitions (rapid pushes currently coalesce to the latest)
 
 ### 11. Error Handling & Recovery
 
