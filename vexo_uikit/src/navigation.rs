@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
-    IndexedStack, LifecycleContext, Opacity, RenderContext, Stack, Text, Transform, Widget,
+    IndexedStack, LifecycleContext, Positioned, RenderContext, Stack, Text, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -582,9 +582,27 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             let outgoing_wrapped = transition_fn(&outgoing_ctx, outgoing_page);
             let incoming_wrapped = transition_fn(&incoming_ctx, incoming_page);
 
+            // Wrap each page in `Positioned` with zero insets so both pages
+            // overlap inside the Stack (filling it). Without this, non-positioned
+            // Stack children are laid out as Column flex items — sequentially
+            // vertical — which leaves a blank gap above the incoming page
+            // during the transition (it sits below the outgoing page in
+            // layout, even though `Transform` only shifts paint).
             Stack::new()
-                .push(outgoing_wrapped)
-                .push(incoming_wrapped)
+                .push(
+                    Positioned::new(outgoing_wrapped)
+                        .top(0.0)
+                        .right(0.0)
+                        .bottom(0.0)
+                        .left(0.0),
+                )
+                .push(
+                    Positioned::new(incoming_wrapped)
+                        .top(0.0)
+                        .right(0.0)
+                        .bottom(0.0)
+                        .left(0.0),
+                )
                 .boxed()
         } else {
             // STEADY: existing IndexedStack path with current path.
