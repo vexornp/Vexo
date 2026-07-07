@@ -38,7 +38,7 @@ use super::Widget;
 /// but controller wiring needs to modify the callback.
 pub struct TextEditingController {
     editor: Rc<RefCell<Editor>>,
-    dirty_callback: RefCell<Option<Arc<dyn Fn() + Send + Sync>>>,
+    dirty_callback: Rc<RefCell<Option<Arc<dyn Fn() + Send + Sync>>>>,
     font_size: f32,
 }
 
@@ -62,7 +62,7 @@ impl TextEditingController {
 
         Self {
             editor: Rc::new(RefCell::new(Editor::new(raw_editor))),
-            dirty_callback: RefCell::new(None),
+            dirty_callback: Rc::new(RefCell::new(None)),
             font_size: 16.0,
         }
     }
@@ -259,7 +259,7 @@ impl Clone for TextEditingController {
     fn clone(&self) -> Self {
         Self {
             editor: self.editor.clone(),
-            dirty_callback: RefCell::new(self.dirty_callback.borrow().clone()),
+            dirty_callback: Rc::clone(&self.dirty_callback),
             font_size: self.font_size,
         }
     }
