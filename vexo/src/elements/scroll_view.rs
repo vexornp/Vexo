@@ -2,17 +2,17 @@
 
 use std::any::Any;
 
-use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
+use crate::elements::RenderObjectElement;
 use crate::event_context::EventContext;
+use crate::focus::attachment::FocusAttachment;
 use crate::id::{ElementKey, RenderObjectKey};
+use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
 use crate::render_objects::ScrollViewRenderObject;
 use crate::widgets::Widget;
-use crate::elements::RenderObjectElement;
-use crate::focus::attachment::FocusAttachment;
 
 const LINE_HEIGHT: f32 = 40.0;
 
@@ -30,9 +30,14 @@ pub struct ScrollViewElement {
 impl ScrollViewElement {
     pub fn new() -> Self {
         Self {
-            id: None, key: None, render_object: None, widget: None,
+            id: None,
+            key: None,
+            render_object: None,
+            widget: None,
             focus_attachment: None,
-            scroll_offset: 0.0, content_height: 0.0, viewport_height: 0.0,
+            scroll_offset: 0.0,
+            content_height: 0.0,
+            viewport_height: 0.0,
         }
     }
 
@@ -84,30 +89,51 @@ impl ScrollViewElement {
 }
 
 impl Default for ScrollViewElement {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RenderObjectElement for ScrollViewElement {
-    fn widget(&self) -> Option<&dyn Widget> { self.widget.as_deref() }
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
     fn set_widget(&mut self, widget: Box<dyn Widget>) {
-        if let Some(sv) = widget.as_any().downcast_ref::<crate::widgets::scroll_view::ScrollView>() {
+        if let Some(sv) = widget
+            .as_any()
+            .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
+        {
             self.key = sv.key().clone();
         }
         self.widget = Some(widget);
     }
-    fn render_object_id(&self) -> Option<RenderObjectKey> { self.render_object }
-    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) { self.render_object = id; }
-    fn stored_key(&self) -> Option<WidgetKey> { self.key.clone() }
-    fn set_stored_key(&mut self, key: Option<WidgetKey>) { self.key = key; }
-    fn element_id(&self) -> Option<ElementKey> { self.id }
-    fn set_element_id(&mut self, id: Option<ElementKey>) { self.id = id; }
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
+        self.render_object = id;
+    }
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+    fn element_id(&self) -> Option<ElementKey> {
+        self.id
+    }
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
+        self.id = id;
+    }
 }
 
 impl Element for ScrollViewElement {
     fn mount(&mut self, context: &mut ElementContext) {
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -128,11 +154,19 @@ impl Element for ScrollViewElement {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
-    fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
+    fn render_object(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
+    fn widget_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
     fn can_update(&self, widget: &dyn Any) -> bool {
-        widget.downcast_ref::<Box<dyn Widget>>()
-            .and_then(|w| w.as_any().downcast_ref::<crate::widgets::scroll_view::ScrollView>())
+        widget
+            .downcast_ref::<Box<dyn Widget>>()
+            .and_then(|w| {
+                w.as_any()
+                    .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
+            })
             .is_some()
     }
 
@@ -143,7 +177,10 @@ impl Element for ScrollViewElement {
         _state: &mut StateStorage,
     ) -> Option<Box<dyn Any>> {
         match event {
-            InputEvent::PointerButton { state: ButtonState::Pressed, .. } => {
+            InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            } => {
                 if context.is_pointer_inside() {
                     context.request_focus(context.element_id());
                     return Some(Box::new(()));
@@ -156,7 +193,11 @@ impl Element for ScrollViewElement {
                 return Some(Box::new(()));
             }
 
-            InputEvent::Keyboard { key, state: ButtonState::Pressed, .. } => {
+            InputEvent::Keyboard {
+                key,
+                state: ButtonState::Pressed,
+                ..
+            } => {
                 let delta = match key {
                     Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
                     Key::Named(NamedKey::ArrowDown) => Some(LINE_HEIGHT),
@@ -177,13 +218,12 @@ impl Element for ScrollViewElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
-            if let Some(sv) = widget.as_any().downcast_ref::<crate::widgets::scroll_view::ScrollView>() {
+            if let Some(sv) = widget
+                .as_any()
+                .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
+            {
                 self.key = sv.key().clone();
             }
             self.widget = Some(*widget);
@@ -191,7 +231,9 @@ impl Element for ScrollViewElement {
             if let Some(child_widget) = self.get_child_widget() {
                 let old_child = context.children().first().copied();
                 match old_child {
-                    Some(old_child_key) => context.update_child(old_child_key, child_widget.clone_boxed()),
+                    Some(old_child_key) => {
+                        context.update_child(old_child_key, child_widget.clone_boxed())
+                    }
                     None => context.inflate_child(None, child_widget.clone_boxed()),
                 }
             } else if let Some(old_child_key) = context.children().first().copied() {
@@ -205,14 +247,23 @@ impl Element for ScrollViewElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }
     }
 
-    fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
-    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
+    }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
         if let Some(ro_key) = self.render_object {

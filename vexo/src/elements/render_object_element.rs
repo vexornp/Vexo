@@ -10,8 +10,8 @@
 
 use std::any::Any;
 
-use crate::{Element, ElementContext, ElementKey, RenderObjectKey, Widget, UpdateResult};
 use crate::key::WidgetKey;
+use crate::{Element, ElementContext, ElementKey, RenderObjectKey, UpdateResult, Widget};
 
 /// Element that owns and manages a RenderObject.
 ///
@@ -103,7 +103,11 @@ pub trait RenderObjectElement: Element {
     /// - Single-child (ProxyRenderObject, etc.) override `set_child_id`
     /// - Multi-child (ContainerRenderObject) override `add_child`
     /// The other method is a no-op by default, so calling both is safe.
-    fn insert_child_render_object(&mut self, child_ro: RenderObjectKey, context: &mut ElementContext) {
+    fn insert_child_render_object(
+        &mut self,
+        child_ro: RenderObjectKey,
+        context: &mut ElementContext,
+    ) {
         if let Some(parent_ro) = self.render_object_id() {
             if let Some(parent_obj) = context.get_render_object_mut(parent_ro) {
                 parent_obj.set_child_id(child_ro);
@@ -159,7 +163,11 @@ pub trait RenderObjectElement: Element {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
                     if let Some(widget) = self.widget() {
                         let result = widget.update_render_object(ro.as_mut());
-                        log::debug!("[update_render_object] element {:?}, result={}", context.element_id, result.bits());
+                        log::debug!(
+                            "[update_render_object] element {:?}, result={}",
+                            context.element_id,
+                            result.bits()
+                        );
 
                         // Only mark dirty based on what actually changed
                         if result.contains(UpdateResult::LAYOUT) {

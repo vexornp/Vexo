@@ -1,9 +1,9 @@
 //! ImageRenderObject implementation.
 
-use crate::core::{Bounds, Color, Logical, Point, Position, Absolute};
+use crate::core::{Absolute, Bounds, Color, Logical, Point, Position};
 use crate::image_atlas::ImageKey;
 use crate::image_data::ImageData;
-use crate::layout::{Layout, LayoutNodeKey, Dimension};
+use crate::layout::{Dimension, Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
@@ -174,7 +174,11 @@ impl RenderObject for ImageRenderObject {
 
                 // 5. Draw image if key is set (registered in atlas)
                 if let Some(key) = self.image_key {
-                    let corner_radius = self.style.corner_radius.as_ref().map_or(0.0, |cr| cr.radius);
+                    let corner_radius = self
+                        .style
+                        .corner_radius
+                        .as_ref()
+                        .map_or(0.0, |cr| cr.radius);
                     // Inset image bounds by border width so it renders inside the border ring
                     let bw = self.style.border.as_ref().map_or(0.0, |b| b.width);
                     let image_bounds = Bounds::new(
@@ -358,7 +362,11 @@ mod tests {
         let result = obj.paint(&mut ctx);
 
         // Should have background rect + image command
-        assert!(result.len() >= 2, "expected at least 2 commands, got {}", result.len());
+        assert!(
+            result.len() >= 2,
+            "expected at least 2 commands, got {}",
+            result.len()
+        );
     }
 
     #[test]
@@ -372,7 +380,10 @@ mod tests {
 
         // Changing data should reset image_key
         assert!(obj.set_image_data(&data2));
-        assert!(obj.image_key.is_none(), "image_key should be reset on data change");
+        assert!(
+            obj.image_key.is_none(),
+            "image_key should be reset on data change"
+        );
 
         // Same data should not report change
         let data2_dup = data2.clone();
