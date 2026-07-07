@@ -104,11 +104,15 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let cb1: Arc<dyn Fn() + Send + Sync> = {
             let c = counter.clone();
-            Arc::new(move || { c.fetch_add(1, Ordering::SeqCst); })
+            Arc::new(move || {
+                c.fetch_add(1, Ordering::SeqCst);
+            })
         };
         let cb2: Arc<dyn Fn() + Send + Sync> = {
             let c = counter.clone();
-            Arc::new(move || { c.fetch_add(10, Ordering::SeqCst); })
+            Arc::new(move || {
+                c.fetch_add(10, Ordering::SeqCst);
+            })
         };
         ticker.register(cb1);
         ticker.register(cb2);

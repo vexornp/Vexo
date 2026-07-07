@@ -109,7 +109,10 @@ impl AnimationController {
             return;
         }
         let start = self.start_time.unwrap();
-        let elapsed = now.checked_duration_since(start).unwrap_or(Duration::ZERO).as_secs_f64();
+        let elapsed = now
+            .checked_duration_since(start)
+            .unwrap_or(Duration::ZERO)
+            .as_secs_f64();
         let duration = self.duration.as_secs_f64();
         let raw = elapsed / duration;
 
@@ -286,8 +289,8 @@ mod tests {
         ctrl.set_ticker(ticker.clone());
         ctrl.forward();
         ctrl.forward(); // second forward should unregister old and register new
-        // Only one callback should be active in the ticker (not two),
-        // so tick() should fire exactly once.
+                        // Only one callback should be active in the ticker (not two),
+                        // so tick() should fire exactly once.
         let before = counter.load(Ordering::SeqCst);
         ticker.tick();
         let after = counter.load(Ordering::SeqCst);

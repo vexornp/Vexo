@@ -15,8 +15,8 @@ pub use app::{KeyBindingAction, VexoApp};
 pub mod animation;
 
 pub use animation::{
-    AnimationController, AnimationDirection, AnimationTicker, ColorTween, FloatTween, TickHandle,
-    Tween,
+    AnimationController, AnimationDirection, AnimationTicker, ColorTween, CurvedAnimation, Curve,
+    EaseInCurve, EaseInOutCurve, EaseOutCurve, FloatTween, LinearCurve, TickHandle, Tween,
 };
 pub mod core;
 pub mod editor;
@@ -195,9 +195,9 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::Style;
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Column, DecoratedContainer, Flex, Grid, Image, IndexedStack, Offstage, Opacity, Positioned,
-    Row, SafeArea, ScrollView, Stack, Text, TextEdit, TextEditState, TextEditingController, Widget,
-    WithLayout,
+    Column, DecoratedContainer, FadeTransition, Flex, Grid, Image, IndexedStack, Offstage, Opacity,
+    Positioned, Row, SafeArea, ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit,
+    TextEditState, TextEditingController, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

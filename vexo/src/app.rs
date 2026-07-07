@@ -125,6 +125,17 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
             if state.check_cursor_blink() {
                 state.request_frame();
             }
+            // Keep the event loop alive while animations are active. On iOS,
+            // request_redraw() called from within RedrawRequested (i.e. from
+            // inside the CADisplayLink callback) doesn't reliably re-arm the
+            // display link for the next vsync, so navigation push/pop
+            // animations stall after the first frame. Re-requesting here from
+            // about_to_wait — the standard winit hook for continuous
+            // animation — keeps the display link firing until the animation
+            // completes.
+            if state.animation_ticker().has_active() {
+                state.request_frame();
+            }
         }
     }
 

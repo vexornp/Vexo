@@ -20,6 +20,7 @@ mod text;
 mod text_edit;
 mod text_edit_content;
 mod transform;
+mod transitions;
 mod with_layout;
 
 use std::any::Any;
@@ -52,7 +53,8 @@ pub use opacity::Opacity;
 pub use positioned::Positioned;
 pub use stack::Stack;
 pub(crate) use text_edit_content::TextEditContent;
-pub(crate) use transform::Transform;
+pub use transform::Transform;
+pub use transitions::{FadeTransition, SlideDirection, SlideTransition};
 pub use with_layout::WithLayout;
 
 /// Immutable widget configuration - rebuilt each frame.

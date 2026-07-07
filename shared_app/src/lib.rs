@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
@@ -258,15 +259,49 @@ struct DetailPageState {
     text_controller: Option<TextEditingController>,
 }
 
+impl DetailPageState {
+    /// (Re)initialize the text controller for the current `id`.
+    ///
+    /// Called from `on_mount` (fresh element) and from `on_update` when the
+    /// `id` changes (element reused across sidebar items via type-only
+    /// `can_update`). Drops any stale controller first so edits never leak
+    /// across logical pages sharing one element.
+    fn sync_controller(&mut self, id: &str) {
+        self.text_controller = None;
+        if id == "inbox" {
+            let mut font_system = vexo::resource::new_font_system();
+            self.text_controller = Some(TextEditingController::new(
+                "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
+                &mut font_system,
+            ));
+        }
+    }
+}
+
 impl ComponentState for DetailPageState {
     fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         if let Some(page) = ctx.widget().downcast_ref::<DetailPage>() {
-            if page.id == "inbox" {
-                let mut font_system = vexo::resource::new_font_system();
-                self.text_controller = Some(TextEditingController::new(
-                    "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
-                    &mut font_system,
-                ));
+            self.sync_controller(&page.id);
+        }
+    }
+
+    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
+        // The framework reconciles `DetailPage` by type only, so the same
+        // element (and its state) is reused when the sidebar selection
+        // changes (e.g. starred → inbox). `on_mount` does not re-run in that
+        // case, so we must re-sync the controller here whenever the `id`
+        // changes — otherwise an inbox render would hit a stale `None`
+        // controller left over from a non-inbox page.
+        let old_id = old_widget
+            .downcast_ref::<DetailPage>()
+            .map(|p| p.id.as_str());
+        let new_id = ctx
+            .widget()
+            .downcast_ref::<DetailPage>()
+            .map(|p| p.id.as_str());
+        if old_id != new_id {
+            if let Some(new_id) = new_id {
+                self.sync_controller(new_id);
             }
         }
     }
