@@ -52,18 +52,24 @@ impl TransitionCtx {
 /// Default mobile transition: iOS-style horizontal slide.
 ///
 /// - **Push, incoming**: slides in from the right (`page_width → 0`), full opacity.
-/// - **Push, outgoing**: slides slightly left (`0 → -page_width * 0.3`), dims to 0.7.
-/// - **Pop, incoming**: reverse of Push.outgoing (slides back to 0, un-dims).
+/// - **Push, outgoing**: slides slightly left (`0 → -page_width * 0.3`), fades to 0.
+/// - **Pop, incoming**: reverse of Push.outgoing (slides back to 0, un-fades).
 /// - **Pop, outgoing**: reverse of Push.incoming (slides out to the right).
+///
+/// The outgoing page's alpha reaches 0.0 at `t=1` so the transition's hard
+/// switch to steady-state rendering (which drops the outgoing page in a single
+/// frame) produces no visible jump. If the outgoing page only dimmed to a
+/// non-zero alpha, that hard cut would be perceived as a fade-out happening
+/// *after* the offset animation — a sequential artifact.
 pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) -> Box<dyn Widget> {
     let t = ctx.t as f32;
     let w = ctx.page_width;
     let (offset, alpha) = match (ctx.direction, ctx.is_incoming) {
         (TransitionDir::Push, true) => (w * (1.0 - t), 1.0),
-        (TransitionDir::Push, false) => (-w * 0.3 * t, 1.0 - 0.3 * t),
-        (TransitionDir::Pop, true) => (-w * 0.3 * (1.0 - t), 0.7 + 0.3 * t),
+        (TransitionDir::Push, false) => (-w * 0.3 * t, 1.0 - t),
+        (TransitionDir::Pop, true) => (-w * 0.3 * (1.0 - t), t),
         (TransitionDir::Pop, false) => (w * t, 1.0),
-        (TransitionDir::PopToRoot, true) => (-w * 0.3 * (1.0 - t), 0.7 + 0.3 * t),
+        (TransitionDir::PopToRoot, true) => (-w * 0.3 * (1.0 - t), t),
         (TransitionDir::PopToRoot, false) => (w * t, 1.0),
     };
     Opacity::new(Transform::translate(child, offset, 0.0), alpha).boxed()
