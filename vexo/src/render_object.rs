@@ -381,6 +381,19 @@ pub trait RenderObject {
         None
     }
 
+    /// Whether this render object is a layout pass-through.
+    ///
+    /// Pass-through ROs (`Opacity`, `Transform`, `Offstage`-onstage) do NOT
+    /// own a Taffy node. Their `layout_node()` returns the child's node, so
+    /// the layouter links the grandparent directly to the grandchild.
+    /// `is_pass_through() == true` tells the registry to skip orphan-node
+    /// cleanup on removal (the child owns the node).
+    ///
+    /// Default: `false` (normal ROs own their Taffy node).
+    fn is_pass_through(&self) -> bool {
+        false
+    }
+
     /// Get the image data that needs registration in the atlas, if any.
     ///
     /// Returns `Some(&ImageData)` when this render object has image data
@@ -798,6 +811,35 @@ mod tests {
         }
         let ro = TestRO;
         assert!(ro.opacity().is_none());
+    }
+
+    #[test]
+    fn test_render_object_is_pass_through_default() {
+        struct TestRO;
+        impl RenderObject for TestRO {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
+                unimplemented!()
+            }
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        let ro = TestRO;
+        assert!(!ro.is_pass_through());
     }
 
     #[test]
