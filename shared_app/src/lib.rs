@@ -46,7 +46,7 @@ fn selected_index(selected: Option<&'static str>) -> usize {
         .unwrap_or(0)
 }
 
-#[derive(ComponentState, Default)]
+#[derive(ComponentState)]
 pub struct State {
     selection_log: Signal<u32>,
     /// Desktop sidebar selection (mobile uses the nav stack for everything).
@@ -63,17 +63,33 @@ pub struct State {
     mobile_nav_controller: NavigationController<Dest>,
 }
 
+/// Manual `Default` (replacing `#[derive(Default)]`) because the desktop path
+/// constructs `State` via `StatefulElement::mount()` → `W::State::default()`
+/// (`vexo/src/stateful_widget.rs:537`), NOT via `Application::new()`. The
+/// backfill of `nav_controllers` to `ITEMS.len()` must happen here, or
+/// `view()`'s `state.nav_controllers[i]` indexing panics on the first frame.
+/// `#[derive(ComponentState)]` is unaffected — it only wires `Signal` fields.
+impl Default for State {
+    fn default() -> Self {
+        let mut nav_controllers = Vec::new();
+        while nav_controllers.len() < ITEMS.len() {
+            nav_controllers.push(NavigationController::new());
+        }
+        Self {
+            selection_log: Signal::new(0),
+            selected: Signal::new(None),
+            nav_controllers,
+            mobile_nav_controller: NavigationController::new(),
+        }
+    }
+}
+
 impl Application for State {
     type State = Self;
 
     fn new() -> Self::State {
-        let mut state = Self::State::default();
+        let state = Self::State::default();
         state.selected.set(Some("inbox"));
-        // Backfill per-item controllers for desktop. `mobile_nav_controller` is
-        // initialized by `Default` (empty path). Length is fixed at ITEMS.len().
-        while state.nav_controllers.len() < ITEMS.len() {
-            state.nav_controllers.push(NavigationController::new());
-        }
         state
     }
 
