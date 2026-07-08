@@ -477,10 +477,11 @@ impl RenderObjectRegistry {
     /// The render object's layout node key (if any) is collected for later
     /// cleanup during the layout pass.
     pub fn remove(&mut self, key: RenderObjectKey) {
-        // Extract layout node key before dropping the render object
         if let Some(obj) = self.objects.get(key) {
-            if let Some(node) = obj.layout_node() {
-                self.orphaned_layout_nodes.push(node);
+            if !obj.is_pass_through() {
+                if let Some(node) = obj.layout_node() {
+                    self.orphaned_layout_nodes.push(node);
+                }
             }
         }
         self.objects.remove(key);
@@ -912,5 +913,99 @@ mod tests {
         let children = parent_obj.children();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0], child_id);
+    }
+
+    #[test]
+    fn test_registry_remove_skips_passthrough_cleanup() {
+        let mut registry = RenderObjectRegistry::new();
+        let element_id = make_element_key();
+
+        struct MockPassthroughRO;
+        impl RenderObject for MockPassthroughRO {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
+                unimplemented!()
+            }
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn is_pass_through(&self) -> bool {
+                true
+            }
+            fn layout_node(&self) -> Option<LayoutNodeKey> {
+                let mut sm: slotmap::SlotMap<LayoutNodeKey, ()> = slotmap::SlotMap::with_key();
+                Some(sm.insert(()))
+            }
+        }
+
+        let obj = Box::new(MockPassthroughRO);
+        let id = registry.create(obj, element_id);
+        registry.remove(id);
+
+        let orphaned = registry.drain_orphaned_layout_nodes();
+        assert!(
+            orphaned.is_empty(),
+            "pass-through RO removal must not orphan the borrowed child node"
+        );
+    }
+
+    #[test]
+    fn test_registry_remove_collects_normal_ro_node() {
+        let mut registry = RenderObjectRegistry::new();
+        let element_id = make_element_key();
+
+        struct MockOwnerRO {
+            node: Option<LayoutNodeKey>,
+        }
+        impl RenderObject for MockOwnerRO {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
+                unimplemented!()
+            }
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn layout_node(&self) -> Option<LayoutNodeKey> {
+                self.node
+            }
+        }
+
+        let mut node_sm: slotmap::SlotMap<LayoutNodeKey, ()> = slotmap::SlotMap::with_key();
+        let owned_node = node_sm.insert(());
+        let obj = Box::new(MockOwnerRO {
+            node: Some(owned_node),
+        });
+        let id = registry.create(obj, element_id);
+        registry.remove(id);
+
+        let orphaned = registry.drain_orphaned_layout_nodes();
+        assert_eq!(orphaned.len(), 1);
+        assert_eq!(orphaned[0], owned_node);
     }
 }
