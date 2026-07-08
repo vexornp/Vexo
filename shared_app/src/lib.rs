@@ -2,7 +2,7 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
+    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, IndexedStack,
     LifecycleContext, RenderContext, Row, SafeArea, ScrollView, Signal, Text, TextEdit,
     TextEditingController, Widget,
 };
@@ -36,20 +36,44 @@ fn item_label(id: &str) -> String {
         .unwrap_or_else(|| id.to_string())
 }
 
+/// Map the desktop sidebar selection to an `IndexedStack` child index.
+/// Falls back to `0` (Inbox) if `selected` is `None` — unreachable on
+/// desktop in practice (`new()` sets `Some("inbox")`, sidebar only ever
+/// sets `Some(id)`), but defensive.
+fn selected_index(selected: Option<&'static str>) -> usize {
+    selected
+        .and_then(|id| ITEMS.iter().position(|(i, _)| *i == id))
+        .unwrap_or(0)
+}
+
 #[derive(ComponentState, Default)]
 pub struct State {
     selection_log: Signal<u32>,
     /// Desktop sidebar selection (mobile uses the nav stack for everything).
     selected: Signal<Option<&'static str>>,
-    nav_controller: NavigationController<Dest>,
+    /// Desktop: one controller per sidebar item, indexed by `ITEMS` position.
+    /// Each item's nav stack persists across sidebar toggles because the
+    /// corresponding `NavigationStackView` stays mounted inside the
+    /// `IndexedStack` (wrapped in `Offstage`).
+    nav_controllers: Vec<NavigationController<Dest>>,
+    /// Mobile: single shared nav stack. Semantically distinct from desktop's
+    /// per-item stacks; must persist in `State` (not be created per `view()`)
+    /// because `NavigationStackView`'s `on_mount` wires its dirty callback and
+    /// its path must survive across rebuilds.
+    mobile_nav_controller: NavigationController<Dest>,
 }
 
 impl Application for State {
     type State = Self;
 
     fn new() -> Self::State {
-        let state = Self::State::default();
+        let mut state = Self::State::default();
         state.selected.set(Some("inbox"));
+        // Backfill per-item controllers for desktop. `mobile_nav_controller` is
+        // initialized by `Default` (empty path). Length is fixed at ITEMS.len().
+        while state.nav_controllers.len() < ITEMS.len() {
+            state.nav_controllers.push(NavigationController::new());
+        }
         state
     }
 
@@ -59,59 +83,61 @@ impl Application for State {
 
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
         let selected_signal = state.selected.clone();
-        let nav_controller = state.nav_controller.clone();
         let selection_count = state.selection_log.clone();
 
         match Platform::current() {
             Platform::Desktop => {
                 let current = selected_signal.get_cloned();
+                let index = selected_index(current);
 
+                // Sidebar: callback now just sets selection — no nav mutation.
+                // The IndexedStack index flip is the only effect; each item's
+                // nav stack is untouched on toggle.
                 let selected_for_cb = selected_signal.clone();
-                let nav_for_cb = nav_controller.clone();
                 let sidebar = build_sidebar(
                     current,
                     Rc::new(move |id| {
                         selected_for_cb.set(Some(id));
-                        nav_for_cb.pop_to_root();
                     }),
                     false,
                 );
 
-                let detail_root = match current {
-                    Some(id) => {
-                        build_detail_content(id, selection_count.clone(), nav_controller.clone())
-                    }
-                    None => Text::new("Select an item").boxed(),
-                };
-                let root_title = current
-                    .as_ref()
-                    .map(|id| item_label(id))
-                    .unwrap_or_default();
-
-                let nav_for_dest = nav_controller.clone();
-                let detail = NavigationStackView::new(nav_controller, detail_root)
-                    .root_title(root_title)
-                    .title(|d| match d {
-                        Dest::Page(n) => format!("Page: {}", n),
-                        _ => String::new(),
-                    })
-                    .destination(move |d| match d {
-                        Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
-                        _ => Text::new("").boxed(),
-                    })
-                    .boxed()
-                    .flex_grow(1.0);
+                // IndexedStack: one child per sidebar item, each with its own
+                // NavigationStackView + NavigationController. All children stay
+                // mounted (wrapped in Offstage by IndexedStack); toggling the
+                // sidebar flips offstage flags, preserving each item's detail
+                // state (text-edit content, scroll position) and pushed nav
+                // stack.
+                let mut stack = IndexedStack::new(index);
+                for (i, (id, label)) in ITEMS.iter().enumerate() {
+                    let ctrl = state.nav_controllers[i].clone();
+                    let detail = build_detail_content(id, selection_count.clone(), ctrl.clone());
+                    let nav_for_dest = ctrl.clone();
+                    stack = stack.push(
+                        NavigationStackView::new(ctrl, detail)
+                            .root_title(label.to_string())
+                            .title(|d| match d {
+                                Dest::Page(n) => format!("Page: {}", n),
+                                _ => String::new(),
+                            })
+                            .destination(move |d| match d {
+                                Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                                _ => Text::new("").boxed(),
+                            })
+                            .boxed(),
+                    );
+                }
 
                 SafeArea::new(
                     Flex::row()
                         .background(Color::WHITE)
                         .push(sidebar)
-                        .push(detail),
+                        .push(stack.flex_grow(1.0)),
                 )
                 .boxed()
             }
             Platform::Mobile => {
-                let nav_for_select = nav_controller.clone();
+                let nav_for_select = state.mobile_nav_controller.clone();
                 let sidebar = build_sidebar(
                     None,
                     Rc::new(move |id| {
@@ -120,11 +146,11 @@ impl Application for State {
                     true,
                 );
 
-                let nav_for_dest = state.nav_controller.clone();
+                let nav_for_dest = state.mobile_nav_controller.clone();
                 let count_for_dest = selection_count.clone();
 
                 SafeArea::new(
-                    NavigationStackView::new(state.nav_controller.clone(), sidebar)
+                    NavigationStackView::new(state.mobile_nav_controller.clone(), sidebar)
                         .root_title("Navigation")
                         .title(|d| match d {
                             Dest::Item(id) => item_label(*id),
