@@ -38,10 +38,14 @@ use crate::layout_builder_methods;
 use crate::style::Style;
 
 /// Default layout for a Stack: relative positioning context, fills parent, column direction.
+///
+/// `AlignItems::Stretch` makes non-positioned children fill the stack's
+/// cross-axis, matching Flutter's `Stack` behavior. Positioned children are
+/// absolutely positioned and are not affected by `AlignItems`.
 fn stack_layout() -> Layout {
     Layout::default()
         .flex_direction(FlexDirection::Column)
-        .align(AlignItems::Start)
+        .align(AlignItems::Stretch)
         .width_percent(1.0)
         .height_percent(1.0)
 }

@@ -34,12 +34,18 @@ use super::{Element, Offstage, Widget};
 use crate::layout_builder_methods;
 use crate::style::Style;
 
-/// Default layout for an IndexedStack: fills parent, column direction, start-aligned.
-/// Matches `Stack`'s defaults so the visible child fills the stack.
+/// Default layout for an IndexedStack: fills parent, column direction, stretched.
+///
+/// `AlignItems::Stretch` makes the visible (onstage) child fill the stack's
+/// cross-axis (horizontal). This is essential: without it, the onstage child
+/// sizes to its own max-content width, which creates a circular dependency
+/// when the child's content width depends on the available width (e.g. text
+/// wrapping, or a `Stack` whose children are all absolutely-positioned and
+/// thus contribute zero in-flow max-content).
 fn indexed_stack_layout() -> Layout {
     Layout::default()
         .flex_direction(FlexDirection::Column)
-        .align(AlignItems::Start)
+        .align(AlignItems::Stretch)
         .width_percent(1.0)
         .height_percent(1.0)
 }
