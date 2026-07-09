@@ -340,12 +340,15 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
     }
 
     /// Supply a custom transition builder. The builder receives a
-    /// `TransitionCtx` (with the eased `t`, direction, platform, and cached
-    /// `page_width`) and the page widget, and returns the page wrapped in
-    /// transform/opacity widgets as desired.
+    /// `TransitionCtx` (with the eased `t`, direction, and platform) and the
+    /// page widget, and returns the page wrapped in transform/opacity widgets
+    /// as desired.
     ///
     /// When `None`, the view uses `default_transition` (mobile slide /
-    /// desktop fade).
+    /// desktop fade). The default mobile slide is expressed in fractions of
+    /// the page's own laid-out size via `FractionalTranslation`, so it is
+    /// correct at any window width without the builder needing to know the
+    /// pixel width.
     pub fn transition<F: Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget> + 'static>(
         mut self,
         f: F,
@@ -393,10 +396,6 @@ struct NavTransition<Dest: Hash + Eq + Clone + 'static> {
     controller: AnimationController,
     from_path: Vec<Dest>,
     to_path: Vec<Dest>,
-    /// Cached page width in logical pixels. Read from the nav content area's
-    /// render object bounds; falls back to `TransitionCtx::DEFAULT_PAGE_WIDTH`
-    /// on the first frame before layout has run.
-    page_width: f32,
 }
 
 /// State for the NavigationStackView component.
@@ -502,7 +501,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                         controller,
                         from_path: pending.from.clone(),
                         to_path: pending.to.clone(),
-                        page_width: TransitionCtx::DEFAULT_PAGE_WIDTH,
                     });
                 } else {
                     // No ticker available (test harness or pre-mount). Clear
@@ -655,7 +653,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             let eased = self.transition_curve.transform(raw_t);
 
             let platform = self.effective_platform();
-            let page_width = t.page_width;
 
             let transition_fn: Rc<dyn Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget>> =
                 self.transition
@@ -673,7 +670,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                         is_incoming: true,
                         direction: t.direction,
                         platform,
-                        page_width,
                     };
                     transition_fn(&incoming_ctx, incoming_page)
                 }
@@ -686,7 +682,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                         is_incoming: false,
                         direction: t.direction,
                         platform,
-                        page_width,
                     };
                     transition_fn(&outgoing_ctx, outgoing_page)
                 }

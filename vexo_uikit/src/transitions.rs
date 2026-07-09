@@ -2,14 +2,20 @@
 //!
 //! These functions are used by `NavigationStackView` when no custom
 //! `transition` builder is supplied. They receive a `TransitionCtx` (which
-//! includes the eased progress `t`, direction, platform, and the cached
-//! `page_width` from layout) and the page widget, and return the page
-//! wrapped in transform/opacity widgets.
+//! includes the eased progress `t`, direction, and platform) and the page
+//! widget, and return the page wrapped in transform/opacity widgets.
 //!
 //! Callers can supply their own builder via `NavigationStackView::transition`
 //! to override the defaults.
+//!
+//! The mobile slide is expressed in *fractions of the page's own laid-out
+//! size* via `FractionalTranslation`, not absolute pixels. This matches
+//! Flutter's `SlideTransition` / `FractionalTranslation`: the slide distance
+//! is `1.0` (one full page width) regardless of the actual window size, so the
+//! same transition code is correct at any width. No pixel width needs to be
+//! read back from layout.
 
-use vexo::{Opacity, Transform, Widget};
+use vexo::{FractionalTranslation, Opacity, Widget};
 
 use crate::platform::Platform;
 
@@ -37,22 +43,18 @@ pub struct TransitionCtx {
     pub direction: TransitionDir,
     /// The platform the navigation view is running on.
     pub platform: Platform,
-    /// The cached page width in logical pixels, read from the nav content
-    /// area's render object bounds. Used to compute slide offsets.
-    /// Falls back to a sentinel default (375.0) on the first frame of a
-    /// transition before layout has run.
-    pub page_width: f32,
-}
-
-impl TransitionCtx {
-    /// Sentinel width used when no layout has been computed yet.
-    pub const DEFAULT_PAGE_WIDTH: f32 = 375.0;
 }
 
 /// Default mobile transition: iOS-style horizontal slide.
 ///
-/// - **Push, incoming**: slides in from the right (`page_width → 0`), full opacity.
-/// - **Push, outgoing**: slides slightly left (`0 → -page_width * 0.3`), fades to 0.
+/// The slide distance is expressed as a fraction of the page's own laid-out
+/// width via `FractionalTranslation`. The render object resolves the fraction
+/// against its `computed_bounds` at paint time, so the slide always covers
+/// exactly one page width — no pixel read-back, no `page_width` field, correct
+/// at any window size.
+///
+/// - **Push, incoming**: slides in from the right (fraction `1.0 → 0.0`), full opacity.
+/// - **Push, outgoing**: slides slightly left (fraction `0.0 → -0.3`), fades to 0.
 /// - **Pop, incoming**: reverse of Push.outgoing (slides back to 0, un-fades).
 /// - **Pop, outgoing**: reverse of Push.incoming (slides out to the right).
 ///
@@ -63,16 +65,15 @@ impl TransitionCtx {
 /// *after* the offset animation — a sequential artifact.
 pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) -> Box<dyn Widget> {
     let t = ctx.t as f32;
-    let w = ctx.page_width;
-    let (offset, alpha) = match (ctx.direction, ctx.is_incoming) {
-        (TransitionDir::Push, true) => (w * (1.0 - t), 1.0),
-        (TransitionDir::Push, false) => (-w * 0.3 * t, 1.0 - t),
-        (TransitionDir::Pop, true) => (-w * 0.3 * (1.0 - t), t),
-        (TransitionDir::Pop, false) => (w * t, 1.0),
-        (TransitionDir::PopToRoot, true) => (-w * 0.3 * (1.0 - t), t),
-        (TransitionDir::PopToRoot, false) => (w * t, 1.0),
+    let (fx, alpha) = match (ctx.direction, ctx.is_incoming) {
+        (TransitionDir::Push, true) => (1.0 - t, 1.0),
+        (TransitionDir::Push, false) => (-0.3 * t, 1.0 - t),
+        (TransitionDir::Pop, true) => (-0.3 * (1.0 - t), t),
+        (TransitionDir::Pop, false) => (t, 1.0),
+        (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), t),
+        (TransitionDir::PopToRoot, false) => (t, 1.0),
     };
-    Opacity::new(Transform::translate(child, offset, 0.0), alpha).boxed()
+    Opacity::new(FractionalTranslation::new(child, fx, 0.0), alpha).boxed()
 }
 
 /// Default desktop transition: fade only.
@@ -103,11 +104,6 @@ mod tests {
     use vexo::Text;
 
     #[test]
-    fn test_transition_ctx_default_width() {
-        assert_eq!(TransitionCtx::DEFAULT_PAGE_WIDTH, 375.0);
-    }
-
-    #[test]
     fn test_transition_dir_equality() {
         assert_eq!(TransitionDir::Push, TransitionDir::Push);
         assert_ne!(TransitionDir::Push, TransitionDir::Pop);
@@ -121,7 +117,6 @@ mod tests {
             is_incoming: true,
             direction: TransitionDir::Push,
             platform: Platform::Mobile,
-            page_width: 400.0,
         };
         let child = Text::new("Page").boxed();
         let result = default_mobile_transition(&ctx, child);
@@ -137,7 +132,6 @@ mod tests {
             is_incoming: true,
             direction: TransitionDir::Push,
             platform: Platform::Desktop,
-            page_width: 800.0,
         };
         let child = Text::new("Page").boxed();
         let _result = default_desktop_transition(&ctx, child);
@@ -150,14 +144,12 @@ mod tests {
             is_incoming: true,
             direction: TransitionDir::Push,
             platform: Platform::Mobile,
-            page_width: 375.0,
         };
         let desktop_ctx = TransitionCtx {
             t: 0.5,
             is_incoming: true,
             direction: TransitionDir::Push,
             platform: Platform::Desktop,
-            page_width: 800.0,
         };
         // Just verify dispatch doesn't panic and produces a widget.
         let _m = default_transition(&mobile_ctx, Text::new("M").boxed());
