@@ -13,7 +13,10 @@ use crate::layout::{AlignItems, FlexDirection, Layout, LayoutEngine, TaffyLayout
 use crate::layouter::Layouter;
 use crate::render::RenderCommand;
 use crate::render_object::{LayoutContext, RenderObject, RenderObjectRegistry};
-use crate::render_objects::{ContainerRenderObject, OffstageRenderObject, OpacityRenderObject};
+use crate::render_objects::{
+    ContainerRenderObject, OffstageRenderObject, OpacityRenderObject, PositionedInsets,
+    PositionedRenderObject, TextRenderObject,
+};
 use crate::widgets::transform::TransformRenderObject;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -390,4 +393,143 @@ fn test_offstage_flag_flip_in_pipeline() {
         .expect("off1 should have bounds after flip");
     assert_eq!(off1_bounds.width(), 0.0);
     assert_eq!(off1_bounds.height(), 0.0);
+}
+
+#[test]
+fn test_nav_transition_text_does_not_wrap() {
+    let mut registry = RenderObjectRegistry::new();
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    let mut dirty = DirtyTracking::new();
+
+    // Tree (outgoing page only, for simplicity):
+    //   Flex::column (root, fills 375 width)
+    //   ├── nav_bar (Flex::row, width 140, flex_shrink 0)
+    //   └── Stack
+    //       └── Positioned(L=R=T=B=0)
+    //           └── Opacity(0.5)            ← pass-through
+    //               └── Transform(translate) ← pass-through
+    //                   └── page Column (padding 24)
+    //                       └── Text("This is a long text that should not wrap")
+
+    let root_elem = make_element_key();
+    let navbar_elem = make_element_key();
+    let stack_elem = make_element_key();
+    let pos_elem = make_element_key();
+    let opacity_elem = make_element_key();
+    let transform_elem = make_element_key();
+    let page_elem = make_element_key();
+    let text_elem = make_element_key();
+
+    let root_ro = Box::new(ContainerRenderObject::new(
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0)
+            .height_percent(1.0),
+    ));
+    let navbar_ro = Box::new(ContainerRenderObject::new(
+        Layout::default()
+            .flex_direction(FlexDirection::Row)
+            .width(140.0)
+            .flex_shrink(0.0),
+    ));
+    let stack_ro = Box::new(ContainerRenderObject::new(
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0)
+            .height_percent(1.0),
+    ));
+    let pos_ro = Box::new(PositionedRenderObject::new(PositionedInsets {
+        left: Some(0.0),
+        right: Some(0.0),
+        top: Some(0.0),
+        bottom: Some(0.0),
+    }));
+    let opacity_ro = Box::new(OpacityRenderObject::new(0.5));
+    let transform_ro = Box::new(TransformRenderObject::new(
+        AffineTransform::translation(0.0, 0.0),
+        true,
+    ));
+    let page_ro = Box::new(ContainerRenderObject::new(
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .padding(24.0),
+    ));
+    let text_ro = Box::new(
+        TextRenderObject::new("This is a long text that should not wrap")
+            .with_font_size(16.0)
+            .with_line_height(1.2),
+    );
+
+    let text_key = registry.create(text_ro, text_elem);
+    let page_key = registry.create(page_ro, page_elem);
+    let transform_key = registry.create(transform_ro, transform_elem);
+    let opacity_key = registry.create(opacity_ro, opacity_elem);
+    let pos_key = registry.create(pos_ro, pos_elem);
+    let stack_key = registry.create(stack_ro, stack_elem);
+    let navbar_key = registry.create(navbar_ro, navbar_elem);
+    let root_key = registry.create(root_ro, root_elem);
+
+    registry.set_child(page_key, text_key);
+    registry.set_child(transform_key, page_key);
+    registry.set_child(opacity_key, transform_key);
+    registry.set_child(pos_key, opacity_key);
+    registry.set_child(stack_key, pos_key);
+    registry.set_child(root_key, navbar_key);
+    {
+        let root = registry.get_mut(root_key).unwrap();
+        root.as_mut().add_child(stack_key);
+    }
+    registry.set_root(root_key);
+
+    for k in [
+        root_key,
+        navbar_key,
+        stack_key,
+        pos_key,
+        opacity_key,
+        transform_key,
+        page_key,
+        text_key,
+    ] {
+        dirty.mark_needs_layout(k);
+    }
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(375.0, 667.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let text_bounds = registry
+        .get(text_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("text should have bounds");
+
+    // The text's natural width ("This is a long text that should not wrap" @ 16px)
+    // is ~290px. With padding 24px (48 total), the page Column needs ~338px.
+    // Window is 375px. The text should NOT wrap — its height should be ~one line
+    // (16.0 * 1.2 = 19.2), not multiple lines.
+    let single_line_height = 16.0 * 1.2;
+    assert!(
+        text_bounds.height() <= single_line_height * 1.5,
+        "text should not wrap (height {} should be ~one line {}); \
+         width was {}",
+        text_bounds.height(),
+        single_line_height,
+        text_bounds.width()
+    );
+    assert!(
+        text_bounds.width() >= 280.0,
+        "text should be on one line (width {} should be >= natural ~290); \
+         this means it received enough width through the pass-through ROs",
+        text_bounds.width()
+    );
 }
