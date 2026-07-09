@@ -1906,4 +1906,111 @@ mod tests {
         // Arc is still held by us but the element is gone. The key assertion is
         // that root's mount count stays 1.
     }
+
+    /// Element-level test: Offstage flag-flip via IndexedStack index change
+    /// must propagate needs_layout to the parent container so the Taffy child
+    /// list is refreshed. Without this, the newly-onstage page's Taffy node is
+    /// never linked and it gets zero-size bounds.
+    #[test]
+    fn test_indexed_stack_flag_flip_updates_layout() {
+        use crate::layout::TaffyLayoutEngine;
+        use crate::widgets::IndexedStack;
+        use crate::{GlobalKey, Key};
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let key_a = GlobalKey::new();
+        let key_b = GlobalKey::new();
+
+        let stack = IndexedStack::new(0)
+            .push(Text::new("Page A").with_key(key_a.clone()))
+            .push(Text::new("Page B").with_key(key_b.clone()));
+        pipeline.reconcile(stack.boxed());
+        pipeline.layout(Size::new(300.0, 200.0), &mut engine, &mut font_system);
+
+        let bounds_a = {
+            let ro_key = pipeline
+                .build_owner()
+                .global_keys()
+                .get_element(&key_a)
+                .and_then(|elem| pipeline.render_objects().render_object_for_element(elem))
+                .expect("Page A should have an RO");
+            pipeline
+                .render_objects()
+                .get(ro_key)
+                .unwrap()
+                .computed_bounds()
+                .expect("Page A should have bounds")
+        };
+        assert!(
+            bounds_a.width() > 0.0,
+            "onstage Page A should have nonzero width, got {}",
+            bounds_a.width()
+        );
+
+        let bounds_b = {
+            let ro_key = pipeline
+                .build_owner()
+                .global_keys()
+                .get_element(&key_b)
+                .and_then(|elem| pipeline.render_objects().render_object_for_element(elem))
+                .expect("Page B should have an RO");
+            pipeline
+                .render_objects()
+                .get(ro_key)
+                .unwrap()
+                .computed_bounds()
+        };
+        assert!(
+            bounds_b.is_none() || bounds_b.unwrap().width() == 0.0,
+            "offstage Page B should have zero or no bounds"
+        );
+
+        let stack = IndexedStack::new(1)
+            .push(Text::new("Page A").with_key(key_a.clone()))
+            .push(Text::new("Page B").with_key(key_b.clone()));
+        pipeline.reconcile(stack.boxed());
+        pipeline.layout(Size::new(300.0, 200.0), &mut engine, &mut font_system);
+
+        let bounds_b_after = {
+            let ro_key = pipeline
+                .build_owner()
+                .global_keys()
+                .get_element(&key_b)
+                .and_then(|elem| pipeline.render_objects().render_object_for_element(elem))
+                .expect("Page B should have an RO after flip");
+            pipeline
+                .render_objects()
+                .get(ro_key)
+                .unwrap()
+                .computed_bounds()
+                .expect("Page B should have bounds after flip")
+        };
+        assert!(
+            bounds_b_after.width() > 0.0,
+            "newly-onstage Page B should have nonzero width after flip, got {}",
+            bounds_b_after.width()
+        );
+
+        let bounds_a_after = {
+            let ro_key = pipeline
+                .build_owner()
+                .global_keys()
+                .get_element(&key_a)
+                .and_then(|elem| pipeline.render_objects().render_object_for_element(elem))
+                .expect("Page A should have an RO after flip");
+            pipeline
+                .render_objects()
+                .get(ro_key)
+                .unwrap()
+                .computed_bounds()
+        };
+        // Offstage children don't get apply_layout (their parent's children() returns &[]),
+        // so their bounds are stale from the last onstage frame. The important
+        // assertion is that the newly-ONSTAGE page (B) receives correct layout.
+        // Page A's stale bounds are harmless — it's not painted or hit-tested.
+        let _ = bounds_a_after;
+    }
 }

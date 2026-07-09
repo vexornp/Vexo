@@ -147,6 +147,7 @@ impl Element for OffstageElement {
 
                     if result.contains(UpdateResult::LAYOUT) {
                         context.mark_needs_layout(ro_id);
+                        context.mark_parent_needs_layout();
                     }
                     if result.contains(UpdateResult::PAINT) {
                         context.mark_needs_paint(ro_id);

@@ -504,6 +504,16 @@ impl RenderObjectRegistry {
         self.element_map.get(key).copied()
     }
 
+    /// Get the render object owned by an element.
+    pub fn render_object_for_element(&self, element_key: ElementKey) -> Option<RenderObjectKey> {
+        for (ro_key, &e_key) in &self.element_map {
+            if e_key == element_key {
+                return Some(ro_key);
+            }
+        }
+        None
+    }
+
     /// Check if the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()

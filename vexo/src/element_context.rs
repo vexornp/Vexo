@@ -1,14 +1,14 @@
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 use crate::animation::AnimationTicker;
 use crate::build_owner::BuildOwner;
 use crate::child_ops::ChildOps;
 use crate::dirty::DirtyTracking;
+use crate::element_state::StateStorage;
 use crate::focus::{FocusManager, FocusNodeId};
 use crate::id::{ElementKey, RenderObjectKey};
 use crate::key::GlobalKey;
 use crate::render_object::{RenderObject, RenderObjectRegistry};
-use crate::element_state::StateStorage;
 
 /// Context passed to element lifecycle methods.
 ///
@@ -113,6 +113,22 @@ impl<'a> ElementContext<'a> {
         self.dirty.mark_needs_layout(key);
     }
 
+    /// Mark the parent element's render object as needing layout.
+    ///
+    /// Used when a child's layout_node() identity changes (e.g. Offstage
+    /// flag flip on a pass-through RO) and the parent must re-run layout()
+    /// to re-collect child_nodes via set_children.
+    pub fn mark_parent_needs_layout(&mut self) {
+        if let Some(parent_element) = self.parent {
+            if let Some(parent_ro) = self
+                .render_objects
+                .render_object_for_element(parent_element)
+            {
+                self.dirty.mark_needs_layout(parent_ro);
+            }
+        }
+    }
+
     /// Mark a render object as needing paint.
     pub fn mark_needs_paint(&mut self, key: RenderObjectKey) {
         self.dirty.mark_needs_paint(key);
@@ -163,7 +179,11 @@ impl<'a> ElementContext<'a> {
     // -- Render object registry --
 
     /// Create a render object in the registry.
-    pub fn create_render_object(&mut self, object: Box<dyn RenderObject>, owner: ElementKey) -> Option<RenderObjectKey> {
+    pub fn create_render_object(
+        &mut self,
+        object: Box<dyn RenderObject>,
+        owner: ElementKey,
+    ) -> Option<RenderObjectKey> {
         Some(self.render_objects.create(object, owner))
     }
 
@@ -173,7 +193,10 @@ impl<'a> ElementContext<'a> {
     }
 
     /// Get a mutable reference to a render object by key.
-    pub fn get_render_object_mut(&mut self, key: RenderObjectKey) -> Option<&mut Box<dyn RenderObject>> {
+    pub fn get_render_object_mut(
+        &mut self,
+        key: RenderObjectKey,
+    ) -> Option<&mut Box<dyn RenderObject>> {
         self.render_objects.get_mut(key)
     }
 
@@ -185,12 +208,18 @@ impl<'a> ElementContext<'a> {
     // -- Global key registry --
 
     /// Register a global key for this element.
-    pub fn register_global_key(&mut self, key: GlobalKey, element_id: ElementKey) -> Result<(), crate::global_key_registry::GlobalKeyError> {
+    pub fn register_global_key(
+        &mut self,
+        key: GlobalKey,
+        element_id: ElementKey,
+    ) -> Result<(), crate::global_key_registry::GlobalKeyError> {
         self.build_owner.global_keys_mut().register(key, element_id)
     }
 
     /// Unregister a global key for this element.
     pub fn unregister_global_key(&mut self, element_id: ElementKey) {
-        self.build_owner.global_keys_mut().unregister_element(element_id);
+        self.build_owner
+            .global_keys_mut()
+            .unregister_element(element_id);
     }
 }
