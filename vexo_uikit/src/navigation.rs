@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
-    IndexedStack, LifecycleContext, Positioned, RenderContext, Stack, Text, Widget,
+    IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext, Stack, Text, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -556,22 +556,31 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // `TextEditingController` edits). On return to steady state, fresh
         // page elements would mount with default state, losing user input.
         //
-        // The base `IndexedStack` is ALWAYS the Stack's first (in-flow) child.
-        // Because the slot-0 widget type never changes, the reconciler updates
-        // it in place; the `Offstage`-wrapped page children inside it stay
-        // mounted across push/pop, preserving their state.
+        // The base `IndexedStack` is ALWAYS the Stack's first (in-flow) child
+        // (optionally wrapped in an `Opacity` during transitions — Opacity is
+        // layout pass-through, so it preserves the in-flow sizing and the
+        // child element subtree). Because the slot-0 widget type never
+        // changes, the reconciler updates it in place; the `Offstage`-wrapped
+        // page children inside it stay mounted across push/pop, preserving
+        // their state.
         //
         // The base IndexedStack always shows the page that STAYS PUT during
         // the animation — the "underneath" page. Only the transient "moving"
         // page is rendered in the overlay (a `Positioned` sibling), which is
         // inflated when a transition starts and unmounted when it ends.
         //
-        //   Steady   : base index = path.len() (current top), no overlay.
+        //   Steady   : base index = path.len() (current top), no overlay,
+        //              Opacity alpha = 1.0.
         //   Push     : base index = from_path.len() (old top, preserved state),
-        //              overlay = incoming page animating in over the base.
-        //   Pop      : base index = to_path.len() (new top = path.len(),
-        //              the destination we're popping back to, preserved state),
-        //              overlay = outgoing page animating out, revealing base.
+        //              base Opacity alpha 1 → 0 so it fades out as the
+        //              incoming page slides over it (prevents the old page's
+        //              text from showing through the new page's transparent
+        //              background during the overlap). Overlay = incoming page.
+        //   Pop      : base index = to_path.len() (new top = path.len(), the
+        //              destination we're popping back to, preserved state),
+        //              base Opacity alpha 0 → 1 (it's the incoming page,
+        //              fading in as the outgoing page slides away).
+        //              Overlay = outgoing page animating out, revealing base.
         //
         // This split is what preserves state across navigation: the
         // destination page on pop is the base IndexedStack's already-mounted
@@ -593,13 +602,53 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             base_stack = base_stack.push((self.destination)(dest));
         }
 
+        // The base is ALWAYS wrapped in an `Opacity` (stable widget type),
+        // even in steady state. This is critical for the same reason the
+        // outer `Stack` is always a `Stack`: if the base widget type flipped
+        // between bare `IndexedStack` (steady) and `Opacity(IndexedStack)`
+        // (transition), the reconciler's `can_update()` (type-based) would
+        // replace the subtree on the swap, unmounting the page elements and
+        // losing their state (e.g. TextEditingController edits).
+        //
+        // `Opacity` is layout pass-through and preserves its child element
+        // across opacity changes (like `Offstage`), so wrapping is safe.
+        //
+        // Alpha rules (mirror the original two-page transition's incoming/
+        // outgoing curves so the visual matches):
+        //   Push         : base (old top) is the OUTGOING page — fades 1 → 0
+        //                  as the incoming page slides over it. Prevents the
+        //                  old page's text showing through the new page's
+        //                  transparent background. At t=1 the base is
+        //                  invisible, so the hard cut to steady state (base
+        //                  becomes the new top at full opacity) shows no jump.
+        //   Pop/PopToRoot: base (destination) is the INCOMING page — fades
+        //                  0 → 1 as the outgoing page slides away. At t=0 the
+        //                  base is invisible so the outgoing page (at center,
+        //                  full opacity) is the only thing visible — no overlap
+        //                  with the destination's text through the outgoing
+        //                  page's transparent background.
+        //   Steady       : full opacity (1.0).
+        let base_alpha = match state.transition.as_ref() {
+            None => 1.0,
+            Some(t) => {
+                let raw_t = t.controller.value();
+                let eased = self.transition_curve.transform(raw_t);
+                match t.direction {
+                    TransitionDir::Push => 1.0 - eased as f32,
+                    TransitionDir::Pop | TransitionDir::PopToRoot => eased as f32,
+                }
+            }
+        };
+        let base_widget: Box<dyn Widget> = Opacity::new(base_stack, base_alpha).boxed();
+
         // The base is an IN-FLOW child of the Stack (not Positioned). The
         // Stack's layout is `flex_direction: Column, align: Stretch,
-        // width_percent(1.0), height_percent(1.0)`, so the base IndexedStack
-        // (also `width_percent(1.0).height_percent(1.0)`) fills the Stack.
-        // The overlay, when present, is a `Positioned` (absolute) sibling
-        // painted on top — it does not affect the base's in-flow layout.
-        let mut content_stack = Stack::new().push(base_stack);
+        // width_percent(1.0), height_percent(1.0)`, so the base
+        // (Opacity is layout pass-through → IndexedStack fills the Stack)
+        // occupies the content area. The overlay, when present, is a
+        // `Positioned` (absolute) sibling painted on top — it does not affect
+        // the base's in-flow layout.
+        let mut content_stack = Stack::new().push(base_widget);
 
         if let Some(t) = state.transition.as_ref() {
             let raw_t = t.controller.value();
