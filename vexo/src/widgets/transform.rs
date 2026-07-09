@@ -12,7 +12,7 @@ use crate::core::{AffineTransform, Bounds, Logical, Point};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
+use crate::layout::LayoutNodeKey;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
     PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
@@ -28,20 +28,11 @@ use crate::{
 /// The transform is applied via `paint_transform()` so the painter wraps
 /// children's commands with `PushTransform`/`PopTransform`.
 pub struct TransformRenderObject {
-    /// The affine transform to apply.
     transform: AffineTransform,
-
-    /// Whether hit tests should use the inverse transform.
     transform_hit_tests: bool,
-
-    /// Child render object ID.
     child: Option<RenderObjectKey>,
-
-    /// Computed bounds from layout.
     computed_bounds: Option<Bounds<Logical>>,
-
-    /// Layout node in Taffy.
-    layout_node: Option<LayoutNodeKey>,
+    child_layout_node: Option<LayoutNodeKey>,
 }
 
 impl TransformRenderObject {
@@ -52,7 +43,7 @@ impl TransformRenderObject {
             transform_hit_tests,
             child: None,
             computed_bounds: None,
-            layout_node: None,
+            child_layout_node: None,
         }
     }
 
@@ -79,43 +70,31 @@ impl TransformRenderObject {
 }
 
 impl RenderObject for TransformRenderObject {
-    fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        // Pass-through layout: transform does NOT affect layout.
-        // The child occupies its original space regardless of the transform.
-        let layout = Layout::default()
-            .flex_direction(FlexDirection::Column)
-            .align(AlignItems::Stretch);
-
-        match self.layout_node {
-            Some(existing) => {
-                ctx.engine().set_style(existing, &layout);
-                ctx.engine().set_children(existing, child_nodes);
-                LayoutResult {
-                    node: existing,
-                    size: crate::core::Size::zero(),
-                }
-            }
-            None => {
-                let node = ctx.engine().create_container(&layout, child_nodes);
-                self.layout_node = Some(node);
-                LayoutResult {
-                    node,
-                    size: crate::core::Size::zero(),
-                }
-            }
+    fn layout(&mut self, _ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
+        let child_node = child_nodes.first().copied().expect(
+            "pass-through render object requires a child widget; \
+             Transform always has a child per its constructor",
+        );
+        self.child_layout_node = Some(child_node);
+        LayoutResult {
+            node: child_node,
+            size: crate::core::Size::zero(),
         }
     }
 
     fn apply_layout(&mut self, ctx: &mut LayoutContext) {
-        if let Some(node) = self.layout_node {
-            if let Some(computed) = ctx.engine_ref().get_layout(node) {
+        if let Some(child_node) = self.child_layout_node {
+            if let Some(computed) = ctx.engine_ref().get_layout(child_node) {
                 self.computed_bounds = Some(computed.bounds);
             }
         }
     }
 
+    fn is_pass_through(&self) -> bool {
+        true
+    }
+
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<crate::render::RenderCommand> {
-        // The transform is applied via paint_transform(), not via paint commands.
         vec![]
     }
 
@@ -154,7 +133,7 @@ impl RenderObject for TransformRenderObject {
     }
 
     fn layout_node(&self) -> Option<LayoutNodeKey> {
-        self.layout_node
+        self.child_layout_node
     }
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
@@ -595,5 +574,84 @@ mod tests {
         // Changing from false back to true should also mark paint dirty
         let result = widget_with.update_render_object(&mut ro);
         assert!(result.contains(UpdateResult::PAINT)); // Flag changed back
+    }
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = include_bytes!("../../font.ttf").to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    #[test]
+    fn test_transform_is_pass_through() {
+        let ro = TransformRenderObject::new(AffineTransform::rotation(0.5), true);
+        assert!(ro.is_pass_through());
+    }
+
+    #[test]
+    fn test_transform_layout_stores_child_node() {
+        use crate::layout::{Layout, LayoutEngine, TaffyLayoutEngine};
+        use crate::{LayoutContext, LayoutResult};
+
+        let mut ro = TransformRenderObject::new(AffineTransform::rotation(0.5), true);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        let child_node = ctx
+            .engine()
+            .create_leaf(&Layout::default().width(50.0).height(30.0));
+
+        let result = ro.layout(&mut ctx, &[child_node]);
+
+        assert_eq!(ro.layout_node(), Some(child_node));
+        assert_eq!(result.node, child_node);
+    }
+
+    #[test]
+    fn test_transform_apply_layout_reads_child_bounds() {
+        use crate::core::Size;
+        use crate::layout::{Layout, LayoutEngine, TaffyLayoutEngine};
+        use crate::{LayoutContext, LayoutResult};
+
+        let mut ro = TransformRenderObject::new(AffineTransform::rotation(0.5), true);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child_node = {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let node = ctx
+                .engine()
+                .create_leaf(&Layout::default().width(60.0).height(25.0));
+            ro.layout(&mut ctx, &[node]);
+            node
+        };
+
+        engine.compute(child_node, Size::new(200.0, 200.0), &mut font_system);
+
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ro.apply_layout(&mut ctx);
+        }
+
+        let bounds = ro
+            .computed_bounds()
+            .expect("apply_layout should set bounds");
+        assert_eq!(bounds.width(), 60.0);
+        assert_eq!(bounds.height(), 25.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "pass-through render object requires a child")]
+    fn test_transform_layout_no_child_panics() {
+        use crate::layout::{LayoutEngine, TaffyLayoutEngine};
+        use crate::{LayoutContext, LayoutResult};
+
+        let mut ro = TransformRenderObject::new(AffineTransform::rotation(0.5), true);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        ro.layout(&mut ctx, &[]);
     }
 }
