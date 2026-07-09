@@ -546,74 +546,113 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         let nav_bar = self.build_nav_bar(&title, can_pop);
 
         // 4. Build the page content area.
-        let content: Box<dyn Widget> = if let Some(t) = state.transition.as_ref() {
-            // TRANSITION: render a Stack with both pages, animated.
+        //
+        // The content widget is ALWAYS a `Stack` (stable type), regardless of
+        // whether a transition is in flight. This is critical: if the widget
+        // type alternated between `IndexedStack` (steady) and `Stack`
+        // (transition), the reconciler's `can_update()` (which checks
+        // `type_id()` equality) would fail on the type swap and replace the
+        // entire subtree — unmounting every page element (and its state, e.g.
+        // `TextEditingController` edits). On return to steady state, fresh
+        // page elements would mount with default state, losing user input.
+        //
+        // The base `IndexedStack` is ALWAYS the Stack's first (in-flow) child.
+        // Because the slot-0 widget type never changes, the reconciler updates
+        // it in place; the `Offstage`-wrapped page children inside it stay
+        // mounted across push/pop, preserving their state.
+        //
+        // The base IndexedStack always shows the page that STAYS PUT during
+        // the animation — the "underneath" page. Only the transient "moving"
+        // page is rendered in the overlay (a `Positioned` sibling), which is
+        // inflated when a transition starts and unmounted when it ends.
+        //
+        //   Steady   : base index = path.len() (current top), no overlay.
+        //   Push     : base index = from_path.len() (old top, preserved state),
+        //              overlay = incoming page animating in over the base.
+        //   Pop      : base index = to_path.len() (new top = path.len(),
+        //              the destination we're popping back to, preserved state),
+        //              overlay = outgoing page animating out, revealing base.
+        //
+        // This split is what preserves state across navigation: the
+        // destination page on pop is the base IndexedStack's already-mounted
+        // child (with its edits intact), never a fresh overlay page.
+        let path = self.controller.path();
+
+        // The base index: point at the "underneath" page.
+        let base_index = match state.transition.as_ref() {
+            None => path.len(),
+            Some(t) => match t.direction {
+                TransitionDir::Push => t.from_path.len(),
+                TransitionDir::Pop | TransitionDir::PopToRoot => t.to_path.len(),
+            },
+        };
+
+        let mut base_stack = IndexedStack::new(base_index);
+        base_stack = base_stack.push(self.root.clone_boxed());
+        for dest in path.iter() {
+            base_stack = base_stack.push((self.destination)(dest));
+        }
+
+        // The base is an IN-FLOW child of the Stack (not Positioned). The
+        // Stack's layout is `flex_direction: Column, align: Stretch,
+        // width_percent(1.0), height_percent(1.0)`, so the base IndexedStack
+        // (also `width_percent(1.0).height_percent(1.0)`) fills the Stack.
+        // The overlay, when present, is a `Positioned` (absolute) sibling
+        // painted on top — it does not affect the base's in-flow layout.
+        let mut content_stack = Stack::new().push(base_stack);
+
+        if let Some(t) = state.transition.as_ref() {
             let raw_t = t.controller.value();
             let eased = self.transition_curve.transform(raw_t);
 
-            // Build the outgoing page (from_path's top, or root if from was empty).
-            let outgoing_page = self.build_page_for_path_top(&t.from_path);
-            // Build the incoming page (to_path's top, or root if to is empty).
-            let incoming_page = self.build_page_for_path_top(&t.to_path);
-
             let platform = self.effective_platform();
             let page_width = t.page_width;
-
-            let outgoing_ctx = TransitionCtx {
-                t: eased,
-                is_incoming: false,
-                direction: t.direction,
-                platform,
-                page_width,
-            };
-            let incoming_ctx = TransitionCtx {
-                t: eased,
-                is_incoming: true,
-                direction: t.direction,
-                platform,
-                page_width,
-            };
 
             let transition_fn: Rc<dyn Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget>> =
                 self.transition
                     .clone()
                     .unwrap_or_else(|| Rc::new(|ctx, child| default_transition(ctx, child)));
 
-            let outgoing_wrapped = transition_fn(&outgoing_ctx, outgoing_page);
-            let incoming_wrapped = transition_fn(&incoming_ctx, incoming_page);
+            // The overlay renders only the "moving" page. The underneath page
+            // is already shown by the base IndexedStack (with preserved state).
+            let overlay: Box<dyn Widget> = match t.direction {
+                TransitionDir::Push => {
+                    // Incoming page slides in over the (still-mounted) old top.
+                    let incoming_page = self.build_page_for_path_top(&t.to_path);
+                    let incoming_ctx = TransitionCtx {
+                        t: eased,
+                        is_incoming: true,
+                        direction: t.direction,
+                        platform,
+                        page_width,
+                    };
+                    transition_fn(&incoming_ctx, incoming_page)
+                }
+                TransitionDir::Pop | TransitionDir::PopToRoot => {
+                    // Outgoing page slides away, revealing the destination
+                    // (the base IndexedStack's new top) underneath.
+                    let outgoing_page = self.build_page_for_path_top(&t.from_path);
+                    let outgoing_ctx = TransitionCtx {
+                        t: eased,
+                        is_incoming: false,
+                        direction: t.direction,
+                        platform,
+                        page_width,
+                    };
+                    transition_fn(&outgoing_ctx, outgoing_page)
+                }
+            };
 
-            // Wrap each page in `Positioned` with zero insets so both pages
-            // overlap inside the Stack (filling it). Without this, non-positioned
-            // Stack children are laid out as Column flex items — sequentially
-            // vertical — which leaves a blank gap above the incoming page
-            // during the transition (it sits below the outgoing page in
-            // layout, even though `Transform` only shifts paint).
-            Stack::new()
-                .push(
-                    Positioned::new(outgoing_wrapped)
-                        .top(0.0)
-                        .right(0.0)
-                        .bottom(0.0)
-                        .left(0.0),
-                )
-                .push(
-                    Positioned::new(incoming_wrapped)
-                        .top(0.0)
-                        .right(0.0)
-                        .bottom(0.0)
-                        .left(0.0),
-                )
-                .boxed()
-        } else {
-            // STEADY: existing IndexedStack path with current path.
-            let path = self.controller.path();
-            let mut stack = IndexedStack::new(path.len());
-            stack = stack.push(self.root.clone_boxed());
-            for dest in path.iter() {
-                stack = stack.push((self.destination)(dest));
-            }
-            stack.boxed()
-        };
+            content_stack = content_stack.push(
+                Positioned::new(overlay)
+                    .top(0.0)
+                    .right(0.0)
+                    .bottom(0.0)
+                    .left(0.0),
+            );
+        }
+
+        let content: Box<dyn Widget> = content_stack.boxed();
 
         Flex::column().push(nav_bar).push(content).boxed()
     }
