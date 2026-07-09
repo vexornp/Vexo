@@ -19,7 +19,7 @@ mod stack;
 mod text;
 mod text_edit;
 mod text_edit_content;
-mod transform;
+pub(crate) mod transform;
 mod transitions;
 mod with_layout;
 

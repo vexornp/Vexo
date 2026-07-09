@@ -98,6 +98,8 @@ mod integration_tests;
 #[cfg(test)]
 mod key_tests;
 #[cfg(test)]
+mod passthrough_integration;
+#[cfg(test)]
 mod reconcile_tests;
 #[cfg(test)]
 mod stateful_integration_test;

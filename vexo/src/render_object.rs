@@ -544,9 +544,16 @@ impl RenderObjectRegistry {
     }
 
     /// Set the child render object for a parent.
+    ///
+    /// Calls both `set_child_id` and `add_child` on the parent so this works
+    /// for single-child render objects (which override `set_child_id`) and
+    /// multi-child containers (which override `add_child`). The non-overridden
+    /// method is a no-op by default, so calling both is safe. This mirrors
+    /// `RenderObjectElement::insert_child_render_object`.
     pub fn set_child(&mut self, parent: RenderObjectKey, child: RenderObjectKey) {
         if let Some(obj) = self.objects.get_mut(parent) {
             obj.set_child_id(child);
+            obj.add_child(child);
         }
     }
 
