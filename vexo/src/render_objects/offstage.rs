@@ -9,7 +9,8 @@
 //!   on render-object removal, not on `children()` filtering).
 //!
 //! When `offstage == false`:
-//! - `layout()` creates a pass-through Taffy container (Column + Stretch) with the child linked
+//! - `layout()` is pass-through: stores the child's node in `child_layout_node`,
+//!   creates no Taffy node of its own, `is_pass_through() == true`
 //! - `children()` returns `&[child]` so the pipeline traverses it normally
 //!
 //! This matches Flutter's `Offstage` widget semantics.
@@ -17,7 +18,7 @@
 use std::any::Any;
 
 use crate::core::{Bounds, Logical, Point, Size};
-use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
+use crate::layout::{Layout, LayoutNodeKey};
 use crate::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey,
 };
@@ -36,8 +37,8 @@ pub struct OffstageRenderObject {
     /// Computed bounds from layout.
     computed_bounds: Option<Bounds<Logical>>,
 
-    /// Layout node in Taffy.
-    layout_node: Option<LayoutNodeKey>,
+    owned_node: Option<LayoutNodeKey>,
+    child_layout_node: Option<LayoutNodeKey>,
 }
 
 impl OffstageRenderObject {
@@ -47,7 +48,8 @@ impl OffstageRenderObject {
             offstage,
             child: None,
             computed_bounds: None,
-            layout_node: None,
+            owned_node: None,
+            child_layout_node: None,
         }
     }
 
@@ -70,15 +72,13 @@ impl OffstageRenderObject {
 impl RenderObject for OffstageRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
         if self.offstage {
-            // Offstage: create a zero-size leaf node. Do NOT link the child into
-            // the Taffy tree — the child's own layout node persists in the engine
-            // (created on a previous onstage frame or never created if it was
-            // offstage from the start), but it is not part of our subtree.
+            // Offstage: zero-size leaf. Child NOT linked into layout.
             let leaf_layout = Layout::default().width(0.0).height(0.0);
-            match self.layout_node {
+            match self.owned_node {
                 Some(existing) => {
                     ctx.engine().set_style(existing, &leaf_layout);
                     ctx.engine().set_children(existing, &[]);
+                    self.child_layout_node = None;
                     LayoutResult {
                         node: existing,
                         size: Size::zero(),
@@ -86,7 +86,8 @@ impl RenderObject for OffstageRenderObject {
                 }
                 None => {
                     let node = ctx.engine().create_container(&leaf_layout, &[]);
-                    self.layout_node = Some(node);
+                    self.owned_node = Some(node);
+                    self.child_layout_node = None;
                     LayoutResult {
                         node,
                         size: Size::zero(),
@@ -94,44 +95,40 @@ impl RenderObject for OffstageRenderObject {
                 }
             }
         } else {
-            // Onstage: pass-through container, child sizes the parent naturally.
-            let layout = Layout::default()
-                .flex_direction(FlexDirection::Column)
-                .align(AlignItems::Stretch);
-
-            match self.layout_node {
-                Some(existing) => {
-                    ctx.engine().set_style(existing, &layout);
-                    ctx.engine().set_children(existing, child_nodes);
-                    LayoutResult {
-                        node: existing,
-                        size: Size::zero(),
-                    }
-                }
-                None => {
-                    let node = ctx.engine().create_container(&layout, child_nodes);
-                    self.layout_node = Some(node);
-                    LayoutResult {
-                        node,
-                        size: Size::zero(),
-                    }
-                }
+            // Onstage: pass-through. Transition cleanup if coming from offstage.
+            if let Some(old_owned) = self.owned_node.take() {
+                ctx.engine().remove_node(old_owned);
+            }
+            let child_node = child_nodes.first().copied().expect(
+                "pass-through render object requires a child widget; \
+                 Offstage always has a child per its constructor",
+            );
+            self.child_layout_node = Some(child_node);
+            LayoutResult {
+                node: child_node,
+                size: Size::zero(),
             }
         }
     }
 
     fn apply_layout(&mut self, ctx: &mut LayoutContext) {
-        if let Some(node) = self.layout_node {
+        let node = if self.offstage {
+            self.owned_node
+        } else {
+            self.child_layout_node
+        };
+        if let Some(node) = node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);
             }
         }
     }
 
+    fn is_pass_through(&self) -> bool {
+        !self.offstage
+    }
+
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<crate::render::RenderCommand> {
-        // No own paint commands. When offstage, children() returns &[] so the
-        // painter never recurses into the child. When onstage, the child is
-        // painted by the pipeline's normal traversal.
         vec![]
     }
 
@@ -172,7 +169,11 @@ impl RenderObject for OffstageRenderObject {
     }
 
     fn layout_node(&self) -> Option<LayoutNodeKey> {
-        self.layout_node
+        if self.offstage {
+            self.owned_node
+        } else {
+            self.child_layout_node
+        }
     }
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
@@ -246,12 +247,10 @@ mod tests {
         let mut font_system = create_test_font_system();
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
 
-        // Pass a child node, but offstage should ignore it
         let result = ro.layout(&mut ctx, &[]);
 
-        assert!(ro.layout_node.is_some());
-        assert_eq!(ro.layout_node, Some(result.node));
-        // Offstage produces zero size
+        assert!(ro.layout_node().is_some());
+        assert_eq!(ro.layout_node(), Some(result.node));
         assert_eq!(result.size, Size::zero());
     }
 
@@ -261,7 +260,6 @@ mod tests {
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
-        // Create a child leaf node
         let child_node = {
             let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
             ctx.engine()
@@ -271,7 +269,152 @@ mod tests {
         let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
         let result = ro.layout(&mut ctx, &[child_node]);
 
-        assert!(ro.layout_node.is_some());
-        assert_eq!(ro.layout_node, Some(result.node));
+        // Onstage: pass-through. layout_node() returns the child's node.
+        assert_eq!(ro.layout_node(), Some(child_node));
+        assert_eq!(result.node, child_node);
+    }
+
+    #[test]
+    fn test_offstage_onstage_is_pass_through() {
+        let ro = OffstageRenderObject::new(false);
+        assert!(ro.is_pass_through());
+    }
+
+    #[test]
+    fn test_offstage_offstage_is_not_pass_through() {
+        let ro = OffstageRenderObject::new(true);
+        assert!(!ro.is_pass_through());
+    }
+
+    #[test]
+    fn test_offstage_onstage_layout_stores_child_node_no_owned_node() {
+        let mut ro = OffstageRenderObject::new(false);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child_node = {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ctx.engine()
+                .create_leaf(&Layout::default().width(50.0).height(50.0))
+        };
+
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+        ro.layout(&mut ctx, &[child_node]);
+
+        assert_eq!(ro.layout_node(), Some(child_node));
+    }
+
+    #[test]
+    fn test_offstage_onstage_apply_layout_reads_child_bounds() {
+        let mut ro = OffstageRenderObject::new(false);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child_node = {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let node = ctx
+                .engine()
+                .create_leaf(&Layout::default().width(70.0).height(35.0));
+            ro.layout(&mut ctx, &[node]);
+            node
+        };
+
+        engine.compute(child_node, Size::new(200.0, 200.0), &mut font_system);
+
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ro.apply_layout(&mut ctx);
+        }
+
+        let bounds = ro.computed_bounds().expect("onstage should have bounds");
+        assert_eq!(bounds.width(), 70.0);
+        assert_eq!(bounds.height(), 35.0);
+    }
+
+    #[test]
+    fn test_offstage_flag_flip_onstage_to_offstage() {
+        let mut ro = OffstageRenderObject::new(false);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        let child_node = {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ctx.engine()
+                .create_leaf(&Layout::default().width(50.0).height(50.0))
+        };
+
+        // Start onstage (pass-through)
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ro.layout(&mut ctx, &[child_node]);
+        }
+        assert_eq!(ro.layout_node(), Some(child_node));
+        assert!(ro.is_pass_through());
+
+        // Flip to offstage
+        ro.set_offstage(true);
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ro.layout(&mut ctx, &[child_node]);
+        }
+
+        // Offstage: owns a zero-size leaf, does NOT report child's node
+        let owned = ro.layout_node().expect("offstage should own a leaf node");
+        assert!(!ro.is_pass_through());
+
+        // The child's node must still exist in the engine (Offstage didn't remove it)
+        engine.compute(owned, Size::new(100.0, 100.0), &mut font_system);
+        assert!(
+            engine.get_layout(child_node).is_some(),
+            "child's node must still exist after onstage->offstage flip"
+        );
+    }
+
+    #[test]
+    fn test_offstage_flag_flip_offstage_to_onstage_removes_owned_node() {
+        let mut ro = OffstageRenderObject::new(true);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // Start offstage (owns zero-size leaf)
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            ro.layout(&mut ctx, &[]);
+        }
+        let offstage_node = ro.layout_node().expect("offstage should own a node");
+        assert!(!ro.is_pass_through());
+
+        // Flip to onstage (pass-through)
+        ro.set_offstage(false);
+        let child_node = {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let node = ctx
+                .engine()
+                .create_leaf(&Layout::default().width(50.0).height(50.0));
+            ro.layout(&mut ctx, &[node]);
+            node
+        };
+
+        // Onstage: reports child's node, old owned node is gone
+        assert_eq!(ro.layout_node(), Some(child_node));
+        assert!(ro.is_pass_through());
+
+        // The old offstage leaf node should be removed from the engine.
+        // After removal, get_layout returns None.
+        assert!(
+            engine.get_layout(offstage_node).is_none(),
+            "old offstage leaf node should be removed after offstage->onstage flip"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "pass-through render object requires a child")]
+    fn test_offstage_onstage_layout_no_child_panics() {
+        let mut ro = OffstageRenderObject::new(false);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        ro.layout(&mut ctx, &[]);
     }
 }
