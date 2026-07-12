@@ -239,6 +239,21 @@ impl Element for ContainerElement {
             for i in (new_len..old_len).rev() {
                 context.unmount_child(old_children[i]);
             }
+
+            // If children were removed, mark our render object as needing
+            // layout so its layout() re-runs and calls set_children() with
+            // the updated (filtered) child list. Without this, the stale
+            // child key remains in our ContainerRenderObject's children Vec,
+            // the orphaned child's Taffy node is removed from the tree but
+            // our Taffy node is not marked dirty, and Taffy's compute()
+            // returns the cached layout (which still allocates space for the
+            // removed child). This mirrors the mark_needs_layout in
+            // child_mounted() for the mount case.
+            if new_len < old_len {
+                if let Some(ro_id) = self.render_object {
+                    context.mark_needs_layout(ro_id);
+                }
+            }
         }
 
         // Reparent focus node if parent changed
