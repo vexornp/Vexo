@@ -20,7 +20,9 @@ pub mod button;
 pub use button::{Button, ButtonState, ButtonVariant};
 
 pub mod navigation;
-pub use navigation::{NavigationController, NavigationStackView, NavigationStackViewState};
+pub use navigation::{
+    base_fx_alpha, NavigationController, NavigationStackView, NavigationStackViewState,
+};
 
 pub mod transitions;
 pub use transitions::{

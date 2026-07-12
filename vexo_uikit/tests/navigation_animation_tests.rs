@@ -359,3 +359,114 @@ fn controller_clone_shares_pending() {
         "clear_pending via clone must clear on original"
     );
 }
+
+// ============================================================================
+// BASE FX / ALPHA (DUAL-VIEW OFFSET ANIMATION)
+// ============================================================================
+
+mod base_fx_alpha_tests {
+    use vexo_uikit::base_fx_alpha;
+    use vexo_uikit::platform::Platform;
+    use vexo_uikit::transitions::TransitionDir;
+
+    #[test]
+    fn push_mobile_slides_left_and_dims() {
+        // t=0: in place, full opacity
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Mobile, 0.0);
+        assert!((fx - 0.0).abs() < 1e-6, "fx at t=0 must be 0, got {}", fx);
+        assert!(
+            (alpha - 1.0).abs() < 1e-6,
+            "alpha at t=0 must be 1.0, got {}",
+            alpha
+        );
+
+        // t=0.5: slid 15% left, dimmed to 0.8
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Mobile, 0.5);
+        assert!(
+            (fx - (-0.15)).abs() < 1e-6,
+            "fx at t=0.5 must be -0.15, got {}",
+            fx
+        );
+        assert!(
+            (alpha - 0.8).abs() < 1e-6,
+            "alpha at t=0.5 must be 0.8, got {}",
+            alpha
+        );
+
+        // t=1.0: slid 30% left, dimmed to 0.6
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Mobile, 1.0);
+        assert!(
+            (fx - (-0.3)).abs() < 1e-6,
+            "fx at t=1.0 must be -0.3, got {}",
+            fx
+        );
+        assert!(
+            (alpha - 0.6).abs() < 1e-6,
+            "alpha at t=1.0 must be 0.6, got {}",
+            alpha
+        );
+    }
+
+    #[test]
+    fn pop_mobile_slides_back_and_un_dims() {
+        // t=0: slid 30% left, dimmed to 0.6 (reverse of push end)
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Pop, Platform::Mobile, 0.0);
+        assert!(
+            (fx - (-0.3)).abs() < 1e-6,
+            "fx at t=0 must be -0.3, got {}",
+            fx
+        );
+        assert!(
+            (alpha - 0.6).abs() < 1e-6,
+            "alpha at t=0 must be 0.6, got {}",
+            alpha
+        );
+
+        // t=1.0: in place, full opacity
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Pop, Platform::Mobile, 1.0);
+        assert!((fx - 0.0).abs() < 1e-6, "fx at t=1.0 must be 0, got {}", fx);
+        assert!(
+            (alpha - 1.0).abs() < 1e-6,
+            "alpha at t=1.0 must be 1.0, got {}",
+            alpha
+        );
+    }
+
+    #[test]
+    fn pop_to_root_mobile_matches_pop() {
+        let pop = base_fx_alpha(TransitionDir::Pop, Platform::Mobile, 0.3);
+        let pop_to_root = base_fx_alpha(TransitionDir::PopToRoot, Platform::Mobile, 0.3);
+        assert!((pop.0 - pop_to_root.0).abs() < 1e-6);
+        assert!((pop.1 - pop_to_root.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn push_desktop_no_offset_fade_only() {
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Desktop, 0.5);
+        assert!(
+            (fx - 0.0).abs() < 1e-6,
+            "desktop must have no offset, got {}",
+            fx
+        );
+        assert!(
+            (alpha - 0.5).abs() < 1e-6,
+            "desktop alpha at t=0.5 must be 0.5, got {}",
+            alpha
+        );
+    }
+
+    #[test]
+    fn pop_desktop_no_offset_fade_only() {
+        let (fx, alpha) = base_fx_alpha(TransitionDir::Pop, Platform::Desktop, 0.5);
+        assert!(
+            (fx - 0.0).abs() < 1e-6,
+            "desktop must have no offset, got {}",
+            fx
+        );
+        assert!(
+            (alpha - 0.5).abs() < 1e-6,
+            "desktop alpha at t=0.5 must be 0.5, got {}",
+            alpha
+        );
+    }
+}

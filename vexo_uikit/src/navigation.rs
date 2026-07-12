@@ -805,3 +805,30 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             .boxed()
     }
 }
+
+/// Compute the base (underneath) page's fractional offset and alpha for a
+/// navigation transition.
+///
+/// On mobile, the underneath page slides left ~30% and dims to 0.6 alpha
+/// (SwiftUI-style dual-view offset animation). On desktop, it fades in place
+/// (no offset — desktop has no stack metaphor).
+///
+/// - Push: base is the outgoing (old top) page — slides left, dims 1.0 → 0.6.
+/// - Pop/PopToRoot: base is the incoming (destination) page — slides back to
+///   0, un-dims 0.6 → 1.0.
+///
+/// Returns `(base_fx, base_alpha)`. `base_fx` is the fractional horizontal
+/// offset (negative = left, resolved against page width at paint time).
+/// `base_alpha` is the opacity multiplier `0.0..=1.0`.
+pub fn base_fx_alpha(direction: TransitionDir, platform: Platform, eased: f64) -> (f32, f32) {
+    match (direction, platform) {
+        (TransitionDir::Push, Platform::Mobile) => {
+            ((-0.3 * eased) as f32, (1.0 - 0.4 * eased) as f32)
+        }
+        (TransitionDir::Pop | TransitionDir::PopToRoot, Platform::Mobile) => {
+            ((-0.3 * (1.0 - eased)) as f32, (0.6 + 0.4 * eased) as f32)
+        }
+        (TransitionDir::Push, Platform::Desktop) => (0.0, (1.0 - eased) as f32),
+        (TransitionDir::Pop | TransitionDir::PopToRoot, Platform::Desktop) => (0.0, eased as f32),
+    }
+}
