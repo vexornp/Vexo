@@ -43,8 +43,8 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
-    IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext, SafeArea, Stack, Text,
-    Widget,
+    FractionalTranslation, IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext,
+    SafeArea, Stack, Text, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -602,44 +602,39 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             base_stack = base_stack.push((self.destination)(dest));
         }
 
-        // The base is ALWAYS wrapped in an `Opacity` (stable widget type),
-        // even in steady state. This is critical for the same reason the
-        // outer `Stack` is always a `Stack`: if the base widget type flipped
-        // between bare `IndexedStack` (steady) and `Opacity(IndexedStack)`
-        // (transition), the reconciler's `can_update()` (type-based) would
-        // replace the subtree on the swap, unmounting the page elements and
-        // losing their state (e.g. TextEditingController edits).
+        // The base is ALWAYS wrapped in an `Opacity(FractionalTranslation(...))`
+        // (stable widget types), even in steady state. This is critical for the
+        // same reason the outer `Stack` is always a `Stack`: if the base widget
+        // type flipped between bare `IndexedStack` (steady) and
+        // `Opacity(FractionalTranslation(IndexedStack))` (transition), the
+        // reconciler's `can_update()` (type-based) would replace the subtree on
+        // the swap, unmounting the page elements and losing their state (e.g.
+        // TextEditingController edits).
         //
-        // `Opacity` is layout pass-through and preserves its child element
-        // across opacity changes (like `Offstage`), so wrapping is safe.
+        // `Opacity` and `FractionalTranslation` are both layout pass-through and
+        // preserve their child element across changes, so wrapping is safe. At
+        // steady state `base_fx = 0.0` makes `FractionalTranslation` a paint-time
+        // no-op (`paint_transform()` returns `None`) — zero rendering cost.
         //
-        // Alpha rules (mirror the original two-page transition's incoming/
-        // outgoing curves so the visual matches):
-        //   Push         : base (old top) is the OUTGOING page — fades 1 → 0
-        //                  as the incoming page slides over it. Prevents the
-        //                  old page's text showing through the new page's
-        //                  transparent background. At t=1 the base is
-        //                  invisible, so the hard cut to steady state (base
-        //                  becomes the new top at full opacity) shows no jump.
-        //   Pop/PopToRoot: base (destination) is the INCOMING page — fades
-        //                  0 → 1 as the outgoing page slides away. At t=0 the
-        //                  base is invisible so the outgoing page (at center,
-        //                  full opacity) is the only thing visible — no overlap
-        //                  with the destination's text through the outgoing
-        //                  page's transparent background.
-        //   Steady       : full opacity (1.0).
-        let base_alpha = match state.transition.as_ref() {
-            None => 1.0,
+        // Offset/alpha rules (SwiftUI-style dual-view animation on mobile;
+        // fade-only on desktop):
+        //   Push (mobile) : base (old top) slides left 30%, dims 1.0 → 0.6.
+        //   Pop  (mobile) : base (destination) slides back to 0, un-dims 0.6 → 1.0.
+        //   Desktop       : base_fx = 0.0 always (no slide); alpha fades as before.
+        //   Steady        : base_fx = 0.0, alpha = 1.0 (no-op wrappers).
+        let (base_fx, base_alpha): (f32, f32) = match state.transition.as_ref() {
+            None => (0.0, 1.0),
             Some(t) => {
                 let raw_t = t.controller.value();
                 let eased = self.transition_curve.transform(raw_t);
-                match t.direction {
-                    TransitionDir::Push => 1.0 - eased as f32,
-                    TransitionDir::Pop | TransitionDir::PopToRoot => eased as f32,
-                }
+                base_fx_alpha(t.direction, self.effective_platform(), eased)
             }
         };
-        let base_widget: Box<dyn Widget> = Opacity::new(base_stack, base_alpha).boxed();
+        let base_widget: Box<dyn Widget> = Opacity::new(
+            FractionalTranslation::new(base_stack, base_fx, 0.0),
+            base_alpha,
+        )
+        .boxed();
 
         // The base is an IN-FLOW child of the Stack (not Positioned). The
         // Stack's layout is `flex_direction: Column, align: Stretch,
