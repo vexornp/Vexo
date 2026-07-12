@@ -11,6 +11,7 @@
 
 mod container;
 mod image;
+mod indexed_stack;
 mod offstage;
 mod opacity;
 mod positioned;
@@ -20,6 +21,7 @@ mod text_edit;
 
 pub use container::ContainerRenderObject;
 pub use image::ImageRenderObject;
+pub use indexed_stack::IndexedStackRenderObject;
 pub use offstage::OffstageRenderObject;
 pub use opacity::OpacityRenderObject;
 pub use positioned::{PositionedInsets, PositionedRenderObject};
