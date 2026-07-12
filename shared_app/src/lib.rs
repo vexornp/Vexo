@@ -165,23 +165,19 @@ impl Application for State {
                 let nav_for_dest = state.mobile_nav_controller.clone();
                 let count_for_dest = selection_count.clone();
 
-                SafeArea::new(
-                    NavigationStackView::new(state.mobile_nav_controller.clone(), sidebar)
-                        .root_title("Navigation")
-                        .title(|d| match d {
-                            Dest::Item(id) => item_label(*id),
-                            Dest::Page(n) => format!("Page: {}", n),
-                        })
-                        .destination(move |d| match d {
-                            Dest::Item(id) => build_detail_content(
-                                *id,
-                                count_for_dest.clone(),
-                                nav_for_dest.clone(),
-                            ),
-                            Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
-                        }),
-                )
-                .boxed()
+                NavigationStackView::new(state.mobile_nav_controller.clone(), sidebar)
+                    .root_title("Navigation")
+                    .title(|d| match d {
+                        Dest::Item(id) => item_label(*id),
+                        Dest::Page(n) => format!("Page: {}", n),
+                    })
+                    .destination(move |d| match d {
+                        Dest::Item(id) => {
+                            build_detail_content(*id, count_for_dest.clone(), nav_for_dest.clone())
+                        }
+                        Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                    })
+                    .boxed()
             }
         }
     }

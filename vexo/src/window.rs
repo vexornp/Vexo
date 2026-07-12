@@ -428,36 +428,18 @@ impl<A: Application + 'static> WindowState<A> {
         log::debug!("\n========================================");
         log::debug!("[RetainMode] === FRAME START ===");
 
-        // 4. Perform state-driven rebuilds
-        self.three_tree_pipeline.perform_rebuilds();
-
-        // 5. On first frame, reconcile the RootComponent into the element tree.
-        //    After that, perform_rebuilds() handles everything — when a Signal
-        //    on the app state fires, the RootComponent's StatefulElement is
-        //    marked dirty and rebuild_from_state() re-calls A::view().
-        //    We only pass a new root widget on the initial mount; state-driven
-        //    rebuilds are handled entirely by perform_rebuilds() above.
-        if self.three_tree_pipeline.needs_full_reconcile() {
-            let root_widget = RootComponent::<A>::default().boxed();
-            self.three_tree_pipeline.update(root_widget);
-        }
-
-        // 6. Compute logical size
-        let scale = self.scale_source.get();
-        let logical_width = self.backend.width() as f32 / scale.factor();
-        let logical_height = self.backend.height() as f32 / scale.factor();
-        let logical_size = Size::<Logical>::new(logical_width, logical_height);
-
-        // 6.5. Refresh safe-area insets (logical pixels) from the platform.
-        //      winit polls UIKit's `safeAreaInsets` here; on desktop this is
-        //      always zero. Done before layout so SafeArea widgets resolve the
-        //      current insets during the upcoming render pass. A change marks
-        //      the tree dirty so layout re-runs (e.g. on device rotation).
+        // 4. Refresh safe-area insets (logical pixels) from the platform.
+        //    winit polls UIKit's `safeAreaInsets` here; on desktop this is
+        //    always zero. Done BEFORE rebuilds/reconcile so that widgets
+        //    reading `ctx.safe_area()` during `render()` (e.g.
+        //    `NavigationStackView`'s nav bar) see the real insets on the
+        //    very first frame. A change marks the tree dirty so layout
+        //    re-runs (e.g. on device rotation).
         {
             let prev = self.safe_area_source.get();
             if let Some(win) = &self.window {
                 let insets = win.safe_area();
-                let f = scale.factor();
+                let f = self.scale_source.get().factor();
                 self.safe_area_source.set(
                     insets.left as f32 / f,
                     insets.right as f32 / f,
@@ -470,7 +452,27 @@ impl<A: Application + 'static> WindowState<A> {
             }
         }
 
-        // 7. Layout dirty render objects
+        // 5. Perform state-driven rebuilds
+        self.three_tree_pipeline.perform_rebuilds();
+
+        // 6. On first frame, reconcile the RootComponent into the element tree.
+        //    After that, perform_rebuilds() handles everything — when a Signal
+        //    on the app state fires, the RootComponent's StatefulElement is
+        //    marked dirty and rebuild_from_state() re-calls A::view().
+        //    We only pass a new root widget on the initial mount; state-driven
+        //    rebuilds are handled entirely by perform_rebuilds() above.
+        if self.three_tree_pipeline.needs_full_reconcile() {
+            let root_widget = RootComponent::<A>::default().boxed();
+            self.three_tree_pipeline.update(root_widget);
+        }
+
+        // 7. Compute logical size
+        let scale = self.scale_source.get();
+        let logical_width = self.backend.width() as f32 / scale.factor();
+        let logical_height = self.backend.height() as f32 / scale.factor();
+        let logical_size = Size::<Logical>::new(logical_width, logical_height);
+
+        // 8. Layout dirty render objects
         self.three_tree_pipeline.layout(
             logical_size,
             self.layout_engine.as_mut(),

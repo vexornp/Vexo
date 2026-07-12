@@ -43,7 +43,8 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
-    IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext, Stack, Text, Widget,
+    IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext, SafeArea, Stack, Text,
+    Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -480,7 +481,7 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
 impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> {
     type State = NavigationStackViewState<Dest>;
 
-    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         // 1. Check for a pending op from the controller. If present and we
         //    don't yet have a transition, start one — but only if the state
         //    has a ticker (i.e., on_mount was called). Without a ticker, the
@@ -541,7 +542,8 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             }
         };
 
-        let nav_bar = self.build_nav_bar(&title, can_pop);
+        let safe_insets = ctx.safe_area();
+        let nav_bar = self.build_nav_bar(&title, can_pop, &safe_insets);
 
         // 4. Build the page content area.
         //
@@ -698,7 +700,19 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
 
         let content: Box<dyn Widget> = content_stack.boxed();
 
-        Flex::column().push(nav_bar).push(content).boxed()
+        // The nav bar handles the top safe-area inset itself (background
+        // extends under the status bar). The content area only needs
+        // left/right/bottom insets — top is already consumed by the bar.
+        let content = SafeArea::new(content).top(false).boxed();
+
+        // flex_grow(1.0) fills the parent: since the caller no longer wraps
+        // this component in a SafeArea (which provided the grow), the column
+        // itself must grow to fill the screen.
+        Flex::column()
+            .flex_grow(1.0)
+            .push(nav_bar)
+            .push(content)
+            .boxed()
     }
 }
 
@@ -715,17 +729,43 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
 
     /// Build the NavBar chrome: title text + optional back button.
     ///
-    /// `can_pop == false` (at root) → no back button, title occupies the row.
-    /// `can_pop == true` → back button on the left, title after it.
-    fn build_nav_bar(&self, title: &str, can_pop: bool) -> Box<dyn Widget> {
-        let mut row = Flex::row()
-            .align(AlignItems::Center)
-            .gap(8.0)
-            .padding(tokens::navigation::MOBILE_HEADER_PADDING)
-            .background(tokens::navigation::MOBILE_HEADER_BG)
-            .height(tokens::navigation::MOBILE_HEADER_HEIGHT)
-            .flex_shrink(0.0);
+    /// The title is centered in the *remaining* space between the leading
+    /// back button and the trailing edge (matching Flutter `AppBar`'s
+    /// semantic, not full-bar center). The row is split into three segments
+    /// — [leading | title | trailing] — where both side segments
+    /// `flex_grow(1.0)` so they split the free space equally; the back
+    /// button lives in the leading segment (left-aligned, `flex_shrink 0`
+    /// to keep its intrinsic width), and the trailing segment is empty.
+    /// The title (default `flex_shrink 1.0`) shrinks to the available
+    /// width and wraps when the text is longer than the gap.
+    ///
+    /// # Safe-area handling (matches Flutter `AppBar`)
+    ///
+    /// The bar's background extends edge-to-edge (no outer horizontal
+    /// padding), and the bar height is increased by the top safe-area inset
+    /// so the background covers the status bar. The left/right safe-area
+    /// insets are applied as padding to the leading/trailing segments so the
+    /// back button and title don't tuck under the notch. The title therefore
+    /// centers within the full bar width minus the left/right insets.
+    fn build_nav_bar(
+        &self,
+        title: &str,
+        can_pop: bool,
+        safe: &vexo::layout::EdgeInsets,
+    ) -> Box<dyn Widget> {
+        let title_text = Text::new(title)
+            .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
+            .with_color(tokens::navigation::MOBILE_TITLE_COLOR);
 
+        // Leading segment: back button (if any), left-aligned, grows to fill.
+        // Padded on the left by the safe-area inset + header padding so it
+        // clears the notch and has breathing room.
+        let h_pad = tokens::navigation::MOBILE_HEADER_PADDING;
+        let mut leading = Flex::row()
+            .align(AlignItems::Center)
+            .flex_grow(1.0)
+            .flex_shrink(0.0)
+            .padding_each(safe.left + h_pad, 0.0, 0.0, 0.0);
         if can_pop {
             let controller = self.controller.clone();
             let back_label = format!(
@@ -739,14 +779,29 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
                     controller.pop();
                 })
                 .boxed();
-            row = row.push(back_button);
+            leading = leading.push(back_button);
         }
 
-        let title_text = Text::new(title)
-            .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
-            .with_color(tokens::navigation::MOBILE_TITLE_COLOR);
-        row = row.push(title_text);
+        // Trailing segment: empty, grows to fill (balances the leading segment
+        // so the title centers in the remaining space). Padded on the right
+        // by the safe-area inset + header padding.
+        let trailing = Flex::row().flex_grow(1.0).flex_shrink(0.0).padding_each(
+            0.0,
+            safe.right + h_pad,
+            0.0,
+            0.0,
+        );
 
-        row.boxed()
+        // Outer bar: background edge-to-edge, height includes top inset.
+        Flex::row()
+            .align(AlignItems::Center)
+            .padding_each(0.0, 0.0, safe.top, 0.0)
+            .background(tokens::navigation::MOBILE_HEADER_BG)
+            .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
+            .flex_shrink(0.0)
+            .push(leading)
+            .push(title_text)
+            .push(trailing)
+            .boxed()
     }
 }
