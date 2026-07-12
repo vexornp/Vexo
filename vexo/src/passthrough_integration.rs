@@ -533,3 +533,308 @@ fn test_nav_transition_text_does_not_wrap() {
         text_bounds.width()
     );
 }
+
+// ============================================================================
+// IndexedStack Flutter-style performLayout integration tests
+// ============================================================================
+
+use crate::render_objects::IndexedStackRenderObject;
+
+/// Build a tree: IndexedStack → [Offstage(onstage, child0), Offstage(offstage, child1)].
+/// Returns (stack_key, offstage0_key, offstage1_key, child0_key, child1_key).
+fn build_indexed_stack_tree(
+    registry: &mut RenderObjectRegistry,
+    index: usize,
+    child0_ro: Box<dyn RenderObject>,
+    child1_ro: Box<dyn RenderObject>,
+    offstage0_flag: bool,
+    offstage1_flag: bool,
+) -> (
+    RenderObjectKey,
+    RenderObjectKey,
+    RenderObjectKey,
+    RenderObjectKey,
+    RenderObjectKey,
+) {
+    let stack_elem = make_element_key();
+    let offstage0_elem = make_element_key();
+    let offstage1_elem = make_element_key();
+    let child0_elem = make_element_key();
+    let child1_elem = make_element_key();
+
+    let child0_key = registry.create(child0_ro, child0_elem);
+    let child1_key = registry.create(child1_ro, child1_elem);
+    let offstage0_key = registry.create(
+        Box::new(OffstageRenderObject::new(offstage0_flag)),
+        offstage0_elem,
+    );
+    let offstage1_key = registry.create(
+        Box::new(OffstageRenderObject::new(offstage1_flag)),
+        offstage1_elem,
+    );
+    let stack_key = registry.create(Box::new(IndexedStackRenderObject::new(index)), stack_elem);
+
+    registry.set_child(offstage0_key, child0_key);
+    registry.set_child(offstage1_key, child1_key);
+    registry.set_child(stack_key, offstage0_key);
+    registry.set_child(stack_key, offstage1_key);
+    registry.set_root(stack_key);
+
+    (
+        stack_key,
+        offstage0_key,
+        offstage1_key,
+        child0_key,
+        child1_key,
+    )
+}
+
+#[test]
+fn test_indexed_stack_only_visible_child_is_laid_out() {
+    let mut registry = RenderObjectRegistry::new();
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    let mut dirty = DirtyTracking::new();
+
+    let child0_ro = Box::new(ContainerRenderObject::new(Layout::default().height(40.0)));
+    let child1_ro = Box::new(ContainerRenderObject::new(Layout::default().height(60.0)));
+
+    let (stack_key, offstage0_key, offstage1_key, child0_key, child1_key) =
+        build_indexed_stack_tree(&mut registry, 0, child0_ro, child1_ro, false, true);
+
+    dirty.mark_needs_layout(stack_key);
+    dirty.mark_needs_layout(offstage0_key);
+    dirty.mark_needs_layout(offstage1_key);
+    dirty.mark_needs_layout(child0_key);
+    dirty.mark_needs_layout(child1_key);
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(300.0, 200.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let child0_bounds = registry
+        .get(child0_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("visible child0 should have bounds");
+    assert_eq!(
+        child0_bounds.width(),
+        300.0,
+        "visible child should fill the stack's width (grandparent constraints)"
+    );
+
+    let stack_bounds = registry
+        .get(stack_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("stack should have bounds");
+    assert_eq!(stack_bounds.width(), 300.0);
+    assert_eq!(stack_bounds.height(), 200.0);
+}
+
+#[test]
+fn test_indexed_stack_offstage_child_not_linked_to_taffy_node() {
+    let mut registry = RenderObjectRegistry::new();
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    let mut dirty = DirtyTracking::new();
+
+    let child0_ro = Box::new(ContainerRenderObject::new(Layout::default().height(40.0)));
+    let child1_ro = Box::new(ContainerRenderObject::new(Layout::default().height(60.0)));
+
+    let (stack_key, offstage0_key, offstage1_key, child0_key, child1_key) =
+        build_indexed_stack_tree(&mut registry, 0, child0_ro, child1_ro, false, true);
+
+    dirty.mark_needs_layout(stack_key);
+    dirty.mark_needs_layout(offstage0_key);
+    dirty.mark_needs_layout(offstage1_key);
+    dirty.mark_needs_layout(child0_key);
+    dirty.mark_needs_layout(child1_key);
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(300.0, 200.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let stack_node = registry
+        .get(stack_key)
+        .unwrap()
+        .layout_node()
+        .expect("stack should have a layout node");
+
+    let linked_children = engine.children(stack_node);
+    assert_eq!(
+        linked_children.len(),
+        1,
+        "IndexedStack's Taffy node should have exactly 1 linked child (the visible one)"
+    );
+
+    let offstage1_node = registry
+        .get(offstage1_key)
+        .unwrap()
+        .layout_node()
+        .expect("offstage1 should still own its zero-size leaf node");
+    assert!(
+        !linked_children.contains(&offstage1_node),
+        "offstage child's zero-size leaf must NOT be linked to the stack's Taffy node"
+    );
+
+    assert!(
+        engine
+            .get_layout(offstage1_node)
+            .map(|l| l.bounds.width() == 0.0 && l.bounds.height() == 0.0)
+            .unwrap_or(true),
+        "offstage child's leaf node should have a zero-size layout (not reachable from root's \
+         compute, so Taffy leaves it at the default zero layout)"
+    );
+}
+
+#[test]
+fn test_indexed_stack_index_flip_relays_visible_child() {
+    let mut registry = RenderObjectRegistry::new();
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    let mut dirty = DirtyTracking::new();
+
+    let child0_ro = Box::new(ContainerRenderObject::new(Layout::default().height(40.0)));
+    let child1_ro = Box::new(ContainerRenderObject::new(Layout::default().height(60.0)));
+
+    let (stack_key, offstage0_key, offstage1_key, child0_key, child1_key) =
+        build_indexed_stack_tree(&mut registry, 0, child0_ro, child1_ro, false, true);
+
+    dirty.mark_needs_layout(stack_key);
+    dirty.mark_needs_layout(offstage0_key);
+    dirty.mark_needs_layout(offstage1_key);
+    dirty.mark_needs_layout(child0_key);
+    dirty.mark_needs_layout(child1_key);
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(300.0, 200.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let child0_bounds_before = registry
+        .get(child0_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("child0 visible initially");
+    assert!(child0_bounds_before.width() > 0.0);
+
+    let stack_ro = registry.get_mut(stack_key).unwrap();
+    let downcast_ro = stack_ro
+        .as_any_mut()
+        .downcast_mut::<IndexedStackRenderObject>()
+        .unwrap();
+    downcast_ro.set_index(1);
+
+    let offstage0_ro = registry.get_mut(offstage0_key).unwrap();
+    let downcast_off0 = offstage0_ro
+        .as_any_mut()
+        .downcast_mut::<OffstageRenderObject>()
+        .unwrap();
+    downcast_off0.set_offstage(true);
+
+    let offstage1_ro = registry.get_mut(offstage1_key).unwrap();
+    let downcast_off1 = offstage1_ro
+        .as_any_mut()
+        .downcast_mut::<OffstageRenderObject>()
+        .unwrap();
+    downcast_off1.set_offstage(false);
+
+    dirty.mark_needs_layout(stack_key);
+    dirty.mark_needs_layout(offstage0_key);
+    dirty.mark_needs_layout(offstage1_key);
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(300.0, 200.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let child1_bounds_after = registry
+        .get(child1_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("child1 should have bounds after flip");
+    assert_eq!(
+        child1_bounds_after.width(),
+        300.0,
+        "newly-visible child1 should fill the stack's width"
+    );
+
+    let stack_node = registry.get(stack_key).unwrap().layout_node().unwrap();
+    let linked_children = engine.children(stack_node);
+    assert_eq!(
+        linked_children.len(),
+        1,
+        "after flip, still exactly 1 linked child"
+    );
+}
+
+#[test]
+fn test_indexed_stack_visible_child_receives_grandparent_width() {
+    let mut registry = RenderObjectRegistry::new();
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    let mut dirty = DirtyTracking::new();
+
+    let parent_elem = make_element_key();
+    let stack_elem = make_element_key();
+    let offstage_elem = make_element_key();
+    let child_elem = make_element_key();
+
+    let child_ro = Box::new(ContainerRenderObject::new(Layout::default().height(40.0)));
+    let child_key = registry.create(child_ro, child_elem);
+    let offstage_ro = Box::new(OffstageRenderObject::new(false));
+    let offstage_key = registry.create(offstage_ro, offstage_elem);
+    let stack_ro = Box::new(IndexedStackRenderObject::new(0));
+    let stack_key = registry.create(stack_ro, stack_elem);
+    let parent_ro = Box::new(ContainerRenderObject::new(column_layout()));
+    let parent_key = registry.create(parent_ro, parent_elem);
+
+    registry.set_child(offstage_key, child_key);
+    registry.set_child(stack_key, offstage_key);
+    registry.set_child(parent_key, stack_key);
+    registry.set_root(parent_key);
+
+    dirty.mark_needs_layout(parent_key);
+    dirty.mark_needs_layout(stack_key);
+    dirty.mark_needs_layout(offstage_key);
+    dirty.mark_needs_layout(child_key);
+
+    Layouter::layout(
+        &mut registry,
+        &mut dirty,
+        Size::new(375.0, 200.0),
+        &mut engine,
+        &mut font_system,
+        SafeAreaSource::default(),
+    );
+
+    let child_bounds = registry
+        .get(child_key)
+        .unwrap()
+        .computed_bounds()
+        .expect("child should have bounds");
+    assert_eq!(
+        child_bounds.width(),
+        375.0,
+        "child should receive grandparent's width directly through the IndexedStack"
+    );
+}
