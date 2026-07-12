@@ -191,10 +191,6 @@ impl RenderObject for IndexedStackRenderObject {
         self.children.clear();
     }
 
-    fn set_child_id(&mut self, child: RenderObjectKey) {
-        self.children = vec![child];
-    }
-
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }
