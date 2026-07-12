@@ -365,9 +365,12 @@ fn controller_clone_shares_pending() {
 // ============================================================================
 
 mod base_fx_alpha_tests {
+    use super::render_stack;
+    use vexo::{FractionalTranslation, Opacity, Text, Widget};
     use vexo_uikit::base_fx_alpha;
     use vexo_uikit::platform::Platform;
     use vexo_uikit::transitions::TransitionDir;
+    use vexo_uikit::{NavigationController, NavigationStackView};
 
     #[test]
     fn push_mobile_slides_left_and_dims() {
@@ -468,5 +471,53 @@ mod base_fx_alpha_tests {
             "desktop alpha at t=0.5 must be 0.5, got {}",
             alpha
         );
+    }
+
+    #[test]
+    fn steady_state_base_has_zero_offset_and_full_opacity() {
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+
+        let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+        let tree = render_stack(view, &mut state);
+
+        let mut found_ft = false;
+        let mut found_opacity = false;
+        visit(&*tree, &mut |w: &dyn Widget| {
+            if let Some(ft) = w.as_any().downcast_ref::<FractionalTranslation>() {
+                let (fx, fy) = ft.offset();
+                assert!((fx - 0.0).abs() < 1e-6, "steady fx must be 0, got {}", fx);
+                assert!((fy - 0.0).abs() < 1e-6, "steady fy must be 0, got {}", fy);
+                found_ft = true;
+            }
+            if let Some(op) = w.as_any().downcast_ref::<Opacity>() {
+                assert!(
+                    (op.opacity_value() - 1.0).abs() < 1e-6,
+                    "steady alpha must be 1.0, got {}",
+                    op.opacity_value()
+                );
+                found_opacity = true;
+            }
+        });
+
+        assert!(
+            found_ft,
+            "FractionalTranslation must be present in steady state"
+        );
+        assert!(found_opacity, "Opacity must be present in steady state");
+    }
+
+    fn visit<F: FnMut(&dyn Widget)>(w: &dyn Widget, f: &mut F) {
+        f(w);
+        if let Some(child) = w.child() {
+            visit(child, f);
+        }
+        for child in w.children() {
+            visit(child.as_ref(), f);
+        }
     }
 }
