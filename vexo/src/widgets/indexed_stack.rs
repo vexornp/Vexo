@@ -28,7 +28,7 @@ use super::super::layout::{
     AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap, Inset,
     JustifyContent, Layout, Overflow, Position,
 };
-use super::super::render_objects::ContainerRenderObject;
+use super::super::render_objects::IndexedStackRenderObject;
 use super::super::{RenderObject, UpdateResult};
 use super::{Element, Offstage, Widget};
 use crate::layout_builder_methods;
@@ -159,7 +159,8 @@ impl Widget for IndexedStack {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_with_style(
+        Box::new(IndexedStackRenderObject::new_with_style(
+            self.index,
             self.layout.clone(),
             self.style.clone(),
         ))
@@ -174,13 +175,14 @@ impl Widget for IndexedStack {
     }
 
     fn update_render_object(&self, render_object: &mut dyn RenderObject) -> UpdateResult {
-        if let Some(container_ro) = render_object
+        if let Some(ro) = render_object
             .as_any_mut()
-            .downcast_mut::<ContainerRenderObject>()
+            .downcast_mut::<IndexedStackRenderObject>()
         {
-            let layout_changed = container_ro.set_layout(self.layout.clone());
-            let style_changed = container_ro.set_style(self.style.clone());
-            if layout_changed {
+            let index_changed = ro.set_index(self.index);
+            let layout_changed = ro.set_layout(self.layout.clone());
+            let style_changed = ro.set_style(self.style.clone());
+            if index_changed || layout_changed {
                 UpdateResult::LAYOUT
             } else if style_changed {
                 UpdateResult::PAINT
@@ -249,5 +251,67 @@ mod tests {
             .as_any()
             .downcast_ref::<Offstage>()
             .is_some());
+    }
+
+    #[test]
+    fn test_indexed_stack_creates_indexed_stack_render_object() {
+        use crate::render_objects::IndexedStackRenderObject;
+
+        let s = IndexedStack::new(1)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
+
+        let ro = s.create_render_object();
+        let indexed_ro = ro
+            .as_any()
+            .downcast_ref::<IndexedStackRenderObject>()
+            .expect("IndexedStack should create IndexedStackRenderObject");
+        assert_eq!(indexed_ro.index(), 1);
+    }
+
+    #[test]
+    fn test_indexed_stack_update_render_object_index_change() {
+        use crate::render_objects::IndexedStackRenderObject;
+
+        let s_old = IndexedStack::new(0)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
+        let s_new = IndexedStack::new(1)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
+
+        let mut ro = s_old.create_render_object();
+        let result = s_new.update_render_object(ro.as_mut());
+
+        assert!(
+            result.contains(crate::UpdateResult::LAYOUT),
+            "index change should signal LAYOUT"
+        );
+        let indexed_ro = ro
+            .as_any()
+            .downcast_ref::<IndexedStackRenderObject>()
+            .unwrap();
+        assert_eq!(indexed_ro.index(), 1);
+    }
+
+    #[test]
+    fn test_indexed_stack_update_render_object_no_index_change() {
+        use crate::render_objects::IndexedStackRenderObject;
+
+        let s_old = IndexedStack::new(1)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
+        let s_new = IndexedStack::new(1)
+            .push(Text::new("A"))
+            .push(Text::new("B"));
+
+        let mut ro = s_old.create_render_object();
+        let result = s_new.update_render_object(ro.as_mut());
+
+        assert_eq!(
+            result,
+            crate::UpdateResult::NONE,
+            "no index/layout/style change should signal NONE"
+        );
     }
 }
