@@ -16,7 +16,7 @@ Convert `OpacityRenderObject`, `TransformRenderObject`, and `OffstageRenderObjec
 ### Non-goals (deferred to follow-up specs)
 
 - **`DecoratedContainer`** — actively uses `.padding()` in production (`shared_app/src/lib.rs:245` nav item, `vexo_uikit/src/button.rs:242` Button). Not pure pass-through. Its Flutter-faithful split into `DecoratedBox` (pass-through, paint-only) + `Padding` (layout container) is a separate design. Audit confirmed `DecoratedContainer` uses `layout_builder_methods!()` and real call sites chain `.padding()` / `.padding_each()`.
-- **`IndexedStack` Flutter-style `performLayout`** (lay out only the visible child with parent constraints). The finding doc marks this as the most complex change; it is independent of the pass-through migration.
+- **`IndexedStack` Flutter-style `performLayout`** — DONE in a follow-up plan (`docs/superpowers/plans/2026-07-12-indexed-stack-flutter-style-perform-layout.md`). Implemented via a dedicated `IndexedStackRenderObject` that filters `set_children()` to the visible child only.
 - **Reverting the `AlignItems::Stretch` workaround** on `IndexedStack`/`Stack`. Kept as defense-in-depth — Stretch is a reasonable default and reverting risks reintroducing circular-dependency bugs in scenarios the pass-through migration does not cover.
 
 ### Success criteria

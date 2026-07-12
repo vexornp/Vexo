@@ -148,9 +148,7 @@ Introduce a category of render objects whose `layout()` forwards the parent's av
 
 2. **Single-child vs multi-child.** Pass-through only applies to single-child render objects (`Opacity`, `Transform`, `Offstage`, `DecoratedContainer`). Multi-child containers (`Flex`, `Stack`, `IndexedStack`) remain layout containers.
 
-3. **IndexedStack special case.** Flutter's `IndexedStack` overrides `performLayout` to lay out only the visible child with parent constraints. Vexo's current `IndexedStack` lays out all children (offstage ones become 0-size leaves). Migration options:
-   - **Option A:** Keep all children in the Taffy tree (state preservation) but only feed the visible child's node to Taffy's `compute`. This requires Taffy API support for "skip this node."
-   - **Option B:** Detach offstage children's Taffy nodes from the parent (keep the render objects alive, just not linked). This matches Flutter's approach more closely.
+3. **IndexedStack special case.** RESOLVED. `IndexedStack` now uses a dedicated `IndexedStackRenderObject` that filters its Taffy `set_children()` to include only the child at `index` (Option B: offstage children's zero-size leaf nodes are not linked to the stack's Taffy node). This matches Flutter's `RenderIndexedStack.performLayout`. See `vexo/src/render_objects/indexed_stack.rs`.
 
 4. **Measurement caching.** Pass-through eliminates the extra max-content measurement layers. This is both a correctness improvement (no circular dependencies) and a performance improvement (fewer Taffy nodes, fewer measurement passes).
 
@@ -170,7 +168,7 @@ Introduce a category of render objects whose `layout()` forwards the parent's av
 
 4. **Roll out** — Migrate `Transform`, `Offstage`, `DecoratedContainer` one at a time, running the full test suite after each.
 
-5. **Consider IndexedStack** — Evaluate Option A or B for Flutter-style `performLayout` on `IndexedStack`. This is the highest-impact change but also the most complex.
+5. **IndexedStack Flutter-style performLayout** — DONE. Implemented via `IndexedStackRenderObject`. See plan `docs/superpowers/plans/2026-07-12-indexed-stack-flutter-style-perform-layout.md`.
 
 6. **Revert workaround** — Once pass-through render objects are in place, evaluate whether the `AlignItems::Stretch` workaround on `IndexedStack`/`Stack` is still needed. It may remain (Stretch is reasonable default behavior) or revert to `Start` if pass-through eliminates the circular dependency.
 
