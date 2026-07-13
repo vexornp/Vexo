@@ -201,8 +201,8 @@ pub use update_result::UpdateResult;
 pub use widgets::{
     Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, Grid, Image,
     IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, ScrollView, SlideDirection,
-    SlideTransition, Stack, Text, TextEdit, TextEditState, TextEditingController, Transform, Widget,
-    WithLayout,
+    SlideTransition, Stack, Text, TextEdit, TextEditState, TextEditingController, Theme,
+    ThemeData, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

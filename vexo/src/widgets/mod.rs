@@ -20,6 +20,7 @@ mod stack;
 mod text;
 mod text_edit;
 mod text_edit_content;
+mod theme;
 pub(crate) mod transform;
 mod transitions;
 mod with_layout;
@@ -40,6 +41,7 @@ pub use safe_area::SafeArea;
 pub use scroll_view::ScrollView;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
+pub use theme::{Theme, ThemeData};
 
 // Crate-internal modifier widgets (not part of public API)
 use crate::core::Color;
