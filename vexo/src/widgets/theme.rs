@@ -23,6 +23,9 @@ pub struct ThemeData {
     pub on_background: Color,
     pub surface: Color,
     pub on_surface: Color,
+    pub surface_variant: Color,
+    pub outline: Color,
+    pub on_surface_variant: Color,
     pub error: Color,
     pub on_error: Color,
 }
@@ -37,6 +40,9 @@ impl ThemeData {
             on_background: Color::BLACK,
             surface: Color::from_hex(0xFFFFFFFF),
             on_surface: Color::from_hex(0x1C1B1FFF),
+            surface_variant: Color::from_hex(0xE6E6EBFF),
+            outline: Color::from_hex(0xC7C7CCFF),
+            on_surface_variant: Color::from_hex(0x999999FF),
             error: Color::from_hex(0xB3261EFF),
             on_error: Color::WHITE,
         }
@@ -45,12 +51,15 @@ impl ThemeData {
     /// Dark preset.
     pub fn dark() -> Self {
         Self {
-            primary: Color::from_hex(0x121434FF),
+            primary: Color::from_hex(0x6775FFFF),
             on_primary: Color::WHITE,
             background: Color::from_hex(0x1C1B1FFF),
             on_background: Color::WHITE,
             surface: Color::from_hex(0x2B2930FF),
             on_surface: Color::WHITE,
+            surface_variant: Color::from_hex(0x38353CFF),
+            outline: Color::from_hex(0x49454FFF),
+            on_surface_variant: Color::from_hex(0x9E9CA6FF),
             error: Color::from_hex(0xF2B8B5FF),
             on_error: Color::BLACK,
         }
@@ -138,6 +147,32 @@ mod tests {
     #[test]
     fn theme_data_default_is_light() {
         assert_eq!(ThemeData::default(), ThemeData::light());
+    }
+
+    #[test]
+    fn theme_data_has_new_roles() {
+        let l = ThemeData::light();
+        // New fields must be non-default (not pure black/white/transparent).
+        assert_ne!(l.surface_variant, Color::TRANSPARENT);
+        assert_ne!(l.outline, Color::TRANSPARENT);
+        assert_ne!(l.on_surface_variant, Color::TRANSPARENT);
+    }
+
+    #[test]
+    fn theme_data_light_and_dark_differ_on_new_roles() {
+        let l = ThemeData::light();
+        let d = ThemeData::dark();
+        assert_ne!(l.surface_variant, d.surface_variant);
+        assert_ne!(l.outline, d.outline);
+        assert_ne!(l.on_surface_variant, d.on_surface_variant);
+    }
+
+    #[test]
+    fn theme_data_dark_primary_is_brand_blue() {
+        // dark().primary changed from the placeholder 0x121434 to the same
+        // brand blue as light(), so accent stays consistent across modes.
+        assert_eq!(ThemeData::dark().primary, ThemeData::light().primary);
+        assert_eq!(ThemeData::dark().primary, Color::from_hex(0x6775FFFF));
     }
 
     #[test]
