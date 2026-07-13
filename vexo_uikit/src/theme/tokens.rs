@@ -1,29 +1,49 @@
 pub mod button {
-    use vexo::Color;
+    use vexo::{Color, ThemeData};
 
-    // Primary variant
-    pub const PRIMARY_BG: Color = Color::rgb(0.0, 0.478, 1.0);
-    pub const PRIMARY_BG_HOVER: Color = Color::rgb(0.224, 0.612, 1.0);
-    pub const PRIMARY_BG_PRESSED: Color = Color::rgb(0.0, 0.353, 0.85);
-    pub const PRIMARY_TEXT: Color = Color::WHITE;
+    /// Theme-aware button colors resolved from a `ThemeData`.
+    ///
+    /// Produced by [`colors`]. Hover/pressed shades are derived via
+    /// `Color::lerp` so they stay correct if `primary`/`error` change.
+    pub struct ButtonColors {
+        pub primary_bg: Color,
+        pub primary_bg_hover: Color,
+        pub primary_bg_pressed: Color,
+        pub primary_text: Color,
+        pub secondary_bg: Color,
+        pub secondary_border: Color,
+        pub secondary_text: Color,
+        pub destructive_bg: Color,
+        pub destructive_bg_hover: Color,
+        pub destructive_bg_pressed: Color,
+        pub destructive_text: Color,
+        pub ghost_bg: Color,
+        pub ghost_text: Color,
+        pub ghost_text_hover: Color,
+    }
 
-    // Secondary variant
-    pub const SECONDARY_BG: Color = Color::TRANSPARENT;
-    pub const SECONDARY_BORDER: Color = Color::rgb(0.78, 0.78, 0.8);
-    pub const SECONDARY_TEXT: Color = Color::rgb(0.0, 0.478, 1.0);
+    /// Resolve button colors from a `ThemeData`.
+    pub fn colors(t: &ThemeData) -> ButtonColors {
+        ButtonColors {
+            primary_bg: t.primary,
+            primary_bg_hover: Color::lerp(t.primary, Color::WHITE, 0.15),
+            primary_bg_pressed: Color::lerp(t.primary, Color::BLACK, 0.15),
+            primary_text: t.on_primary,
+            secondary_bg: Color::TRANSPARENT,
+            secondary_border: t.outline,
+            secondary_text: t.primary,
+            destructive_bg: t.error,
+            destructive_bg_hover: Color::lerp(t.error, Color::WHITE, 0.15),
+            destructive_bg_pressed: Color::lerp(t.error, Color::BLACK, 0.15),
+            destructive_text: t.on_error,
+            ghost_bg: Color::TRANSPARENT,
+            ghost_text: t.primary,
+            ghost_text_hover: Color::lerp(t.primary, Color::WHITE, 0.15),
+        }
+    }
 
-    // Destructive variant
-    pub const DESTRUCTIVE_BG: Color = Color::rgb(1.0, 0.231, 0.188);
-    pub const DESTRUCTIVE_BG_HOVER: Color = Color::rgb(1.0, 0.388, 0.341);
-    pub const DESTRUCTIVE_BG_PRESSED: Color = Color::rgb(0.88, 0.18, 0.14);
-    pub const DESTRUCTIVE_TEXT: Color = Color::WHITE;
+    // Theme-independent constants (sizing, padding, font sizes).
 
-    // Ghost variant
-    pub const GHOST_BG: Color = Color::TRANSPARENT;
-    pub const GHOST_TEXT: Color = Color::rgb(0.0, 0.478, 1.0);
-    pub const GHOST_TEXT_HOVER: Color = Color::rgb(0.224, 0.612, 1.0);
-
-    // Disabled
     pub const DISABLED_OPACITY: f32 = 0.5;
 
     // Desktop sizing (matches macOS SwiftUI .bordered, regular control size)
@@ -85,4 +105,81 @@ pub mod navigation {
     // Detail page title (selected item's label)
     pub const MOBILE_TITLE_FONT_SIZE: f32 = 17.0;
     pub const MOBILE_TITLE_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::button::{colors, ButtonColors};
+    use vexo::{Color, ThemeData};
+
+    #[test]
+    fn button_colors_light_maps_roles() {
+        let t = ThemeData::light();
+        let c = colors(&t);
+        assert_eq!(c.primary_bg, t.primary);
+        assert_eq!(c.primary_text, t.on_primary);
+        assert_eq!(c.secondary_bg, Color::TRANSPARENT);
+        assert_eq!(c.secondary_border, t.outline);
+        assert_eq!(c.secondary_text, t.primary);
+        assert_eq!(c.destructive_bg, t.error);
+        assert_eq!(c.destructive_text, t.on_error);
+        assert_eq!(c.ghost_bg, Color::TRANSPARENT);
+        assert_eq!(c.ghost_text, t.primary);
+    }
+
+    #[test]
+    fn button_colors_hover_pressed_are_lerp() {
+        let t = ThemeData::light();
+        let c = colors(&t);
+        assert_eq!(
+            c.primary_bg_hover,
+            Color::lerp(t.primary, Color::WHITE, 0.15)
+        );
+        assert_eq!(
+            c.primary_bg_pressed,
+            Color::lerp(t.primary, Color::BLACK, 0.15)
+        );
+        assert_eq!(
+            c.destructive_bg_hover,
+            Color::lerp(t.error, Color::WHITE, 0.15)
+        );
+        assert_eq!(
+            c.destructive_bg_pressed,
+            Color::lerp(t.error, Color::BLACK, 0.15)
+        );
+        assert_eq!(
+            c.ghost_text_hover,
+            Color::lerp(t.primary, Color::WHITE, 0.15)
+        );
+    }
+
+    #[test]
+    fn button_colors_dark_maps_roles() {
+        let t = ThemeData::dark();
+        let c = colors(&t);
+        assert_eq!(c.primary_bg, t.primary);
+        assert_eq!(c.destructive_bg, t.error);
+        assert_eq!(c.secondary_border, t.outline);
+    }
+
+    #[test]
+    fn button_colors_is_a_struct() {
+        // Compile-time check that ButtonColors is nameable and field-accessible.
+        let _ = ButtonColors {
+            primary_bg: Color::WHITE,
+            primary_bg_hover: Color::WHITE,
+            primary_bg_pressed: Color::WHITE,
+            primary_text: Color::WHITE,
+            secondary_bg: Color::WHITE,
+            secondary_border: Color::WHITE,
+            secondary_text: Color::WHITE,
+            destructive_bg: Color::WHITE,
+            destructive_bg_hover: Color::WHITE,
+            destructive_bg_pressed: Color::WHITE,
+            destructive_text: Color::WHITE,
+            ghost_bg: Color::WHITE,
+            ghost_text: Color::WHITE,
+            ghost_text_hover: Color::WHITE,
+        };
+    }
 }
