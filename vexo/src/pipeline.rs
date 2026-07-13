@@ -39,6 +39,8 @@
 use std::any::Any;
 use std::sync::{mpsc, Arc};
 
+use slotmap::SecondaryMap;
+
 use crate::animation::AnimationTicker;
 use crate::core::{Absolute, Logical, Point, Position, ScaleSource, Size};
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
@@ -54,6 +56,7 @@ use super::event_handler::EventHandler;
 use super::focus::FocusManager;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
+use super::inherited_registry::{InheritedMap, InheritedRegistry};
 use super::layouter::Layouter;
 use super::painter::Painter;
 use super::reconciler::Reconciler;
@@ -141,6 +144,15 @@ pub struct ThreeTreePipeline {
     /// Animation ticker that fires per-frame callbacks for active animations.
     /// Passed to ElementContext so ComponentState::on_mount() can access it.
     animation_ticker: Arc<AnimationTicker>,
+
+    /// Pipeline-owned registry of inherited-value providers and dependents.
+    /// Passed by `&` to every `ElementContext` and `RenderContext`.
+    inherited_registry: InheritedRegistry,
+
+    /// Per-element `Arc<InheritedMap>`. Built top-down at mount: each element
+    /// inherits its parent's map (Arc clone), and `InheritedElement`s insert
+    /// their own type. Cleared on unmount.
+    inherited_maps: SecondaryMap<ElementKey, Arc<InheritedMap>>,
 }
 
 impl ThreeTreePipeline {
@@ -162,6 +174,8 @@ impl ThreeTreePipeline {
             mouse_tracker: MouseTracker::new(),
             cached_commands: None,
             animation_ticker,
+            inherited_registry: InheritedRegistry::new(),
+            inherited_maps: SecondaryMap::new(),
         }
     }
 
@@ -222,6 +236,8 @@ impl ThreeTreePipeline {
             &self.dirty_sender,
             &mut self.focus_manager,
             &self.animation_ticker,
+            &self.inherited_registry,
+            &mut self.inherited_maps,
             root_widget,
         );
     }
@@ -247,6 +263,8 @@ impl ThreeTreePipeline {
             &mut self.focus_manager,
             &self.animation_ticker,
             &mut self.needs_full_reconcile,
+            &self.inherited_registry,
+            &mut self.inherited_maps,
             root_widget,
         );
     }
@@ -268,6 +286,8 @@ impl ThreeTreePipeline {
             &mut self.focus_manager,
             &self.animation_ticker,
             &self.dirty_receiver,
+            &self.inherited_registry,
+            &mut self.inherited_maps,
         );
     }
 

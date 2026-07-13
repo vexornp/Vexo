@@ -191,15 +191,31 @@ mod tests {
     use super::*;
     use crate::animation::AnimationTicker;
     use crate::focus::FocusManager;
+    use crate::inherited_registry::{InheritedMap, InheritedRegistry};
     use crate::{
         BuildOwner, ChildOps, DirtyTracking, Key, RenderObjectRegistry, StateStorage, Text,
     };
+    use slotmap::SecondaryMap;
     use std::sync::mpsc;
     use std::sync::Arc;
 
     fn make_element_key() -> ElementKey {
         let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
         sm.insert(())
+    }
+
+    // Test helper: builds the three inherited-related values needed by
+    // ElementContext::new. Returns (empty_map, registry, maps_storage).
+    fn make_inherited_ctx() -> (
+        InheritedMap,
+        InheritedRegistry,
+        SecondaryMap<ElementKey, Arc<InheritedMap>>,
+    ) {
+        (
+            InheritedMap::empty(),
+            InheritedRegistry::new(),
+            SecondaryMap::new(),
+        )
     }
 
     #[test]
@@ -212,6 +228,7 @@ mod tests {
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
         let mut focus_manager = FocusManager::new();
+        let (empty_map, inherited_registry, mut inherited_maps) = make_inherited_ctx();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -225,6 +242,9 @@ mod tests {
             &mut focus_manager,
             None,
             Arc::new(AnimationTicker::new()),
+            &empty_map,
+            &inherited_registry,
+            &mut inherited_maps,
         );
 
         element.mount(&mut context);
@@ -245,6 +265,7 @@ mod tests {
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
         let mut focus_manager = FocusManager::new();
+        let (empty_map, inherited_registry, mut inherited_maps) = make_inherited_ctx();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -258,6 +279,9 @@ mod tests {
             &mut focus_manager,
             None,
             Arc::new(AnimationTicker::new()),
+            &empty_map,
+            &inherited_registry,
+            &mut inherited_maps,
         );
 
         element.mount(&mut context);
@@ -281,6 +305,7 @@ mod tests {
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
         let mut focus_manager = FocusManager::new();
+        let (empty_map, inherited_registry, mut inherited_maps) = make_inherited_ctx();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -294,6 +319,9 @@ mod tests {
             &mut focus_manager,
             None,
             Arc::new(AnimationTicker::new()),
+            &empty_map,
+            &inherited_registry,
+            &mut inherited_maps,
         );
 
         element.mount(&mut context);
@@ -314,6 +342,7 @@ mod tests {
         let (dirty_sender, _) = mpsc::channel();
         let mut child_ops = ChildOps::new();
         let mut focus_manager = FocusManager::new();
+        let (empty_map, inherited_registry, mut inherited_maps) = make_inherited_ctx();
         let mut context = ElementContext::new(
             make_element_key(),
             None,
@@ -327,6 +356,9 @@ mod tests {
             &mut focus_manager,
             None,
             Arc::new(AnimationTicker::new()),
+            &empty_map,
+            &inherited_registry,
+            &mut inherited_maps,
         );
 
         element.mount(&mut context);

@@ -11,6 +11,7 @@ use super::elements::RenderObjectElement;
 use super::focus::attachment::FocusAttachment;
 use super::id::ElementKey;
 use super::id::RenderObjectKey;
+use super::inherited_registry::{InheritedMap, InheritedRegistry};
 use super::key::WidgetKey;
 use super::render_object::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
@@ -319,6 +320,13 @@ pub struct RenderContext<'a> {
     /// Uses shared reference because mark_needs_build() takes &self
     /// via interior mutability (RefCell).
     pub build_owner: &'a BuildOwner,
+
+    /// Nearest-ancestor cache for inherited values (read-only here).
+    pub inherited_map: &'a InheritedMap,
+
+    /// Pipeline-owned registry; `depend_on_inherited_widget` uses interior
+    /// mutability to register the caller as a dependent.
+    pub inherited_registry: &'a InheritedRegistry,
 }
 
 impl<'a> RenderContext<'a> {
@@ -466,12 +474,16 @@ impl<W: Component + Clone> StatefulElement<W> {
         dirty: &mut DirtyTracking,
         render_objects: &mut RenderObjectRegistry,
         build_owner: &BuildOwner,
+        inherited_map: &InheritedMap,
+        inherited_registry: &InheritedRegistry,
     ) -> Box<dyn Widget> {
         let mut render_ctx = RenderContext {
             element_id,
             dirty,
             render_objects,
             build_owner,
+            inherited_map,
+            inherited_registry,
         };
         self.widget.render(state, &mut render_ctx)
     }
@@ -579,6 +591,8 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.dirty,
                 context.render_objects,
                 context.build_owner,
+                context.inherited_map,
+                context.inherited_registry,
             )
         };
 
@@ -630,6 +644,8 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.dirty,
                 context.render_objects,
                 context.build_owner,
+                context.inherited_map,
+                context.inherited_registry,
             )
         };
 
@@ -723,6 +739,8 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.dirty,
                 context.render_objects,
                 context.build_owner,
+                context.inherited_map,
+                context.inherited_registry,
             )
         };
 
@@ -936,12 +954,14 @@ mod tests {
     }
 
     use super::*;
+    use crate::inherited_registry::{InheritedMap, InheritedRegistry};
     use crate::reactive::Signal;
     use crate::ComponentState;
     use crate::{
         BuildOwner, ChildOps, DirtyTracking, ElementContext, ElementRegistry, FocusManager,
         RenderObjectRegistry, StateStorage, Text,
     };
+    use slotmap::SecondaryMap;
 
     #[derive(Clone)]
     struct TestCounter {
@@ -988,6 +1008,8 @@ mod tests {
         std::sync::mpsc::Sender<ElementKey>,
         ChildOps,
         FocusManager,
+        InheritedRegistry,
+        SecondaryMap<ElementKey, Arc<InheritedMap>>,
     ) {
         let (dirty_sender, _) = std::sync::mpsc::channel();
         (
@@ -1000,6 +1022,8 @@ mod tests {
             dirty_sender,
             ChildOps::new(),
             FocusManager::new(),
+            InheritedRegistry::new(),
+            SecondaryMap::new(),
         )
     }
 
@@ -1020,7 +1044,10 @@ mod tests {
             dirty_sender,
             mut child_ops,
             mut focus_manager,
+            inherited_registry,
+            mut inherited_maps,
         ) = create_test_context();
+        let empty_map = InheritedMap::empty();
 
         // Mount the element
         let mut ctx = ElementContext::new(
@@ -1036,6 +1063,9 @@ mod tests {
             &mut focus_manager,
             None,
             Arc::new(AnimationTicker::new()),
+            &empty_map,
+            &inherited_registry,
+            &mut inherited_maps,
         );
 
         let mut element = element;
@@ -1070,7 +1100,10 @@ mod tests {
             dirty_sender,
             mut child_ops,
             mut focus_manager,
+            inherited_registry,
+            mut inherited_maps,
         ) = create_test_context();
+        let empty_map = InheritedMap::empty();
 
         // Mount
         {
@@ -1087,6 +1120,9 @@ mod tests {
                 &mut focus_manager,
                 None,
                 Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -1116,6 +1152,9 @@ mod tests {
                 &mut focus_manager,
                 None,
                 Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
             );
             Element::update(&mut element, Box::new(new_widget), &mut ctx);
         }
@@ -1148,7 +1187,10 @@ mod tests {
             dirty_sender,
             mut child_ops,
             mut focus_manager,
+            inherited_registry,
+            mut inherited_maps,
         ) = create_test_context();
+        let empty_map = InheritedMap::empty();
 
         // Mount
         {
@@ -1165,6 +1207,9 @@ mod tests {
                 &mut focus_manager,
                 None,
                 Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
             );
             Element::mount(&mut element, &mut ctx);
         }
@@ -1187,6 +1232,9 @@ mod tests {
                 &mut focus_manager,
                 None,
                 Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
             );
             Element::unmount(&mut element, &mut ctx);
         }
@@ -1223,13 +1271,18 @@ mod tests {
             _dirty_sender,
             _child_ops,
             _focus_manager,
+            inherited_registry,
+            _inherited_maps,
         ) = create_test_context();
+        let empty_map = InheritedMap::empty();
 
         let mut ctx = RenderContext {
             element_id,
             dirty: &mut dirty,
             render_objects: &mut render_objects,
             build_owner: &build_owner,
+            inherited_map: &empty_map,
+            inherited_registry: &inherited_registry,
         };
 
         ctx.request_rebuild();
@@ -1249,7 +1302,10 @@ mod tests {
             _dirty_sender,
             _child_ops,
             _focus_manager,
+            inherited_registry,
+            _inherited_maps,
         ) = create_test_context();
+        let empty_map = InheritedMap::empty();
 
         // Not focused initially
         let ctx = RenderContext {
@@ -1257,6 +1313,8 @@ mod tests {
             dirty: &mut dirty,
             render_objects: &mut render_objects,
             build_owner: &build_owner,
+            inherited_map: &empty_map,
+            inherited_registry: &inherited_registry,
         };
         assert!(!ctx.is_focused());
 
@@ -1267,6 +1325,8 @@ mod tests {
             dirty: &mut dirty,
             render_objects: &mut render_objects,
             build_owner: &build_owner,
+            inherited_map: &empty_map,
+            inherited_registry: &inherited_registry,
         };
         assert!(ctx.is_focused());
 
@@ -1277,6 +1337,8 @@ mod tests {
             dirty: &mut dirty,
             render_objects: &mut render_objects,
             build_owner: &build_owner,
+            inherited_map: &empty_map,
+            inherited_registry: &inherited_registry,
         };
         assert!(!ctx.is_focused());
     }

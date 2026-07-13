@@ -1,5 +1,7 @@
 use std::sync::{mpsc, Arc};
 
+use slotmap::SecondaryMap;
+
 use crate::animation::AnimationTicker;
 use crate::build_owner::BuildOwner;
 use crate::child_ops::ChildOps;
@@ -7,6 +9,7 @@ use crate::dirty::DirtyTracking;
 use crate::element_state::StateStorage;
 use crate::focus::{FocusManager, FocusNodeId};
 use crate::id::{ElementKey, RenderObjectKey};
+use crate::inherited_registry::{InheritedMap, InheritedRegistry};
 use crate::key::GlobalKey;
 use crate::render_object::{RenderObject, RenderObjectRegistry};
 
@@ -36,6 +39,21 @@ pub struct ElementContext<'a> {
     /// Passed through to LifecycleContext so that ComponentState::on_mount() can wire
     /// AnimationControllers to the ticker.
     pub animation_ticker: Arc<AnimationTicker>,
+
+    /// Nearest-ancestor cache for inherited values. Read-only here; built
+    /// top-down at mount by the pipeline. Elements that are `InheritedElement`s
+    /// produce a new map for their subtree (see `inherited_widget.rs`).
+    pub inherited_map: &'a InheritedMap,
+
+    /// Pipeline-owned registry of inherited-value providers. Used by
+    /// `InheritedElement` to register/remove itself and by `RenderContext` to
+    /// register dependents at lookup time.
+    pub inherited_registry: &'a InheritedRegistry,
+
+    /// Pipeline-owned per-element map storage. `InheritedElement::mount`
+    /// writes its subtree map here so children can read it via their
+    /// `inherited_map` (which the reconciler resolves from this storage).
+    pub inherited_map_storage: &'a mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
 }
 
 impl<'a> ElementContext<'a> {
@@ -52,6 +70,9 @@ impl<'a> ElementContext<'a> {
         focus_manager: &'a mut FocusManager,
         parent_focus_node_id: Option<FocusNodeId>,
         animation_ticker: Arc<AnimationTicker>,
+        inherited_map: &'a InheritedMap,
+        inherited_registry: &'a InheritedRegistry,
+        inherited_map_storage: &'a mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
     ) -> Self {
         Self {
             element_id,
@@ -66,6 +87,9 @@ impl<'a> ElementContext<'a> {
             focus_manager,
             parent_focus_node_id,
             animation_ticker,
+            inherited_map,
+            inherited_registry,
+            inherited_map_storage,
         }
     }
 

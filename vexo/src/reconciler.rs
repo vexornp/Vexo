@@ -7,6 +7,8 @@
 
 use std::sync::{mpsc, Arc};
 
+use slotmap::SecondaryMap;
+
 use super::build_owner::BuildOwner;
 use super::child_ops::{ChildOp, ChildOps};
 use super::dirty::DirtyTracking;
@@ -15,6 +17,7 @@ use super::element_context::ElementContext;
 use super::element_state::StateStorage;
 use super::focus::{FocusManager, FocusNodeId};
 use super::id::ElementKey;
+use super::inherited_registry::{InheritedMap, InheritedRegistry};
 use super::render_object::RenderObjectRegistry;
 use super::widgets::Widget;
 use crate::animation::AnimationTicker;
@@ -54,6 +57,28 @@ impl Reconciler {
         None
     }
 
+    /// Compute the inherited map for an element by looking up its parent's
+    /// map in `inherited_maps`. Returns an `Arc` so the caller can hold a
+    /// `&InheritedMap` reference without aliasing the `&mut inherited_maps`
+    /// that is also passed to `ElementContext::new` as `inherited_map_storage`.
+    ///
+    /// - For root elements (`parent == None`), returns a fresh empty map.
+    /// - If the parent has no entry yet (e.g. mounting under a non-inherited
+    ///   element that hasn't populated its slot — which shouldn't normally
+    ///   happen, but is defensive), also returns an empty map.
+    fn compute_inherited_map(
+        parent: Option<ElementKey>,
+        inherited_maps: &SecondaryMap<ElementKey, Arc<InheritedMap>>,
+    ) -> Arc<InheritedMap> {
+        match parent {
+            None => Arc::new(InheritedMap::empty()),
+            Some(p) => inherited_maps
+                .get(p)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(InheritedMap::empty())),
+        }
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
@@ -73,6 +98,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         root_widget: Box<dyn Widget>,
     ) {
         // Check if we have an existing root element
@@ -95,6 +122,8 @@ impl Reconciler {
                     dirty_sender,
                     focus_manager,
                     animation_ticker,
+                    inherited_registry,
+                    inherited_maps,
                     root_id,
                     root_widget,
                 );
@@ -112,6 +141,8 @@ impl Reconciler {
                 dirty_sender,
                 focus_manager,
                 animation_ticker,
+                inherited_registry,
+                inherited_maps,
                 root_id,
             );
         }
@@ -127,6 +158,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
             None,
             root_widget,
         );
@@ -151,6 +184,8 @@ impl Reconciler {
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
         needs_full_reconcile: &mut bool,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         root_widget: Box<dyn Widget>,
     ) {
         // First, perform any pending state-driven rebuilds (from setState)
@@ -165,6 +200,8 @@ impl Reconciler {
             focus_manager,
             animation_ticker,
             dirty_receiver,
+            inherited_registry,
+            inherited_maps,
         );
 
         log::debug!(
@@ -187,6 +224,8 @@ impl Reconciler {
                 dirty_sender,
                 focus_manager,
                 animation_ticker,
+                inherited_registry,
+                inherited_maps,
                 root_widget,
             );
             *needs_full_reconcile = false;
@@ -211,6 +250,8 @@ impl Reconciler {
                         dirty_sender,
                         focus_manager,
                         animation_ticker,
+                        inherited_registry,
+                        inherited_maps,
                         root_id,
                         root_widget,
                     );
@@ -227,6 +268,8 @@ impl Reconciler {
                         dirty_sender,
                         focus_manager,
                         animation_ticker,
+                        inherited_registry,
+                        inherited_maps,
                         root_widget,
                     );
                 }
@@ -241,6 +284,8 @@ impl Reconciler {
                     dirty_sender,
                     focus_manager,
                     animation_ticker,
+                    inherited_registry,
+                    inherited_maps,
                     root_widget,
                 );
             }
@@ -267,6 +312,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         root_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -278,6 +325,7 @@ impl Reconciler {
         // Call element.rebuild() which handles both update and child reconciliation
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
 
+        let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
         let mut ctx = ElementContext::new(
             root_id,
             parent,
@@ -291,6 +339,9 @@ impl Reconciler {
             focus_manager,
             parent_focus_node_id,
             animation_ticker.clone(),
+            &inherited_map_arc,
+            inherited_registry,
+            inherited_maps,
         );
 
         element_registry.with_element(root_id, &mut ctx, |element, ctx| {
@@ -308,6 +359,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
         );
     }
 
@@ -326,6 +379,8 @@ impl Reconciler {
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
         dirty_receiver: &mpsc::Receiver<ElementKey>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
     ) {
         // First, drain any dirty signals from Signal callbacks
         Self::drain_dirty_channel(dirty_receiver, build_owner);
@@ -361,6 +416,7 @@ impl Reconciler {
                 Self::resolve_parent_focus_node_id(element_registry, element_id);
 
             // Create context for the element
+            let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
             let mut ctx = ElementContext::new(
                 element_id,
                 parent,
@@ -374,6 +430,9 @@ impl Reconciler {
                 focus_manager,
                 parent_focus_node_id,
                 animation_ticker.clone(),
+                &inherited_map_arc,
+                inherited_registry,
+                inherited_maps,
             );
 
             // Animate then rebuild from current state using with_element
@@ -393,6 +452,8 @@ impl Reconciler {
                 dirty_sender,
                 focus_manager,
                 animation_ticker,
+                inherited_registry,
+                inherited_maps,
             );
 
             // Exit build scope
@@ -414,6 +475,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -427,6 +490,7 @@ impl Reconciler {
         // Call element.rebuild() which handles both update and child reconciliation.
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
 
+        let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
         let mut ctx = ElementContext::new(
             element_id,
             parent,
@@ -440,6 +504,9 @@ impl Reconciler {
             focus_manager,
             None, // parent_focus_node_id not needed during reconcile
             animation_ticker.clone(),
+            &inherited_map_arc,
+            inherited_registry,
+            inherited_maps,
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -457,6 +524,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
         );
     }
 
@@ -479,6 +548,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         parent: Option<ElementKey>,
         widget: Box<dyn Widget>,
     ) -> ElementKey {
@@ -494,6 +565,7 @@ impl Reconciler {
         let parent_focus_node_id = Self::resolve_parent_focus_node_id(element_registry, key);
 
         // Build context for the mount call
+        let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
         let mut ctx = ElementContext::new(
             key,
             parent,
@@ -507,6 +579,9 @@ impl Reconciler {
             focus_manager,
             parent_focus_node_id,
             animation_ticker.clone(),
+            &inherited_map_arc,
+            inherited_registry,
+            inherited_maps,
         );
 
         // Call mount() on the element via with_element
@@ -534,6 +609,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
         );
 
         // After child ops are processed, the element's render_object() may have changed
@@ -571,6 +648,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
     ) {
         loop {
             let ops = child_ops.drain();
@@ -596,6 +675,8 @@ impl Reconciler {
                             dirty_sender,
                             focus_manager,
                             animation_ticker,
+                            inherited_registry,
+                            inherited_maps,
                             Some(parent),
                             widget,
                         );
@@ -612,6 +693,8 @@ impl Reconciler {
                         // into the parent's render object tree.
                         let parent_parent = element_registry.parent(parent);
 
+                        let inherited_map_arc =
+                            Self::compute_inherited_map(parent_parent, inherited_maps);
                         let mut ctx = ElementContext::new(
                             parent,
                             parent_parent,
@@ -625,6 +708,9 @@ impl Reconciler {
                             focus_manager,
                             None, // parent_focus_node_id not needed during child_mounted
                             animation_ticker.clone(),
+                            &inherited_map_arc,
+                            inherited_registry,
+                            inherited_maps,
                         );
 
                         element_registry.with_element(parent, &mut ctx, |element, ctx| {
@@ -643,6 +729,8 @@ impl Reconciler {
                             dirty_sender,
                             focus_manager,
                             animation_ticker,
+                            inherited_registry,
+                            inherited_maps,
                             child,
                             widget,
                         );
@@ -659,6 +747,8 @@ impl Reconciler {
                             dirty_sender,
                             focus_manager,
                             animation_ticker,
+                            inherited_registry,
+                            inherited_maps,
                             child,
                         );
                     }
@@ -685,6 +775,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -707,6 +799,8 @@ impl Reconciler {
                 dirty_sender,
                 focus_manager,
                 animation_ticker,
+                inherited_registry,
+                inherited_maps,
                 element_id,
                 widget,
             );
@@ -718,6 +812,7 @@ impl Reconciler {
 
         let widget_as_any: Box<dyn std::any::Any> = Box::new(widget.clone_boxed());
 
+        let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
         let mut ctx = ElementContext::new(
             element_id,
             parent,
@@ -731,6 +826,9 @@ impl Reconciler {
             focus_manager,
             parent_focus_node_id,
             animation_ticker.clone(),
+            &inherited_map_arc,
+            inherited_registry,
+            inherited_maps,
         );
 
         element_registry.with_element(element_id, &mut ctx, |element, ctx| {
@@ -760,6 +858,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         element_id: ElementKey,
         widget: Box<dyn Widget>,
     ) {
@@ -798,6 +898,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
             Some(parent),
             widget,
         );
@@ -841,6 +943,8 @@ impl Reconciler {
             dirty_sender,
             focus_manager,
             animation_ticker,
+            inherited_registry,
+            inherited_maps,
             element_id,
         );
 
@@ -879,6 +983,8 @@ impl Reconciler {
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
         animation_ticker: &Arc<AnimationTicker>,
+        inherited_registry: &InheritedRegistry,
+        inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         element_id: ElementKey,
     ) {
         // Get children and parent before unmounting
@@ -897,11 +1003,14 @@ impl Reconciler {
                 dirty_sender,
                 focus_manager,
                 animation_ticker,
+                inherited_registry,
+                inherited_maps,
                 *child_id,
             );
         }
 
         // Build context for the unmount call
+        let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
         let mut ctx = ElementContext::new(
             element_id,
             parent,
@@ -915,6 +1024,9 @@ impl Reconciler {
             focus_manager,
             None, // parent_focus_node_id not needed during unmount
             animation_ticker.clone(),
+            &inherited_map_arc,
+            inherited_registry,
+            inherited_maps,
         );
 
         // Call unmount() via with_element

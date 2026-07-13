@@ -68,6 +68,7 @@ mod event_context;
 mod event_handler;
 mod global_key_registry;
 mod inherited_registry;
+mod inherited_widget;
 mod hit_test;
 mod id;
 mod key;
