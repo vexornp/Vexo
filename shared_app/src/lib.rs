@@ -2,7 +2,7 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, IndexedStack,
+    Application, Column, Component, ComponentState, DecoratedContainer, Flex, IndexedStack,
     LifecycleContext, RenderContext, Row, SafeArea, ScrollView, Signal, Text, TextEdit,
     TextEditingController, Theme, ThemeData, Widget,
 };
@@ -412,8 +412,11 @@ impl ComponentState for DetailPageState {
 impl Component for DetailPage {
     type State = DetailPageState;
 
-    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let title_widget = Text::new(self.id.as_str()).with_font_size(32.0);
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let theme = Theme::of(ctx);
+        let title_widget = Text::new(self.id.as_str())
+            .with_font_size(32.0)
+            .with_color(theme.on_background);
 
         let body: Box<dyn Widget> = if self.id == "inbox" {
             let controller = state
@@ -429,18 +432,22 @@ impl Component for DetailPage {
                         .push(
                             Icon::new(Icons::FloppyDisk)
                                 .with_size(24.0)
-                                .with_color(Color::BLACK),
+                                .with_color(theme.on_background),
                         )
-                        .push(Text::new("Text Edit Showcase").with_font_size(24.0)),
+                        .push(
+                            Text::new("Text Edit Showcase")
+                                .with_font_size(24.0)
+                                .with_color(theme.on_background),
+                        ),
                 )
                 .push(TextEdit::new(controller))
                 .boxed()
         } else {
             Column::new()
-                .push(Text::new(format!(
-                    "This is the detail content for \"{}\".",
-                    self.id
-                )))
+                .push(
+                    Text::new(format!("This is the detail content for \"{}\".", self.id))
+                        .with_color(theme.on_background),
+                )
                 .boxed()
         };
 
@@ -449,7 +456,7 @@ impl Component for DetailPage {
         Column::new()
             .gap(16.0)
             .padding(24.0)
-            .background(Color::WHITE)
+            .background(theme.background)
             .push(title_widget)
             .push(body)
             .push(
@@ -459,10 +466,10 @@ impl Component for DetailPage {
                         count.set(count.get() + 1);
                     }),
             )
-            .push(Text::new(format!(
-                "Counter: {}",
-                self.selection_count.get()
-            )))
+            .push(
+                Text::new(format!("Counter: {}", self.selection_count.get()))
+                    .with_color(theme.on_background),
+            )
             .push(
                 Button::new("Next page")
                     .variant(ButtonVariant::Primary)
