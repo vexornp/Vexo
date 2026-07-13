@@ -179,6 +179,8 @@ vexo/src/
 ├── update_result.rs            # UpdateResult
 ├── child_ops.rs                # ChildOp, ChildOps
 ├── global_key_registry.rs      # GlobalKeyRegistry
+├── inherited_registry.rs       # InheritedRegistry, InheritedMap
+├── inherited_widget.rs         # InheritedWidget trait, InheritedElement
 ├── layout/                     # Layout engine abstraction
 │   ├── mod.rs
 │   ├── engine.rs               # LayoutEngine trait
@@ -302,6 +304,9 @@ backend.render();
 - Render backend: `vexo/src/render/wgpu_backend.rs`
 - Input events: `vexo/src/input/event.rs`
 - Stateful widgets: `vexo/src/stateful_widget.rs` (Component, ComponentState), `vexo/src/reactive/mod.rs` (Signal)
+- InheritedWidget trait: `vexo/src/inherited_widget.rs`
+- InheritedRegistry: `vexo/src/inherited_registry.rs`
+- Theme widget: `vexo/src/widgets/theme.rs`
 - Sample application: `shared_app/src/lib.rs`
 - iOS wrapper: `shared_app/src/lib.rs`
 - Build script: `build_for_ios.sh`
@@ -326,6 +331,9 @@ Vexo's public API maps to web framework concepts:
 | `Column::new()` / `Row::new()` | `<div flex-direction: column/row>` |
 | `children![]` macro | JSX children |
 | `.on_press()` / `.on_release()` | `onClick` / `onMouseUp` |
+| `InheritedWidget` trait | React Context Provider / Vue `provide()` |
+| `RenderContext::depend_on_inherited_widget::<V>()` | React `useContext()` / Vue `inject()` |
+| `Theme` / `ThemeData` | CSS custom properties / Tailwind theme |
 
 ## Three-Tree Architecture
 
