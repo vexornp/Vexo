@@ -566,6 +566,13 @@ impl Reconciler {
 
         // Build context for the mount call
         let inherited_map_arc = Self::compute_inherited_map(parent, inherited_maps);
+        // Store this element's inherited map so its children can resolve it
+        // via `compute_inherited_map`. `InheritedElement::mount` overwrites
+        // this with its COW'd map (which adds its own type); non-provider
+        // elements keep the parent's map unchanged. Insert BEFORE creating
+        // `ElementContext` so the `&mut` borrow ends before `ctx` borrows
+        // `inherited_maps` as `inherited_map_storage`.
+        inherited_maps.insert(key, inherited_map_arc.clone());
         let mut ctx = ElementContext::new(
             key,
             parent,
@@ -1039,6 +1046,13 @@ impl Reconciler {
             // Call unmount lifecycle
             element.unmount(ctx);
         });
+
+        // Remove this element's inherited-map entry. `InheritedElement::unmount`
+        // already removed its own entry above (no-op here); other elements
+        // still have the entry we stored at mount, so clear it now. `ctx` is
+        // not used past this point, so NLL allows the `&mut` borrow on
+        // `inherited_maps` to resume here.
+        inherited_maps.remove(element_id);
 
         // Remove state
         state.remove(element_id);

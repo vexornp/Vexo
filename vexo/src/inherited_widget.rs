@@ -84,6 +84,24 @@ pub trait InheritedWidget: Clone + 'static {
 ///
 /// See [`InheritedWidget`] docs for why this is a macro rather than a blanket
 /// impl.
+///
+/// # Usage from external crates
+///
+/// ```ignore
+/// use vexo::inherited_widget::{InheritedWidget, impl_widget_for_inherited};
+///
+/// #[derive(Clone)]
+/// struct MyEnv { value: u32, child: Box<dyn vexo::Widget> }
+///
+/// impl InheritedWidget for MyEnv {
+///     type Value = u32;
+///     fn value(&self) -> &u32 { &self.value }
+///     fn child(&self) -> &dyn vexo::Widget { self.child.as_ref() }
+/// }
+///
+/// impl_widget_for_inherited!(MyEnv);
+/// ```
+#[macro_export]
 macro_rules! impl_widget_for_inherited {
     ($t:ty) => {
         impl $crate::widgets::Widget for $t {
