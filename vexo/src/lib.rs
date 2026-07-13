@@ -106,6 +106,8 @@ mod reconcile_tests;
 #[cfg(test)]
 mod stateful_integration_test;
 #[cfg(test)]
+mod inherited_integration_test;
+#[cfg(test)]
 mod window_integration_test;
 
 // --- Re-exports from former retain/ ---
