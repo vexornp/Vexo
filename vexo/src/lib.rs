@@ -67,6 +67,7 @@ mod element_state;
 mod event_context;
 mod event_handler;
 mod global_key_registry;
+mod inherited_registry;
 mod hit_test;
 mod id;
 mod key;
