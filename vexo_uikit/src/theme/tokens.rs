@@ -60,51 +60,65 @@ pub mod button {
 }
 
 pub mod navigation {
-    use vexo::Color;
+    use vexo::{Color, ThemeData};
 
-    // Sidebar
-    pub const SIDEBAR_BG: Color = Color::rgb(0.95, 0.95, 0.97);
+    /// Theme-aware navigation colors resolved from a `ThemeData`.
+    pub struct NavColors {
+        pub sidebar_bg: Color,
+        pub header_bg: Color,
+        pub header_text: Color,
+        pub row_bg: Color,
+        pub row_text: Color,
+        pub selected_bg: Color,
+        pub selected_text: Color,
+        pub detail_bg: Color,
+        pub divider: Color,
+        pub placeholder_text: Color,
+        pub mobile_header_bg: Color,
+        pub mobile_title: Color,
+        pub back_color: Color,
+    }
+
+    /// Resolve navigation colors from a `ThemeData`.
+    pub fn colors(t: &ThemeData) -> NavColors {
+        NavColors {
+            sidebar_bg: t.surface,
+            header_bg: t.surface_variant,
+            header_text: t.on_surface,
+            row_bg: Color::TRANSPARENT,
+            row_text: t.on_surface,
+            selected_bg: t.primary,
+            selected_text: t.on_primary,
+            detail_bg: t.background,
+            divider: t.outline,
+            placeholder_text: t.on_surface_variant,
+            mobile_header_bg: t.surface,
+            mobile_title: t.on_surface,
+            back_color: t.primary,
+        }
+    }
+
+    // Theme-independent constants (sizing, padding, strings, font sizes).
+
     pub const SIDEBAR_WIDTH: f32 = 240.0;
     pub const COLLAPSED_WIDTH: f32 = 44.0;
 
-    // Sidebar header
-    pub const HEADER_BG: Color = Color::rgb(0.9, 0.9, 0.92);
-    pub const HEADER_TEXT_COLOR: Color = Color::rgb(0.2, 0.2, 0.2);
     pub const HEADER_PADDING: f32 = 12.0;
     pub const HEADER_FONT_SIZE: f32 = 16.0;
 
-    // Sidebar rows
     pub const ROW_PADDING: f32 = 10.0;
     pub const ROW_FONT_SIZE: f32 = 16.0;
-    pub const ROW_BG: Color = Color::TRANSPARENT;
-    pub const ROW_TEXT_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
-    pub const SELECTED_BG: Color = Color::rgb(0.0, 0.478, 1.0);
-    pub const SELECTED_TEXT_COLOR: Color = Color::WHITE;
 
-    // Detail pane
-    pub const DETAIL_BG: Color = Color::WHITE;
-    pub const DIVIDER_COLOR: Color = Color::rgb(0.85, 0.85, 0.85);
-    pub const PLACEHOLDER_TEXT_COLOR: Color = Color::rgb(0.6, 0.6, 0.6);
     pub const PLACEHOLDER_FONT_SIZE: f32 = 16.0;
 
-    // Mobile (push/pop) detail page header.
-    // On mobile the sidebar and detail are never shown side-by-side; selecting
-    // an item pushes the detail page, which has its own header with a back
-    // chevron + label and a title reflecting the selected item.
-    pub const MOBILE_HEADER_BG: Color = Color::rgb(0.98, 0.98, 0.98);
     pub const MOBILE_HEADER_HEIGHT: f32 = 44.0;
     pub const MOBILE_HEADER_PADDING: f32 = 8.0;
-    pub const MOBILE_HEADER_DIVIDER: Color = Color::rgb(0.85, 0.85, 0.85);
 
-    // Back chevron + label (iOS-style tint blue, matches SELECTED_BG)
     pub const BACK_CHEVRON: &str = "\u{2039}"; // ‹
     pub const BACK_LABEL: &str = "Back";
     pub const BACK_FONT_SIZE: f32 = 17.0;
-    pub const BACK_COLOR: Color = Color::rgb(0.0, 0.478, 1.0);
 
-    // Detail page title (selected item's label)
     pub const MOBILE_TITLE_FONT_SIZE: f32 = 17.0;
-    pub const MOBILE_TITLE_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
 }
 
 #[cfg(test)]
@@ -180,6 +194,55 @@ mod tests {
             ghost_bg: Color::WHITE,
             ghost_text: Color::WHITE,
             ghost_text_hover: Color::WHITE,
+        };
+    }
+
+    use super::navigation::{colors as nav_colors, NavColors};
+
+    #[test]
+    fn nav_colors_light_maps_roles() {
+        let t = ThemeData::light();
+        let n = nav_colors(&t);
+        assert_eq!(n.sidebar_bg, t.surface);
+        assert_eq!(n.header_bg, t.surface_variant);
+        assert_eq!(n.header_text, t.on_surface);
+        assert_eq!(n.row_bg, Color::TRANSPARENT);
+        assert_eq!(n.row_text, t.on_surface);
+        assert_eq!(n.selected_bg, t.primary);
+        assert_eq!(n.selected_text, t.on_primary);
+        assert_eq!(n.detail_bg, t.background);
+        assert_eq!(n.divider, t.outline);
+        assert_eq!(n.placeholder_text, t.on_surface_variant);
+        assert_eq!(n.mobile_header_bg, t.surface);
+        assert_eq!(n.mobile_title, t.on_surface);
+        assert_eq!(n.back_color, t.primary);
+    }
+
+    #[test]
+    fn nav_colors_dark_maps_roles() {
+        let t = ThemeData::dark();
+        let n = nav_colors(&t);
+        assert_eq!(n.sidebar_bg, t.surface);
+        assert_eq!(n.selected_bg, t.primary);
+        assert_eq!(n.divider, t.outline);
+    }
+
+    #[test]
+    fn nav_colors_is_a_struct() {
+        let _ = NavColors {
+            sidebar_bg: Color::WHITE,
+            header_bg: Color::WHITE,
+            header_text: Color::WHITE,
+            row_bg: Color::WHITE,
+            row_text: Color::WHITE,
+            selected_bg: Color::WHITE,
+            selected_text: Color::WHITE,
+            detail_bg: Color::WHITE,
+            divider: Color::WHITE,
+            placeholder_text: Color::WHITE,
+            mobile_header_bg: Color::WHITE,
+            mobile_title: Color::WHITE,
+            back_color: Color::WHITE,
         };
     }
 }
