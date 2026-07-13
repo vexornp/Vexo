@@ -363,6 +363,21 @@ impl<'a> RenderContext<'a> {
     pub fn safe_area(&self) -> crate::layout::EdgeInsets {
         self.build_owner.safe_area_source().get()
     }
+
+    /// Read the nearest inherited value of type `V`. Establishes a
+    /// dependency: the caller rebuilds when the provider's value changes.
+    ///
+    /// Returns `None` if no ancestor provides `V`. The returned value is
+    /// cloned out of the registry (values are `Clone + PartialEq` by the
+    /// `InheritedWidget` trait requirement).
+    pub fn depend_on_inherited_widget<V: Clone + 'static>(&mut self) -> Option<V> {
+        let type_id = std::any::TypeId::of::<V>();
+        let provider = self.inherited_map.get(type_id)?;
+        let value = self.inherited_registry.value_clone::<V>(provider)?;
+        self.inherited_registry
+            .add_dependent(provider, type_id, self.element_id);
+        Some(value)
+    }
 }
 
 // ============================================================================
@@ -1341,5 +1356,85 @@ mod tests {
             inherited_registry: &inherited_registry,
         };
         assert!(!ctx.is_focused());
+    }
+
+    #[test]
+    fn depend_on_inherited_widget_returns_value_when_provider_present() {
+        // Set up a registry with one provider exposing u32=42.
+        let reg = InheritedRegistry::new();
+        let provider_key = make_element_key();
+        reg.register_provider(provider_key, std::any::TypeId::of::<u32>(), Box::new(42u32));
+
+        // Build an InheritedMap that points u32 -> provider_key.
+        let map = InheritedMap::empty().with_insert(std::any::TypeId::of::<u32>(), provider_key);
+
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let build_owner = BuildOwner::new();
+        let element_id = make_element_key();
+
+        let mut ctx = RenderContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+            inherited_map: &map,
+            inherited_registry: &reg,
+        };
+
+        let v = ctx.depend_on_inherited_widget::<u32>();
+        assert_eq!(v, Some(42));
+    }
+
+    #[test]
+    fn depend_on_inherited_widget_returns_none_when_no_provider() {
+        let reg = InheritedRegistry::new();
+        let map = InheritedMap::empty();
+
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let build_owner = BuildOwner::new();
+        let element_id = make_element_key();
+
+        let mut ctx = RenderContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+            inherited_map: &map,
+            inherited_registry: &reg,
+        };
+
+        let v = ctx.depend_on_inherited_widget::<u32>();
+        assert_eq!(v, None);
+    }
+
+    #[test]
+    fn depend_on_inherited_widget_registers_dependent() {
+        let reg = InheritedRegistry::new();
+        let provider_key = make_element_key();
+        reg.register_provider(provider_key, std::any::TypeId::of::<u32>(), Box::new(0u32));
+
+        let map = InheritedMap::empty().with_insert(std::any::TypeId::of::<u32>(), provider_key);
+
+        let mut dirty = DirtyTracking::new();
+        let mut render_objects = RenderObjectRegistry::new();
+        let build_owner = BuildOwner::new();
+        let element_id = make_element_key();
+
+        let mut ctx = RenderContext {
+            element_id,
+            dirty: &mut dirty,
+            render_objects: &mut render_objects,
+            build_owner: &build_owner,
+            inherited_map: &map,
+            inherited_registry: &reg,
+        };
+
+        let _ = ctx.depend_on_inherited_widget::<u32>();
+
+        // The caller's element_id should now be in the provider's dependents.
+        let deps = reg.dependents_for(provider_key);
+        assert!(deps.contains(&element_id));
     }
 }
