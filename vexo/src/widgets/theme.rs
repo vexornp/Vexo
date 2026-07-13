@@ -31,13 +31,13 @@ impl ThemeData {
     /// Light preset. Used as the fallback when no `Theme` ancestor exists.
     pub fn light() -> Self {
         Self {
-            primary: Color::from_hex(0x6775FF),
+            primary: Color::from_hex(0x6775FFFF),
             on_primary: Color::WHITE,
             background: Color::WHITE,
             on_background: Color::BLACK,
-            surface: Color::from_hex(0xFFFFFF),
-            on_surface: Color::from_hex(0x1C1B1F),
-            error: Color::from_hex(0xB3261E),
+            surface: Color::from_hex(0xFFFFFFFF),
+            on_surface: Color::from_hex(0x1C1B1FFF),
+            error: Color::from_hex(0xB3261EFF),
             on_error: Color::WHITE,
         }
     }
@@ -45,13 +45,13 @@ impl ThemeData {
     /// Dark preset.
     pub fn dark() -> Self {
         Self {
-            primary: Color::from_hex(0x121434),
+            primary: Color::from_hex(0x121434FF),
             on_primary: Color::WHITE,
-            background: Color::from_hex(0x1C1B1F),
+            background: Color::from_hex(0x1C1B1FFF),
             on_background: Color::WHITE,
-            surface: Color::from_hex(0x2B2930),
+            surface: Color::from_hex(0x2B2930FF),
             on_surface: Color::WHITE,
-            error: Color::from_hex(0xF2B8B5),
+            error: Color::from_hex(0xF2B8B5FF),
             on_error: Color::BLACK,
         }
     }
