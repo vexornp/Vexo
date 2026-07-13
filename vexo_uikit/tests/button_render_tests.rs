@@ -1,5 +1,6 @@
+use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
 use vexo::layout::AlignSelf;
-use vexo::{BuildOwner, DirtyTracking, ElementKey, RenderContext, RenderObjectRegistry};
+use vexo::{BuildOwner, DirtyTracking, ElementKey, RenderContext, RenderObjectRegistry, ThemeData};
 use vexo::{DecoratedContainer, Opacity, Text, Widget, WithLayout};
 use vexo_uikit::theme::tokens;
 use vexo_uikit::{Button, ButtonState, ButtonVariant, Component, Platform};
@@ -14,12 +15,16 @@ fn create_render_context<'a>(
     dirty: &'a mut DirtyTracking,
     render_objects: &'a mut RenderObjectRegistry,
     build_owner: &'a BuildOwner,
+    inherited_map: &'a InheritedMap,
+    inherited_registry: &'a InheritedRegistry,
 ) -> RenderContext<'a> {
     RenderContext {
         element_id,
         dirty,
         render_objects,
         build_owner,
+        inherited_map,
+        inherited_registry,
     }
 }
 
@@ -30,7 +35,16 @@ fn render_button(button: Button) -> Box<dyn Widget> {
     let mut dirty = DirtyTracking::new();
     let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
-    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let inherited_map = InheritedMap::empty();
+    let inherited_registry = InheritedRegistry::new();
+    let mut ctx = create_render_context(
+        element_id,
+        &mut dirty,
+        &mut render_objects,
+        &build_owner,
+        &inherited_map,
+        &inherited_registry,
+    );
     button.render(&mut state, &mut ctx)
 }
 
@@ -74,14 +88,30 @@ fn button_hover_state_render_does_not_panic() {
     let mut dirty = DirtyTracking::new();
     let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
-    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let inherited_map = InheritedMap::empty();
+    let inherited_registry = InheritedRegistry::new();
+    let mut ctx = create_render_context(
+        element_id,
+        &mut dirty,
+        &mut render_objects,
+        &build_owner,
+        &inherited_map,
+        &inherited_registry,
+    );
     let _unhovered = button.render(&mut state, &mut ctx);
 
     // Simulate hover
     state.is_hovered.set(true);
 
     // Render with hover
-    let mut ctx2 = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let mut ctx2 = create_render_context(
+        element_id,
+        &mut dirty,
+        &mut render_objects,
+        &build_owner,
+        &inherited_map,
+        &inherited_registry,
+    );
     let _hovered = button.render(&mut state, &mut ctx2);
 }
 
@@ -138,7 +168,7 @@ fn button_decoration_on_container_not_text() {
     // Background must be on the container, not on the Text leaf.
     assert_eq!(
         dc.style_ref().background,
-        Some(tokens::button::PRIMARY_BG),
+        Some(ThemeData::light().primary),
         "background should live on DecoratedContainer, not Text"
     );
 
@@ -191,14 +221,11 @@ fn button_secondary_has_border_on_container() {
         .border
         .as_ref()
         .expect("Secondary should have a border on DecoratedContainer");
-    assert_eq!(border.color, tokens::button::SECONDARY_BORDER);
+    assert_eq!(border.color, ThemeData::light().outline);
     assert_eq!(border.width, 1.0);
 
     // Background is transparent for Secondary.
-    assert_eq!(
-        dc.style_ref().background,
-        Some(tokens::button::SECONDARY_BG)
-    );
+    assert_eq!(dc.style_ref().background, Some(vexo::Color::TRANSPARENT));
 }
 
 #[test]
@@ -234,28 +261,28 @@ fn text_leaf_from_tree(tree: &Box<dyn Widget>) -> &Text {
 fn button_primary_text_color_matches_token() {
     let tree = render_button(Button::new("Submit").variant(ButtonVariant::Primary));
     let text = text_leaf_from_tree(&tree);
-    assert_eq!(text.color(), tokens::button::PRIMARY_TEXT);
+    assert_eq!(text.color(), ThemeData::light().on_primary);
 }
 
 #[test]
 fn button_secondary_text_color_matches_token() {
     let tree = render_button(Button::new("Cancel").variant(ButtonVariant::Secondary));
     let text = text_leaf_from_tree(&tree);
-    assert_eq!(text.color(), tokens::button::SECONDARY_TEXT);
+    assert_eq!(text.color(), ThemeData::light().primary);
 }
 
 #[test]
 fn button_destructive_text_color_matches_token() {
     let tree = render_button(Button::new("Delete").variant(ButtonVariant::Destructive));
     let text = text_leaf_from_tree(&tree);
-    assert_eq!(text.color(), tokens::button::DESTRUCTIVE_TEXT);
+    assert_eq!(text.color(), ThemeData::light().on_error);
 }
 
 #[test]
 fn button_ghost_text_color_matches_token() {
     let tree = render_button(Button::new("More").variant(ButtonVariant::Ghost));
     let text = text_leaf_from_tree(&tree);
-    assert_eq!(text.color(), tokens::button::GHOST_TEXT);
+    assert_eq!(text.color(), ThemeData::light().primary);
 }
 
 #[test]
@@ -272,9 +299,21 @@ fn button_ghost_hover_uses_hover_text_color() {
     let mut dirty = DirtyTracking::new();
     let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
-    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let inherited_map = InheritedMap::empty();
+    let inherited_registry = InheritedRegistry::new();
+    let mut ctx = create_render_context(
+        element_id,
+        &mut dirty,
+        &mut render_objects,
+        &build_owner,
+        &inherited_map,
+        &inherited_registry,
+    );
     let tree = button.render(&mut state, &mut ctx);
 
     let text = text_leaf_from_tree(&tree);
-    assert_eq!(text.color(), tokens::button::GHOST_TEXT_HOVER);
+    assert_eq!(
+        text.color(),
+        vexo::Color::lerp(ThemeData::light().primary, vexo::Color::WHITE, 0.15)
+    );
 }

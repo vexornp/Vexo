@@ -195,6 +195,7 @@ fn stack_view_state_default_compiles() {
     assert_default::<vexo_uikit::navigation::NavigationStackViewState<&'static str>>();
 }
 
+use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
 use vexo::{BuildOwner, DirtyTracking, ElementKey, Flex, RenderContext, RenderObjectRegistry};
 
 fn make_element_key() -> ElementKey {
@@ -207,12 +208,16 @@ fn create_render_context<'a>(
     dirty: &'a mut DirtyTracking,
     render_objects: &'a mut RenderObjectRegistry,
     build_owner: &'a BuildOwner,
+    inherited_map: &'a InheritedMap,
+    inherited_registry: &'a InheritedRegistry,
 ) -> RenderContext<'a> {
     RenderContext {
         element_id,
         dirty,
         render_objects,
         build_owner,
+        inherited_map,
+        inherited_registry,
     }
 }
 
@@ -224,7 +229,16 @@ fn render_stack<Dest: std::hash::Hash + Eq + Clone + 'static>(
     let mut dirty = DirtyTracking::new();
     let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
-    let mut ctx = create_render_context(element_id, &mut dirty, &mut render_objects, &build_owner);
+    let inherited_map = InheritedMap::empty();
+    let inherited_registry = InheritedRegistry::new();
+    let mut ctx = create_render_context(
+        element_id,
+        &mut dirty,
+        &mut render_objects,
+        &build_owner,
+        &inherited_map,
+        &inherited_registry,
+    );
     view.render(state, &mut ctx)
 }
 
