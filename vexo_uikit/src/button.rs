@@ -3,11 +3,12 @@ use std::rc::Rc;
 
 use vexo::{
     AlignSelf, Color, Component, ComponentState, DecoratedContainer, RenderContext, Signal, Text,
-    Widget,
+    Theme, Widget,
 };
 
 use crate::platform::Platform;
 use crate::theme::tokens;
+use crate::theme::tokens::button::ButtonColors;
 
 /// Visual style variant for a Button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,48 +119,48 @@ impl Button {
         self.platform.unwrap_or_else(Platform::current)
     }
 
-    fn resolve_bg(&self, is_pressed: bool, is_hovered: bool) -> Color {
+    fn resolve_bg(&self, c: &ButtonColors, is_pressed: bool, is_hovered: bool) -> Color {
         match self.variant {
             ButtonVariant::Primary => {
                 if is_pressed {
-                    tokens::button::PRIMARY_BG_PRESSED
+                    c.primary_bg_pressed
                 } else if is_hovered && self.effective_platform() == Platform::Desktop {
-                    tokens::button::PRIMARY_BG_HOVER
+                    c.primary_bg_hover
                 } else {
-                    tokens::button::PRIMARY_BG
+                    c.primary_bg
                 }
             }
-            ButtonVariant::Secondary => tokens::button::SECONDARY_BG,
+            ButtonVariant::Secondary => c.secondary_bg,
             ButtonVariant::Destructive => {
                 if is_pressed {
-                    tokens::button::DESTRUCTIVE_BG_PRESSED
+                    c.destructive_bg_pressed
                 } else if is_hovered && self.effective_platform() == Platform::Desktop {
-                    tokens::button::DESTRUCTIVE_BG_HOVER
+                    c.destructive_bg_hover
                 } else {
-                    tokens::button::DESTRUCTIVE_BG
+                    c.destructive_bg
                 }
             }
-            ButtonVariant::Ghost => tokens::button::GHOST_BG,
+            ButtonVariant::Ghost => c.ghost_bg,
         }
     }
 
-    fn resolve_border(&self) -> (Color, f32) {
+    fn resolve_border(&self, c: &ButtonColors) -> (Color, f32) {
         match self.variant {
-            ButtonVariant::Secondary => (tokens::button::SECONDARY_BORDER, 1.0),
+            ButtonVariant::Secondary => (c.secondary_border, 1.0),
             _ => (Color::TRANSPARENT, 0.0),
         }
     }
 
-    fn resolve_text_color(&self, is_hovered: bool) -> Color {
+    fn resolve_text_color(&self, c: &ButtonColors, is_hovered: bool) -> Color {
         match self.variant {
-            ButtonVariant::Primary => tokens::button::PRIMARY_TEXT,
-            ButtonVariant::Destructive => tokens::button::DESTRUCTIVE_TEXT,
-            ButtonVariant::Secondary => tokens::button::SECONDARY_TEXT,
+            ButtonVariant::Primary => c.primary_text,
+            ButtonVariant::Destructive => c.destructive_text,
+            ButtonVariant::Secondary => c.secondary_text,
             ButtonVariant::Ghost => {
                 if is_hovered && self.effective_platform() == Platform::Desktop {
-                    tokens::button::GHOST_TEXT_HOVER
+                    c.ghost_text_hover
                 } else {
-                    tokens::button::GHOST_TEXT
+                    c.ghost_text
                 }
             }
         }
@@ -201,13 +202,14 @@ impl Button {
 impl Component for Button {
     type State = ButtonState;
 
-    fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let is_pressed = state.is_pressed.get();
         let is_hovered = state.is_hovered.get();
 
-        let bg = self.resolve_bg(is_pressed, is_hovered);
-        let (border_color, border_width) = self.resolve_border();
-        let text_color = self.resolve_text_color(is_hovered);
+        let colors = tokens::button::colors(&Theme::of(ctx));
+        let bg = self.resolve_bg(&colors, is_pressed, is_hovered);
+        let (border_color, border_width) = self.resolve_border(&colors);
+        let text_color = self.resolve_text_color(&colors, is_hovered);
         let corner_radius = self.resolve_corner_radius();
         let (pt, pr, pb, pl) = self.resolve_padding();
         let opacity = if self.disabled {

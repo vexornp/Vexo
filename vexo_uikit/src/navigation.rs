@@ -44,12 +44,13 @@ use std::time::{Duration, Instant};
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
     FractionalTranslation, IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext,
-    SafeArea, Stack, Text, Widget,
+    SafeArea, Stack, Text, Theme, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
 use crate::platform::Platform;
 use crate::theme::tokens;
+use crate::theme::tokens::navigation::NavColors;
 use crate::transitions::{default_transition, TransitionCtx, TransitionDir};
 
 // ============================================================================
@@ -543,7 +544,8 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         };
 
         let safe_insets = ctx.safe_area();
-        let nav_bar = self.build_nav_bar(&title, can_pop, &safe_insets);
+        let nav = tokens::navigation::colors(&Theme::of(ctx));
+        let nav_bar = self.build_nav_bar(&title, can_pop, &safe_insets, &nav);
 
         // 4. Build the page content area.
         //
@@ -747,10 +749,11 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         title: &str,
         can_pop: bool,
         safe: &vexo::layout::EdgeInsets,
+        nav: &NavColors,
     ) -> Box<dyn Widget> {
         let title_text = Text::new(title)
             .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
-            .with_color(tokens::navigation::MOBILE_TITLE_COLOR);
+            .with_color(nav.mobile_title);
 
         // Leading segment: back button (if any), left-aligned, grows to fill.
         // Padded on the left by the safe-area inset + header padding so it
@@ -791,7 +794,7 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         Flex::row()
             .align(AlignItems::Center)
             .padding_each(0.0, 0.0, safe.top, 0.0)
-            .background(tokens::navigation::MOBILE_HEADER_BG)
+            .background(nav.mobile_header_bg)
             .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
             .flex_shrink(0.0)
             .push(leading)
