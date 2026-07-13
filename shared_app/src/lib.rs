@@ -142,7 +142,11 @@ impl Application for State {
                                 _ => String::new(),
                             })
                             .destination(move |d| match d {
-                                Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                                Dest::Page(n) => PageContent {
+                                    n: *n,
+                                    nav_controller: nav_for_dest.clone(),
+                                }
+                                .boxed(),
                                 _ => Text::new("").boxed(),
                             })
                             .boxed(),
@@ -182,7 +186,11 @@ impl Application for State {
                         Dest::Item(id) => {
                             build_detail_content(*id, count_for_dest.clone(), nav_for_dest.clone())
                         }
-                        Dest::Page(n) => build_page_content(*n, nav_for_dest.clone()),
+                        Dest::Page(n) => PageContent {
+                            n: *n,
+                            nav_controller: nav_for_dest.clone(),
+                        }
+                        .boxed(),
                     })
                     .boxed()
             }
@@ -481,21 +489,61 @@ impl Component for DetailPage {
     }
 }
 
-fn build_page_content(n: u32, nav_controller: NavigationController<Dest>) -> Box<dyn Widget> {
-    let ctrl = nav_controller.clone();
-    Column::new()
-        .gap(16.0)
-        .padding(24.0)
-        .push(Text::new(format!("Page: {}", n)).with_font_size(24.0))
-        .push(Text::new(format!("You are on pushed page \"{}\".", n)))
-        .push(
-            Button::new("Next page")
-                .variant(ButtonVariant::Primary)
-                .on_press(move || {
-                    ctrl.push(Dest::Page(n + 1));
-                }),
-        )
-        .boxed()
+// ============================================================================
+// PAGE CONTENT COMPONENT
+// ============================================================================
+
+/// Pushed page content. Implemented as a `Component` (not a free function)
+/// so it establishes an inherited-widget dependency via `Theme::of(ctx)` and
+/// auto-rebuilds when the theme toggles after the page has been pushed.
+#[derive(Default)]
+struct PageContentState;
+
+impl ComponentState for PageContentState {}
+
+struct PageContent {
+    n: u32,
+    nav_controller: NavigationController<Dest>,
+}
+
+impl Clone for PageContent {
+    fn clone(&self) -> Self {
+        Self {
+            n: self.n,
+            nav_controller: self.nav_controller.clone(),
+        }
+    }
+}
+
+impl Component for PageContent {
+    type State = PageContentState;
+
+    fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let theme = Theme::of(ctx);
+        let ctrl = self.nav_controller.clone();
+        let n = self.n;
+        Column::new()
+            .gap(16.0)
+            .padding(24.0)
+            .background(theme.background)
+            .push(
+                Text::new(format!("Page: {}", n))
+                    .with_font_size(24.0)
+                    .with_color(theme.on_background),
+            )
+            .push(
+                Text::new(format!("You are on pushed page \"{}\".", n))
+                    .with_color(theme.on_background),
+            )
+            .push(
+                Button::new("Next page")
+                    .variant(ButtonVariant::Primary)
+                    .on_press(move || {
+                        ctrl.push(Dest::Page(n + 1));
+                    }),
+            )
+            .boxed()
+    }
 }
 
 #[derive(uniffi::Object)]
