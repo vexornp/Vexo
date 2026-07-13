@@ -4,10 +4,13 @@ use std::rc::Rc;
 use vexo::{
     Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, IndexedStack,
     LifecycleContext, RenderContext, Row, SafeArea, ScrollView, Signal, Text, TextEdit,
-    TextEditingController, Widget,
+    TextEditingController, Theme, ThemeData, Widget,
 };
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{Button, ButtonVariant, NavigationController, NavigationStackView, Platform};
+use vexo_uikit::{
+    theme::tokens::navigation, Button, ButtonVariant, NavigationController, NavigationStackView,
+    Platform,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -49,6 +52,7 @@ fn selected_index(selected: Option<&'static str>) -> usize {
 #[derive(ComponentState)]
 pub struct State {
     selection_log: Signal<u32>,
+    is_dark: Signal<bool>,
     /// Desktop sidebar selection (mobile uses the nav stack for everything).
     selected: Signal<Option<&'static str>>,
     /// Desktop: one controller per sidebar item, indexed by `ITEMS` position.
@@ -77,6 +81,7 @@ impl Default for State {
         }
         Self {
             selection_log: Signal::new(0),
+            is_dark: Signal::new(false),
             selected: Signal::new(None),
             nav_controllers,
             mobile_nav_controller: NavigationController::new(),
@@ -100,15 +105,19 @@ impl Application for State {
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
         let selected_signal = state.selected.clone();
         let selection_count = state.selection_log.clone();
+        let is_dark = state.is_dark.get();
+        let theme = if is_dark {
+            ThemeData::dark()
+        } else {
+            ThemeData::light()
+        };
+        let is_dark_signal = state.is_dark.clone();
 
-        match Platform::current() {
+        let inner: Box<dyn Widget> = match Platform::current() {
             Platform::Desktop => {
                 let current = selected_signal.get_cloned();
                 let index = selected_index(current);
 
-                // Sidebar: callback now just sets selection — no nav mutation.
-                // The IndexedStack index flip is the only effect; each item's
-                // nav stack is untouched on toggle.
                 let selected_for_cb = selected_signal.clone();
                 let sidebar = build_sidebar(
                     current,
@@ -116,14 +125,10 @@ impl Application for State {
                         selected_for_cb.set(Some(id));
                     }),
                     false,
+                    theme.clone(),
+                    is_dark_signal.clone(),
                 );
 
-                // IndexedStack: one child per sidebar item, each with its own
-                // NavigationStackView + NavigationController. All children stay
-                // mounted (wrapped in Offstage by IndexedStack); toggling the
-                // sidebar flips offstage flags, preserving each item's detail
-                // state (text-edit content, scroll position) and pushed nav
-                // stack.
                 let mut stack = IndexedStack::new(index);
                 for (i, (id, label)) in ITEMS.iter().enumerate() {
                     let ctrl = state.nav_controllers[i].clone();
@@ -146,7 +151,7 @@ impl Application for State {
 
                 SafeArea::new(
                     Flex::row()
-                        .background(Color::WHITE)
+                        .background(theme.background)
                         .push(sidebar)
                         .push(stack.flex_grow(1.0)),
                 )
@@ -160,6 +165,8 @@ impl Application for State {
                         nav_for_select.push(Dest::Item(id));
                     }),
                     true,
+                    theme.clone(),
+                    is_dark_signal.clone(),
                 );
 
                 let nav_for_dest = state.mobile_nav_controller.clone();
@@ -179,7 +186,9 @@ impl Application for State {
                     })
                     .boxed()
             }
-        }
+        };
+
+        Theme::new(theme, inner).boxed()
     }
 }
 
@@ -187,26 +196,71 @@ fn build_sidebar(
     selected: Option<&str>,
     on_select: Rc<dyn Fn(&'static str)>,
     full_width: bool,
+    theme: ThemeData,
+    is_dark: Signal<bool>,
 ) -> Box<dyn Widget> {
+    let nav = navigation::colors(&theme);
+    let dark = is_dark.get();
+
+    // Icon shows the TARGET mode (tap to go there): moon when light, sun when dark.
+    let (icon, target_label) = if dark {
+        (Icons::Sun, "Light")
+    } else {
+        (Icons::Moon, "Dark")
+    };
+    let icon_color = theme.on_surface;
+    let toggle_is_dark = is_dark.clone();
+
+    let toggle_button =
+        DecoratedContainer::new(Icon::new(icon).with_size(20.0).with_color(icon_color))
+            .padding(8.0)
+            .boxed()
+            .on_press(move || {
+                toggle_is_dark.set(!toggle_is_dark.get());
+            });
+
     let header = Flex::row()
         .padding(12.0)
-        .background(Color::rgb(0.9, 0.9, 0.92))
+        .background(nav.header_bg)
         .push(
             Text::new("Navigation")
-                .with_font_size(16.0)
-                .with_color(Color::rgb(0.2, 0.2, 0.2)),
+                .with_font_size(navigation::HEADER_FONT_SIZE)
+                .with_color(nav.header_text),
         )
+        .push(Flex::new().flex_grow(1.0))
+        .push(toggle_button)
         .boxed();
 
     let mut list = Flex::column();
+    // Mobile: no header, so prepend a toggle row to the list.
+    // Styled like build_item_row but with an icon + label (spec: "icon + label").
+    if full_width {
+        let row_is_dark = is_dark.clone();
+        let toggle_content = Row::new()
+            .gap(8.0)
+            .push(Icon::new(icon).with_size(16.0).with_color(nav.row_text))
+            .push(
+                Text::new(target_label)
+                    .with_font_size(navigation::ROW_FONT_SIZE)
+                    .with_color(nav.row_text),
+            );
+        let toggle_row = DecoratedContainer::new(toggle_content)
+            .background(nav.row_bg)
+            .padding(navigation::ROW_PADDING)
+            .boxed()
+            .on_press(move || {
+                row_is_dark.set(!row_is_dark.get());
+            });
+        list = list.push(toggle_row);
+    }
     for &(id, label) in ITEMS {
         let is_selected = selected == Some(id);
         let on_select = on_select.clone();
-        let row = build_item_row(label, is_selected, move || on_select(id));
+        let row = build_item_row(label, is_selected, move || on_select(id), &nav);
         list = list.push(row);
     }
 
-    let mut sidebar = Flex::column().background(Color::rgb(0.95, 0.95, 0.97));
+    let mut sidebar = Flex::column().background(nav.sidebar_bg);
     if full_width {
         sidebar = sidebar.flex_grow(1.0);
     } else {
@@ -222,23 +276,26 @@ fn build_item_row(
     label: &str,
     is_selected: bool,
     on_press: impl FnMut() + 'static,
+    nav: &navigation::NavColors,
 ) -> Box<dyn Widget> {
     let text_color = if is_selected {
-        Color::WHITE
+        nav.selected_text
     } else {
-        Color::rgb(0.1, 0.1, 0.1)
+        nav.row_text
     };
     let bg = if is_selected {
-        Color::rgb(0.0, 0.478, 1.0)
+        nav.selected_bg
     } else {
-        Color::TRANSPARENT
+        nav.row_bg
     };
 
-    let label_text = Text::new(label).with_font_size(16.0).with_color(text_color);
+    let label_text = Text::new(label)
+        .with_font_size(navigation::ROW_FONT_SIZE)
+        .with_color(text_color);
 
     DecoratedContainer::new(label_text)
         .background(bg)
-        .padding(10.0)
+        .padding(navigation::ROW_PADDING)
         .boxed()
         .on_press(on_press)
 }
