@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use vexo::{
     Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, Image,
-    ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, SafeArea, ScrollView,
-    Signal, Text, TextEdit, TextEditingController, Theme, ThemeData, Widget,
+    ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, ScrollView, Signal,
+    Text, TextEdit, TextEditingController, Theme, ThemeData, Widget,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
@@ -84,6 +84,8 @@ pub struct ImState {
     profile: Profile,
     tab_controller: TabController<ImTab>,
     chats_nav: NavigationController<ChatsRoute>,
+    contacts_nav: NavigationController<()>,
+    me_nav: NavigationController<()>,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -262,6 +264,8 @@ fn seed() -> ImState {
         profile,
         tab_controller: TabController::new(ImTab::Chats),
         chats_nav: NavigationController::new(),
+        contacts_nav: NavigationController::new(),
+        me_nav: NavigationController::new(),
     }
 }
 
@@ -628,6 +632,8 @@ impl Application for ImState {
         let contacts = state.contacts.clone();
         let profile = state.profile.clone();
         let tab_controller = state.tab_controller.clone();
+        let contacts_nav = state.contacts_nav.clone();
+        let me_nav = state.me_nav.clone();
 
         let tab_view = TabBarView::new(
             tab_controller,
@@ -680,8 +686,17 @@ impl Application for ImState {
                         })
                         .boxed()
                 }
-                ImTab::Contacts => build_contacts_screen(contacts.clone()),
-                ImTab::Me => build_profile_screen(&profile),
+                ImTab::Contacts => NavigationStackView::new(
+                    contacts_nav.clone(),
+                    build_contacts_screen(contacts.clone()),
+                )
+                .root_title("Contacts")
+                .boxed(),
+                ImTab::Me => {
+                    NavigationStackView::new(me_nav.clone(), build_profile_screen(&profile))
+                        .root_title("Me")
+                        .boxed()
+                }
             },
             |tab, is_selected| {
                 let (icon, label) = match tab {
@@ -704,7 +719,7 @@ impl Application for ImState {
         );
 
         let _ = messages_for_view;
-        SafeArea::new(tab_view.boxed()).boxed()
+        tab_view.boxed()
     }
 }
 
