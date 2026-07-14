@@ -245,8 +245,10 @@ impl Element for ScrollViewElement {
                 state: ButtonState::Released,
                 ..
             } => {
-                self.drag_active = false;
-                return Some(Box::new(()));
+                if self.drag_active {
+                    self.drag_active = false;
+                    return Some(Box::new(()));
+                }
             }
             InputEvent::PointerMoved { position } => {
                 if self.drag_active {
