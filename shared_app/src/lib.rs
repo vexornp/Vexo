@@ -619,8 +619,92 @@ impl Application for ImState {
     }
 
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
-        // Placeholder — replaced in Task 8.
-        Text::new("IM UI placeholder").boxed()
+        let conversations = state.conversations.clone();
+        let messages_for_view = state.messages.clone();
+        let nav_for_list = state.chats_nav.clone();
+        let nav_for_chat = state.chats_nav.clone();
+        let convs_for_chat = state.conversations.clone();
+        let messages_for_chat = state.messages.clone();
+        let contacts = state.contacts.clone();
+        let profile = state.profile.clone();
+        let tab_controller = state.tab_controller.clone();
+
+        let tab_view = TabBarView::new(
+            tab_controller,
+            vec![ImTab::Chats, ImTab::Contacts, ImTab::Me],
+            move |tab| match tab {
+                ImTab::Chats => {
+                    let chats_root =
+                        build_conversation_list_screen(conversations.clone(), nav_for_list.clone());
+                    let nav = nav_for_chat.clone();
+                    let convs = convs_for_chat.clone();
+                    let msgs = messages_for_chat.clone();
+                    NavigationStackView::new(nav_for_chat.clone(), chats_root)
+                        .root_title("Chats")
+                        .title(|d| match d {
+                            ChatsRoute::Chat(id) => format!("Chat {}", id.0),
+                            _ => String::new(),
+                        })
+                        .destination(move |d| match d {
+                            ChatsRoute::Chat(id) => {
+                                let m = msgs.get_cloned().get(id).cloned().unwrap_or_default();
+                                let avatar = convs
+                                    .iter()
+                                    .find(|c| c.id == *id)
+                                    .map(|c| Rc::clone(&c.avatar_bytes))
+                                    .unwrap_or_else(|| Rc::from([0u8; 0]));
+                                let nav_back = nav.clone();
+                                let msgs_for_send = msgs.clone();
+                                let id_for_send = id.clone();
+                                ChatScreen {
+                                    conv_id: id_for_send.clone(),
+                                    messages: m,
+                                    avatar_bytes: avatar,
+                                    nav: nav_back,
+                                    on_send: Rc::new(move |text: &str| {
+                                        let mut map = msgs_for_send.get_cloned();
+                                        if let Some(vec) = map.get_mut(&id_for_send) {
+                                            vec.push(Message {
+                                                author: MessageAuthor::Me,
+                                                text: text.to_string(),
+                                                timestamp: 1732348000,
+                                            });
+                                        }
+                                        msgs_for_send.set_from(&map);
+                                    }),
+                                    scroll_controller: vexo::ScrollController::new(),
+                                }
+                                .boxed()
+                            }
+                            _ => Text::new("").boxed(),
+                        })
+                        .boxed()
+                }
+                ImTab::Contacts => build_contacts_screen(contacts.clone()),
+                ImTab::Me => build_profile_screen(&profile),
+            },
+            |tab, is_selected| {
+                let (icon, label) = match tab {
+                    ImTab::Chats => (Icons::Comment, "Chats"),
+                    ImTab::Contacts => (Icons::User, "Contacts"),
+                    ImTab::Me => (Icons::Gear, "Me"),
+                };
+                let color = if is_selected {
+                    Color::rgb(0.0, 0.5, 1.0)
+                } else {
+                    Color::rgb(0.5, 0.5, 0.5)
+                };
+                Column::new()
+                    .gap(2.0)
+                    .push(Icon::new(icon).with_size(22.0).with_color(color))
+                    .push(Text::new(label).with_font_size(11.0).with_color(color))
+                    .boxed()
+                    .padding(8.0)
+            },
+        );
+
+        let _ = messages_for_view;
+        SafeArea::new(tab_view.boxed()).boxed()
     }
 }
 
@@ -744,6 +828,39 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 2,
             "expected multiple elements for profile header + settings rows"
+        );
+    }
+
+    #[test]
+    fn test_full_app_view_renders_three_tabs() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::ThreeTreePipeline;
+
+        let mut state = seed();
+        let view = ImState::view(&mut state);
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 15,
+            "expected many elements for full three-tab shell"
+        );
+    }
+
+    #[test]
+    fn test_tab_switch_to_contacts_renders_contacts_page() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::ThreeTreePipeline;
+
+        let mut state = seed();
+        state.tab_controller.switch_to(ImTab::Contacts);
+        let view = ImState::view(&mut state);
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 15,
+            "contacts tab should have many elements (8 contacts × several widgets each)"
         );
     }
 }
