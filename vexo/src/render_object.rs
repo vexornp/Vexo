@@ -410,6 +410,16 @@ pub trait RenderObject {
     /// backend. The render object stores the key for use during paint()
     /// to emit `RenderCommand::Image`.
     fn set_image_key(&mut self, _key: crate::image_atlas::ImageKey) {}
+
+    /// Get the atlas key currently assigned to this render object's image, if any.
+    ///
+    /// The registry calls this during `remove()` to collect keys that must be
+    /// returned to the backend via `unregister_image`. Without this, popping a
+    /// route that contains images leaks their atlas slots forever and the
+    /// 2048x2048 atlas fills up after a few dozen push/pop cycles on iOS.
+    fn image_key(&self) -> Option<crate::image_atlas::ImageKey> {
+        None
+    }
 }
 
 // ============================================================================
@@ -429,6 +439,10 @@ pub struct RenderObjectRegistry {
     /// Layout node keys orphaned by removed render objects.
     /// Drained during layout to remove nodes from the Taffy engine.
     orphaned_layout_nodes: Vec<LayoutNodeKey>,
+    /// Image atlas keys orphaned by removed render objects.
+    /// Drained by the pipeline's image pass to call `unregister_image` on the
+    /// backend, returning the slot to the atlas free list.
+    orphaned_image_keys: Vec<crate::image_atlas::ImageKey>,
 }
 
 impl RenderObjectRegistry {
@@ -440,6 +454,7 @@ impl RenderObjectRegistry {
             cursor_annotations: SecondaryMap::new(),
             root: None,
             orphaned_layout_nodes: Vec::new(),
+            orphaned_image_keys: Vec::new(),
         }
     }
 
@@ -482,6 +497,12 @@ impl RenderObjectRegistry {
                 if let Some(node) = obj.layout_node() {
                     self.orphaned_layout_nodes.push(node);
                 }
+            }
+            // Collect the atlas key so the pipeline can return the slot to the
+            // backend's image atlas. Without this, removing an image render
+            // object (e.g. during iOS pop) leaks the atlas slot permanently.
+            if let Some(img_key) = obj.image_key() {
+                self.orphaned_image_keys.push(img_key);
             }
         }
         self.objects.remove(key);
@@ -542,6 +563,7 @@ impl RenderObjectRegistry {
         self.element_map.clear();
         self.cursor_annotations.clear();
         self.orphaned_layout_nodes.clear();
+        self.orphaned_image_keys.clear();
         self.root = None;
     }
 
@@ -551,6 +573,16 @@ impl RenderObjectRegistry {
     /// from the Taffy engine.
     pub fn drain_orphaned_layout_nodes(&mut self) -> Vec<LayoutNodeKey> {
         std::mem::take(&mut self.orphaned_layout_nodes)
+    }
+
+    /// Drain all orphaned image atlas keys for cleanup.
+    ///
+    /// Called by the pipeline's image pass to call `unregister_image` on the
+    /// backend, returning each slot to the atlas free list. Pair this with
+    /// `register_images` so a single frame reclaims removed slots before
+    /// carving new ones.
+    pub fn drain_orphaned_image_keys(&mut self) -> Vec<crate::image_atlas::ImageKey> {
+        std::mem::take(&mut self.orphaned_image_keys)
     }
 
     /// Set the child render object for a parent.

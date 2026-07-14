@@ -244,6 +244,10 @@ impl RenderObject for ImageRenderObject {
     fn set_image_key(&mut self, key: ImageKey) {
         self.image_key = Some(key);
     }
+
+    fn image_key(&self) -> Option<ImageKey> {
+        self.image_key
+    }
 }
 
 #[cfg(test)]

@@ -482,7 +482,11 @@ impl<A: Application + 'static> WindowState<A> {
         // 8. Inject cursor focus/blink state into render objects before paint
         self.three_tree_pipeline.prepare_cursor_state();
 
-        // 8.5. Register any new images with the GPU atlas before paint
+        // 8.5. Register any new images with the GPU atlas before paint.
+        // Reclaim atlas slots from removed image render objects first, so a
+        // pop-then-push on the same frame can reuse the freed slot instead of
+        // carving new shelf space and slowly filling the 2048x2048 atlas.
+        self.three_tree_pipeline.unregister_images(&mut self.backend);
         self.three_tree_pipeline.register_images(&mut self.backend);
 
         // 9. Paint dirty render objects

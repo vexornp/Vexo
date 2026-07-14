@@ -837,6 +837,19 @@ impl ThreeTreePipeline {
             }
         }
     }
+
+    /// Return atlas slots from removed image render objects to the backend.
+    ///
+    /// Drains the orphaned image keys collected by `RenderObjectRegistry::remove`
+    /// and calls `unregister_image` on the backend for each. This must run every
+    /// frame (before `register_images`) so that slots freed by a pop are
+    /// available for reuse by a subsequent push; otherwise the 2048x2048 atlas
+    /// fills up after a few dozen push/pop cycles on iOS.
+    pub fn unregister_images(&mut self, backend: &mut crate::render::WgpuBackend) {
+        for key in self.render_objects.drain_orphaned_image_keys() {
+            backend.unregister_image(key);
+        }
+    }
 }
 
 impl Default for ThreeTreePipeline {
