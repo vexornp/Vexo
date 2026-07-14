@@ -14,8 +14,8 @@ use std::sync::Arc;
 use vexo::layout::FlexDirection;
 use vexo::layout::JustifyContent;
 use vexo::{
-    Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext, Text,
-    Widget,
+    Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext,
+    SafeArea, Text, Widget,
 };
 
 // ============================================================================
@@ -174,6 +174,12 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
                 .on_press(move || ctrl.switch_to(tab_clone.clone()));
             bar = bar.push(item);
         }
+
+        // The tab bar row owns its bottom safe-area (home indicator) and
+        // left/right insets (landscape notch), mirroring how
+        // `NavigationStackView` owns the top inset for its nav bar. `top(false)`
+        // because the bar is at the bottom — no status-bar inset to consume.
+        let bar = SafeArea::new(bar.boxed()).top(false).boxed();
 
         Flex::column()
             .layout(
