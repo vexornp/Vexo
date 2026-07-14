@@ -170,7 +170,11 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             bar = bar.push(item);
         }
 
-        Flex::column().push(stack.flex_grow(1.0)).push(bar).boxed()
+        Flex::column()
+            .layout(Layout::default().width_percent(1.0).height_percent(1.0))
+            .push(stack.flex_grow(1.0))
+            .push(bar)
+            .boxed()
     }
 }
 
