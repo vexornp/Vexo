@@ -11,6 +11,7 @@ use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use vexo::layout::FlexDirection;
 use vexo::layout::JustifyContent;
 use vexo::{
     Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext, Text,
@@ -175,7 +176,12 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         Flex::column()
-            .layout(Layout::default().width_percent(1.0).height_percent(1.0))
+            .layout(
+                Layout::default()
+                    .flex_direction(FlexDirection::Column)
+                    .width_percent(1.0)
+                    .height_percent(1.0),
+            )
             .push(stack.flex_grow(1.0))
             .push(bar)
             .boxed()
