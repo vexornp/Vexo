@@ -504,6 +504,102 @@ fn build_input_bar(
         .padding(8.0)
 }
 
+// ============================================================================
+// CONTACTS SCREEN
+// ============================================================================
+
+fn build_contacts_screen(contacts: Vec<Contact>) -> Box<dyn Widget> {
+    let mut list = Flex::column();
+    for c in &contacts {
+        list = list.push(build_contact_row(c));
+    }
+    ScrollView::new(list.boxed()).flex_grow(1.0).boxed()
+}
+
+fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
+    let avatar = Image::from_bytes(&c.avatar_bytes)
+        .expect("avatar bytes valid")
+        .width(40.0)
+        .height(40.0)
+        .corner_radius(20.0)
+        .clip();
+
+    let name = Text::new(c.name.as_str())
+        .with_font_size(16.0)
+        .with_color(Color::BLACK);
+    let status = Text::new(c.status.as_str())
+        .with_font_size(13.0)
+        .with_color(Color::rgb(0.5, 0.5, 0.5));
+
+    Row::new()
+        .gap(12.0)
+        .push(avatar)
+        .push(
+            Column::new()
+                .gap(2.0)
+                .push(name)
+                .push(status)
+                .flex_grow(1.0),
+        )
+        .boxed()
+        .padding(12.0)
+}
+
+// ============================================================================
+// PROFILE SCREEN
+// ============================================================================
+
+fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
+    let avatar = Image::from_bytes(&profile.avatar_bytes)
+        .expect("avatar bytes valid")
+        .width(80.0)
+        .height(80.0)
+        .corner_radius(40.0)
+        .clip();
+
+    let name = Text::new(profile.name.as_str())
+        .with_font_size(22.0)
+        .with_color(Color::BLACK);
+    let email = Text::new(profile.email.as_str())
+        .with_font_size(14.0)
+        .with_color(Color::rgb(0.5, 0.5, 0.5));
+
+    let header = Column::new()
+        .gap(4.0)
+        .push(avatar)
+        .push(name)
+        .push(email)
+        .boxed()
+        .padding(24.0);
+
+    let settings = vec!["Settings", "Notifications", "About"];
+    let mut settings_list = Flex::column();
+    for label in settings {
+        settings_list = settings_list.push(
+            Row::new()
+                .gap(8.0)
+                .push(
+                    Text::new(label)
+                        .with_font_size(16.0)
+                        .with_color(Color::BLACK)
+                        .flex_grow(1.0),
+                )
+                .push(
+                    Text::new("›")
+                        .with_font_size(20.0)
+                        .with_color(Color::rgb(0.6, 0.6, 0.6)),
+                )
+                .boxed()
+                .padding(16.0),
+        );
+    }
+
+    Column::new()
+        .push(header)
+        .push(settings_list.boxed())
+        .boxed()
+}
+
 // Placeholder Application impl — full view() comes in Task 8.
 impl Default for ImState {
     fn default() -> Self {
@@ -616,6 +712,38 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 4,
             "expected multiple elements for 3 messages + input bar"
+        );
+    }
+
+    #[test]
+    fn test_contacts_screen_renders_in_pipeline() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::ThreeTreePipeline;
+
+        let state = seed();
+        let view = build_contacts_screen(state.contacts.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 4,
+            "expected multiple elements for 8 contacts"
+        );
+    }
+
+    #[test]
+    fn test_profile_screen_renders_in_pipeline() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::ThreeTreePipeline;
+
+        let state = seed();
+        let view = build_profile_screen(&state.profile);
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 2,
+            "expected multiple elements for profile header + settings rows"
         );
     }
 }
