@@ -11,8 +11,10 @@ use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use vexo::layout::JustifyContent;
 use vexo::{
-    Component, ComponentState, Flex, IndexedStack, LifecycleContext, RenderContext, Text, Widget,
+    Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext, Text,
+    Widget,
 };
 
 // ============================================================================
@@ -158,14 +160,13 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         // Build the tab bar row.
-        let mut bar = Flex::row();
+        let mut bar = Flex::row().layout(Layout::default().justify(JustifyContent::SpaceBetween));
         for tab in &self.tabs {
             let is_selected = *tab == self.controller.current();
             let ctrl = self.controller.clone();
             let tab_clone = tab.clone();
             let item = (self.tab_bar_builder)(tab, is_selected)
-                .on_press(move || ctrl.switch_to(tab_clone.clone()))
-                .flex_grow(1.0);
+                .on_press(move || ctrl.switch_to(tab_clone.clone()));
             bar = bar.push(item);
         }
 
