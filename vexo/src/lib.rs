@@ -48,7 +48,7 @@ pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
 pub use layout::{
-    AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Overflow,
+    AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, Layout, Overflow,
     DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
 };
 

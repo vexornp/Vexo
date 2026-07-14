@@ -1,101 +1,282 @@
+//! Mocked IM UI — three-tab app shell (Chats / Contacts / Me) with
+//! in-memory data, no network or persistence.
+
 use std::any::Any;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{
-    Application, Column, Component, ComponentState, DecoratedContainer, Flex, IndexedStack,
-    LifecycleContext, RenderContext, Row, SafeArea, ScrollView, Signal, Text, TextEdit,
-    TextEditingController, Theme, ThemeData, Widget,
+    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, Image,
+    ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, SafeArea, ScrollView,
+    Signal, Text, TextEdit, TextEditingController, Theme, ThemeData, Widget,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
-    theme::tokens::navigation, Button, ButtonVariant, NavigationController, NavigationStackView,
-    Platform,
+    Button, ButtonVariant, NavigationController, NavigationStackView, Platform, TabBarView,
+    TabController,
 };
 
 uniffi::setup_scaffolding!();
 
-/// Mobile navigation destinations: drilling into a sidebar item, or pushing
-/// a numbered "page-N" page from a detail's "Next page" button.
+// ============================================================================
+// MOCK DATA
+// ============================================================================
+
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
-enum Dest {
-    Item(&'static str),
-    Page(u32),
+pub struct ConvId(pub u32);
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+enum ImTab {
+    Chats,
+    Contacts,
+    Me,
 }
 
-const ITEMS: &[(&str, &str)] = &[
-    ("inbox", "Inbox"),
-    ("starred", "Starred"),
-    ("sent", "Sent"),
-    ("drafts", "Drafts"),
-    ("archive", "Archive"),
-    ("trash", "Trash"),
-];
-
-fn item_label(id: &str) -> String {
-    ITEMS
-        .iter()
-        .find(|(i, _)| *i == id)
-        .map(|(_, l)| l.to_string())
-        .unwrap_or_else(|| id.to_string())
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+enum ChatsRoute {
+    List,
+    Chat(ConvId),
 }
 
-/// Map the desktop sidebar selection to an `IndexedStack` child index.
-/// Falls back to `0` (Inbox) if `selected` is `None` — unreachable on
-/// desktop in practice (`new()` sets `Some("inbox")`, sidebar only ever
-/// sets `Some(id)`), but defensive.
-fn selected_index(selected: Option<&'static str>) -> usize {
-    selected
-        .and_then(|id| ITEMS.iter().position(|(i, _)| *i == id))
-        .unwrap_or(0)
+#[derive(Clone, Debug, PartialEq)]
+struct Message {
+    author: MessageAuthor,
+    text: String,
+    timestamp: u64, // unix seconds (mocked)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MessageAuthor {
+    Them,
+    Me,
+}
+
+#[derive(Clone, Debug)]
+struct Conversation {
+    id: ConvId,
+    name: String,
+    avatar_bytes: Rc<[u8]>,
+    unread_count: u32,
+    last_preview: String,
+    last_timestamp: u64,
+}
+
+#[derive(Clone, Debug)]
+struct Contact {
+    id: u32,
+    name: String,
+    avatar_bytes: Rc<[u8]>,
+    status: String,
+}
+
+#[derive(Clone, Debug)]
+struct Profile {
+    name: String,
+    email: String,
+    avatar_bytes: Rc<[u8]>,
 }
 
 #[derive(ComponentState)]
-pub struct State {
-    selection_log: Signal<u32>,
-    is_dark: Signal<bool>,
-    /// Desktop sidebar selection (mobile uses the nav stack for everything).
-    selected: Signal<Option<&'static str>>,
-    /// Desktop: one controller per sidebar item, indexed by `ITEMS` position.
-    /// Each item's nav stack persists across sidebar toggles because the
-    /// corresponding `NavigationStackView` stays mounted inside the
-    /// `IndexedStack` (wrapped in `Offstage`).
-    nav_controllers: Vec<NavigationController<Dest>>,
-    /// Mobile: single shared nav stack. Semantically distinct from desktop's
-    /// per-item stacks; must persist in `State` (not be created per `view()`)
-    /// because `NavigationStackView`'s `on_mount` wires its dirty callback and
-    /// its path must survive across rebuilds.
-    mobile_nav_controller: NavigationController<Dest>,
+pub struct ImState {
+    conversations: Vec<Conversation>,
+    messages: Signal<HashMap<ConvId, Vec<Message>>>,
+    contacts: Vec<Contact>,
+    profile: Profile,
+    tab_controller: TabController<ImTab>,
+    chats_nav: NavigationController<ChatsRoute>,
 }
 
-/// Manual `Default` (replacing `#[derive(Default)]`) because the desktop path
-/// constructs `State` via `StatefulElement::mount()` → `W::State::default()`
-/// (`vexo/src/stateful_widget.rs:537`), NOT via `Application::new()`. The
-/// backfill of `nav_controllers` to `ITEMS.len()` must happen here, or
-/// `view()`'s `state.nav_controllers[i]` indexing panics on the first frame.
-/// `#[derive(ComponentState)]` is unaffected — it only wires `Signal` fields.
-impl Default for State {
-    fn default() -> Self {
-        let mut nav_controllers = Vec::new();
-        while nav_controllers.len() < ITEMS.len() {
-            nav_controllers.push(NavigationController::new());
-        }
-        Self {
-            selection_log: Signal::new(0),
-            is_dark: Signal::new(false),
-            selected: Signal::new(None),
-            nav_controllers,
-            mobile_nav_controller: NavigationController::new(),
-        }
+/// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
+/// (already a workspace dep). Returns the encoded PNG bytes.
+fn make_avatar_png(r: u8, g: u8, b: u8) -> Rc<[u8]> {
+    use image::{ImageBuffer, Rgba, RgbaImage};
+    let mut img: RgbaImage = ImageBuffer::new(64, 64);
+    for (_, _, pixel) in img.enumerate_pixels_mut() {
+        *pixel = Rgba([r, g, b, 255]);
+    }
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .expect("PNG encode must succeed");
+    bytes.into_inner().into()
+}
+
+fn seed() -> ImState {
+    let alice_bytes = make_avatar_png(120, 180, 255);
+    let bob_bytes = make_avatar_png(180, 220, 120);
+    let group_bytes = make_avatar_png(220, 160, 200);
+    let charlie_bytes = make_avatar_png(255, 200, 120);
+    let diana_bytes = make_avatar_png(200, 200, 240);
+
+    let conversations = vec![
+        Conversation {
+            id: ConvId(1),
+            name: "Alice".into(),
+            avatar_bytes: alice_bytes.clone(),
+            unread_count: 2,
+            last_preview: "See you tomorrow!".into(),
+            last_timestamp: 1732347520,
+        },
+        Conversation {
+            id: ConvId(2),
+            name: "Bob".into(),
+            avatar_bytes: bob_bytes.clone(),
+            unread_count: 0,
+            last_preview: "Got it, thanks".into(),
+            last_timestamp: 1732347050,
+        },
+        Conversation {
+            id: ConvId(3),
+            name: "Group Chat".into(),
+            avatar_bytes: group_bytes.clone(),
+            unread_count: 5,
+            last_preview: "Charlie: sounds good".into(),
+            last_timestamp: 1732346700,
+        },
+        Conversation {
+            id: ConvId(4),
+            name: "Charlie".into(),
+            avatar_bytes: charlie_bytes.clone(),
+            unread_count: 0,
+            last_preview: "Let me check and get back".into(),
+            last_timestamp: 1732345000,
+        },
+        Conversation {
+            id: ConvId(5),
+            name: "Diana".into(),
+            avatar_bytes: diana_bytes.clone(),
+            unread_count: 0,
+            last_preview: "Meeting at 3pm".into(),
+            last_timestamp: 1732340000,
+        },
+    ];
+
+    let mut messages: HashMap<ConvId, Vec<Message>> = HashMap::new();
+    messages.insert(
+        ConvId(1),
+        vec![
+            Message {
+                author: MessageAuthor::Them,
+                text: "Hey! Are we still on for tomorrow?".into(),
+                timestamp: 1732347000,
+            },
+            Message {
+                author: MessageAuthor::Me,
+                text: "Yes, definitely!".into(),
+                timestamp: 1732347300,
+            },
+            Message {
+                author: MessageAuthor::Them,
+                text: "See you tomorrow!".into(),
+                timestamp: 1732347520,
+            },
+        ],
+    );
+    messages.insert(
+        ConvId(2),
+        vec![
+            Message {
+                author: MessageAuthor::Them,
+                text: "Did you get the file?".into(),
+                timestamp: 1732346800,
+            },
+            Message {
+                author: MessageAuthor::Me,
+                text: "Got it, thanks".into(),
+                timestamp: 1732347050,
+            },
+        ],
+    );
+    messages.insert(
+        ConvId(3),
+        vec![Message {
+            author: MessageAuthor::Them,
+            text: "Charlie: sounds good".into(),
+            timestamp: 1732346700,
+        }],
+    );
+    messages.insert(ConvId(4), vec![]);
+    messages.insert(ConvId(5), vec![]);
+
+    let contacts = vec![
+        Contact {
+            id: 1,
+            name: "Alice".into(),
+            avatar_bytes: alice_bytes.clone(),
+            status: "Online".into(),
+        },
+        Contact {
+            id: 2,
+            name: "Bob".into(),
+            avatar_bytes: bob_bytes.clone(),
+            status: "Last seen 10:00".into(),
+        },
+        Contact {
+            id: 3,
+            name: "Charlie".into(),
+            avatar_bytes: charlie_bytes.clone(),
+            status: "Online".into(),
+        },
+        Contact {
+            id: 4,
+            name: "Diana".into(),
+            avatar_bytes: diana_bytes.clone(),
+            status: "Away".into(),
+        },
+        Contact {
+            id: 5,
+            name: "Eve".into(),
+            avatar_bytes: make_avatar_png(180, 220, 180),
+            status: "Offline".into(),
+        },
+        Contact {
+            id: 6,
+            name: "Frank".into(),
+            avatar_bytes: make_avatar_png(220, 180, 140),
+            status: "Online".into(),
+        },
+        Contact {
+            id: 7,
+            name: "Grace".into(),
+            avatar_bytes: make_avatar_png(140, 200, 220),
+            status: "Last seen yesterday".into(),
+        },
+        Contact {
+            id: 8,
+            name: "Heidi".into(),
+            avatar_bytes: make_avatar_png(240, 160, 180),
+            status: "Online".into(),
+        },
+    ];
+
+    let profile = Profile {
+        name: "Alice".into(),
+        email: "alice@example.com".into(),
+        avatar_bytes: alice_bytes,
+    };
+
+    ImState {
+        conversations,
+        messages: Signal::new(messages),
+        contacts,
+        profile,
+        tab_controller: TabController::new(ImTab::Chats),
+        chats_nav: NavigationController::new(),
     }
 }
 
-impl Application for State {
+// Placeholder Application impl — full view() comes in Task 8.
+impl Default for ImState {
+    fn default() -> Self {
+        seed()
+    }
+}
+
+impl Application for ImState {
     type State = Self;
 
     fn new() -> Self::State {
-        let state = Self::State::default();
-        state.selected.set(Some("inbox"));
-        state
+        seed()
     }
 
     fn register_fonts(font_system: &mut glyphon::FontSystem) {
@@ -103,447 +284,46 @@ impl Application for State {
     }
 
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
-        let selected_signal = state.selected.clone();
-        let selection_count = state.selection_log.clone();
-        let is_dark = state.is_dark.get();
-        let theme = if is_dark {
-            ThemeData::dark()
-        } else {
-            ThemeData::light()
-        };
-        let is_dark_signal = state.is_dark.clone();
-
-        let inner: Box<dyn Widget> = match Platform::current() {
-            Platform::Desktop => {
-                let current = selected_signal.get_cloned();
-                let index = selected_index(current);
-
-                let selected_for_cb = selected_signal.clone();
-                let sidebar = build_sidebar(
-                    current,
-                    Rc::new(move |id| {
-                        selected_for_cb.set(Some(id));
-                    }),
-                    false,
-                    theme.clone(),
-                    is_dark_signal.clone(),
-                );
-
-                let mut stack = IndexedStack::new(index);
-                for (i, (id, label)) in ITEMS.iter().enumerate() {
-                    let ctrl = state.nav_controllers[i].clone();
-                    let detail = build_detail_content(id, selection_count.clone(), ctrl.clone());
-                    let nav_for_dest = ctrl.clone();
-                    stack = stack.push(
-                        NavigationStackView::new(ctrl, detail)
-                            .root_title(label.to_string())
-                            .title(|d| match d {
-                                Dest::Page(n) => format!("Page: {}", n),
-                                _ => String::new(),
-                            })
-                            .destination(move |d| match d {
-                                Dest::Page(n) => PageContent {
-                                    n: *n,
-                                    nav_controller: nav_for_dest.clone(),
-                                }
-                                .boxed(),
-                                _ => Text::new("").boxed(),
-                            })
-                            .boxed(),
-                    );
-                }
-
-                SafeArea::new(
-                    Flex::row()
-                        .flex_grow(1.0)
-                        .background(theme.background)
-                        .push(sidebar)
-                        .push(stack.flex_grow(1.0)),
-                )
-                .boxed()
-            }
-            Platform::Mobile => {
-                let nav_for_select = state.mobile_nav_controller.clone();
-                let sidebar = build_sidebar(
-                    None,
-                    Rc::new(move |id| {
-                        nav_for_select.push(Dest::Item(id));
-                    }),
-                    true,
-                    theme.clone(),
-                    is_dark_signal.clone(),
-                );
-
-                let nav_for_dest = state.mobile_nav_controller.clone();
-                let count_for_dest = selection_count.clone();
-
-                NavigationStackView::new(state.mobile_nav_controller.clone(), sidebar)
-                    .root_title("Navigation")
-                    .title(|d| match d {
-                        Dest::Item(id) => item_label(*id),
-                        Dest::Page(n) => format!("Page: {}", n),
-                    })
-                    .destination(move |d| match d {
-                        Dest::Item(id) => {
-                            build_detail_content(*id, count_for_dest.clone(), nav_for_dest.clone())
-                        }
-                        Dest::Page(n) => PageContent {
-                            n: *n,
-                            nav_controller: nav_for_dest.clone(),
-                        }
-                        .boxed(),
-                    })
-                    .boxed()
-            }
-        };
-
-        Theme::new(theme, inner).boxed()
+        // Placeholder — replaced in Task 8.
+        Text::new("IM UI placeholder").boxed()
     }
 }
 
-fn build_sidebar(
-    selected: Option<&str>,
-    on_select: Rc<dyn Fn(&'static str)>,
-    full_width: bool,
-    theme: ThemeData,
-    is_dark: Signal<bool>,
-) -> Box<dyn Widget> {
-    let nav = navigation::colors(&theme);
-    let dark = is_dark.get();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // Icon shows the TARGET mode (tap to go there): moon when light, sun when dark.
-    let (icon, target_label) = if dark {
-        (Icons::Sun, "Light")
-    } else {
-        (Icons::Moon, "Dark")
-    };
-    let icon_color = theme.on_surface;
-    let toggle_is_dark = is_dark.clone();
-
-    let toggle_button =
-        DecoratedContainer::new(Icon::new(icon).with_size(20.0).with_color(icon_color))
-            .padding(8.0)
-            .boxed()
-            .on_press(move || {
-                toggle_is_dark.set(!toggle_is_dark.get());
-            });
-
-    let header = Flex::row()
-        .padding(12.0)
-        .background(nav.header_bg)
-        .push(
-            Text::new("Navigation")
-                .with_font_size(navigation::HEADER_FONT_SIZE)
-                .with_color(nav.header_text),
-        )
-        .push(Flex::new().flex_grow(1.0))
-        .push(toggle_button)
-        .boxed();
-
-    let mut list = Flex::column();
-    // Mobile: no header, so prepend a toggle row to the list.
-    // Styled like build_item_row but with an icon + label (spec: "icon + label").
-    if full_width {
-        let row_is_dark = is_dark.clone();
-        let toggle_content = Row::new()
-            .gap(8.0)
-            .push(Icon::new(icon).with_size(16.0).with_color(nav.row_text))
-            .push(
-                Text::new(target_label)
-                    .with_font_size(navigation::ROW_FONT_SIZE)
-                    .with_color(nav.row_text),
-            );
-        let toggle_row = DecoratedContainer::new(toggle_content)
-            .background(nav.row_bg)
-            .padding(navigation::ROW_PADDING)
-            .boxed()
-            .on_press(move || {
-                row_is_dark.set(!row_is_dark.get());
-            });
-        list = list.push(toggle_row);
-    }
-    for &(id, label) in ITEMS {
-        let is_selected = selected == Some(id);
-        let on_select = on_select.clone();
-        let row = build_item_row(label, is_selected, move || on_select(id), &nav);
-        list = list.push(row);
+    #[test]
+    fn test_seed_has_five_conversations() {
+        let s = seed();
+        assert_eq!(s.conversations.len(), 5);
     }
 
-    let mut sidebar = Flex::column().background(nav.sidebar_bg);
-    if full_width {
-        sidebar = sidebar.flex_grow(1.0);
-    } else {
-        sidebar = sidebar.width(240.0).flex_shrink(0.0);
-        sidebar = sidebar.push(header);
-    }
-    sidebar
-        .push(ScrollView::new(list.boxed()).flex_grow(1.0))
-        .boxed()
-}
-
-fn build_item_row(
-    label: &str,
-    is_selected: bool,
-    on_press: impl FnMut() + 'static,
-    nav: &navigation::NavColors,
-) -> Box<dyn Widget> {
-    let text_color = if is_selected {
-        nav.selected_text
-    } else {
-        nav.row_text
-    };
-    let bg = if is_selected {
-        nav.selected_bg
-    } else {
-        nav.row_bg
-    };
-
-    let label_text = Text::new(label)
-        .with_font_size(navigation::ROW_FONT_SIZE)
-        .with_color(text_color);
-
-    DecoratedContainer::new(label_text)
-        .background(bg)
-        .padding(navigation::ROW_PADDING)
-        .boxed()
-        .on_press(on_press)
-}
-
-fn build_detail_content(
-    id: &str,
-    selection_count: Signal<u32>,
-    nav_controller: NavigationController<Dest>,
-) -> Box<dyn Widget> {
-    DetailPage {
-        id: id.to_string(),
-        selection_count,
-        nav_controller,
-    }
-    .boxed()
-}
-
-// ============================================================================
-// DETAIL PAGE COMPONENT
-// ============================================================================
-
-/// Detail page for a sidebar item. Each instance owns its own
-/// `TextEditingController` (for the "inbox" text-edit showcase), created on
-/// mount and dropped on unmount. This means every push to a fresh detail page
-/// starts with the original text, and edits do not leak across push/pop
-/// cycles — the bug that occurred when a single shared controller was reused.
-struct DetailPage {
-    id: String,
-    selection_count: Signal<u32>,
-    nav_controller: NavigationController<Dest>,
-}
-
-impl Clone for DetailPage {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id.clone(),
-            selection_count: self.selection_count.clone(),
-            nav_controller: self.nav_controller.clone(),
-        }
-    }
-}
-
-/// State for `DetailPage`. The `TextEditingController` is created in
-/// `on_mount` (not `Default`) because construction needs a `FontSystem`, and
-/// because it must be scoped to this element's lifetime — fresh on mount,
-/// dropped on unmount.
-///
-/// The framework does not expose the window's `FontSystem` in
-/// `LifecycleContext`, so we construct a throwaway one here solely for the
-/// initial `set_text`/`shape_until_scroll`. This matches the prior
-/// `demo_text_controller()` singleton approach. The initial text is ASCII,
-/// fully covered by the embedded Roboto font; subsequent typing uses the real
-/// window `FontSystem` via `EventContext` during `on_event`.
-#[derive(Default)]
-struct DetailPageState {
-    text_controller: Option<TextEditingController>,
-}
-
-impl DetailPageState {
-    /// (Re)initialize the text controller for the current `id`.
-    ///
-    /// Called from `on_mount` (fresh element) and from `on_update` when the
-    /// `id` changes (element reused across sidebar items via type-only
-    /// `can_update`). Drops any stale controller first so edits never leak
-    /// across logical pages sharing one element.
-    fn sync_controller(&mut self, id: &str) {
-        self.text_controller = None;
-        if id == "inbox" {
-            let mut font_system = vexo::resource::new_font_system();
-            self.text_controller = Some(TextEditingController::new(
-                "Hello, edit me! Try Cmd+A, Cmd+C, Cmd+V.",
-                &mut font_system,
-            ));
-        }
-    }
-}
-
-impl ComponentState for DetailPageState {
-    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
-        if let Some(page) = ctx.widget().downcast_ref::<DetailPage>() {
-            self.sync_controller(&page.id);
-        }
+    #[test]
+    fn test_seed_messages_for_alice() {
+        let s = seed();
+        let map = s.messages.get_cloned();
+        let msgs = map.get(&ConvId(1)).expect("Alice has messages");
+        assert_eq!(msgs.len(), 3);
     }
 
-    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
-        // The framework reconciles `DetailPage` by type only, so the same
-        // element (and its state) is reused when the sidebar selection
-        // changes (e.g. starred → inbox). `on_mount` does not re-run in that
-        // case, so we must re-sync the controller here whenever the `id`
-        // changes — otherwise an inbox render would hit a stale `None`
-        // controller left over from a non-inbox page.
-        let old_id = old_widget
-            .downcast_ref::<DetailPage>()
-            .map(|p| p.id.as_str());
-        let new_id = ctx
-            .widget()
-            .downcast_ref::<DetailPage>()
-            .map(|p| p.id.as_str());
-        if old_id != new_id {
-            if let Some(new_id) = new_id {
-                self.sync_controller(new_id);
-            }
-        }
+    #[test]
+    fn test_seed_contacts_count() {
+        let s = seed();
+        assert_eq!(s.contacts.len(), 8);
     }
 
-    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
-        // Drop the controller. Its dirty callback was already cleared by
-        // TextEdit's on_unmount (children unmount after parent's on_unmount
-        // but before parent state is dropped).
-        self.text_controller = None;
+    #[test]
+    fn test_avatar_bytes_decode() {
+        let bytes = make_avatar_png(255, 0, 0);
+        let img = Image::from_bytes(&bytes);
+        assert!(img.is_ok(), "avatar bytes must decode as PNG");
     }
-}
 
-impl Component for DetailPage {
-    type State = DetailPageState;
-
-    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let theme = Theme::of(ctx);
-        let title_widget = Text::new(self.id.as_str())
-            .with_font_size(32.0)
-            .with_color(theme.on_background);
-
-        let body: Box<dyn Widget> = if self.id == "inbox" {
-            let controller = state
-                .text_controller
-                .as_ref()
-                .expect("inbox DetailPage must have a controller after on_mount")
-                .clone();
-            Column::new()
-                .gap(8.0)
-                .push(
-                    Row::new()
-                        .gap(8.0)
-                        .push(
-                            Icon::new(Icons::FloppyDisk)
-                                .with_size(24.0)
-                                .with_color(theme.on_background),
-                        )
-                        .push(
-                            Text::new("Text Edit Showcase")
-                                .with_font_size(24.0)
-                                .with_color(theme.on_background),
-                        ),
-                )
-                .push(TextEdit::new(controller))
-                .boxed()
-        } else {
-            Column::new()
-                .push(
-                    Text::new(format!("This is the detail content for \"{}\".", self.id))
-                        .with_color(theme.on_background),
-                )
-                .boxed()
-        };
-
-        let count = self.selection_count.clone();
-        let root_nav = self.nav_controller.clone();
-        Column::new()
-            .gap(16.0)
-            .padding(24.0)
-            .background(theme.background)
-            .push(title_widget)
-            .push(body)
-            .push(
-                Button::new("Bump counter")
-                    .variant(ButtonVariant::Primary)
-                    .on_press(move || {
-                        count.set(count.get() + 1);
-                    }),
-            )
-            .push(
-                Text::new(format!("Counter: {}", self.selection_count.get()))
-                    .with_color(theme.on_background),
-            )
-            .push(
-                Button::new("Next page")
-                    .variant(ButtonVariant::Primary)
-                    .on_press(move || {
-                        root_nav.push(Dest::Page(1));
-                    }),
-            )
-            .boxed()
-    }
-}
-
-// ============================================================================
-// PAGE CONTENT COMPONENT
-// ============================================================================
-
-/// Pushed page content. Implemented as a `Component` (not a free function)
-/// so it establishes an inherited-widget dependency via `Theme::of(ctx)` and
-/// auto-rebuilds when the theme toggles after the page has been pushed.
-#[derive(Default)]
-struct PageContentState;
-
-impl ComponentState for PageContentState {}
-
-struct PageContent {
-    n: u32,
-    nav_controller: NavigationController<Dest>,
-}
-
-impl Clone for PageContent {
-    fn clone(&self) -> Self {
-        Self {
-            n: self.n,
-            nav_controller: self.nav_controller.clone(),
-        }
-    }
-}
-
-impl Component for PageContent {
-    type State = PageContentState;
-
-    fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let theme = Theme::of(ctx);
-        let ctrl = self.nav_controller.clone();
-        let n = self.n;
-        Column::new()
-            .gap(16.0)
-            .padding(24.0)
-            .background(theme.background)
-            .push(
-                Text::new(format!("Page: {}", n))
-                    .with_font_size(24.0)
-                    .with_color(theme.on_background),
-            )
-            .push(
-                Text::new(format!("You are on pushed page \"{}\".", n))
-                    .with_color(theme.on_background),
-            )
-            .push(
-                Button::new("Next page")
-                    .variant(ButtonVariant::Primary)
-                    .on_press(move || {
-                        ctrl.push(Dest::Page(n + 1));
-                    }),
-            )
-            .boxed()
+    #[test]
+    fn test_tab_controller_starts_on_chats() {
+        let s = seed();
+        assert_eq!(s.tab_controller.current(), ImTab::Chats);
     }
 }
 
@@ -558,7 +338,7 @@ impl MobileApp {
     }
 
     pub fn start_app(&self) {
-        let rt = vexo::run_desktop_demo::<State>();
+        let rt = vexo::run_desktop_demo::<ImState>();
         match rt {
             Ok(_) => println!("App exited normally"),
             Err(e) => println!("App exited with error: {:?}", e),

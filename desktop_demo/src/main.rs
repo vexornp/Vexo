@@ -1,9 +1,9 @@
-use shared_app::State;
+use shared_app::ImState;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Logger is already initialized in vexo::run_desktop_demo
     // Set RUST_LOG=debug environment variable to see retain mode partial update logs
-    vexo::run_desktop_demo::<State>()
+    vexo::run_desktop_demo::<ImState>()
 }
 
 /*
