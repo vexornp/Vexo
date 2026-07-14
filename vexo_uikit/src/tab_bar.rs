@@ -164,7 +164,8 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             let ctrl = self.controller.clone();
             let tab_clone = tab.clone();
             let item = (self.tab_bar_builder)(tab, is_selected)
-                .on_press(move || ctrl.switch_to(tab_clone.clone()));
+                .on_press(move || ctrl.switch_to(tab_clone.clone()))
+                .flex_grow(1.0);
             bar = bar.push(item);
         }
 
