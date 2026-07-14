@@ -340,6 +340,170 @@ fn format_timestamp(ts: u64) -> String {
     format!("{:02}:{:02}", hours, mins)
 }
 
+// ============================================================================
+// CHAT SCREEN
+// ============================================================================
+
+struct ChatScreen {
+    conv_id: ConvId,
+    messages: Vec<Message>,
+    avatar_bytes: Rc<[u8]>,
+    nav: NavigationController<ChatsRoute>,
+    on_send: Rc<dyn Fn(&str)>,
+    scroll_controller: vexo::ScrollController,
+}
+
+impl Clone for ChatScreen {
+    fn clone(&self) -> Self {
+        Self {
+            conv_id: self.conv_id.clone(),
+            messages: self.messages.clone(),
+            avatar_bytes: Rc::clone(&self.avatar_bytes),
+            nav: self.nav.clone(),
+            on_send: Rc::clone(&self.on_send),
+            scroll_controller: self.scroll_controller.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ChatScreenState {
+    text_controller: Option<TextEditingController>,
+}
+
+impl ChatScreenState {
+    fn sync_controller(&mut self) {
+        if self.text_controller.is_none() {
+            let mut fs = vexo::resource::new_font_system();
+            self.text_controller = Some(TextEditingController::new("", &mut fs));
+        }
+    }
+}
+
+impl ComponentState for ChatScreenState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        self.sync_controller();
+        if let Some(tc) = self.text_controller.as_ref() {
+            tc.set_dirty_callback(ctx.dirty_callback());
+        }
+    }
+    fn on_update(&mut self, _old_widget: &dyn Any, ctx: &mut LifecycleContext) {
+        if let Some(tc) = self.text_controller.as_ref() {
+            tc.set_dirty_callback(ctx.dirty_callback());
+        }
+    }
+    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
+        if let Some(tc) = self.text_controller.as_ref() {
+            tc.clear_dirty_callback();
+        }
+        self.text_controller = None;
+    }
+}
+
+impl Component for ChatScreen {
+    type State = ChatScreenState;
+
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let theme = Theme::of(ctx);
+
+        let mut list = Flex::column().gap(8.0).padding(12.0);
+        for msg in &self.messages {
+            list = list.push(build_message_bubble(msg, &self.avatar_bytes));
+        }
+
+        let scroll_for_send = self.scroll_controller.clone();
+        let on_send = Rc::clone(&self.on_send);
+        let tc = state
+            .text_controller
+            .as_ref()
+            .expect("text controller set on mount")
+            .clone();
+        let tc_for_clear = tc.clone();
+        let on_send_closure = move || {
+            let text = tc_for_clear.text();
+            if !text.trim().is_empty() {
+                on_send(&text);
+                let mut fs = vexo::resource::new_font_system();
+                tc_for_clear.set_text("", &mut fs);
+                scroll_for_send.jump_to_bottom();
+            }
+        };
+
+        let input_bar = build_input_bar(tc, on_send_closure);
+
+        Column::new()
+            .push(
+                ScrollView::new(list.boxed())
+                    .controller(self.scroll_controller.clone())
+                    .flex_grow(1.0),
+            )
+            .push(input_bar)
+            .background(theme.background)
+            .boxed()
+    }
+}
+
+fn build_message_bubble(msg: &Message, avatar_bytes: &Rc<[u8]>) -> Box<dyn Widget> {
+    let avatar = Image::from_bytes(avatar_bytes)
+        .expect("avatar bytes valid")
+        .width(32.0)
+        .height(32.0)
+        .corner_radius(16.0)
+        .clip();
+
+    let bubble = DecoratedContainer::new(
+        Text::new(msg.text.as_str())
+            .with_font_size(15.0)
+            .with_color(if msg.author == MessageAuthor::Me {
+                Color::WHITE
+            } else {
+                Color::BLACK
+            }),
+    )
+    .padding(10.0)
+    .corner_radius(12.0)
+    .background(if msg.author == MessageAuthor::Me {
+        Color::rgb(0.0, 0.5, 1.0)
+    } else {
+        Color::WHITE
+    })
+    .border(Color::rgb(0.85, 0.85, 0.85), 1.0)
+    .boxed()
+    .width(220.0);
+
+    if msg.author == MessageAuthor::Me {
+        Row::new()
+            .gap(8.0)
+            .push(Flex::new().flex_grow(1.0))
+            .push(bubble)
+            .push(avatar)
+            .boxed()
+    } else {
+        Row::new()
+            .gap(8.0)
+            .push(avatar)
+            .push(bubble)
+            .push(Flex::new().flex_grow(1.0))
+            .boxed()
+    }
+}
+
+fn build_input_bar(
+    controller: TextEditingController,
+    on_send: impl FnMut() + 'static,
+) -> Box<dyn Widget> {
+    Row::new()
+        .gap(8.0)
+        .push(TextEdit::new(controller).flex_grow(1.0))
+        .push(
+            Button::new("Send")
+                .variant(ButtonVariant::Primary)
+                .on_press(on_send),
+        )
+        .boxed()
+        .padding(8.0)
+}
+
 // Placeholder Application impl — full view() comes in Task 8.
 impl Default for ImState {
     fn default() -> Self {
@@ -415,6 +579,43 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 5,
             "expected multiple elements for 5 conversation rows"
+        );
+    }
+
+    #[test]
+    fn test_chat_screen_renders_messages() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::ThreeTreePipeline;
+
+        let state = seed();
+        let messages = state
+            .messages
+            .get_cloned()
+            .get(&ConvId(1))
+            .cloned()
+            .unwrap();
+        let avatar_bytes = state
+            .conversations
+            .iter()
+            .find(|c| c.id == ConvId(1))
+            .unwrap()
+            .avatar_bytes
+            .clone();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages,
+            avatar_bytes,
+            nav: state.chats_nav.clone(),
+            on_send: Rc::new(|_| ()),
+            scroll_controller: vexo::ScrollController::new(),
+        }
+        .boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 4,
+            "expected multiple elements for 3 messages + input bar"
         );
     }
 }
