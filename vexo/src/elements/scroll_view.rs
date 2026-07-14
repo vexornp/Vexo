@@ -41,6 +41,8 @@ pub struct ScrollViewElement {
     content_height: f32,
     viewport_height: f32,
     controller: Option<ScrollController>,
+    drag_active: bool,
+    drag_last_y: f32,
 }
 
 impl ScrollViewElement {
@@ -55,6 +57,8 @@ impl ScrollViewElement {
             content_height: 0.0,
             viewport_height: 0.0,
             controller: None,
+            drag_active: false,
+            drag_last_y: 0.0,
         }
     }
 
@@ -227,10 +231,29 @@ impl Element for ScrollViewElement {
         match event {
             InputEvent::PointerButton {
                 state: ButtonState::Pressed,
+                position,
                 ..
             } => {
                 if context.is_pointer_inside() {
                     context.request_focus(context.element_id());
+                    self.drag_active = true;
+                    self.drag_last_y = position.y;
+                    return Some(Box::new(()));
+                }
+            }
+            InputEvent::PointerButton {
+                state: ButtonState::Released,
+                ..
+            } => {
+                self.drag_active = false;
+                return Some(Box::new(()));
+            }
+            InputEvent::PointerMoved { position } => {
+                if self.drag_active {
+                    let delta = self.drag_last_y - position.y; // drag up → positive → scroll down
+                    self.drag_last_y = position.y;
+                    let new_offset = self.scroll_offset + delta;
+                    self.apply_scroll_offset(new_offset, context);
                     return Some(Box::new(()));
                 }
             }
@@ -359,6 +382,10 @@ impl Element for ScrollViewElement {
 mod tests {
     use super::*;
 
+    fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+        std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
+
     #[test]
     fn test_clamp_offset_at_zero() {
         let elem = ScrollViewElement::new();
@@ -425,6 +452,231 @@ mod tests {
         assert!(
             ctrl.current_offset() > 0.0,
             "after pump, deferred jump_to_bottom applied"
+        );
+    }
+
+    #[test]
+    fn test_touch_drag_scrolls_via_pipeline() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::ScrollView;
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        // Tall content (200 lines × ~40px = 8000px).
+        let mut col = Flex::column();
+        for i in 0..200 {
+            col = col.push(crate::Text::new(format!("line {}", i)));
+        }
+        let sv = ScrollView::new(col.boxed());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 100) inside the viewport.
+        let event = InputEvent::PointerButton {
+            position: Point::new(200.0, 100.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 100.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Drag down 50px → content moves down 50px → offset decreases by 50.
+        // (Dragging the content down means scrolling toward the top, so
+        // offset should DECREASE. But we're at offset 0 already, so it stays
+        // clamped at 0. Drag UP instead to scroll toward bottom.)
+        let event = InputEvent::PointerMoved {
+            position: Point::new(200.0, 50.0), // y decreased by 50 → drag up
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 50.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let event = InputEvent::PointerButton {
+            position: Point::new(200.0, 50.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 50.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // After dragging up 50px, offset should be ~50 (clamped to max).
+        // We can't read the element's offset directly, so use a controller
+        // to observe. Re-do the test with a controller:
+        let ctrl = crate::widgets::ScrollController::new();
+        let mut col2 = Flex::column();
+        for i in 0..200 {
+            col2 = col2.push(crate::Text::new(format!("line {}", i)));
+        }
+        let sv2 = ScrollView::new(col2.boxed()).controller(ctrl.clone());
+        let mut p2 = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        p2.reconcile(Box::new(sv2));
+        p2.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        assert_eq!(ctrl.current_offset(), 0.0, "starts at top");
+        let event = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        p2.handle_event(
+            Point::new(200.0, 300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let event = InputEvent::PointerMoved {
+            position: Point::new(200.0, 250.0), // drag up 50px
+        };
+        p2.handle_event(
+            Point::new(200.0, 250.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let event = InputEvent::PointerButton {
+            position: Point::new(200.0, 250.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        p2.handle_event(
+            Point::new(200.0, 250.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert!(
+            ctrl.current_offset() > 0.0,
+            "drag-up should scroll toward bottom; got offset={}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_touch_drag_clamps_at_top() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for i in 0..200 {
+            col = col.push(crate::Text::new(format!("line {}", i)));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        // Drag DOWN 1000px from offset 0 → should clamp at 0 (can't go above top).
+        let event = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let event = InputEvent::PointerMoved {
+            position: Point::new(200.0, 1300.0), // drag down 1000px
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 1300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(ctrl.current_offset(), 0.0, "clamped at top");
+    }
+
+    #[test]
+    fn test_mouse_wheel_still_works() {
+        use crate::animation::AnimationTicker;
+        use crate::core::ScaleSource;
+        use crate::core::{Point, Size};
+        use crate::input::{InputEvent, Modifiers};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for i in 0..200 {
+            col = col.push(crate::Text::new(format!("line {}", i)));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+        let event = InputEvent::Scroll {
+            position: Point::new(200.0, 300.0),
+            delta: Point::new(0.0, -100.0), // scroll down 100px (negative y = down per winit/codebase convention)
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            ctrl.current_offset(),
+            100.0,
+            "mouse wheel still scrolls; existing path unchanged"
         );
     }
 }
