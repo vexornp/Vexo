@@ -1,8 +1,7 @@
 //! ScrollViewElement - manages scroll state and handles input events.
 
 use std::any::Any;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::element::Element;
 use crate::element_context::ElementContext;
@@ -14,10 +13,23 @@ use crate::id::{ElementKey, RenderObjectKey};
 use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
 use crate::render_objects::ScrollViewRenderObject;
+use crate::widgets::ScrollController;
 use crate::widgets::Widget;
-use crate::widgets::{ScrollController, ScrollElementState};
 
 const LINE_HEIGHT: f32 = 40.0;
+
+/// Wire a `ScrollController`'s dirty callback to the pipeline's mpsc channel.
+///
+/// Matches the `StatefulElement` dirty-callback pattern
+/// (`stateful_widget.rs:567-570`): clones the `mpsc::Sender` directly into the
+/// closure. `Sender: Send + Sync` since Rust 1.71, so no `Mutex` is needed.
+fn wire_dirty_callback(ctrl: &ScrollController, context: &ElementContext) {
+    let tx = context.dirty_sender.clone();
+    let element_id = context.element_id;
+    ctrl.set_dirty_callback(Arc::new(move || {
+        let _ = tx.send(element_id);
+    }));
+}
 
 pub struct ScrollViewElement {
     id: Option<ElementKey>,
@@ -29,7 +41,6 @@ pub struct ScrollViewElement {
     content_height: f32,
     viewport_height: f32,
     controller: Option<ScrollController>,
-    controller_current_cell: Option<Rc<RefCell<f32>>>,
 }
 
 impl ScrollViewElement {
@@ -44,7 +55,6 @@ impl ScrollViewElement {
             content_height: 0.0,
             viewport_height: 0.0,
             controller: None,
-            controller_current_cell: None,
         }
     }
 
@@ -74,11 +84,8 @@ impl ScrollViewElement {
         }
         self.scroll_offset = clamped;
 
-        if let Some(cell) = self.controller_current_cell.as_ref() {
-            *cell.borrow_mut() = clamped;
-        }
         if let Some(ctrl) = self.controller.as_ref() {
-            ctrl.update_max_scroll(self.max_scroll());
+            ctrl.set_current_offset(clamped);
         }
 
         if let Some(rr) = ctx.render_objects() {
@@ -154,51 +161,8 @@ impl Element for ScrollViewElement {
         }
         self.mount_render_object(context);
 
-        if let Some(ctrl) = self.controller.clone() {
-            let dirty_sender = std::sync::Mutex::new(context.dirty_sender.clone());
-            let element_id = context.element_id;
-            ctrl.set_dirty_callback(std::sync::Arc::new(move || {
-                if let Ok(s) = dirty_sender.lock() {
-                    let _ = s.send(element_id);
-                }
-            }));
-
-            let ro_ptr: Option<*const ScrollViewRenderObject> =
-                self.render_object.and_then(|ro_key| {
-                    context
-                        .render_objects
-                        .get(ro_key)
-                        .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
-                        .map(|svro| svro as *const ScrollViewRenderObject)
-                });
-
-            let current = Rc::new(RefCell::new(0.0_f32));
-            let current_for_apply = current.clone();
-            let ro_ptr_for_apply = ro_ptr;
-            let ro_ptr_for_max = ro_ptr;
-
-            ctrl.set_element_state(ScrollElementState {
-                apply_offset: Box::new(move |offset: f32| {
-                    if let Some(ptr) = ro_ptr_for_apply {
-                        unsafe {
-                            (*ptr).set_scroll_offset(offset);
-                        }
-                    }
-                    *current_for_apply.borrow_mut() = offset;
-                }),
-                current_offset: Box::new({
-                    let current = current.clone();
-                    move || *current.borrow()
-                }),
-                max_scroll: Box::new(move || {
-                    ro_ptr_for_max
-                        .map(|ptr| unsafe { (*ptr).max_scroll() })
-                        .unwrap_or(0.0)
-                }),
-                request_frame: Box::new(|| ()),
-            });
-
-            self.controller_current_cell = Some(current);
+        if let Some(ctrl) = self.controller.as_ref() {
+            wire_dirty_callback(ctrl, context);
         }
 
         if let Some(child_widget) = self.get_child_widget() {
@@ -207,15 +171,31 @@ impl Element for ScrollViewElement {
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
+        // Capture the old controller before set_widget replaces it, so we can
+        // detect a controller swap and re-wire the dirty callback. Mirrors
+        // TextEditState::on_update (text_edit.rs:320-329) which compares
+        // controllers via Rc::ptr_eq.
+        let old_controller = self.controller.clone();
         self.update_render_object(new_widget, context);
+        match (&old_controller, &self.controller) {
+            (Some(old), Some(new)) if !old.is_same_instance(new) => {
+                old.clear_dirty_callback();
+                wire_dirty_callback(new, context);
+            }
+            (Some(old), None) => {
+                old.clear_dirty_callback();
+            }
+            (None, Some(new)) => {
+                wire_dirty_callback(new, context);
+            }
+            _ => {}
+        }
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
         if let Some(ctrl) = self.controller.as_ref() {
             ctrl.clear_dirty_callback();
-            ctrl.clear_element_state();
         }
-        self.controller_current_cell = None;
         self.unmount_render_object(context);
         if let Some(mut attachment) = self.focus_attachment.take() {
             attachment.detach(context.focus_manager());
@@ -334,6 +314,41 @@ impl Element for ScrollViewElement {
     }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
+        // Deferred-apply: consume any pending target offset from the controller
+        // (set by jump_to_bottom / jump_to). The controller's dirty callback
+        // sent this element's ID through the pipeline's mpsc channel, which
+        // the pipeline drained into the BuildOwner, scheduling this rebuild.
+        // Here we have safe `&mut RenderObjectRegistry` access — no raw
+        // pointers needed.
+        let pending = self
+            .controller
+            .as_ref()
+            .and_then(|ctrl| ctrl.take_target_offset());
+
+        if let Some(target) = pending {
+            if let Some(ro_key) = self.render_object {
+                if let Some(svro) = context
+                    .render_objects
+                    .get(ro_key)
+                    .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                {
+                    self.viewport_height = svro.viewport_size().height;
+                    self.content_height = svro.content_size().height;
+                    let max = self.max_scroll();
+                    let clamped = if target.is_infinite() {
+                        max
+                    } else {
+                        target.clamp(0.0, max)
+                    };
+                    svro.set_scroll_offset(clamped);
+                    self.scroll_offset = clamped;
+                    if let Some(ctrl) = self.controller.as_ref() {
+                        ctrl.set_current_offset(clamped);
+                    }
+                }
+            }
+        }
+
         if let Some(ro_key) = self.render_object {
             context.mark_needs_paint(ro_key);
         }
@@ -390,11 +405,26 @@ mod tests {
             &mut engine,
             &mut font_system,
         );
-        let _ = ctrl.current_offset();
+
+        // jump_to_bottom defers: stores target + fires dirty callback (sends
+        // element_id through the pipeline's mpsc channel). The offset is NOT
+        // applied yet — current_offset() still reads 0.0.
         ctrl.jump_to_bottom();
+        assert_eq!(
+            ctrl.current_offset(),
+            0.0,
+            "offset not applied until pipeline pumps rebuild"
+        );
+
+        // Pump: drain dirty channel into BuildOwner, then run rebuilds.
+        // rebuild_from_state consumes the pending target, computes max_scroll
+        // live from the render object, clamps, and applies via set_scroll_offset.
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
         assert!(
             ctrl.current_offset() > 0.0,
-            "after jump_to_bottom, offset > 0"
+            "after pump, deferred jump_to_bottom applied"
         );
     }
 }

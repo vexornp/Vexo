@@ -1,29 +1,35 @@
 //! ScrollController — external handle for programmatic control of ScrollView.
 //!
-//! Mirrors `TextEditingController` and `NavigationController`: the caller owns
-//! the controller, passes it into `ScrollView`, and the framework wires a
-//! dirty callback on mount so `jump_to_bottom()` etc. trigger rebuilds.
+//! Mirrors `TextEditingController`: the caller owns the controller, passes it
+//! into `ScrollView`, and the framework wires a dirty callback on mount so
+//! `jump_to_bottom()` etc. trigger rebuilds via the deferred-apply pattern.
+//!
+//! # Deferred-apply pattern
+//!
+//! `jump_to_bottom` / `jump_to` only store a pending target offset and fire
+//! the dirty callback (which sends the element ID through the pipeline's mpsc
+//! channel). The actual apply happens in `ScrollViewElement::rebuild_from_state`,
+//! which receives a safe `&mut ElementContext` with `&mut RenderObjectRegistry`
+//! access — no `unsafe` raw pointers needed. This works both pre-mount (target
+//! stored, no callback yet → applied on first `rebuild_from_state` after mount)
+//! and post-mount (target stored + callback fires → applied on next pump).
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-/// Callbacks the element wires on mount so the controller can drive the
-/// render object directly (no rebuild needed for offset changes — just
-/// `request_frame`).
-pub struct ElementState {
-    pub apply_offset: Box<dyn Fn(f32) + 'static>, // svro.set_scroll_offset + cache
-    pub current_offset: Box<dyn Fn() -> f32 + 'static>,
-    pub max_scroll: Box<dyn Fn() -> f32 + 'static>,
-    pub request_frame: Box<dyn Fn() + 'static>,
-}
-
 pub struct ScrollController {
+    /// Pending target offset requested by `jump_to_bottom` / `jump_to`.
+    /// Consumed by `ScrollViewElement::rebuild_from_state` on the next rebuild.
+    /// `Some(f32::INFINITY)` is a sentinel meaning "jump to max scroll".
     target_offset: Rc<RefCell<Option<f32>>>,
+    /// Last applied offset, written by the element. Read by `current_offset()`.
     current_offset: Rc<RefCell<f32>>,
-    max_scroll: Rc<RefCell<f32>>,
+    /// Dirty callback wired by `ScrollViewElement::mount` (and re-wired on
+    /// `update` when the controller instance changes). Sends the element ID
+    /// through the pipeline's mpsc channel, which the pipeline drains into the
+    /// BuildOwner to schedule a `rebuild_from_state`.
     dirty_callback: Rc<RefCell<Option<Arc<dyn Fn() + Send + Sync>>>>,
-    element_state: Rc<RefCell<Option<ElementState>>>,
 }
 
 impl ScrollController {
@@ -31,47 +37,26 @@ impl ScrollController {
         Self {
             target_offset: Rc::new(RefCell::new(None)),
             current_offset: Rc::new(RefCell::new(0.0)),
-            max_scroll: Rc::new(RefCell::new(0.0)),
             dirty_callback: Rc::new(RefCell::new(None)),
-            element_state: Rc::new(RefCell::new(None)),
         }
     }
 
+    /// Last applied scroll offset (0.0 before any apply).
     pub fn current_offset(&self) -> f32 {
-        if let Some(es) = self.element_state.borrow().as_ref() {
-            (es.current_offset)()
-        } else {
-            *self.current_offset.borrow()
-        }
+        *self.current_offset.borrow()
     }
 
+    /// Jump to the bottom of the scrollable content on the next rebuild.
     pub fn jump_to_bottom(&self) {
-        if let Some(es) = self.element_state.borrow().as_ref() {
-            let max = (es.max_scroll)();
-            self.apply_offset(max, &es);
-        } else {
-            // Not mounted yet — defer: store max-scroll sentinel as +inf,
-            // applied on mount.
-            *self.target_offset.borrow_mut() = Some(f32::INFINITY);
-            self.notify();
-        }
+        *self.target_offset.borrow_mut() = Some(f32::INFINITY);
+        self.notify();
     }
 
+    /// Jump to the given offset (clamped to `[0, max_scroll]` on apply) on
+    /// the next rebuild.
     pub fn jump_to(&self, offset: f32) {
-        if let Some(es) = self.element_state.borrow().as_ref() {
-            let max = (es.max_scroll)();
-            let clamped = offset.clamp(0.0, max);
-            self.apply_offset(clamped, &es);
-        } else {
-            *self.target_offset.borrow_mut() = Some(offset);
-            self.notify();
-        }
-    }
-
-    fn apply_offset(&self, offset: f32, es: &ElementState) {
-        (es.apply_offset)(offset);
-        *self.current_offset.borrow_mut() = offset;
-        (es.request_frame)();
+        *self.target_offset.borrow_mut() = Some(offset);
+        self.notify();
     }
 
     pub fn set_dirty_callback(&self, cb: Arc<dyn Fn() + Send + Sync>) {
@@ -90,32 +75,24 @@ impl ScrollController {
 
     // --- Called by ScrollViewElement ---
 
-    pub(crate) fn set_element_state(&self, state: ElementState) {
-        *self.element_state.borrow_mut() = Some(state);
-        // Apply any pending target offset from before mount.
-        if let Some(target) = self.target_offset.borrow_mut().take() {
-            if let Some(es) = self.element_state.borrow().as_ref() {
-                let max = (es.max_scroll)();
-                let clamped = if target.is_infinite() {
-                    max
-                } else {
-                    target.clamp(0.0, max)
-                };
-                self.apply_offset(clamped, &es);
-            }
-        }
+    /// Identity check used by `ScrollViewElement::update` to detect controller
+    /// swaps on widget replacement (mirrors `TextEditingController`'s
+    /// `Rc::ptr_eq` comparison in `TextEditState::on_update`).
+    pub(crate) fn is_same_instance(&self, other: &ScrollController) -> bool {
+        Rc::ptr_eq(&self.target_offset, &other.target_offset)
     }
 
-    pub(crate) fn clear_element_state(&self) {
-        // Cache final offset so `current_offset()` still works after unmount.
-        if let Some(es) = self.element_state.borrow().as_ref() {
-            *self.current_offset.borrow_mut() = (es.current_offset)();
-        }
-        *self.element_state.borrow_mut() = None;
+    /// Consume and return the pending target offset, if any.
+    /// Called by `ScrollViewElement::rebuild_from_state` (deferred-apply).
+    pub(crate) fn take_target_offset(&self) -> Option<f32> {
+        self.target_offset.borrow_mut().take()
     }
 
-    pub(crate) fn update_max_scroll(&self, max: f32) {
-        *self.max_scroll.borrow_mut() = max;
+    /// Write back the applied offset so `current_offset()` reads correctly.
+    /// Called by `ScrollViewElement::rebuild_from_state` (deferred-apply) and
+    /// by `apply_scroll_offset` (interactive scroll wheel / keyboard).
+    pub(crate) fn set_current_offset(&self, offset: f32) {
+        *self.current_offset.borrow_mut() = offset;
     }
 }
 
@@ -130,9 +107,7 @@ impl Clone for ScrollController {
         Self {
             target_offset: Rc::clone(&self.target_offset),
             current_offset: Rc::clone(&self.current_offset),
-            max_scroll: Rc::clone(&self.max_scroll),
             dirty_callback: Rc::clone(&self.dirty_callback),
-            element_state: Rc::clone(&self.element_state),
         }
     }
 }
@@ -160,5 +135,38 @@ mod tests {
     fn test_current_offset_defaults_to_zero() {
         let ctrl = ScrollController::new();
         assert_eq!(ctrl.current_offset(), 0.0);
+    }
+
+    #[test]
+    fn test_take_target_offset_consumes_pending() {
+        let ctrl = ScrollController::new();
+        ctrl.jump_to(120.0);
+        assert_eq!(ctrl.take_target_offset(), Some(120.0));
+        // Second take returns None — target was consumed.
+        assert_eq!(ctrl.take_target_offset(), None);
+    }
+
+    #[test]
+    fn test_set_current_offset_updates_readback() {
+        let ctrl = ScrollController::new();
+        ctrl.set_current_offset(42.0);
+        assert_eq!(ctrl.current_offset(), 42.0);
+    }
+
+    #[test]
+    fn test_is_same_instance_identifies_clones() {
+        let a = ScrollController::new();
+        let b = a.clone();
+        let c = ScrollController::new();
+        assert!(a.is_same_instance(&b));
+        assert!(!a.is_same_instance(&c));
+    }
+
+    #[test]
+    fn test_notify_noops_without_callback() {
+        let ctrl = ScrollController::new();
+        // No dirty callback wired — should not panic.
+        ctrl.jump_to_bottom();
+        ctrl.jump_to(50.0);
     }
 }

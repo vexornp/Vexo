@@ -39,7 +39,7 @@ pub use container::{ChildPush, Column, Flex, Row};
 pub use grid::Grid;
 pub use image::Image;
 pub use safe_area::SafeArea;
-pub use scroll_controller::{ElementState as ScrollElementState, ScrollController};
+pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
