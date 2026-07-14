@@ -24,6 +24,9 @@ pub use navigation::{
     base_fx_alpha, NavigationController, NavigationStackView, NavigationStackViewState,
 };
 
+pub mod tab_bar;
+pub use tab_bar::{TabBarView, TabController};
+
 pub mod transitions;
 pub use transitions::{
     default_desktop_transition, default_mobile_transition, default_transition, TransitionCtx,
