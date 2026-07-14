@@ -5,6 +5,7 @@
 **/*.xcuserdata
 **/xcuserdata/
 .worktrees/
+.superpowers/
 
 # Android build artifacts
 # - libmain.so is rebuilt from source by build_for_android.sh; do not commit.
