@@ -160,7 +160,11 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         // Build the tab bar row.
-        let mut bar = Flex::row().layout(Layout::default().justify(JustifyContent::SpaceBetween));
+        let mut bar = Flex::row().layout(
+            Layout::default()
+                .justify(JustifyContent::SpaceBetween)
+                .width_percent(1.0),
+        );
         for tab in &self.tabs {
             let is_selected = *tab == self.controller.current();
             let ctrl = self.controller.clone();
