@@ -8,12 +8,14 @@ use crate::elements::ScrollViewElement;
 use crate::key::WidgetKey;
 use crate::render_object::RenderObject;
 use crate::render_objects::ScrollViewRenderObject;
+use crate::widgets::scroll_controller::ScrollController;
 use crate::widgets::Widget;
 use crate::UpdateResult;
 
 pub struct ScrollView {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
+    controller: Option<ScrollController>,
 }
 
 impl ScrollView {
@@ -21,12 +23,22 @@ impl ScrollView {
         Self {
             key: None,
             child: Box::new(child),
+            controller: None,
         }
     }
 
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
+    }
+
+    pub fn controller(mut self, controller: ScrollController) -> Self {
+        self.controller = Some(controller);
+        self
+    }
+
+    pub fn controller_ref(&self) -> Option<&ScrollController> {
+        self.controller.as_ref()
     }
 }
 
@@ -35,6 +47,7 @@ impl Clone for ScrollView {
         Self {
             key: self.key.clone(),
             child: self.child.clone_boxed(),
+            controller: self.controller.clone(),
         }
     }
 }

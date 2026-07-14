@@ -1,6 +1,8 @@
 //! ScrollViewElement - manages scroll state and handles input events.
 
 use std::any::Any;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::element::Element;
 use crate::element_context::ElementContext;
@@ -13,6 +15,7 @@ use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
 use crate::render_objects::ScrollViewRenderObject;
 use crate::widgets::Widget;
+use crate::widgets::{ScrollController, ScrollElementState};
 
 const LINE_HEIGHT: f32 = 40.0;
 
@@ -25,6 +28,8 @@ pub struct ScrollViewElement {
     scroll_offset: f32,
     content_height: f32,
     viewport_height: f32,
+    controller: Option<ScrollController>,
+    controller_current_cell: Option<Rc<RefCell<f32>>>,
 }
 
 impl ScrollViewElement {
@@ -38,6 +43,8 @@ impl ScrollViewElement {
             scroll_offset: 0.0,
             content_height: 0.0,
             viewport_height: 0.0,
+            controller: None,
+            controller_current_cell: None,
         }
     }
 
@@ -66,6 +73,13 @@ impl ScrollViewElement {
             return false;
         }
         self.scroll_offset = clamped;
+
+        if let Some(cell) = self.controller_current_cell.as_ref() {
+            *cell.borrow_mut() = clamped;
+        }
+        if let Some(ctrl) = self.controller.as_ref() {
+            ctrl.update_max_scroll(self.max_scroll());
+        }
 
         if let Some(rr) = ctx.render_objects() {
             if let Some(ro_key) = self.render_object {
@@ -104,6 +118,7 @@ impl RenderObjectElement for ScrollViewElement {
             .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
         {
             self.key = sv.key().clone();
+            self.controller = sv.controller_ref().cloned();
         }
         self.widget = Some(widget);
     }
@@ -138,6 +153,54 @@ impl Element for ScrollViewElement {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
         self.mount_render_object(context);
+
+        if let Some(ctrl) = self.controller.clone() {
+            let dirty_sender = std::sync::Mutex::new(context.dirty_sender.clone());
+            let element_id = context.element_id;
+            ctrl.set_dirty_callback(std::sync::Arc::new(move || {
+                if let Ok(s) = dirty_sender.lock() {
+                    let _ = s.send(element_id);
+                }
+            }));
+
+            let ro_ptr: Option<*const ScrollViewRenderObject> =
+                self.render_object.and_then(|ro_key| {
+                    context
+                        .render_objects
+                        .get(ro_key)
+                        .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                        .map(|svro| svro as *const ScrollViewRenderObject)
+                });
+
+            let current = Rc::new(RefCell::new(0.0_f32));
+            let current_for_apply = current.clone();
+            let ro_ptr_for_apply = ro_ptr;
+            let ro_ptr_for_max = ro_ptr;
+
+            ctrl.set_element_state(ScrollElementState {
+                apply_offset: Box::new(move |offset: f32| {
+                    if let Some(ptr) = ro_ptr_for_apply {
+                        unsafe {
+                            (*ptr).set_scroll_offset(offset);
+                        }
+                    }
+                    *current_for_apply.borrow_mut() = offset;
+                }),
+                current_offset: Box::new({
+                    let current = current.clone();
+                    move || *current.borrow()
+                }),
+                max_scroll: Box::new(move || {
+                    ro_ptr_for_max
+                        .map(|ptr| unsafe { (*ptr).max_scroll() })
+                        .unwrap_or(0.0)
+                }),
+                request_frame: Box::new(|| ()),
+            });
+
+            self.controller_current_cell = Some(current);
+        }
+
         if let Some(child_widget) = self.get_child_widget() {
             context.inflate_child(None, child_widget.clone_boxed());
         }
@@ -148,6 +211,11 @@ impl Element for ScrollViewElement {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        if let Some(ctrl) = self.controller.as_ref() {
+            ctrl.clear_dirty_callback();
+            ctrl.clear_element_state();
+        }
+        self.controller_current_cell = None;
         self.unmount_render_object(context);
         if let Some(mut attachment) = self.focus_attachment.take() {
             attachment.detach(context.focus_manager());
@@ -297,5 +365,36 @@ mod tests {
         elem.viewport_height = 500.0;
         assert_eq!(elem.max_scroll(), 0.0);
         assert_eq!(elem.clamp_offset(100.0), 0.0);
+    }
+
+    #[test]
+    fn test_scroll_controller_wired_on_mount_via_pipeline() {
+        use crate::animation::AnimationTicker;
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for i in 0..200 {
+            col = col.push(crate::Text::new(format!("line {}", i)));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        let _ = ctrl.current_offset();
+        ctrl.jump_to_bottom();
+        assert!(
+            ctrl.current_offset() > 0.0,
+            "after jump_to_bottom, offset > 0"
+        );
     }
 }
