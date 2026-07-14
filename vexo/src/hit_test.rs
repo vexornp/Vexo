@@ -75,7 +75,13 @@ impl HitTestResult {
 
     /// Create a hit result with the given path.
     pub fn hit(path: Vec<RenderObjectKey>, element_path: Vec<ElementKey>) -> Self {
-        Self { path, element_path, bounds_map: Vec::new(), inner_bounds: None, annotations: Vec::new() }
+        Self {
+            path,
+            element_path,
+            bounds_map: Vec::new(),
+            inner_bounds: None,
+            annotations: Vec::new(),
+        }
     }
 
     /// Create a hit result with absolute bounds.
@@ -269,7 +275,8 @@ impl RenderObjectRegistry {
         };
 
         // Get this object's position relative to its parent (from Taffy layout)
-        let position_in_parent: Position<Logical, Relative> = obj.computed_bounds()
+        let position_in_parent: Position<Logical, Relative> = obj
+            .computed_bounds()
             .map(|b| Position::new(b.left, b.top))
             .unwrap_or(Position::zero());
 
@@ -300,7 +307,8 @@ impl RenderObjectRegistry {
         };
 
         // Get the size of this object
-        let size = obj.computed_bounds()
+        let size = obj
+            .computed_bounds()
             .map(|b| crate::core::Size::<Logical>::new(b.width(), b.height()))
             .unwrap_or(crate::core::Size::zero());
 
@@ -368,11 +376,27 @@ impl RenderObjectRegistry {
 
             // Test children in reverse order (top-most first)
             // The last child is drawn on top, so it should be tested first
+            //
+            // Pass-through coordinate correction (mirrors painter.rs):
+            // Pass-through ROs share their child's Taffy node, so both read
+            // the same `computed_bounds` origin (relative to the Taffy
+            // grandparent). Without correction the child's origin would be
+            // added again — double-counting the shared offset and causing
+            // hit tests to miss. Subtract `position_in_parent` so the
+            // child's equal `position_in_parent` cancels out.
+            let child_parent_absolute = if obj.is_pass_through() {
+                Position::new(
+                    object_absolute_position.x - position_in_parent.x,
+                    object_absolute_position.y - position_in_parent.y,
+                )
+            } else {
+                object_absolute_position
+            };
             for child in obj.children().iter().rev() {
                 if self.hit_test_recursive(
                     *child,
                     child_pointer,
-                    object_absolute_position,
+                    child_parent_absolute,
                     path,
                     element_path,
                     bounds_map,
@@ -396,9 +420,9 @@ impl RenderObjectRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ElementKey, TextRenderObject, RenderObject};
     use crate::layout::{LayoutEngine, TaffyLayoutEngine};
     use crate::LayoutContext;
+    use crate::{ElementKey, RenderObject, TextRenderObject};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -537,13 +561,15 @@ mod tests {
 
     #[test]
     fn test_hit_test_with_children() {
+        use crate::layout::{AlignItems, FlexDirection, Layout};
         use crate::{ContainerRenderObject, RenderObject};
-        use crate::layout::{FlexDirection, AlignItems, Layout};
 
         let mut registry = RenderObjectRegistry::new();
 
         // Create parent container with layout
-        let column_layout = Layout::default().flex_direction(FlexDirection::Column).align(AlignItems::Stretch);
+        let column_layout = Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch);
         let mut parent = ContainerRenderObject::new(column_layout);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
@@ -563,7 +589,10 @@ mod tests {
 
         // Add child to parent
         if let Some(parent_obj) = registry.get_mut(parent_id) {
-            if let Some(container) = parent_obj.as_any_mut().downcast_mut::<ContainerRenderObject>() {
+            if let Some(container) = parent_obj
+                .as_any_mut()
+                .downcast_mut::<ContainerRenderObject>()
+            {
                 container.add_child(child_id);
             }
         }

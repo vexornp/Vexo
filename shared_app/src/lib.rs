@@ -155,6 +155,7 @@ impl Application for State {
 
                 SafeArea::new(
                     Flex::row()
+                        .flex_grow(1.0)
                         .background(theme.background)
                         .push(sidebar)
                         .push(stack.flex_grow(1.0)),

@@ -106,13 +106,22 @@ impl Painter {
         // rotations happen around the center (matching the shader behavior).
         let transform = obj.paint_transform();
         if let Some(t) = &transform {
-            let origin = obj.computed_bounds()
-                .map(|b| crate::core::Point::new(
-                    absolute_position.x + b.width() * 0.5,
-                    absolute_position.y + b.height() * 0.5,
-                ))
-                .unwrap_or(crate::core::Point::new(absolute_position.x, absolute_position.y));
-            ctx.push_command(RenderCommand::PushTransform { transform: *t, origin });
+            let origin = obj
+                .computed_bounds()
+                .map(|b| {
+                    crate::core::Point::new(
+                        absolute_position.x + b.width() * 0.5,
+                        absolute_position.y + b.height() * 0.5,
+                    )
+                })
+                .unwrap_or(crate::core::Point::new(
+                    absolute_position.x,
+                    absolute_position.y,
+                ));
+            ctx.push_command(RenderCommand::PushTransform {
+                transform: *t,
+                origin,
+            });
         }
 
         // If this object clips its children, push clip before painting children.
@@ -124,7 +133,9 @@ impl Painter {
                 absolute_position.x + local_clip.width(),
                 absolute_position.y + local_clip.height(),
             );
-            ctx.push_command(RenderCommand::PushClip { bounds: absolute_clip });
+            ctx.push_command(RenderCommand::PushClip {
+                bounds: absolute_clip,
+            });
         }
 
         // If this object has a scroll offset, push it before painting children.
@@ -136,12 +147,33 @@ impl Painter {
         // If this object has an opacity, push it before painting children.
         let opacity = obj.opacity();
         if let Some(opacity_value) = &opacity {
-            ctx.push_command(RenderCommand::PushOpacity { opacity: *opacity_value });
+            ctx.push_command(RenderCommand::PushOpacity {
+                opacity: *opacity_value,
+            });
         }
 
         // Paint children
+        //
+        // Pass-through coordinate correction:
+        // Pass-through ROs (ProxyRenderObject, Opacity, Offstage-onstage,
+        // FractionalTranslation) share their child's Taffy node. Both the
+        // pass-through RO and its child therefore read the *same*
+        // `computed_bounds` (origin relative to the Taffy *grandparent*).
+        // Without correction, the child's origin would be added a second
+        // time — double-counting the shared offset and painting children at
+        // the wrong position. Subtract `position_in_parent` so the child's
+        // own `position_in_parent` (equal to this RO's, since they share the
+        // Taffy node) cancels out.
+        let child_parent_absolute = if obj.is_pass_through() {
+            Position::new(
+                absolute_position.x - position_in_parent.x,
+                absolute_position.y - position_in_parent.y,
+            )
+        } else {
+            absolute_position
+        };
         for child_id in obj.children() {
-            Self::paint_recursive(render_objects, *child_id, ctx, absolute_position);
+            Self::paint_recursive(render_objects, *child_id, ctx, child_parent_absolute);
         }
 
         // Pop opacity after children
