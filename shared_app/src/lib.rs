@@ -1,7 +1,7 @@
 //! Mocked IM UI — three-tab app shell (Chats / Contacts / Me) with
 //! in-memory data, no network or persistence.
 
-use vexo::{AlignItems, Application, Color, Column, Flex, Row, ScrollView, Text, Widget};
+use vexo::{AlignItems, Application, Color, Column, Flex, Row, Text, Widget};
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{NavigationStackView, TabBarView};
 
@@ -15,41 +15,7 @@ use widgets::avatar::avatar;
 
 mod chats;
 
-// ============================================================================
-// CONTACTS SCREEN
-// ============================================================================
-
-fn build_contacts_screen(contacts: Vec<Contact>) -> Box<dyn Widget> {
-    let mut list = Flex::column();
-    for c in &contacts {
-        list = list.push(build_contact_row(c));
-    }
-    ScrollView::new(list.boxed()).flex_fill().boxed()
-}
-
-fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
-    let avatar = avatar(&c.avatar_bytes, 40.0);
-
-    let name = Text::new(c.name.as_str())
-        .with_font_size(16.0)
-        .with_color(Color::BLACK);
-    let status = Text::new(c.status.as_str())
-        .with_font_size(13.0)
-        .with_color(Color::rgb(0.5, 0.5, 0.5));
-
-    Row::new()
-        .gap(12.0)
-        .push(avatar)
-        .push(
-            Column::new()
-                .gap(2.0)
-                .push(name)
-                .push(status)
-                .flex_grow(1.0),
-        )
-        .boxed()
-        .padding(12.0)
-}
+mod contacts;
 
 // ============================================================================
 // PROFILE SCREEN
@@ -141,12 +107,9 @@ impl Application for ImState {
                     messages_for_chat.clone(),
                     me_avatar.clone(),
                 ),
-                ImTab::Contacts => NavigationStackView::new(
-                    contacts_nav.clone(),
-                    build_contacts_screen(contacts.clone()),
-                )
-                .root_title("Contacts")
-                .boxed(),
+                ImTab::Contacts => {
+                    contacts::build_contacts_tab(contacts.clone(), contacts_nav.clone())
+                }
                 ImTab::Me => {
                     NavigationStackView::new(me_nav.clone(), build_profile_screen(&profile))
                         .root_title("Me")
@@ -357,7 +320,7 @@ mod tests {
         use vexo::ThreeTreePipeline;
 
         let state = seed();
-        let view = build_contacts_screen(state.contacts.clone());
+        let view = contacts::contacts_screen::build_contacts_screen(state.contacts.clone());
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
         assert!(
