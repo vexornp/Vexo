@@ -179,7 +179,14 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // left/right insets (landscape notch), mirroring how
         // `NavigationStackView` owns the top inset for its nav bar. `top(false)`
         // because the bar is at the bottom — no status-bar inset to consume.
+        //
+        // `SafeArea` bakes in `flex_grow(1.0)` (correct for content areas that
+        // should fill their parent, but wrong for the tab bar which should be
+        // its intrinsic height). Wrapping in `WithLayout` with `flex_grow(0.0)`
+        // + `flex_shrink(0.0)` pins the bar to its content height so it doesn't
+        // steal space from the page area above.
         let bar = SafeArea::new(bar.boxed()).top(false).boxed();
+        let bar = bar.with_layout(Layout::default().flex_grow(0.0).flex_shrink(0.0));
 
         Flex::column()
             .layout(
@@ -188,7 +195,7 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
                     .width_percent(1.0)
                     .height_percent(1.0),
             )
-            .push(stack.flex_grow(1.0))
+            .push(stack.flex_fill())
             .push(bar)
             .boxed()
     }

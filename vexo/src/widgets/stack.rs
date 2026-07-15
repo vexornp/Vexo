@@ -42,12 +42,19 @@ use crate::style::Style;
 /// `AlignItems::Stretch` makes non-positioned children fill the stack's
 /// cross-axis, matching Flutter's `Stack` behavior. Positioned children are
 /// absolutely positioned and are not affected by `AlignItems`.
+///
+/// `min_height(0.0)` allows the stack to shrink below its content's
+/// min-content when the parent is shorter. Without this, the stack's
+/// min-content (tallest child) propagates upward and can push siblings
+/// (e.g. a tab bar) off screen on short windows. This matches CSS block
+/// layout semantics where `min-height: auto` is `0`.
 fn stack_layout() -> Layout {
     Layout::default()
         .flex_direction(FlexDirection::Column)
         .align(AlignItems::Stretch)
         .width_percent(1.0)
         .height_percent(1.0)
+        .min_height(0.0)
 }
 
 /// Stack widget — a multi-child container where children overlap.

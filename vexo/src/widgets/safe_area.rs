@@ -98,12 +98,17 @@ impl SafeAreaRenderObject {
     ///
     /// `flex_grow(1.0)` makes the safe area fill its parent's main axis;
     /// `AlignItems::Stretch` (via the flex column) fills the cross axis.
+    /// `min_height(0.0)` allows the safe area to shrink below its content's
+    /// min-content when the parent is shorter (e.g. a scrollable page inside
+    /// a TabBarView on a short window). Without this, the content's
+    /// min-content propagates upward and can push siblings off screen.
     fn layout_for(&self, insets: EdgeInsets) -> Layout {
         let (left, right, top, bottom) = self.effective_padding(insets);
         Layout::default()
             .flex_direction(FlexDirection::Column)
             .align(AlignItems::Stretch)
             .flex_grow(1.0)
+            .min_height(0.0)
             .padding_each(left, right, top, bottom)
     }
 

@@ -260,6 +260,25 @@ pub trait Widget: Any {
         Box::new(WithLayout::new(self, Layout::default().flex_grow(value)))
     }
 
+    /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
+    /// propagating min-content upward.
+    ///
+    /// Convenience for `.with_layout(Layout::default().flex_grow(1.0).flex_basis(0.0).min_height(0.0))`.
+    /// Use this for scrollable content areas that should fill the remaining
+    /// space in a flex column without pushing siblings off screen.
+    fn flex_fill(self) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(WithLayout::new(
+            self,
+            Layout::default()
+                .flex_grow(1.0)
+                .flex_basis(0.0)
+                .min_height(0.0),
+        ))
+    }
+
     fn align_self(self, value: crate::layout::AlignSelf) -> Box<dyn Widget>
     where
         Self: Sized + 'static,

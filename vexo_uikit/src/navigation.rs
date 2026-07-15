@@ -700,13 +700,15 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // The nav bar handles the top safe-area inset itself (background
         // extends under the status bar). The content area only needs
         // left/right/bottom insets — top is already consumed by the bar.
-        let content = SafeArea::new(content).top(false).boxed();
+        let content = SafeArea::new(content).top(false).flex_fill();
 
-        // flex_grow(1.0) fills the parent: since the caller no longer wraps
-        // this component in a SafeArea (which provided the grow), the column
-        // itself must grow to fill the screen.
+        // flex_fill() fills the parent and prevents the column's content
+        // (a tall scrollable page) from propagating its min-content upward.
+        // Without this, a page taller than the available space (e.g. 8
+        // contacts inside a TabBarView on a short window) pushes the tab bar
+        // off screen. The page's own ScrollView handles the overflow.
         Flex::column()
-            .flex_grow(1.0)
+            .flex_fill()
             .push(nav_bar)
             .push(content)
             .boxed()

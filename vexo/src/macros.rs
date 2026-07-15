@@ -170,6 +170,17 @@ macro_rules! layout_builder_methods {
             self.layout = self.layout.flex_basis(value);
             self
         }
+        /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
+        /// propagating min-content upward.
+        ///
+        /// This is the correct pattern for scrollable content areas inside a
+        /// flex column. Without `min_height(0.0)`, the default `min-height:
+        /// auto` resolves to the content's min-content, which propagates up
+        /// and can push siblings (e.g. a tab bar) off screen on short windows.
+        pub fn flex_fill(mut self) -> Self {
+            self.layout = self.layout.flex_grow(1.0).flex_basis(0.0).min_height(0.0);
+            self
+        }
         pub fn justify(mut self, value: JustifyContent) -> Self {
             self.layout = self.layout.justify(value);
             self

@@ -79,6 +79,7 @@ fn indexed_stack_layout() -> Layout {
         .align(AlignItems::Stretch)
         .width_percent(1.0)
         .height_percent(1.0)
+        .min_height(0.0)
 }
 
 impl RenderObject for IndexedStackRenderObject {

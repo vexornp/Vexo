@@ -286,7 +286,7 @@ fn build_conversation_list_screen(
         });
         list = list.push(row);
     }
-    ScrollView::new(list.boxed()).flex_grow(1.0).boxed()
+    ScrollView::new(list.boxed()).flex_fill().boxed()
 }
 
 fn build_conversation_row(
@@ -517,7 +517,7 @@ fn build_contacts_screen(contacts: Vec<Contact>) -> Box<dyn Widget> {
     for c in &contacts {
         list = list.push(build_contact_row(c));
     }
-    ScrollView::new(list.boxed()).flex_grow(1.0).boxed()
+    ScrollView::new(list.boxed()).flex_fill().boxed()
 }
 
 fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
@@ -877,6 +877,67 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 15,
             "contacts tab should have many elements (8 contacts × several widgets each)"
+        );
+    }
+
+    #[test]
+    fn test_contacts_tab_tab_bar_fits_window() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::layout::TaffyLayoutEngine;
+        use vexo::{RenderObject, RenderObjectRegistry, ThreeTreePipeline};
+
+        // Regression test: switching to the Contacts tab must not push the
+        // tab bar off screen on a short window (800×600). Before the fix,
+        // the contacts page's min-content (8 rows × 64px = 512px + 44px nav
+        // bar = 556px) propagated through the layout chain and overflowed
+        // the window (556 + 58 = 614 > 600), pushing the tab bar 14px below
+        // the visible area.
+        let mut state = seed();
+        state.tab_controller.switch_to(ImTab::Contacts);
+        let view = ImState::view(&mut state);
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(800.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        // Walk the tree to find the tab bar: it's the SECOND top-level child
+        // of the TabBarView column (the first is the page area). The tab bar
+        // is a WithLayout wrapping a SafeArea wrapping a Flex::row with 3
+        // tab items. We identify it by walking root → child → second child.
+        fn find_child(
+            ro_reg: &RenderObjectRegistry,
+            id: vexo::RenderObjectKey,
+            index: usize,
+        ) -> Option<vexo::RenderObjectKey> {
+            ro_reg.get(id)?.children().get(index).copied()
+        }
+
+        // root → TabBarView column → second child (tab bar)
+        let tab_view = find_child(ro_reg, root, 0).expect("tab view");
+        let tab_bar = find_child(ro_reg, tab_view, 1).expect("tab bar");
+        let bar_bounds = ro_reg
+            .get(tab_bar)
+            .and_then(|ro| ro.computed_bounds())
+            .expect("tab bar bounds");
+
+        // The tab bar's bottom edge must be within the window height (600).
+        let bar_bottom = bar_bounds.top + bar_bounds.height();
+        assert!(
+            bar_bottom <= 600.0,
+            "tab bar bottom ({}) must not exceed window height (600). \
+             Top={}, Height={}",
+            bar_bottom,
+            bar_bounds.top,
+            bar_bounds.height()
         );
     }
 }
