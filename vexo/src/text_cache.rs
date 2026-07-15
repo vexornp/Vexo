@@ -147,6 +147,7 @@ mod tests {
             color: Color::BLACK,
             font_family: family.map(|s| s.to_string()),
             max_width: None,
+            clip_bounds: None,
         }
     }
 

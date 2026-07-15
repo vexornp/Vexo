@@ -2,6 +2,35 @@ use crate::core::{AffineTransform, Color, Logical, Point, Stroke};
 use crate::image_atlas::ImageKey;
 use crate::quad_instance::QuadInstance;
 
+/// A single drawable geometry primitive in paint order.
+#[derive(Debug, Clone)]
+pub enum DrawOp {
+    Quad(QuadInstance),
+    Image(ImageRequest),
+}
+
+/// Where an op landed in the typed instance buffer, for draw iteration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpLocation {
+    Quad { index: u32 },
+    Image { index: u32 },
+}
+
+impl OpLocation {
+    pub fn kind(&self) -> OpKind {
+        match self {
+            OpLocation::Quad { .. } => OpKind::Quad,
+            OpLocation::Image { .. } => OpKind::Image,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpKind {
+    Quad,
+    Image,
+}
+
 #[derive(Clone)]
 pub struct TextRequest {
     pub content: String,
@@ -13,9 +42,12 @@ pub struct TextRequest {
     pub font_family: Option<String>,
     /// Maximum width for text wrapping. If None, no wrapping.
     pub max_width: Option<f32>,
+    /// Effective clip bounds when this text was added (logical coordinates).
+    /// `None` means no clipping (full viewport). Populated via dual-write.
+    pub clip_bounds: Option<Bounds>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ImageRequest {
     pub position: [f32; 2],
     pub size: [f32; 2],
@@ -58,6 +90,10 @@ pub struct FrameBuilder {
     /// Index of the last-used clip group (for O(1) lookup when clip hasn't changed).
     current_group_index: Option<usize>,
 
+    /// Flat ordered draw list (dual-write alongside `clip_groups`).
+    /// Each entry is the op plus its effective clip bounds at add-time.
+    ops: Vec<(DrawOp, Option<Bounds>)>,
+
     corner_radius_stack: Vec<f32>,
     clip_stack: Vec<Bounds>,
     transform_stack: Vec<AffineTransform>,
@@ -75,6 +111,7 @@ impl FrameBuilder {
         Self {
             clip_groups: Vec::new(),
             current_group_index: None,
+            ops: Vec::new(),
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
             transform_stack: Vec::new(),
@@ -85,6 +122,7 @@ impl FrameBuilder {
     pub fn clear(&mut self) {
         self.clip_groups.clear();
         self.current_group_index = None;
+        self.ops.clear();
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
         self.transform_stack.clear();
@@ -277,7 +315,9 @@ impl FrameBuilder {
             _padding: [0.0; 2],
         };
 
+        let clip = self.current_clip();
         self.current_group().quads.push(instance);
+        self.ops.push((DrawOp::Quad(instance), clip));
     }
 
     pub fn add_text(
@@ -290,6 +330,7 @@ impl FrameBuilder {
         max_width: Option<f32>,
     ) {
         let color: Color = color.into();
+        let clip_bounds = self.current_clip();
 
         self.current_group().text_requests.push(TextRequest {
             content: content.into(),
@@ -298,11 +339,14 @@ impl FrameBuilder {
             color,
             font_family,
             max_width,
+            clip_bounds,
         });
     }
 
     pub fn add_image(&mut self, request: ImageRequest) {
-        self.current_group().image_requests.push(request);
+        let clip = self.current_clip();
+        self.current_group().image_requests.push(request.clone());
+        self.ops.push((DrawOp::Image(request), clip));
     }
 
     pub fn image_count(&self) -> usize {
@@ -325,6 +369,44 @@ impl FrameBuilder {
             });
         }
         (requests, draw_ranges)
+    }
+
+    /// All geometry ops in paint order, each with its clip bounds.
+    pub fn ops(&self) -> &[(DrawOp, Option<Bounds>)] {
+        &self.ops
+    }
+
+    /// Image requests filtered from `ops`, in paint order.
+    pub fn image_requests(&self) -> Vec<ImageRequest> {
+        self.ops
+            .iter()
+            .filter_map(|(op, _)| match op {
+                DrawOp::Image(r) => Some(r.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Compute typed-buffer locations for each op in paint order.
+    /// Pure function — no GPU access. Used by upload and unit-tested directly.
+    pub fn compute_op_locations(&self) -> Vec<OpLocation> {
+        let mut quad_idx = 0u32;
+        let mut image_idx = 0u32;
+        self.ops
+            .iter()
+            .map(|(op, _)| match op {
+                DrawOp::Quad(_) => {
+                    let i = quad_idx;
+                    quad_idx += 1;
+                    OpLocation::Quad { index: i }
+                }
+                DrawOp::Image(_) => {
+                    let i = image_idx;
+                    image_idx += 1;
+                    OpLocation::Image { index: i }
+                }
+            })
+            .collect()
     }
 }
 
@@ -387,5 +469,149 @@ mod tests {
         let (requests, ranges) = fb.flatten_image_requests();
         assert_eq!(requests.len(), 2);
         assert_eq!(ranges.len(), 2);
+    }
+
+    #[test]
+    fn test_ops_preserve_paint_order() {
+        let mut fb = FrameBuilder::new();
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::RED,
+            None,
+            0.0,
+        );
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [10.0, 10.0],
+            image_key: 1,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+
+        let ops = fb.ops();
+        assert_eq!(ops.len(), 3);
+        assert!(matches!(ops[0].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[1].0, DrawOp::Image(_)));
+        assert!(matches!(ops[2].0, DrawOp::Quad(_)));
+    }
+
+    #[test]
+    fn test_op_carries_clip_bounds() {
+        let mut fb = FrameBuilder::new();
+        let clip = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
+        fb.push_clip(clip);
+        fb.add_rect(
+            Bounds::from_xywh(10.0, 10.0, 10.0, 10.0),
+            Color::RED,
+            None,
+            0.0,
+        );
+        fb.add_image(ImageRequest {
+            position: [10.0, 10.0],
+            size: [10.0, 10.0],
+            image_key: 1,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+        fb.pop_clip();
+        fb.add_rect(
+            Bounds::from_xywh(20.0, 20.0, 10.0, 10.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+
+        let ops = fb.ops();
+        assert_eq!(ops[0].1, Some(clip));
+        assert_eq!(ops[1].1, Some(clip));
+        assert_eq!(ops[2].1, None);
+    }
+
+    #[test]
+    fn test_text_request_carries_clip_bounds() {
+        let mut fb = FrameBuilder::new();
+        let clip = Bounds::from_xywh(0.0, 0.0, 100.0, 100.0);
+        fb.push_clip(clip);
+        fb.add_text(
+            "inside".to_string(),
+            Point::new(0.0, 0.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+        fb.pop_clip();
+        fb.add_text(
+            "outside".to_string(),
+            Point::new(0.0, 0.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+
+        let reqs = fb.text_requests();
+        assert_eq!(reqs[0].clip_bounds, Some(clip));
+        assert_eq!(reqs[1].clip_bounds, None);
+    }
+
+    #[test]
+    fn test_quad_instances_flatten_preserves_order() {
+        let mut fb = FrameBuilder::new();
+        fb.add_rect(Bounds::from_xywh(0.0, 0.0, 1.0, 1.0), Color::RED, None, 0.0);
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [1.0, 1.0],
+            image_key: 1,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 2.0, 2.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+
+        let quads = fb.quad_instances();
+        assert_eq!(quads.len(), 2);
+        assert_eq!(quads[0].size, [1.0, 1.0]);
+        assert_eq!(quads[1].size, [2.0, 2.0]);
+    }
+
+    #[test]
+    fn test_image_requests_preserve_order() {
+        let mut fb = FrameBuilder::new();
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [1.0, 1.0],
+            image_key: 10,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+        fb.add_rect(Bounds::from_xywh(0.0, 0.0, 1.0, 1.0), Color::RED, None, 0.0);
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [2.0, 2.0],
+            image_key: 20,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+
+        let imgs = fb.image_requests();
+        assert_eq!(imgs.len(), 2);
+        assert_eq!(imgs[0].image_key, 10);
+        assert_eq!(imgs[1].image_key, 20);
     }
 }
