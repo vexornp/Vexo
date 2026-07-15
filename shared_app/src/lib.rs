@@ -473,8 +473,8 @@ fn build_message_bubble(msg: &Message, avatar_bytes: &Rc<[u8]>) -> Box<dyn Widge
         Color::WHITE
     })
     .border(Color::rgb(0.85, 0.85, 0.85), 1.0)
-    .boxed()
-    .width(220.0);
+    .max_width(220.0)
+    .boxed();
 
     if msg.author == MessageAuthor::Me {
         Row::new()
