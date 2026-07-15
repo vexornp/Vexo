@@ -1,9 +1,9 @@
 //! Mocked IM UI — three-tab app shell (Chats / Contacts / Me) with
 //! in-memory data, no network or persistence.
 
-use vexo::{AlignItems, Application, Color, Column, Flex, Row, Text, Widget};
+use vexo::{AlignItems, Application, Color, Column, Text, Widget};
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{NavigationStackView, TabBarView};
+use vexo_uikit::TabBarView;
 
 uniffi::setup_scaffolding!();
 
@@ -11,61 +11,12 @@ mod data;
 use data::*;
 
 mod widgets;
-use widgets::avatar::avatar;
 
 mod chats;
 
 mod contacts;
 
-// ============================================================================
-// PROFILE SCREEN
-// ============================================================================
-
-fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
-    let avatar = avatar(&profile.avatar_bytes, 80.0);
-
-    let name = Text::new(profile.name.as_str())
-        .with_font_size(22.0)
-        .with_color(Color::BLACK);
-    let email = Text::new(profile.email.as_str())
-        .with_font_size(14.0)
-        .with_color(Color::rgb(0.5, 0.5, 0.5));
-
-    let header = Column::new()
-        .gap(4.0)
-        .push(avatar)
-        .push(name)
-        .push(email)
-        .boxed()
-        .padding(24.0);
-
-    let settings = vec!["Settings", "Notifications", "About"];
-    let mut settings_list = Flex::column();
-    for label in settings {
-        settings_list = settings_list.push(
-            Row::new()
-                .gap(8.0)
-                .push(
-                    Text::new(label)
-                        .with_font_size(16.0)
-                        .with_color(Color::BLACK)
-                        .flex_grow(1.0),
-                )
-                .push(
-                    Text::new("›")
-                        .with_font_size(20.0)
-                        .with_color(Color::rgb(0.6, 0.6, 0.6)),
-                )
-                .boxed()
-                .padding(16.0),
-        );
-    }
-
-    Column::new()
-        .push(header)
-        .push(settings_list.boxed())
-        .boxed()
-}
+mod me;
 
 // Placeholder Application impl — full view() comes in Task 8.
 impl Default for ImState {
@@ -110,11 +61,7 @@ impl Application for ImState {
                 ImTab::Contacts => {
                     contacts::build_contacts_tab(contacts.clone(), contacts_nav.clone())
                 }
-                ImTab::Me => {
-                    NavigationStackView::new(me_nav.clone(), build_profile_screen(&profile))
-                        .root_title("Me")
-                        .boxed()
-                }
+                ImTab::Me => me::build_me_tab(&profile, me_nav.clone()),
             },
             |tab, is_selected| {
                 let (icon, label) = match tab {
@@ -336,7 +283,7 @@ mod tests {
         use vexo::ThreeTreePipeline;
 
         let state = seed();
-        let view = build_profile_screen(&state.profile);
+        let view = me::profile_screen::build_profile_screen(&state.profile);
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
         assert!(
