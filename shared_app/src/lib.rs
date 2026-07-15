@@ -17,6 +17,9 @@ uniffi::setup_scaffolding!();
 mod data;
 use data::*;
 
+mod widgets;
+use widgets::avatar::avatar;
+
 // ============================================================================
 // CONVERSATION LIST SCREEN
 // ============================================================================
@@ -41,12 +44,7 @@ fn build_conversation_row(
     conv: &Conversation,
     on_press: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
-    let avatar = Image::from_bytes(&conv.avatar_bytes)
-        .expect("avatar bytes are valid PNG")
-        .width(40.0)
-        .height(40.0)
-        .corner_radius(20.0)
-        .clip();
+    let avatar = avatar(&conv.avatar_bytes, 40.0);
 
     let name_text = Text::new(conv.name.as_str())
         .with_font_size(16.0)
@@ -228,12 +226,7 @@ fn build_message_bubble(
     .boxed();
 
     if msg.author == MessageAuthor::Me {
-        let me_avatar = Image::from_bytes(me_avatar_bytes)
-            .expect("avatar bytes valid")
-            .width(32.0)
-            .height(32.0)
-            .corner_radius(16.0)
-            .clip();
+        let me_avatar = avatar(me_avatar_bytes, 32.0);
         Row::new()
             .gap(8.0)
             .push(Flex::new().flex_grow(1.0))
@@ -241,12 +234,7 @@ fn build_message_bubble(
             .push(me_avatar)
             .boxed()
     } else {
-        let them_avatar = Image::from_bytes(them_avatar_bytes)
-            .expect("avatar bytes valid")
-            .width(32.0)
-            .height(32.0)
-            .corner_radius(16.0)
-            .clip();
+        let them_avatar = avatar(them_avatar_bytes, 32.0);
         Row::new()
             .gap(8.0)
             .push(them_avatar)
@@ -285,12 +273,7 @@ fn build_contacts_screen(contacts: Vec<Contact>) -> Box<dyn Widget> {
 }
 
 fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
-    let avatar = Image::from_bytes(&c.avatar_bytes)
-        .expect("avatar bytes valid")
-        .width(40.0)
-        .height(40.0)
-        .corner_radius(20.0)
-        .clip();
+    let avatar = avatar(&c.avatar_bytes, 40.0);
 
     let name = Text::new(c.name.as_str())
         .with_font_size(16.0)
@@ -318,12 +301,7 @@ fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
 // ============================================================================
 
 fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
-    let avatar = Image::from_bytes(&profile.avatar_bytes)
-        .expect("avatar bytes valid")
-        .width(80.0)
-        .height(80.0)
-        .corner_radius(40.0)
-        .clip();
+    let avatar = avatar(&profile.avatar_bytes, 80.0);
 
     let name = Text::new(profile.name.as_str())
         .with_font_size(22.0)
