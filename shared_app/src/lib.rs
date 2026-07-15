@@ -1,16 +1,9 @@
 //! Mocked IM UI — three-tab app shell (Chats / Contacts / Me) with
 //! in-memory data, no network or persistence.
 
-use std::any::Any;
-use std::rc::Rc;
-
-use vexo::{
-    AlignItems, Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
-    Image, ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, ScrollView, Text,
-    TextEdit, TextEditingController, Theme, ThemeData, Widget,
-};
+use vexo::{AlignItems, Application, Color, Column, Flex, Row, ScrollView, Text, Widget};
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{Button, ButtonVariant, NavigationController, NavigationStackView, TabBarView};
+use vexo_uikit::{NavigationStackView, TabBarView};
 
 uniffi::setup_scaffolding!();
 
@@ -20,245 +13,7 @@ use data::*;
 mod widgets;
 use widgets::avatar::avatar;
 
-// ============================================================================
-// CONVERSATION LIST SCREEN
-// ============================================================================
-
-fn build_conversation_list_screen(
-    conversations: Vec<Conversation>,
-    nav: NavigationController<ChatsRoute>,
-) -> Box<dyn Widget> {
-    let mut list = Flex::column();
-    for conv in &conversations {
-        let nav_for_row = nav.clone();
-        let id = conv.id.clone();
-        let row = build_conversation_row(conv, move || {
-            nav_for_row.push(ChatsRoute::Chat(id.clone()));
-        });
-        list = list.push(row);
-    }
-    ScrollView::new(list.boxed()).flex_fill().boxed()
-}
-
-fn build_conversation_row(
-    conv: &Conversation,
-    on_press: impl FnMut() + 'static,
-) -> Box<dyn Widget> {
-    let avatar = avatar(&conv.avatar_bytes, 40.0);
-
-    let name_text = Text::new(conv.name.as_str())
-        .with_font_size(16.0)
-        .with_color(Color::BLACK);
-    let preview_text = Text::new(conv.last_preview.as_str())
-        .with_font_size(13.0)
-        .with_color(Color::rgb(0.5, 0.5, 0.5));
-
-    let info_col = Column::new().gap(2.0).push(name_text).push(preview_text);
-
-    let time_text = Text::new(format_timestamp(conv.last_timestamp).as_str())
-        .with_font_size(12.0)
-        .with_color(Color::rgb(0.6, 0.6, 0.6));
-
-    let right_col = if conv.unread_count > 0 {
-        let badge = DecoratedContainer::new(
-            Text::new(conv.unread_count.to_string())
-                .with_font_size(11.0)
-                .with_color(Color::WHITE),
-        )
-        .background(Color::rgb(0.0, 0.5, 1.0))
-        .corner_radius(10.0)
-        .boxed();
-        Column::new().gap(4.0).push(time_text).push(badge)
-    } else {
-        Column::new().push(time_text)
-    };
-
-    Row::new()
-        .gap(12.0)
-        .push(avatar)
-        .push(info_col.flex_grow(1.0))
-        .push(right_col)
-        .boxed()
-        .padding(12.0)
-        .on_press(on_press)
-}
-
-fn format_timestamp(ts: u64) -> String {
-    let secs = ts % 86400;
-    let hours = secs / 3600;
-    let mins = (secs % 3600) / 60;
-    format!("{:02}:{:02}", hours, mins)
-}
-
-// ============================================================================
-// CHAT SCREEN
-// ============================================================================
-
-struct ChatScreen {
-    conv_id: ConvId,
-    messages: Vec<Message>,
-    avatar_bytes: Rc<[u8]>,
-    me_avatar_bytes: Rc<[u8]>,
-    nav: NavigationController<ChatsRoute>,
-    on_send: Rc<dyn Fn(&str)>,
-    scroll_controller: vexo::ScrollController,
-}
-
-impl Clone for ChatScreen {
-    fn clone(&self) -> Self {
-        Self {
-            conv_id: self.conv_id.clone(),
-            messages: self.messages.clone(),
-            avatar_bytes: Rc::clone(&self.avatar_bytes),
-            me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
-            nav: self.nav.clone(),
-            on_send: Rc::clone(&self.on_send),
-            scroll_controller: self.scroll_controller.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-struct ChatScreenState {
-    text_controller: Option<TextEditingController>,
-}
-
-impl ChatScreenState {
-    fn sync_controller(&mut self) {
-        if self.text_controller.is_none() {
-            let mut fs = vexo::resource::new_font_system();
-            self.text_controller = Some(TextEditingController::new("", &mut fs));
-        }
-    }
-}
-
-impl ComponentState for ChatScreenState {
-    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
-        self.sync_controller();
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.set_dirty_callback(ctx.dirty_callback());
-        }
-    }
-    fn on_update(&mut self, _old_widget: &dyn Any, ctx: &mut LifecycleContext) {
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.set_dirty_callback(ctx.dirty_callback());
-        }
-    }
-    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.clear_dirty_callback();
-        }
-        self.text_controller = None;
-    }
-}
-
-impl Component for ChatScreen {
-    type State = ChatScreenState;
-
-    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let theme = Theme::of(ctx);
-
-        let mut list = Flex::column().gap(8.0).padding(12.0);
-        for msg in &self.messages {
-            list = list.push(build_message_bubble(
-                msg,
-                &self.avatar_bytes,
-                &self.me_avatar_bytes,
-            ));
-        }
-
-        let scroll_for_send = self.scroll_controller.clone();
-        let on_send = Rc::clone(&self.on_send);
-        let tc = state
-            .text_controller
-            .as_ref()
-            .expect("text controller set on mount")
-            .clone();
-        let tc_for_clear = tc.clone();
-        let on_send_closure = move || {
-            let text = tc_for_clear.text();
-            if !text.trim().is_empty() {
-                on_send(&text);
-                let mut fs = vexo::resource::new_font_system();
-                tc_for_clear.set_text("", &mut fs);
-                scroll_for_send.jump_to_bottom();
-            }
-        };
-
-        let input_bar = build_input_bar(tc, on_send_closure);
-
-        Column::new()
-            .flex_fill()
-            .push(
-                ScrollView::new(list.boxed())
-                    .controller(self.scroll_controller.clone())
-                    .flex_fill(),
-            )
-            .push(input_bar)
-            .background(theme.background)
-            .boxed()
-    }
-}
-
-fn build_message_bubble(
-    msg: &Message,
-    them_avatar_bytes: &Rc<[u8]>,
-    me_avatar_bytes: &Rc<[u8]>,
-) -> Box<dyn Widget> {
-    let bubble = DecoratedContainer::new(
-        Text::new(msg.text.as_str())
-            .with_font_size(15.0)
-            .with_color(if msg.author == MessageAuthor::Me {
-                Color::WHITE
-            } else {
-                Color::BLACK
-            }),
-    )
-    .padding(10.0)
-    .corner_radius(12.0)
-    .background(if msg.author == MessageAuthor::Me {
-        Color::rgb(0.0, 0.5, 1.0)
-    } else {
-        Color::WHITE
-    })
-    .border(Color::rgb(0.85, 0.85, 0.85), 1.0)
-    .max_width(220.0)
-    .boxed();
-
-    if msg.author == MessageAuthor::Me {
-        let me_avatar = avatar(me_avatar_bytes, 32.0);
-        Row::new()
-            .gap(8.0)
-            .push(Flex::new().flex_grow(1.0))
-            .push(bubble)
-            .push(me_avatar)
-            .boxed()
-    } else {
-        let them_avatar = avatar(them_avatar_bytes, 32.0);
-        Row::new()
-            .gap(8.0)
-            .push(them_avatar)
-            .push(bubble)
-            .push(Flex::new().flex_grow(1.0))
-            .boxed()
-    }
-}
-
-fn build_input_bar(
-    controller: TextEditingController,
-    on_send: impl FnMut() + 'static,
-) -> Box<dyn Widget> {
-    Row::new()
-        .gap(8.0)
-        .push(TextEdit::new(controller).flex_grow(1.0))
-        .push(
-            Button::new("Send")
-                .variant(ButtonVariant::Primary)
-                .on_press(on_send),
-        )
-        .boxed()
-        .padding(8.0)
-}
+mod chats;
 
 // ============================================================================
 // CONTACTS SCREEN
@@ -367,9 +122,7 @@ impl Application for ImState {
     fn view(state: &mut Self::State) -> Box<dyn Widget> {
         let conversations = state.conversations.clone();
         let messages_for_view = state.messages.clone();
-        let nav_for_list = state.chats_nav.clone();
         let nav_for_chat = state.chats_nav.clone();
-        let convs_for_chat = state.conversations.clone();
         let messages_for_chat = state.messages.clone();
         let contacts = state.contacts.clone();
         let profile = state.profile.clone();
@@ -382,55 +135,12 @@ impl Application for ImState {
             tab_controller,
             vec![ImTab::Chats, ImTab::Contacts, ImTab::Me],
             move |tab| match tab {
-                ImTab::Chats => {
-                    let chats_root =
-                        build_conversation_list_screen(conversations.clone(), nav_for_list.clone());
-                    let nav = nav_for_chat.clone();
-                    let convs = convs_for_chat.clone();
-                    let msgs = messages_for_chat.clone();
-                    let me_avatar = me_avatar.clone();
-                    NavigationStackView::new(nav_for_chat.clone(), chats_root)
-                        .root_title("Chats")
-                        .title(|d| match d {
-                            ChatsRoute::Chat(id) => format!("Chat {}", id.0),
-                            _ => String::new(),
-                        })
-                        .destination(move |d| match d {
-                            ChatsRoute::Chat(id) => {
-                                let m = msgs.get_cloned().get(id).cloned().unwrap_or_default();
-                                let avatar = convs
-                                    .iter()
-                                    .find(|c| c.id == *id)
-                                    .map(|c| Rc::clone(&c.avatar_bytes))
-                                    .unwrap_or_else(|| Rc::from([0u8; 0]));
-                                let nav_back = nav.clone();
-                                let msgs_for_send = msgs.clone();
-                                let id_for_send = id.clone();
-                                ChatScreen {
-                                    conv_id: id_for_send.clone(),
-                                    messages: m,
-                                    avatar_bytes: avatar,
-                                    me_avatar_bytes: me_avatar.clone(),
-                                    nav: nav_back,
-                                    on_send: Rc::new(move |text: &str| {
-                                        let mut map = msgs_for_send.get_cloned();
-                                        if let Some(vec) = map.get_mut(&id_for_send) {
-                                            vec.push(Message {
-                                                author: MessageAuthor::Me,
-                                                text: text.to_string(),
-                                                timestamp: 1732348000,
-                                            });
-                                        }
-                                        msgs_for_send.set_from(&map);
-                                    }),
-                                    scroll_controller: vexo::ScrollController::new(),
-                                }
-                                .boxed()
-                            }
-                            _ => Text::new("").boxed(),
-                        })
-                        .boxed()
-                }
+                ImTab::Chats => chats::build_chats_tab(
+                    conversations.clone(),
+                    nav_for_chat.clone(),
+                    messages_for_chat.clone(),
+                    me_avatar.clone(),
+                ),
                 ImTab::Contacts => NavigationStackView::new(
                     contacts_nav.clone(),
                     build_contacts_screen(contacts.clone()),
@@ -472,6 +182,8 @@ impl Application for ImState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
+    use vexo::Image;
 
     #[test]
     fn test_seed_has_five_conversations() {
@@ -513,8 +225,10 @@ mod tests {
         use vexo::ThreeTreePipeline;
 
         let state = seed();
-        let view =
-            build_conversation_list_screen(state.conversations.clone(), state.chats_nav.clone());
+        let view = chats::conversation_list::build_conversation_list_screen(
+            state.conversations.clone(),
+            state.chats_nav.clone(),
+        );
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
         assert!(
@@ -543,7 +257,7 @@ mod tests {
             .unwrap()
             .avatar_bytes
             .clone();
-        let view = ChatScreen {
+        let view = chats::chat_screen::ChatScreen {
             conv_id: ConvId(1),
             messages,
             avatar_bytes,
@@ -582,7 +296,7 @@ mod tests {
             .unwrap()
             .avatar_bytes
             .clone();
-        let chat = ChatScreen {
+        let chat = chats::chat_screen::ChatScreen {
             conv_id: ConvId(4),
             messages: vec![], // zero messages — minimal content
             avatar_bytes,
