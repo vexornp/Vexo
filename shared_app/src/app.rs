@@ -9,7 +9,7 @@ use crate::contacts::build_contacts_tab;
 use crate::data::{seed, ImTab};
 use crate::me::build_me_tab;
 
-pub use crate::data::ImState;
+use crate::data::ImState;
 
 impl Default for ImState {
     fn default() -> Self {

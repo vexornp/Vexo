@@ -14,13 +14,13 @@ use crate::data::{ChatsRoute, ConvId, Message, MessageAuthor};
 use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
-    pub conv_id: ConvId,
-    pub messages: Vec<Message>,
-    pub avatar_bytes: Rc<[u8]>,
-    pub me_avatar_bytes: Rc<[u8]>,
-    pub nav: NavigationController<ChatsRoute>,
-    pub on_send: Rc<dyn Fn(&str)>,
-    pub scroll_controller: ScrollController,
+    pub(crate) conv_id: ConvId,
+    pub(crate) messages: Vec<Message>,
+    pub(crate) avatar_bytes: Rc<[u8]>,
+    pub(crate) me_avatar_bytes: Rc<[u8]>,
+    pub(crate) nav: NavigationController<ChatsRoute>,
+    pub(crate) on_send: Rc<dyn Fn(&str)>,
+    pub(crate) scroll_controller: ScrollController,
 }
 
 impl Clone for ChatScreen {
@@ -185,7 +185,7 @@ mod tests {
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
     use vexo::layout::TaffyLayoutEngine;
-    use vexo::{RenderObject, RenderObjectRegistry, ThreeTreePipeline};
+    use vexo::{RenderObjectRegistry, ThreeTreePipeline};
 
     #[test]
     fn test_chat_screen_renders_messages() {

@@ -11,6 +11,7 @@ mod widgets;
 #[cfg(test)]
 mod integration_tests;
 
-pub use app::{ImState, MobileApp};
+pub use app::MobileApp;
+pub use data::ImState;
 
 uniffi::setup_scaffolding!();

@@ -2,12 +2,12 @@
 //! cross-tab interactions. These are integration-level because they
 //! assert on the complete widget tree, not individual screens.
 
-use crate::app::ImState;
+use crate::data::ImState;
 use crate::data::ImTab;
 use std::sync::Arc;
 use vexo::animation::AnimationTicker;
 use vexo::layout::TaffyLayoutEngine;
-use vexo::{Application, RenderObject, RenderObjectRegistry, ThreeTreePipeline};
+use vexo::{Application, RenderObjectRegistry, ThreeTreePipeline};
 
 #[test]
 fn test_full_app_view_renders_three_tabs() {
