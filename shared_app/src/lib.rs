@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{
-    Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex, Image,
-    ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, ScrollView, Signal,
-    Text, TextEdit, TextEditingController, Theme, ThemeData, Widget,
+    AlignItems, Application, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
+    Image, ImageData, IndexedStack, Layout, LifecycleContext, RenderContext, Row, ScrollView,
+    Signal, Text, TextEdit, TextEditingController, Theme, ThemeData, Widget,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
@@ -711,6 +711,7 @@ impl Application for ImState {
                 };
                 Column::new()
                     .gap(2.0)
+                    .align(AlignItems::Center)
                     .push(Icon::new(icon).with_size(22.0).with_color(color))
                     .push(Text::new(label).with_font_size(11.0).with_color(color))
                     .boxed()
