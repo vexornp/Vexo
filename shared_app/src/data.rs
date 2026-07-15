@@ -259,3 +259,42 @@ pub(crate) fn seed() -> ImState {
         me_nav: NavigationController::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vexo::Image;
+
+    #[test]
+    fn test_seed_has_five_conversations() {
+        let s = seed();
+        assert_eq!(s.conversations.len(), 5);
+    }
+
+    #[test]
+    fn test_seed_messages_for_alice() {
+        let s = seed();
+        let map = s.messages.get_cloned();
+        let msgs = map.get(&ConvId(1)).expect("Alice has messages");
+        assert_eq!(msgs.len(), 3);
+    }
+
+    #[test]
+    fn test_seed_contacts_count() {
+        let s = seed();
+        assert_eq!(s.contacts.len(), 8);
+    }
+
+    #[test]
+    fn test_avatar_bytes_decode() {
+        let bytes = make_avatar_png(255, 0, 0);
+        let img = Image::from_bytes(&bytes);
+        assert!(img.is_ok(), "avatar bytes must decode as PNG");
+    }
+
+    #[test]
+    fn test_tab_controller_starts_on_chats() {
+        let s = seed();
+        assert_eq!(s.tab_controller.current(), ImTab::Chats);
+    }
+}

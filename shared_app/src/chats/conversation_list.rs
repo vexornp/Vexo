@@ -71,3 +71,24 @@ fn format_timestamp(ts: u64) -> String {
     let mins = (secs % 3600) / 60;
     format!("{:02}:{:02}", hours, mins)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use vexo::animation::AnimationTicker;
+    use vexo::ThreeTreePipeline;
+
+    #[test]
+    fn test_conversation_list_renders_in_pipeline() {
+        let state = crate::data::seed();
+        let view =
+            build_conversation_list_screen(state.conversations.clone(), state.chats_nav.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 5,
+            "expected multiple elements for 5 conversation rows"
+        );
+    }
+}

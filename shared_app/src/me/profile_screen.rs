@@ -50,3 +50,23 @@ pub(crate) fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
         .push(settings_list.boxed())
         .boxed()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use vexo::animation::AnimationTicker;
+    use vexo::ThreeTreePipeline;
+
+    #[test]
+    fn test_profile_screen_renders_in_pipeline() {
+        let state = crate::data::seed();
+        let view = build_profile_screen(&state.profile);
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 2,
+            "expected multiple elements for profile header + settings rows"
+        );
+    }
+}

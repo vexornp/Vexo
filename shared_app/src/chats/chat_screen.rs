@@ -178,3 +178,111 @@ fn build_input_bar(
         .boxed()
         .padding(8.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use vexo::animation::AnimationTicker;
+    use vexo::layout::TaffyLayoutEngine;
+    use vexo::{RenderObject, RenderObjectRegistry, ThreeTreePipeline};
+
+    #[test]
+    fn test_chat_screen_renders_messages() {
+        let state = crate::data::seed();
+        let messages = state
+            .messages
+            .get_cloned()
+            .get(&ConvId(1))
+            .cloned()
+            .unwrap();
+        let avatar_bytes = state
+            .conversations
+            .iter()
+            .find(|c| c.id == ConvId(1))
+            .unwrap()
+            .avatar_bytes
+            .clone();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages,
+            avatar_bytes,
+            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            nav: state.chats_nav.clone(),
+            on_send: Rc::new(|_| ()),
+            scroll_controller: ScrollController::new(),
+        }
+        .boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 4,
+            "expected multiple elements for 3 messages + input bar"
+        );
+    }
+
+    #[test]
+    fn test_chat_screen_input_bar_pinned_to_bottom_with_few_messages() {
+        // Regression: with zero messages, the input bar must be pinned to
+        // the bottom of the view, not floating right below the (empty)
+        // message list.
+        let state = crate::data::seed();
+        let avatar_bytes = state
+            .conversations
+            .iter()
+            .find(|c| c.id == ConvId(4))
+            .unwrap()
+            .avatar_bytes
+            .clone();
+        let chat = ChatScreen {
+            conv_id: ConvId(4),
+            messages: vec![], // zero messages — minimal content
+            avatar_bytes,
+            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            nav: state.chats_nav.clone(),
+            on_send: Rc::new(|_| ()),
+            scroll_controller: ScrollController::new(),
+        };
+
+        let view = vexo::Column::new().height(600.0).push(chat).boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        fn find_child(
+            ro_reg: &RenderObjectRegistry,
+            id: vexo::RenderObjectKey,
+            index: usize,
+        ) -> Option<vexo::RenderObjectKey> {
+            ro_reg.get(id)?.children().get(index).copied()
+        }
+
+        let proxy = find_child(ro_reg, root, 0).expect("proxy");
+        let chat_col = find_child(ro_reg, proxy, 0).expect("chat column");
+        let input_wrapper = find_child(ro_reg, chat_col, 1).expect("input bar wrapper");
+        let input_bounds = ro_reg
+            .get(input_wrapper)
+            .and_then(|ro| ro.computed_bounds())
+            .expect("input bar bounds");
+
+        let input_bottom = input_bounds.top + input_bounds.height();
+        assert!(
+            input_bottom >= 599.0,
+            "input bar bottom ({}) should be at the view bottom (600). \
+             Top={}, Height={}",
+            input_bottom,
+            input_bounds.top,
+            input_bounds.height()
+        );
+    }
+}

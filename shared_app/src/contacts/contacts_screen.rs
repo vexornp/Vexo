@@ -36,3 +36,23 @@ fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
         .boxed()
         .padding(12.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use vexo::animation::AnimationTicker;
+    use vexo::ThreeTreePipeline;
+
+    #[test]
+    fn test_contacts_screen_renders_in_pipeline() {
+        let state = crate::data::seed();
+        let view = build_contacts_screen(state.contacts.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 4,
+            "expected multiple elements for 8 contacts"
+        );
+    }
+}
