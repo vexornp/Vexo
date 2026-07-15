@@ -110,6 +110,10 @@ fn seed() -> ImState {
     let charlie_bytes = make_avatar_png(255, 200, 120);
     let diana_bytes = make_avatar_png(200, 200, 240);
 
+    // "Me" gets a single, distinct avatar color used in every conversation,
+    // independent of whichever chat is open.
+    let me_bytes = make_avatar_png(130, 100, 200);
+
     let conversations = vec![
         Conversation {
             id: ConvId(1),
@@ -254,7 +258,7 @@ fn seed() -> ImState {
     let profile = Profile {
         name: "Alice".into(),
         email: "alice@example.com".into(),
-        avatar_bytes: alice_bytes,
+        avatar_bytes: me_bytes,
     };
 
     ImState {
@@ -352,6 +356,7 @@ struct ChatScreen {
     conv_id: ConvId,
     messages: Vec<Message>,
     avatar_bytes: Rc<[u8]>,
+    me_avatar_bytes: Rc<[u8]>,
     nav: NavigationController<ChatsRoute>,
     on_send: Rc<dyn Fn(&str)>,
     scroll_controller: vexo::ScrollController,
@@ -363,6 +368,7 @@ impl Clone for ChatScreen {
             conv_id: self.conv_id.clone(),
             messages: self.messages.clone(),
             avatar_bytes: Rc::clone(&self.avatar_bytes),
+            me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             nav: self.nav.clone(),
             on_send: Rc::clone(&self.on_send),
             scroll_controller: self.scroll_controller.clone(),
@@ -412,7 +418,11 @@ impl Component for ChatScreen {
 
         let mut list = Flex::column().gap(8.0).padding(12.0);
         for msg in &self.messages {
-            list = list.push(build_message_bubble(msg, &self.avatar_bytes));
+            list = list.push(build_message_bubble(
+                msg,
+                &self.avatar_bytes,
+                &self.me_avatar_bytes,
+            ));
         }
 
         let scroll_for_send = self.scroll_controller.clone();
@@ -448,14 +458,11 @@ impl Component for ChatScreen {
     }
 }
 
-fn build_message_bubble(msg: &Message, avatar_bytes: &Rc<[u8]>) -> Box<dyn Widget> {
-    let avatar = Image::from_bytes(avatar_bytes)
-        .expect("avatar bytes valid")
-        .width(32.0)
-        .height(32.0)
-        .corner_radius(16.0)
-        .clip();
-
+fn build_message_bubble(
+    msg: &Message,
+    them_avatar_bytes: &Rc<[u8]>,
+    me_avatar_bytes: &Rc<[u8]>,
+) -> Box<dyn Widget> {
     let bubble = DecoratedContainer::new(
         Text::new(msg.text.as_str())
             .with_font_size(15.0)
@@ -477,16 +484,28 @@ fn build_message_bubble(msg: &Message, avatar_bytes: &Rc<[u8]>) -> Box<dyn Widge
     .boxed();
 
     if msg.author == MessageAuthor::Me {
+        let me_avatar = Image::from_bytes(me_avatar_bytes)
+            .expect("avatar bytes valid")
+            .width(32.0)
+            .height(32.0)
+            .corner_radius(16.0)
+            .clip();
         Row::new()
             .gap(8.0)
             .push(Flex::new().flex_grow(1.0))
             .push(bubble)
-            .push(avatar)
+            .push(me_avatar)
             .boxed()
     } else {
+        let them_avatar = Image::from_bytes(them_avatar_bytes)
+            .expect("avatar bytes valid")
+            .width(32.0)
+            .height(32.0)
+            .corner_radius(16.0)
+            .clip();
         Row::new()
             .gap(8.0)
-            .push(avatar)
+            .push(them_avatar)
             .push(bubble)
             .push(Flex::new().flex_grow(1.0))
             .boxed()
@@ -632,6 +651,7 @@ impl Application for ImState {
         let messages_for_chat = state.messages.clone();
         let contacts = state.contacts.clone();
         let profile = state.profile.clone();
+        let me_avatar = profile.avatar_bytes.clone();
         let tab_controller = state.tab_controller.clone();
         let contacts_nav = state.contacts_nav.clone();
         let me_nav = state.me_nav.clone();
@@ -646,6 +666,7 @@ impl Application for ImState {
                     let nav = nav_for_chat.clone();
                     let convs = convs_for_chat.clone();
                     let msgs = messages_for_chat.clone();
+                    let me_avatar = me_avatar.clone();
                     NavigationStackView::new(nav_for_chat.clone(), chats_root)
                         .root_title("Chats")
                         .title(|d| match d {
@@ -667,6 +688,7 @@ impl Application for ImState {
                                     conv_id: id_for_send.clone(),
                                     messages: m,
                                     avatar_bytes: avatar,
+                                    me_avatar_bytes: me_avatar.clone(),
                                     nav: nav_back,
                                     on_send: Rc::new(move |text: &str| {
                                         let mut map = msgs_for_send.get_cloned();
@@ -803,6 +825,7 @@ mod tests {
             conv_id: ConvId(1),
             messages,
             avatar_bytes,
+            me_avatar_bytes: state.profile.avatar_bytes.clone(),
             nav: state.chats_nav.clone(),
             on_send: Rc::new(|_| ()),
             scroll_controller: vexo::ScrollController::new(),
@@ -841,6 +864,7 @@ mod tests {
             conv_id: ConvId(4),
             messages: vec![], // zero messages — minimal content
             avatar_bytes,
+            me_avatar_bytes: state.profile.avatar_bytes.clone(),
             nav: state.chats_nav.clone(),
             on_send: Rc::new(|_| ()),
             scroll_controller: vexo::ScrollController::new(),
