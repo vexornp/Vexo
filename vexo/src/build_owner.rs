@@ -69,6 +69,18 @@ pub struct BuildOwner {
     /// that only have `&BuildOwner`.
     focused_element: RefCell<Option<ElementKey>>,
 
+    /// Deferred unfocus request, set by `RenderContext::clear_focus()` during
+    /// a rebuild (e.g. when `NavigationStackView` observes a pending pop).
+    ///
+    /// `RenderContext` cannot reach `FocusManager` directly (it only holds a
+    /// shared `&BuildOwner`), so the request is stashed here and applied by
+    /// the pipeline after `perform_rebuilds()` returns, where it has a free
+    /// `&mut FocusManager`. This is what lets a widget dismiss focus (and on
+    /// mobile, the software keyboard) at the moment a navigation transition
+    /// *starts* rather than waiting for the outgoing page to unmount at the
+    /// end of the animation.
+    pending_unfocus: RefCell<bool>,
+
     /// Device safe-area insets (logical pixels), shared with all
     /// [`RenderContext`](crate::stateful_widget::RenderContext)s so widgets
     /// like `SafeArea` can read live values during `Component::render()`.
@@ -89,6 +101,7 @@ impl BuildOwner {
             building: HashSet::new(),
             global_keys: RefCell::new(GlobalKeyRegistry::new()),
             focused_element: RefCell::new(None),
+            pending_unfocus: RefCell::new(false),
             safe_area_source: SafeAreaSource::default(),
         }
     }
@@ -216,6 +229,34 @@ impl BuildOwner {
         *self.focused_element.borrow_mut() = element;
     }
 
+    /// Request that the pipeline clear primary focus after the current
+    /// rebuild pass.
+    ///
+    /// Called from `RenderContext::clear_focus()` by widgets that need to
+    /// dismiss focus while rebuilding (e.g. `NavigationStackView` when a
+    /// pop transition starts). The request is deferred because `RenderContext`
+    /// only has `&BuildOwner` and cannot touch `FocusManager` directly; the
+    /// pipeline drains it in `perform_rebuilds()` via
+    /// [`take_unfocus_requested()`](Self::take_unfocus_requested).
+    ///
+    /// Idempotent: multiple requests within one rebuild cycle collapse to a
+    /// single unfocus.
+    pub fn request_unfocus(&self) {
+        *self.pending_unfocus.borrow_mut() = true;
+    }
+
+    /// Take and clear the deferred unfocus request.
+    ///
+    /// Returns `true` if at least one `request_unfocus()` was made since the
+    /// last call. The pipeline calls this after `perform_rebuilds()` and, when
+    /// it returns `true`, invokes `FocusManager::unfocus()` (a no-op when
+    /// nothing is focused).
+    pub fn take_unfocus_requested(&self) -> bool {
+        let v = *self.pending_unfocus.borrow();
+        *self.pending_unfocus.borrow_mut() = false;
+        v
+    }
+
     /// Get a clone of the shared safe-area source.
     ///
     /// Returns a cheaply-clonable handle ([`SafeAreaSource`] is `Arc`-based)
@@ -251,4 +292,34 @@ pub struct RebuildResult {
 
     /// Whether any cycles were detected.
     pub cycles_detected: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deferred_unfocus_request_and_take() {
+        let bo = BuildOwner::new();
+        // Initially nothing is requested.
+        assert!(!bo.take_unfocus_requested());
+
+        // A single request is reported once then cleared.
+        bo.request_unfocus();
+        assert!(bo.take_unfocus_requested());
+        assert!(!bo.take_unfocus_requested());
+    }
+
+    #[test]
+    fn test_deferred_unfocus_idempotent() {
+        // Multiple requests within one rebuild cycle collapse to a single
+        // unfocus — mirrors how `RenderContext::clear_focus()` may be called
+        // by several widgets during the same rebuild pass.
+        let bo = BuildOwner::new();
+        bo.request_unfocus();
+        bo.request_unfocus();
+        bo.request_unfocus();
+        assert!(bo.take_unfocus_requested());
+        assert!(!bo.take_unfocus_requested());
+    }
 }

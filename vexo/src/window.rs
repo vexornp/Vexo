@@ -455,6 +455,44 @@ impl<A: Application + 'static> WindowState<A> {
         // 5. Perform state-driven rebuilds
         self.three_tree_pipeline.perform_rebuilds();
 
+        // 5.5. Render-loop focus / keyboard sync.
+        //
+        // Focus can change during `perform_rebuilds()` in two ways that the
+        // event-phase keyboard sync (in `process_input_event`) cannot see:
+        //
+        //   1. A deferred unfocus requested via `RenderContext::clear_focus()`
+        //      — e.g. `NavigationStackView` clearing focus when a pop
+        //      transition starts. Applied inside `perform_rebuilds()` above.
+        //   2. The focused element unmounting during reconciliation (the
+        //      safety net in `FocusManager::remove_node_recursive`), e.g. the
+        //      outgoing overlay page at the end of a navigation animation.
+        //
+        // Both set `focus_changed`; we drain it here and mirror the event-phase
+        // handling: rebuild focus-sensitive elements, repaint the cursor, and
+        // (mobile only) show/hide the software keyboard. On non-mobile the
+        // `focus_changed` flag is still consumed here so it doesn't linger.
+        //
+        // This is what dismisses the keyboard *immediately* when the user taps
+        // Back on a focused chat screen — on the same frame the pop animation
+        // begins — instead of leaving it stuck on screen.
+        let focus_changed = self.three_tree_pipeline.take_focus_changed();
+        if focus_changed {
+            self.three_tree_pipeline.mark_focus_needs_build();
+            self.three_tree_pipeline.mark_focus_subtree_needs_paint();
+            self.three_tree_pipeline.reset_cursor_blink();
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            {
+                let text_input_focused = self.three_tree_pipeline.is_text_input_focused();
+                if let Some(win) = &self.window {
+                    #[allow(deprecated)]
+                    let _ = win.set_ime_allowed(text_input_focused);
+                }
+            }
+            // Drive another frame so the border-color rebuild (requested by
+            // mark_focus_needs_build) actually renders.
+            self.request_frame();
+        }
+
         // 6. On first frame, reconcile the RootComponent into the element tree.
         //    After that, perform_rebuilds() handles everything — when a Signal
         //    on the app state fires, the RootComponent's StatefulElement is

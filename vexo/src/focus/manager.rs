@@ -338,7 +338,14 @@ impl FocusManager {
 
         // Clear primary focus if this node held it.
         if self.primary_focus == Some(id) {
+            // Mirror `unfocus()`: record the previous focus and flag the change
+            // so observers (keyboard sync, focus-needs-build) can react. Without
+            // this, unmounting the focused element (e.g. the overlay page at the
+            // end of a navigation pop) would clear `primary_focus` silently and
+            // leave the software keyboard stuck on screen.
+            self.previous_primary_focus = self.primary_focus;
             self.primary_focus = None;
+            self.focus_changed = true;
         }
 
         // Clear pending focus if this node was pending.
@@ -492,6 +499,32 @@ mod tests {
         // Root should have no children now.
         let root_data = mgr.get(mgr.root_scope()).unwrap();
         assert!(!root_data.children.contains(&id));
+    }
+
+    #[test]
+    fn test_remove_focused_node_sets_focus_changed() {
+        // Regression: unmounting the focused element (e.g. the overlay page at
+        // the end of a navigation pop) must flag `focus_changed` so observers
+        // — keyboard sync, focus-needs-build — can react. Previously
+        // `remove_node_recursive` cleared `primary_focus` silently, leaving
+        // the software keyboard stuck on screen.
+        let mut mgr = FocusManager::new();
+        let mut elem_map: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
+        let key = elem_map.insert(());
+        let id = mgr.create_node_for_element(key, None).unwrap();
+        mgr.request_focus(id);
+        mgr.apply_focus_changes();
+        assert_eq!(mgr.primary_focus(), Some(id));
+        // Drain any focus_changed set by request_focus/apply_focus_changes so
+        // the assertion below isolates the remove_node path.
+        assert!(mgr.take_focus_changed());
+
+        mgr.remove_node(id);
+        assert!(mgr.primary_focus().is_none());
+        assert!(
+            mgr.take_focus_changed(),
+            "removing the focused node must set focus_changed"
+        );
     }
 
     #[test]

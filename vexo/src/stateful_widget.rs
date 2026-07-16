@@ -352,6 +352,25 @@ impl<'a> RenderContext<'a> {
         self.build_owner.focused_element() == Some(self.element_id)
     }
 
+    /// Request that primary focus be cleared after the current rebuild pass.
+    ///
+    /// Safe to call from within [`Component::render()`] (which only has
+    /// `&mut RenderContext`, no access to `FocusManager`). The request is
+    /// stashed on the [`BuildOwner`] and applied by the pipeline once
+    /// `perform_rebuilds()` returns.
+    ///
+    /// Primary use case: a navigation container that observes a pending pop
+    /// calls this so focus (and, on mobile, the software keyboard) is
+    /// dismissed the instant the pop transition *starts* — concurrent with
+    /// the animation — rather than lingering until the outgoing page unmounts
+    /// at the end of the transition.
+    ///
+    /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
+    /// is itself a no-op in that case).
+    pub fn clear_focus(&self) {
+        self.build_owner.request_unfocus();
+    }
+
     /// Current device safe-area insets in logical pixels.
     ///
     /// Reflects the live values written each frame by

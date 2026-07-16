@@ -439,6 +439,68 @@ fn test_unmount_focused_element_clears_focus() {
     }
 }
 
+/// Unmounting a focused `TextEdit` (e.g. the overlay page at the end of a
+/// navigation pop) must flag `focus_changed` so the render-loop keyboard sync
+/// can dismiss the software keyboard. Previously `remove_node_recursive` cleared
+/// `primary_focus` silently, leaving the keyboard stuck on screen.
+#[test]
+fn test_unmount_focused_text_edit_flags_focus_changed() {
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    let mut font_system = create_test_font_system();
+
+    // Mount a TextEdit (a Component whose ComponentState returns
+    // `requests_focus_on_click() == true`, tagging its focus node as
+    // `is_text_input`).
+    let controller = crate::TextEditingController::new("Hello", &mut font_system);
+    let widget = Focus::new(crate::TextEdit::new(controller.clone()));
+    pipeline.reconcile(Box::new(widget));
+    layout_pipeline(&mut pipeline, &mut font_system);
+
+    // Tap inside the TextEdit to focus it — the realistic path.
+    pipeline.handle_event(
+        Point::new(5.0, 5.0),
+        &pointer_press(5.0, 5.0),
+        Modifiers::default(),
+        &mut font_system,
+        &ScaleSource::default(),
+        &test_clipboard(),
+    );
+    assert!(
+        pipeline.focused_element().is_some(),
+        "TextEdit should be focused after click"
+    );
+    assert!(
+        pipeline.is_text_input_focused(),
+        "is_text_input_focused() should be true while TextEdit is focused"
+    );
+
+    // Drain whatever focus_changed the click produced so the assertion below
+    // isolates the unmount path.
+    assert!(
+        pipeline.take_focus_changed(),
+        "click should have set focus_changed"
+    );
+    assert!(
+        !pipeline.take_focus_changed(),
+        "focus_changed should be cleared after take"
+    );
+
+    // Reconcile with a completely different root to force full unmount of the
+    // focused TextEdit subtree — this is what happens when the outgoing
+    // overlay page is unmounted at the end of a navigation pop animation.
+    pipeline.reconcile(Box::new(Text::new("replacement")));
+
+    // The safety net in `remove_node_recursive` must flag focus_changed.
+    assert!(
+        pipeline.take_focus_changed(),
+        "unmounting the focused TextEdit must set focus_changed so the keyboard can be dismissed"
+    );
+    assert!(
+        !pipeline.is_text_input_focused(),
+        "is_text_input_focused() should be false after the TextEdit unmounts"
+    );
+}
+
 /// Multiple reconcile cycles should not leak focus nodes.
 #[test]
 fn test_repeated_reconcile_no_leaks() {

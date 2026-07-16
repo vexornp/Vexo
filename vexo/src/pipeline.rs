@@ -289,6 +289,23 @@ impl ThreeTreePipeline {
             &self.inherited_registry,
             &mut self.inherited_maps,
         );
+
+        // Apply deferred unfocus requests made during the rebuild above.
+        //
+        // Widgets that need to dismiss focus while rendering (notably
+        // `NavigationStackView` when a pop transition starts) call
+        // `RenderContext::clear_focus()`, which only has `&BuildOwner` and so
+        // stashes the request there. Now that the mutable borrow of
+        // `focus_manager` held by `Reconciler::perform_rebuilds` has been
+        // released, we can drain the request and clear primary focus for real.
+        //
+        // `unfocus()` is a no-op when nothing is focused, and it sets
+        // `focus_changed = true` otherwise — which the render-loop keyboard
+        // sync in `WindowState::render_retain` picks up to dismiss the
+        // software keyboard on mobile.
+        if self.build_owner.take_unfocus_requested() {
+            self.focus_manager.unfocus();
+        }
     }
 
     /// Mark an element as needing rebuild.
