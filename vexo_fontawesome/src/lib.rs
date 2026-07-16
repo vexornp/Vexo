@@ -58,9 +58,13 @@ pub use icon::Icon;
 /// The font family name embedded in `fa-solid-900.otf`.
 ///
 /// This is what [`vexo::widgets::Text::with_font_family`] references; it must
-/// match the family name in the OTF file's name table (it does for the
-/// official FontAwesome Free download).
-pub const FONT_FAMILY: &str = "Font Awesome 6 Free";
+/// match the family name in the OTF file's name table. The bundled asset is
+/// FontAwesome **7** Free Solid, whose family name is `"Font Awesome 7 Free"`.
+/// If the asset is ever swapped, keep this in sync — a mismatch makes
+/// `Family::Name(...)` unresolvable and lets cosmic-text's fallback chain pick
+/// system symbol fonts (e.g. macOS Webdings/Party LET) for the PUA
+/// codepoints, producing wrong icon shapes.
+pub const FONT_FAMILY: &str = "Font Awesome 7 Free";
 
 /// Register the FontAwesome Solid font with an existing `FontSystem`.
 ///
@@ -84,7 +88,7 @@ mod tests {
 
     #[test]
     fn font_family_constant_is_correct() {
-        assert_eq!(FONT_FAMILY, "Font Awesome 6 Free");
+        assert_eq!(FONT_FAMILY, "Font Awesome 7 Free");
     }
 
     #[test]
@@ -97,6 +101,90 @@ mod tests {
     fn icons_reference_the_solid_font_family() {
         for icon in [Icons::House, Icons::Trash, Icons::ThumbsUp] {
             assert_eq!(icon.family(), FONT_FAMILY);
+        }
+    }
+
+    /// Regression guard: the hardcoded `FONT_FAMILY` constant MUST match the
+    /// family name that fontdb parses out of the embedded `fa-solid-900.otf`.
+    /// If the asset is swapped for a different FontAwesome major version
+    /// (e.g. FA6 → FA7) without updating the constant, `Family::Name(...)`
+    /// stops resolving and icon glyphs get served by cosmic-text's fallback
+    /// chain — which on macOS picks Webdings/Party LET for the PUA
+    /// codepoints, producing wrong icon shapes (while iOS, lacking those
+    /// system fonts, still renders correctly via fallback).
+    #[test]
+    fn font_family_constant_matches_embedded_otf() {
+        let mut db = glyphon::fontdb::Database::new();
+        db.load_font_source(glyphon::fontdb::Source::Binary(std::sync::Arc::new(
+            include_bytes!("../assets/fa-solid-900.otf").to_vec(),
+        )));
+        let matches: Vec<_> = db
+            .faces()
+            .filter(|f| f.families.iter().any(|(n, _)| n == FONT_FAMILY))
+            .collect();
+        assert!(
+            !matches.is_empty(),
+            "FONT_FAMILY constant {:?} does not match any family in the embedded OTF. \
+             Actual families: {:?}. Update FONT_FAMILY (lib.rs) and the codegen constant \
+             (build.rs) to match the asset.",
+            FONT_FAMILY,
+            db.faces()
+                .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))
+                .collect::<std::collections::BTreeSet<_>>()
+        );
+    }
+
+    /// Regression guard: shaping a tab-bar icon codepoint with `FONT_FAMILY`
+    /// MUST resolve to the embedded FontAwesome font, NOT a system fallback
+    /// font. On macOS, a broken family name previously let Webdings/Party LET
+    /// serve the PUA codepoints (U+F007/F013/F075), rendering wrong icon
+    /// shapes. This test reproduces the app's font setup (including system
+    /// fonts) and asserts the winning face is the embedded binary.
+    #[test]
+    fn icon_shaping_selects_fontawesome_not_system_fallback() {
+        use glyphon::{Buffer, Family, Metrics, Shaping};
+
+        let mut fs = vexo::resource::new_font_system();
+        register_fonts(&mut fs);
+
+        for icon in [Icons::Comment, Icons::User, Icons::Gear] {
+            let cp = icon.codepoint();
+            let mut buf = Buffer::new(&mut fs, Metrics::new(22.0, 22.0 * 1.2));
+            let attrs = glyphon::Attrs::new().family(Family::Name(FONT_FAMILY));
+            buf.set_text(&mut fs, cp, &attrs, Shaping::Advanced, None);
+            buf.shape_until_scroll(&mut fs, true);
+
+            let mut winners: Vec<&str> = Vec::new();
+            for run in buf.layout_runs() {
+                for g in run.glyphs.iter() {
+                    if let Some(info) = fs.db().face(g.font_id) {
+                        let src = match &info.source {
+                            glyphon::fontdb::Source::Binary(_) => "binary",
+                            glyphon::fontdb::Source::File(_) => "file",
+                            glyphon::fontdb::Source::SharedFile(_, _) => "shared",
+                        };
+                        let fam = info
+                            .families
+                            .first()
+                            .map(|(n, _)| n.as_str())
+                            .unwrap_or("?");
+                        winners.push(match src {
+                            "binary" => fam,
+                            _ => "<system>",
+                        });
+                    }
+                }
+            }
+            assert!(
+                winners.iter().all(|w| *w == FONT_FAMILY),
+                "icon {:?} ({:?}): expected glyph to come from the embedded FontAwesome \
+                 font ({}), but winning fonts were {:?}. The family name is not resolving \
+                 and a system fallback is shadowing the icon.",
+                icon,
+                cp,
+                FONT_FAMILY,
+                winners
+            );
         }
     }
 }

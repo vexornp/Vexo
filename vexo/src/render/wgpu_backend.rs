@@ -13,7 +13,7 @@ use crate::image_data::ImageData;
 use crate::image_instance::ImageInstance;
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::frame_builder::{ClipGroup, DrawRange, FrameBuilder};
+use crate::frame_builder::{FrameBuilder, OpKind};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -102,6 +102,10 @@ pub struct WgpuBackend {
 
     // Current configuration
     current_config: Option<RenderConfig>,
+
+    // Current frame's op locations + clips, populated by upload_geometry.
+    current_op_locations: Vec<crate::frame_builder::OpLocation>,
+    current_op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>>,
 
     // Shared scale factor source
     scale_source: ScaleSource,
@@ -497,6 +501,8 @@ impl WgpuBackend {
             image_atlas_texture,
             image_allocator,
             current_config: Some(RenderConfig::new(physical_size)),
+            current_op_locations: Vec::new(),
+            current_op_clips: Vec::new(),
             scale_source,
             clear_color: Color::WHITE.to_wgpu_color(),
         })
@@ -682,38 +688,74 @@ impl WgpuBackend {
         self.image_instance_buffer_capacity = new_capacity;
     }
 
-    /// Upload image geometry from frame builder to GPU buffers.
-    pub fn upload_image_geometry(&mut self, frame_builder: &FrameBuilder) {
-        let (requests, _ranges) = frame_builder.flatten_image_requests();
-        if requests.is_empty() { return; }
-        let atlas_size = [self.image_allocator.atlas_width() as f32, self.image_allocator.atlas_height() as f32];
-        let instances: Vec<ImageInstance> = requests.iter().map(|req| {
-            let region = self.image_allocator.get_region(req.image_key).expect("Image key not found in atlas");
-            ImageInstance::from_logical(req.position, req.size, region, atlas_size, req.corner_radius, AffineTransform::from_array(req.transform), req.opacity)
-        }).collect();
-        self.ensure_image_instance_capacity(instances.len());
-        self.queue.write_buffer(&self.image_instance_buffer, 0, bytemuck::cast_slice(&instances));
-    }
-
-    /// Upload geometry from frame builder to GPU buffers.
+    /// Upload geometry (quads + images) from frame builder to GPU buffers.
+    /// Also records per-op typed-buffer locations for draw iteration.
     pub fn upload_geometry(&mut self, frame_builder: &FrameBuilder) {
-        let flattened = frame_builder.flatten_quads();
-        if !flattened.instances.is_empty() {
-            self.ensure_instance_capacity(flattened.instances.len());
+        let op_locations = frame_builder.compute_op_locations();
+        let op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>> = frame_builder
+            .ops()
+            .iter()
+            .map(|(_, clip)| *clip)
+            .collect();
+
+        let mut quad_instances: Vec<QuadInstance> = Vec::new();
+        let mut image_instances: Vec<ImageInstance> = Vec::new();
+        let atlas_size = [
+            self.image_allocator.atlas_width() as f32,
+            self.image_allocator.atlas_height() as f32,
+        ];
+
+        for (op, _) in frame_builder.ops() {
+            match op {
+                crate::frame_builder::DrawOp::Quad(q) => {
+                    quad_instances.push(*q);
+                }
+                crate::frame_builder::DrawOp::Image(req) => {
+                    let region = self
+                        .image_allocator
+                        .get_region(req.image_key)
+                        .expect("Image key not found in atlas");
+                    let instance = ImageInstance::from_logical(
+                        req.position,
+                        req.size,
+                        region,
+                        atlas_size,
+                        req.corner_radius,
+                        AffineTransform::from_array(req.transform),
+                        req.opacity,
+                    );
+                    image_instances.push(instance);
+                }
+            }
+        }
+
+        if !quad_instances.is_empty() {
+            self.ensure_instance_capacity(quad_instances.len());
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(&flattened.instances),
+                bytemuck::cast_slice(&quad_instances),
             );
         }
+        if !image_instances.is_empty() {
+            self.ensure_image_instance_capacity(image_instances.len());
+            self.queue.write_buffer(
+                &self.image_instance_buffer,
+                0,
+                bytemuck::cast_slice(&image_instances),
+            );
+        }
+
+        self.current_op_locations = op_locations;
+        self.current_op_clips = op_clips;
     }
 
-    /// Execute the render pass with per-clip-group scissor rects and draw calls.
+    /// Execute the render pass, iterating `current_op_locations` in paint order.
+    /// Scissor rect and pipeline are set only when they change between ops;
+    /// each op draws exactly one instance at its typed-buffer index. Text is
+    /// rendered last as a single full-viewport pass.
     pub fn execute_render_pass(
         &mut self,
-        clip_groups: &[ClipGroup],
-        draw_ranges: &[DrawRange],
-        image_draw_ranges: &[DrawRange],
         viewport_width: u32,
         viewport_height: u32,
     ) -> Result<(), RenderError> {
@@ -752,67 +794,87 @@ impl WgpuBackend {
                 multiview_mask: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            // Iterate ops in paint order. Set scissor + pipeline only on change.
+            // prev_clip uses Option<Option<Bounds>> so the initial state (no
+            // scissor ever set yet) is distinguishable from "scissor set to None
+            // (full viewport)". This matters when the first op has clip == None:
+            // we still need to set the scissor once.
+            let mut prev_kind: Option<OpKind> = None;
+            let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
 
-            // Draw quads per clip group with appropriate scissor rect
-            for (group, range) in clip_groups.iter().zip(draw_ranges.iter()) {
-                if range.count == 0 { continue; }
-
-                // Set scissor rect for this clip group
-                if let Some(clip) = &group.clip_bounds {
-                    let x = (clip.left * scale_factor).max(0.0) as u32;
-                    let y = (clip.top * scale_factor).max(0.0) as u32;
-                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
-                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
-                    let w = right.saturating_sub(x);
-                    let h = bottom.saturating_sub(y);
-                    if w == 0 || h == 0 { continue; } // Fully clipped, skip
-                    render_pass.set_scissor_rect(x, y, w, h);
-                } else {
-                    // No clip: scissor defaults to full viewport
-                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+            for (loc, clip) in self.current_op_locations.iter().zip(self.current_op_clips.iter()) {
+                // 1. Scissor: only set when clip changes.
+                //    Compare Option<Bounds> by value via the Option<Option> sentinel.
+                let clip_value = *clip;
+                if prev_clip != Some(clip_value) {
+                    match clip {
+                        Some(c) => {
+                            let x = (c.left * scale_factor).max(0.0) as u32;
+                            let y = (c.top * scale_factor).max(0.0) as u32;
+                            let right = (c.right * scale_factor).min(viewport_width as f32) as u32;
+                            let bottom = (c.bottom * scale_factor).min(viewport_height as f32) as u32;
+                            let w = right.saturating_sub(x);
+                            let h = bottom.saturating_sub(y);
+                            if w == 0 || h == 0 {
+                                // Fully clipped — skip this op. Still advance prev_clip
+                                // so we don't repeatedly re-set scissor for adjacent
+                                // ops with the same degenerate clip.
+                                prev_clip = Some(clip_value);
+                                continue;
+                            }
+                            render_pass.set_scissor_rect(x, y, w, h);
+                        }
+                        None => {
+                            render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                        }
+                    }
+                    prev_clip = Some(clip_value);
                 }
 
-                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..6, 0, range.first_instance..range.first_instance + range.count);
-            }
-
-            // Draw image quads per clip group with appropriate scissor rect
-            render_pass.set_pipeline(&self.image_pipeline);
-            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.image_atlas_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
-
-            for (group, range) in clip_groups.iter().zip(image_draw_ranges.iter()) {
-                if range.count == 0 { continue; }
-
-                // Set scissor rect for this clip group
-                if let Some(clip) = &group.clip_bounds {
-                    let x = (clip.left * scale_factor).max(0.0) as u32;
-                    let y = (clip.top * scale_factor).max(0.0) as u32;
-                    let right = (clip.right * scale_factor).min(viewport_width as f32) as u32;
-                    let bottom = (clip.bottom * scale_factor).min(viewport_height as f32) as u32;
-                    let w = right.saturating_sub(x);
-                    let h = bottom.saturating_sub(y);
-                    if w == 0 || h == 0 { continue; }
-                    render_pass.set_scissor_rect(x, y, w, h);
-                } else {
-                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                // 2. Pipeline: only switch when op kind changes.
+                let kind = loc.kind();
+                if Some(kind) != prev_kind {
+                    match kind {
+                        OpKind::Quad => {
+                            render_pass.set_pipeline(&self.render_pipeline);
+                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                        }
+                        OpKind::Image => {
+                            render_pass.set_pipeline(&self.image_pipeline);
+                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                            render_pass.set_bind_group(1, &self.image_atlas_bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
+                            render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
+                        }
+                    }
+                    prev_kind = Some(kind);
                 }
 
-                render_pass.set_index_buffer(self.image_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..6, 0, range.first_instance..range.first_instance + range.count);
+                // 3. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
+                match kind {
+                    OpKind::Quad => {
+                        render_pass.set_index_buffer(
+                            self.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint16,
+                        );
+                    }
+                    OpKind::Image => {
+                        render_pass.set_index_buffer(
+                            self.image_index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint16,
+                        );
+                    }
+                }
+                let idx = match loc {
+                    crate::frame_builder::OpLocation::Quad { index } => *index,
+                    crate::frame_builder::OpLocation::Image { index } => *index,
+                };
+                render_pass.draw_indexed(0..6, 0, idx..idx + 1);
             }
 
-            // Render all text with full-viewport scissor.
-            // Text clipping is handled by glyphon's TextArea.bounds per-request,
-            // not by GPU scissor rects (glyphon's prepare() replaces its vertex
-            // buffer on each call, so per-clip-group prepare+render is not possible
-            // within a single render pass).
+            // Text pass — full-viewport scissor, unchanged.
             render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
             self.text_renderer
                 .render(&self.atlas, &self.viewport, &mut render_pass)
@@ -856,7 +918,7 @@ impl RenderBackend for WgpuBackend {
     }
 
     fn render(&mut self) -> Result<(), RenderError> {
-        // The trait method is not used by the clip-group-based pipeline.
+        // The trait method is not used by the flat-op pipeline.
         // TextPipeline::execute_render() calls execute_render_pass() directly.
         Ok(())
     }

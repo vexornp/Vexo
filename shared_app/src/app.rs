@@ -69,7 +69,6 @@ impl Application for ImState {
                     .push(Icon::new(icon).with_size(22.0).with_color(color))
                     .push(Text::new(label).with_font_size(11.0).with_color(color))
                     .boxed()
-                    .padding(8.0)
             },
         );
 

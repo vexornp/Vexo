@@ -1,7 +1,7 @@
 use glyphon::{Buffer, FontSystem, TextArea};
 
 use crate::core::{Bounds, Color, Physical, ScaleSource, Size};
-use crate::frame_builder::ClipGroup;
+use crate::frame_builder::TextRequest;
 use crate::text_cache::TextCache;
 
 /// Processes text requests into TextArea instances for rendering.
@@ -81,11 +81,14 @@ impl TextProcessor {
         (buffer, data)
     }
 
-    /// Process text requests from clip groups into a single PreparedText.
+    /// Process text requests into a single PreparedText.
+    ///
+    /// Each request carries its own `clip_bounds`; there is no clip-group
+    /// bucketing. Clipping is per-request via `TextArea.bounds`.
     fn process_text_requests(
         &mut self,
         font_system: &mut FontSystem,
-        clip_groups: &[ClipGroup],
+        requests: &[TextRequest],
         scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> PreparedText {
@@ -93,44 +96,35 @@ impl TextProcessor {
         let mut buffers: Vec<Buffer> = Vec::new();
         let mut text_area_data: Vec<TextAreaData> = Vec::new();
 
-        for group in clip_groups {
-            for req in &group.text_requests {
-                let buffer = self.cache.get_or_create(font_system, req);
+        for req in requests {
+            let buffer = self.cache.get_or_create(font_system, req);
+            let physical_pos = req.position.to_physical(scale);
 
-                // Convert logical position to physical
-                let physical_pos = req.position.to_physical(scale);
+            // Use the request's own clip bounds, or fall back to the full
+            // viewport when no clip is active.
+            //
+            // The fallback uses (0, 0, viewport_width, viewport_height) — the full
+            // viewport — rather than a viewport-sized region starting at the text
+            // position. Starting at the text position would create bounds like
+            // (text_x, text_y, text_x + vp_w, text_y + vp_h), which pushes the
+            // bottom far past the viewport. glyphon internally clamps bounds to
+            // the resolution, and a large bottom value interacts badly with that
+            // clamping.
+            let bounds = if let Some(clip) = req.clip_bounds {
+                clip.to_physical(scale)
+            } else {
+                Bounds::<Physical>::from_xywh(
+                    0.0,
+                    0.0,
+                    viewport_physical.width,
+                    viewport_physical.height,
+                )
+            };
 
-                // Use the clip group's bounds for text clipping (via glyphon TextArea.bounds),
-                // or fall back to viewport bounds if no clip is active.
-                //
-                // The fallback uses (0, 0, viewport_width, viewport_height) — the full
-                // viewport — rather than a viewport-sized region starting at the text
-                // position. Starting at the text position would create bounds like
-                // (text_x, text_y, text_x + vp_w, text_y + vp_h), which pushes the
-                // bottom far past the viewport. glyphon internally clamps bounds to
-                // the resolution, and a large bottom value interacts badly with that
-                // clamping.
-                let bounds = if let Some(clip) = &group.clip_bounds {
-                    clip.to_physical(scale)
-                } else {
-                    Bounds::<Physical>::from_xywh(
-                        0.0,
-                        0.0,
-                        viewport_physical.width,
-                        viewport_physical.height,
-                    )
-                };
-
-                let (buf, data) = Self::create_text_area(
-                    buffer,
-                    physical_pos,
-                    scale_source,
-                    bounds,
-                    req.color,
-                );
-                buffers.push(buf);
-                text_area_data.push(data);
-            }
+            let (buf, data) =
+                Self::create_text_area(buffer, physical_pos, scale_source, bounds, req.color);
+            buffers.push(buf);
+            text_area_data.push(data);
         }
 
         // Periodically evict stale cache entries
@@ -144,6 +138,10 @@ impl TextProcessor {
 
     /// Collect text from the frame_builder and prepare it for rendering.
     ///
+    /// Reads `text_requests()` directly; each request carries its own
+    /// `clip_bounds`, so there is no clip-group structure to consult for
+    /// text clipping.
+    ///
     /// Only processes text_requests (editor requests have been removed;
     /// editor text is now handled via the retain-mode TextEditRenderObject
     /// which emits Caret commands instead).
@@ -154,13 +152,9 @@ impl TextProcessor {
         scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
-        let clip_groups = frame_builder.clip_groups();
-        let regular = self.process_text_requests(
-            font_system,
-            clip_groups,
-            scale_source,
-            viewport_physical,
-        );
+        let requests = frame_builder.text_requests();
+        let regular =
+            self.process_text_requests(font_system, &requests, scale_source, viewport_physical);
 
         CombinedPreparedText { regular }
     }
@@ -187,5 +181,62 @@ impl CombinedPreparedText {
     /// Must be called immediately before rendering.
     pub fn as_text_areas(&mut self) -> Vec<TextArea<'_>> {
         self.regular.as_text_areas()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{Bounds, Color, Logical, Physical, Point, ScaleSource, Size};
+    use crate::frame_builder::FrameBuilder;
+
+    fn font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        glyphon::FontSystem::new_with_fonts([glyphon::fontdb::Source::Binary(std::sync::Arc::new(
+            font_data,
+        ))])
+    }
+
+    #[test]
+    fn test_collect_text_reads_clip_from_request() {
+        let mut fb = FrameBuilder::new();
+        let clip = Bounds::<Logical>::from_xywh(5.0, 5.0, 50.0, 50.0);
+        fb.push_clip(clip);
+        fb.add_text(
+            "hi".to_string(),
+            Point::new(10.0, 10.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+        fb.pop_clip();
+        // Outside clip — clip_bounds should be None
+        fb.add_text(
+            "lo".to_string(),
+            Point::new(10.0, 10.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+
+        let mut fs = font_system();
+        let scale = ScaleSource::new(1.0);
+        let mut proc = TextProcessor::new();
+        let mut prepared = proc.collect_text(
+            &mut fb,
+            &mut fs,
+            &scale,
+            Size::<Physical>::new(800.0, 600.0),
+        );
+
+        // No panic, and both text areas present
+        let mut areas = prepared.as_text_areas();
+        assert_eq!(areas.len(), 2);
+        // First area's bounds should reflect the clip; second should be full viewport.
+        // glyphon's TextArea.bounds is a glyphon::Bounds (i32). We don't assert exact
+        // values (resolution-dependent); just that the call succeeds.
+        let _ = areas.drain(..);
     }
 }

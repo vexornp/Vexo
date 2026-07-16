@@ -1,11 +1,13 @@
 //! End-to-end test for the retain-mode pipeline.
 
-use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
 use crate::animation::AnimationTicker;
-use crate::widgets::{DecoratedContainer, Transform};
 use crate::core::{Color, Position, Size};
-use crate::layout::{Layout, TaffyLayoutEngine, AlignItems, JustifyContent, TrackSizing, GridPlacement};
+use crate::layout::{
+    AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
+};
 use crate::render::RenderCommand;
+use crate::widgets::{DecoratedContainer, Transform};
+use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -36,9 +38,18 @@ fn test_retain_pipeline_e2e() {
 
     // Verify element creation
     // Note: Current implementation creates elements for root widget only
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
-    assert!(pipeline.render_objects().root().is_some(), "Root should be set");
+    assert!(
+        pipeline.element_registry().len() >= 1,
+        "Should have at least root element"
+    );
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
+    assert!(
+        pipeline.render_objects().root().is_some(),
+        "Root should be set"
+    );
 
     // === Step 3: Layout ===
     let mut engine = TaffyLayoutEngine::new();
@@ -46,12 +57,18 @@ fn test_retain_pipeline_e2e() {
     let available_size = Size::new(800.0, 600.0);
 
     // Verify dirty before layout
-    assert!(pipeline.needs_layout(), "Should need layout after reconcile");
+    assert!(
+        pipeline.needs_layout(),
+        "Should need layout after reconcile"
+    );
 
     pipeline.layout(available_size, &mut engine, &mut font_system);
 
     // Verify dirty cleared
-    assert!(!pipeline.needs_layout(), "Should not need layout after layout");
+    assert!(
+        !pipeline.needs_layout(),
+        "Should not need layout after layout"
+    );
 
     // === Step 4: Paint ===
     assert!(pipeline.needs_paint(), "Should need paint after reconcile");
@@ -117,34 +134,58 @@ fn test_decorated_container_widget_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree with DecoratedContainer wrapping a Text
-    let container = DecoratedContainer::new(Text::new("Hello"))
-        .style(crate::Style::new()
+    let container = DecoratedContainer::new(Text::new("Hello")).style(
+        crate::Style::new()
             .background(Color::RED)
             .border(Color::BLACK, 2.0)
-            .corner_radius(8.0));
+            .corner_radius(8.0),
+    );
 
     // Create pipeline and reconcile
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(container));
 
     // Should have created elements and render objects
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+    assert!(
+        pipeline.element_registry().len() >= 1,
+        "Should have at least root element"
+    );
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
 
     // === Verify render tree structure ===
-    let root_ro = pipeline.render_objects().root().expect("should have root render object");
-    let root_obj = pipeline.render_objects().get(root_ro).expect("root render object should exist");
+    let root_ro = pipeline
+        .render_objects()
+        .root()
+        .expect("should have root render object");
+    let root_obj = pipeline
+        .render_objects()
+        .get(root_ro)
+        .expect("root render object should exist");
 
     // DecoratedContainer render object should have the Text render object as a child
     let children = root_obj.children();
-    assert_eq!(children.len(), 1, "DecoratedContainer render object should have exactly one child");
+    assert_eq!(
+        children.len(),
+        1,
+        "DecoratedContainer render object should have exactly one child"
+    );
 
     // The child render object should exist
     let child_ro_id = children[0];
-    let child_obj = pipeline.render_objects().get(child_ro_id).expect("child render object should exist");
+    let child_obj = pipeline
+        .render_objects()
+        .get(child_ro_id)
+        .expect("child render object should exist");
     // The child should be a leaf (no children of its own)
     // TextRenderObject returns empty children by default
-    assert_eq!(child_obj.children().len(), 0, "Text render object should be a leaf");
+    assert_eq!(
+        child_obj.children().len(),
+        0,
+        "Text render object should be a leaf"
+    );
 
     // === Layout ===
     let mut engine = TaffyLayoutEngine::new();
@@ -155,11 +196,19 @@ fn test_decorated_container_widget_in_pipeline() {
     let commands = pipeline.paint();
 
     // DecoratedContainer should produce rect commands for background and border
-    assert!(commands.len() >= 2, "DecoratedContainer should produce at least two commands");
+    assert!(
+        commands.len() >= 2,
+        "DecoratedContainer should produce at least two commands"
+    );
 
     // Verify the render commands include a rect command (the background fill)
-    let has_rect = commands.iter().any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
-    assert!(has_rect, "Commands should include a Rect command for background fill");
+    let has_rect = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect,
+        "Commands should include a Rect command for background fill"
+    );
 }
 
 /// Test Transform::translate in the pipeline.
@@ -168,13 +217,12 @@ fn test_decorated_container_widget_in_pipeline() {
 /// PushTransform/PopTransform and the transform is correctly applied.
 #[test]
 fn test_translate_transform_in_pipeline() {
+    use crate::core::Point;
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::Point;
 
     let child = DecoratedContainer::new(Text::new("Shifted"))
-        .style(crate::Style::new()
-            .background(Color::BLUE))
+        .style(crate::Style::new().background(Color::BLUE))
         .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::translate(child, 50.0, 30.0);
@@ -191,14 +239,25 @@ fn test_translate_transform_in_pipeline() {
     let commands = pipeline.paint();
 
     // Should have PushTransform and PopTransform wrapping the child commands
-    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
-    let pop_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PopTransform));
+    let push_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    let pop_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopTransform));
     assert!(push_idx.is_some(), "Should have PushTransform command");
     assert!(pop_idx.is_some(), "Should have PopTransform command");
-    assert!(push_idx.unwrap() < pop_idx.unwrap(), "PushTransform should come before PopTransform");
+    assert!(
+        push_idx.unwrap() < pop_idx.unwrap(),
+        "PushTransform should come before PopTransform"
+    );
 
     // Verify the transform values
-    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+    if let Some(RenderCommand::PushTransform {
+        transform,
+        origin: _,
+    }) = commands.get(push_idx.unwrap())
+    {
         assert_eq!(transform.a, 1.0);
         assert_eq!(transform.d, 1.0);
         assert_eq!(transform.e, 50.0);
@@ -210,18 +269,25 @@ fn test_translate_transform_in_pipeline() {
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
     // Should have at least one quad (background rect from DecoratedContainer)
-    assert!(frame_builder.quad_count() >= 1, "Should have at least one quad");
+    assert!(
+        frame_builder.quad_count() >= 1,
+        "Should have at least one quad"
+    );
 
     // The translate transform should be baked into the quad instance
     let has_translated_quad = frame_builder.quad_instances().iter().any(|q| {
         q.transform[4] == 50.0 && q.transform[5] == 30.0 // e=50, f=30
     });
-    assert!(has_translated_quad, "At least one quad should have the translate(50,30) transform");
+    assert!(
+        has_translated_quad,
+        "At least one quad should have the translate(50,30) transform"
+    );
 
     // Text should be shifted by (50, 30)
-    let has_shifted_text = frame_builder.text_requests().iter().any(|t| {
-        t.content == "Shifted"
-    });
+    let has_shifted_text = frame_builder
+        .text_requests()
+        .iter()
+        .any(|t| t.content == "Shifted");
     assert!(has_shifted_text, "Should have 'Shifted' text");
 }
 
@@ -231,13 +297,12 @@ fn test_translate_transform_in_pipeline() {
 /// PushTransform/PopTransform and the rotation matrix is correct.
 #[test]
 fn test_rotate_transform_in_pipeline() {
+    use crate::core::{AffineTransform, Point};
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::{AffineTransform, Point};
 
     let child = DecoratedContainer::new(Text::new("Rotated"))
-        .style(crate::Style::new()
-            .background(Color::BLUE))
+        .style(crate::Style::new().background(Color::BLUE))
         .layout(crate::layout::Layout::default().padding(8.0));
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
@@ -252,18 +317,32 @@ fn test_rotate_transform_in_pipeline() {
 
     let commands = pipeline.paint();
 
-    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
-    let pop_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PopTransform));
+    let push_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    let pop_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopTransform));
     assert!(push_idx.is_some(), "Should have PushTransform command");
     assert!(pop_idx.is_some(), "Should have PopTransform command");
-    assert!(push_idx.unwrap() < pop_idx.unwrap(), "Push should come before Pop");
+    assert!(
+        push_idx.unwrap() < pop_idx.unwrap(),
+        "Push should come before Pop"
+    );
 
-    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+    if let Some(RenderCommand::PushTransform {
+        transform,
+        origin: _,
+    }) = commands.get(push_idx.unwrap())
+    {
         let cos_45 = angle.cos();
         let sin_45 = angle.sin();
         assert!((transform.a - cos_45).abs() < 1e-6, "a should be cos(45)");
         assert!((transform.b - sin_45).abs() < 1e-6, "b should be sin(45)");
-        assert!((transform.c - (-sin_45)).abs() < 1e-6, "c should be -sin(45)");
+        assert!(
+            (transform.c - (-sin_45)).abs() < 1e-6,
+            "c should be -sin(45)"
+        );
         assert!((transform.d - cos_45).abs() < 1e-6, "d should be cos(45)");
         assert!(transform.e.abs() < 1e-6, "e should be 0 for pure rotation");
         assert!(transform.f.abs() < 1e-6, "f should be 0 for pure rotation");
@@ -272,25 +351,30 @@ fn test_rotate_transform_in_pipeline() {
     let mut frame_builder = FrameBuilder::new();
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-    assert!(frame_builder.quad_count() >= 1, "Should have at least one quad");
+    assert!(
+        frame_builder.quad_count() >= 1,
+        "Should have at least one quad"
+    );
 
     let has_rotated_quad = frame_builder.quad_instances().iter().any(|q| {
         let t = AffineTransform::from_array(q.transform);
         !t.is_translation_only()
     });
-    assert!(has_rotated_quad, "At least one quad should have a rotation transform");
+    assert!(
+        has_rotated_quad,
+        "At least one quad should have a rotation transform"
+    );
 }
 
 /// Test Transform::scale in the pipeline.
 #[test]
 fn test_scale_transform_in_pipeline() {
+    use crate::core::Point;
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::Point;
 
     let child = DecoratedContainer::new(Text::new("Scaled"))
-        .style(crate::Style::new()
-            .background(Color::GREEN))
+        .style(crate::Style::new().background(Color::GREEN))
         .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::scale(child, 2.0, 3.0);
@@ -304,10 +388,16 @@ fn test_scale_transform_in_pipeline() {
 
     let commands = pipeline.paint();
 
-    let push_idx = commands.iter().position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
+    let push_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushTransform { .. }));
     assert!(push_idx.is_some(), "Should have PushTransform command");
 
-    if let Some(RenderCommand::PushTransform { transform, origin: _ }) = commands.get(push_idx.unwrap()) {
+    if let Some(RenderCommand::PushTransform {
+        transform,
+        origin: _,
+    }) = commands.get(push_idx.unwrap())
+    {
         assert!((transform.a - 2.0).abs() < 1e-6, "a should be 2.0 (scaleX)");
         assert!(transform.b.abs() < 1e-6, "b should be 0");
         assert!(transform.c.abs() < 1e-6, "c should be 0");
@@ -321,25 +411,34 @@ fn test_scale_transform_in_pipeline() {
 
     assert!(frame_builder.quad_count() >= 1);
 
-    let has_scaled_quad = frame_builder.quad_instances().iter().any(|q| {
-        (q.transform[0] - 2.0).abs() < 1e-6 && (q.transform[3] - 3.0).abs() < 1e-6
-    });
-    assert!(has_scaled_quad, "At least one quad should have the scale transform");
+    let has_scaled_quad = frame_builder
+        .quad_instances()
+        .iter()
+        .any(|q| (q.transform[0] - 2.0).abs() < 1e-6 && (q.transform[3] - 3.0).abs() < 1e-6);
+    assert!(
+        has_scaled_quad,
+        "At least one quad should have the scale transform"
+    );
 }
 
 /// Test that clip bounds are expanded to AABB when inside a rotation transform.
 #[test]
 fn test_clip_bounds_expanded_for_rotated_content() {
+    use crate::core::{AffineTransform, Bounds, Point};
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::{AffineTransform, Bounds, Point};
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let transform = AffineTransform::rotation(angle);
 
     let commands = vec![
-        RenderCommand::PushTransform { transform, origin: Point::new(200.0, 200.0) },
-        RenderCommand::PushClip { bounds: Bounds::from_xywh(150.0, 150.0, 100.0, 100.0) },
+        RenderCommand::PushTransform {
+            transform,
+            origin: Point::new(200.0, 200.0),
+        },
+        RenderCommand::PushClip {
+            bounds: Bounds::from_xywh(150.0, 150.0, 100.0, 100.0),
+        },
         RenderCommand::rect(Bounds::from_xywh(150.0, 150.0, 100.0, 100.0), Color::RED),
         RenderCommand::PopClip,
         RenderCommand::PopTransform,
@@ -348,30 +447,44 @@ fn test_clip_bounds_expanded_for_rotated_content() {
     let mut frame_builder = FrameBuilder::new();
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-    let groups = frame_builder.clip_groups();
-    let group_with_clip = groups.iter().find(|g| g.clip_bounds.is_some());
-    assert!(group_with_clip.is_some(), "Should have a clip group with bounds");
-
-    let clip_bounds = group_with_clip.unwrap().clip_bounds.unwrap();
+    let ops = frame_builder.ops();
+    let quad_op = ops
+        .iter()
+        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let clip_bounds = quad_op
+        .expect("Should have a quad op with clip bounds")
+        .1
+        .unwrap();
     let width = clip_bounds.right - clip_bounds.left;
     let height = clip_bounds.bottom - clip_bounds.top;
     // Original clip was 100x100. After 45deg rotation, AABB should be ~141x141.
-    assert!(width > 100.0, "Clip width should expand beyond 100 for rotated content, got {width}");
-    assert!(height > 100.0, "Clip height should expand beyond 100 for rotated content, got {height}");
+    assert!(
+        width > 100.0,
+        "Clip width should expand beyond 100 for rotated content, got {width}"
+    );
+    assert!(
+        height > 100.0,
+        "Clip height should expand beyond 100 for rotated content, got {height}"
+    );
 }
 
 /// Test that translation-only transforms do not expand clip bounds.
 #[test]
 fn test_clip_bounds_unchanged_for_translate_only() {
+    use crate::core::{AffineTransform, Bounds, Point};
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::{AffineTransform, Bounds, Point};
 
     let transform = AffineTransform::translation(50.0, 30.0);
 
     let commands = vec![
-        RenderCommand::PushTransform { transform, origin: Point::new(200.0, 200.0) },
-        RenderCommand::PushClip { bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 100.0) },
+        RenderCommand::PushTransform {
+            transform,
+            origin: Point::new(200.0, 200.0),
+        },
+        RenderCommand::PushClip {
+            bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
+        },
         RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 100.0), Color::RED),
         RenderCommand::PopClip,
         RenderCommand::PopTransform,
@@ -380,28 +493,39 @@ fn test_clip_bounds_unchanged_for_translate_only() {
     let mut frame_builder = FrameBuilder::new();
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-    let groups = frame_builder.clip_groups();
-    let group_with_clip = groups.iter().find(|g| g.clip_bounds.is_some());
-    assert!(group_with_clip.is_some());
-
-    let clip_bounds = group_with_clip.unwrap().clip_bounds.unwrap();
+    let ops = frame_builder.ops();
+    let quad_op = ops
+        .iter()
+        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let clip_bounds = quad_op
+        .expect("Should have a quad op with clip bounds")
+        .1
+        .unwrap();
     let width = clip_bounds.right - clip_bounds.left;
     let height = clip_bounds.bottom - clip_bounds.top;
-    assert!((width - 100.0).abs() < 1.0, "Clip width should remain ~100 for translate-only, got {width}");
-    assert!((height - 100.0).abs() < 1.0, "Clip height should remain ~100 for translate-only, got {height}");
+    assert!(
+        (width - 100.0).abs() < 1.0,
+        "Clip width should remain ~100 for translate-only, got {width}"
+    );
+    assert!(
+        (height - 100.0).abs() < 1.0,
+        "Clip height should remain ~100 for translate-only, got {height}"
+    );
 }
 
 /// Test that a rotation transform with a rounded rect produces correct quad instances.
 #[test]
 fn test_rotate_transform_with_rounded_rect() {
+    use crate::core::{AffineTransform, Point};
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
-    use crate::core::{AffineTransform, Point};
 
     let child = DecoratedContainer::new(Text::new("Rounded"))
-        .style(crate::Style::new()
-            .background(Color::BLUE)
-            .corner_radius(12.0))
+        .style(
+            crate::Style::new()
+                .background(Color::BLUE)
+                .corner_radius(12.0),
+        )
         .layout(crate::layout::Layout::default().padding(8.0));
 
     let widget = Transform::rotate(child, 0.3);
@@ -421,7 +545,10 @@ fn test_rotate_transform_with_rounded_rect() {
     let has_rotated_rounded_quad = frame_builder.quad_instances().iter().any(|q| {
         q.corner_radius > 0.0 && !AffineTransform::from_array(q.transform).is_translation_only()
     });
-    assert!(has_rotated_rounded_quad, "Should have a quad with both rotation and corner_radius");
+    assert!(
+        has_rotated_rounded_quad,
+        "Should have a quad with both rotation and corner_radius"
+    );
 }
 
 /// Test Flex::column() with CSS-like layout properties (padding, gap, justify, align).
@@ -443,8 +570,14 @@ fn test_column_with_layout() {
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+    assert!(
+        pipeline.element_registry().len() >= 1,
+        "Should have at least root element"
+    );
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
 
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = create_test_font_system();
@@ -459,18 +592,9 @@ fn test_column_with_layout() {
 #[test]
 fn test_with_layout_on_children() {
     let widget = Flex::row()
-        .push(
-            Text::new("Left")
-                .with_layout(Layout::default().flex_grow(1.0)),
-        )
-        .push(
-            Text::new("Center")
-                .with_layout(Layout::default().width(100.0)),
-        )
-        .push(
-            Text::new("Right")
-                .with_layout(Layout::default().flex_grow(2.0)),
-        )
+        .push(Text::new("Left").with_layout(Layout::default().flex_grow(1.0)))
+        .push(Text::new("Center").with_layout(Layout::default().width(100.0)))
+        .push(Text::new("Right").with_layout(Layout::default().flex_grow(2.0)))
         .layout(
             Layout::default()
                 .flex_direction(crate::layout::FlexDirection::Row)
@@ -480,8 +604,14 @@ fn test_with_layout_on_children() {
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+    assert!(
+        pipeline.element_registry().len() >= 1,
+        "Should have at least root element"
+    );
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
 
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = create_test_font_system();
@@ -496,20 +626,32 @@ fn test_with_layout_on_children() {
 fn test_grid_widget() {
     let widget = Grid::new()
         .push(
-            Text::new("A")
-                .with_layout(Layout::default().grid_column(GridPlacement::start(1)).grid_row(GridPlacement::start(1))),
+            Text::new("A").with_layout(
+                Layout::default()
+                    .grid_column(GridPlacement::start(1))
+                    .grid_row(GridPlacement::start(1)),
+            ),
         )
         .push(
-            Text::new("B")
-                .with_layout(Layout::default().grid_column(GridPlacement::start(2)).grid_row(GridPlacement::start(1))),
+            Text::new("B").with_layout(
+                Layout::default()
+                    .grid_column(GridPlacement::start(2))
+                    .grid_row(GridPlacement::start(1)),
+            ),
         )
         .push(
-            Text::new("C")
-                .with_layout(Layout::default().grid_column(GridPlacement::start(1)).grid_row(GridPlacement::start(2))),
+            Text::new("C").with_layout(
+                Layout::default()
+                    .grid_column(GridPlacement::start(1))
+                    .grid_row(GridPlacement::start(2)),
+            ),
         )
         .push(
-            Text::new("D")
-                .with_layout(Layout::default().grid_column(GridPlacement::start(2)).grid_row(GridPlacement::start(2))),
+            Text::new("D").with_layout(
+                Layout::default()
+                    .grid_column(GridPlacement::start(2))
+                    .grid_row(GridPlacement::start(2)),
+            ),
         )
         .layout(
             Layout::default()
@@ -521,8 +663,14 @@ fn test_grid_widget() {
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
 
-    assert!(pipeline.element_registry().len() >= 1, "Should have at least root element");
-    assert!(pipeline.render_objects().len() >= 1, "Should have at least root render object");
+    assert!(
+        pipeline.element_registry().len() >= 1,
+        "Should have at least root element"
+    );
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
 
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = create_test_font_system();

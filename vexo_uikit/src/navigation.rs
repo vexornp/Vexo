@@ -793,7 +793,7 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         );
 
         // Outer bar: background edge-to-edge, height includes top inset.
-        Flex::row()
+        let bar_row = Flex::row()
             .align(AlignItems::Center)
             .padding_each(0.0, 0.0, safe.top, 0.0)
             .background(nav.mobile_header_bg)
@@ -801,7 +801,24 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             .flex_shrink(0.0)
             .push(leading)
             .push(title_text)
-            .push(trailing)
+            .push(trailing);
+
+        // SwiftUI-style hairline along the bar's bottom edge. 1 logical pixel
+        // (Taffy floors sub-pixel heights to 0, so a true 1-physical-px
+        // `1/scale` height would vanish on Retina). 1 logical px renders as 1
+        // physical px at 1× and 2 at 2× — matching macOS `Divider`.
+        let hairline = Flex::row()
+            .background(nav.divider)
+            .height(tokens::navigation::HAIRLINE_THICKNESS)
+            .flex_shrink(0.0);
+
+        // Wrap bar + hairline in a fixed-height column so the outer
+        // NavigationStackView column keeps a single nav-bar child; the
+        // hairline sits flush against the bar's bottom edge, full width.
+        Flex::column()
+            .flex_shrink(0.0)
+            .push(bar_row)
+            .push(hairline)
             .boxed()
     }
 }

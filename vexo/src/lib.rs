@@ -201,10 +201,10 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::Style;
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, Grid, Image,
-    IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, ScrollController, ScrollView,
-    SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState, TextEditingController,
-    Theme, ThemeData, Transform, Widget, WithLayout,
+    Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, GestureDetector, Grid,
+    Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, ScrollController,
+    ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
+    TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;
