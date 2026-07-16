@@ -555,4 +555,48 @@ mod tests {
         let text = &frame_builder.text_requests()[0];
         assert_eq!(text.color, Color::BLACK.with_alpha(0.5));
     }
+
+    #[test]
+    fn test_process_rect_then_image_preserves_order() {
+        use crate::image_atlas::ImageKey;
+        use crate::render::RenderCommand;
+        let mut frame_builder = crate::frame_builder::FrameBuilder::new();
+        let commands = vec![
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 10.0, 10.0), Color::RED),
+            RenderCommand::Image {
+                bounds: Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+                image_key: ImageKey::default(),
+                corner_radius: 0.0,
+            },
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        let ops = frame_builder.ops();
+        assert_eq!(ops.len(), 2, "rect+image must produce 2 ops, not bucketed");
+        assert!(matches!(ops[0].0, crate::frame_builder::DrawOp::Quad(_)));
+        assert!(matches!(ops[1].0, crate::frame_builder::DrawOp::Image(_)));
+    }
+
+    #[test]
+    fn test_process_image_then_rect_preserves_order() {
+        use crate::image_atlas::ImageKey;
+        use crate::render::RenderCommand;
+        let mut frame_builder = crate::frame_builder::FrameBuilder::new();
+        let commands = vec![
+            RenderCommand::Image {
+                bounds: Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+                image_key: ImageKey::default(),
+                corner_radius: 0.0,
+            },
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 10.0, 10.0), Color::RED),
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        let ops = frame_builder.ops();
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(ops[0].0, crate::frame_builder::DrawOp::Image(_)));
+        assert!(matches!(ops[1].0, crate::frame_builder::DrawOp::Quad(_)));
+    }
 }

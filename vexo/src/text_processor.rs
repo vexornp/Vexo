@@ -83,9 +83,8 @@ impl TextProcessor {
 
     /// Process text requests into a single PreparedText.
     ///
-    /// Each request carries its own `clip_bounds`; the clip group is no longer
-    /// consulted. This decouples text rendering from `ClipGroup` so it can be
-    /// removed in a later step.
+    /// Each request carries its own `clip_bounds`; there is no clip-group
+    /// bucketing. Clipping is per-request via `TextArea.bounds`.
     fn process_text_requests(
         &mut self,
         font_system: &mut FontSystem,
@@ -140,8 +139,8 @@ impl TextProcessor {
     /// Collect text from the frame_builder and prepare it for rendering.
     ///
     /// Reads `text_requests()` directly; each request carries its own
-    /// `clip_bounds` (populated via dual-write in Task 1), so the clip group
-    /// structure is no longer consulted for text clipping.
+    /// `clip_bounds`, so there is no clip-group structure to consult for
+    /// text clipping.
     ///
     /// Only processes text_requests (editor requests have been removed;
     /// editor text is now handled via the retain-mode TextEditRenderObject

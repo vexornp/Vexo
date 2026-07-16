@@ -1,6 +1,6 @@
 use crate::core::{Physical, ScaleSource, Size};
-use crate::render::{RenderError, WgpuBackend};
 use crate::frame_builder::FrameBuilder;
+use crate::render::{RenderError, WgpuBackend};
 use crate::text_processor::{CombinedPreparedText, TextProcessor};
 
 /// Text preparation and GPU submission pipeline.
@@ -32,8 +32,12 @@ impl TextPipeline {
         scale_source: &ScaleSource,
         viewport_physical: Size<Physical>,
     ) -> CombinedPreparedText {
-        self.text_processor
-            .collect_text(frame_builder, font_system, scale_source, viewport_physical)
+        self.text_processor.collect_text(
+            frame_builder,
+            font_system,
+            scale_source,
+            viewport_physical,
+        )
     }
 
     /// Stage 2: Execute the render on the backend.
@@ -44,35 +48,17 @@ impl TextPipeline {
         mut prepared_text: CombinedPreparedText,
         font_system: &mut glyphon::FontSystem,
     ) -> Result<(), RenderError> {
-        // Upload geometry data to GPU (flattened instances + draw ranges)
         backend.upload_geometry(frame_builder);
-
-        // Upload image geometry data to GPU
-        backend.upload_image_geometry(frame_builder);
-
-        let flattened = frame_builder.flatten_quads();
-        let clip_groups = frame_builder.clip_groups();
-
-        // Get image draw ranges
-        let (_, image_draw_ranges) = frame_builder.flatten_image_requests();
 
         // Prepare all text together (glyphon's prepare() replaces vertex buffer
         // contents each call, so per-clip-group prepare would lose previous groups).
         // Text clipping is handled by glyphon's TextArea.bounds per-request.
         backend.prepare_text(font_system, prepared_text.as_text_areas());
 
-        // Execute the render pass with per-clip-group scissor rects for quads,
-        // then render all text with full-viewport scissor.
         let viewport_width = backend.width();
         let viewport_height = backend.height();
 
-        backend.execute_render_pass(
-            clip_groups,
-            &flattened.draw_ranges,
-            &image_draw_ranges,
-            viewport_width,
-            viewport_height,
-        )?;
+        backend.execute_render_pass(viewport_width, viewport_height)?;
 
         Ok(())
     }
