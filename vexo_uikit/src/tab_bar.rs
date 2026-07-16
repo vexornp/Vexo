@@ -14,7 +14,7 @@ use std::sync::Arc;
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
     Component, ComponentState, Flex, GestureDetector, IndexedStack, Layout, LifecycleContext,
-    RenderContext, SafeArea, Text, Theme, Widget,
+    RenderContext, SafeArea, Theme, Widget,
 };
 
 use crate::theme::tokens;

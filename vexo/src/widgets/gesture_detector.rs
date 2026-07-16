@@ -60,7 +60,9 @@ pub struct GestureDetector {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
     layout: Layout,
+    /// Callback invoked when pointer is pressed inside the child bounds.
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
+    /// Callback invoked when pointer is released inside the child bounds.
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
 }
 
@@ -89,6 +91,10 @@ impl GestureDetector {
     /// Overrides the default `Column + Stretch` layout. Use this when the
     /// detector needs to participate in flex sizing (e.g. `flex_grow` to fill
     /// a slot) or center its content (`justify(Center)`).
+    ///
+    /// The layout is applied at mount time. Changing it on rebuild requires
+    /// a new element (different widget type or key); the render object's
+    /// layout is not hot-updated.
     pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
         self
