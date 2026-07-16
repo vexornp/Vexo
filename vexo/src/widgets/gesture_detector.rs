@@ -59,9 +59,8 @@ use super::{Element, Widget};
 pub struct GestureDetector {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
-    /// Callback invoked when pointer is pressed inside the child bounds.
+    layout: Layout,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
-    /// Callback invoked when pointer is released inside the child bounds.
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
 }
 
@@ -71,6 +70,9 @@ impl GestureDetector {
         Self {
             key: None,
             child: Box::new(child),
+            layout: Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .align(AlignItems::Stretch),
             on_press: None,
             on_release: None,
         }
@@ -79,6 +81,16 @@ impl GestureDetector {
     /// Set the key for this widget.
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set the layout for this GestureDetector.
+    ///
+    /// Overrides the default `Column + Stretch` layout. Use this when the
+    /// detector needs to participate in flex sizing (e.g. `flex_grow` to fill
+    /// a slot) or center its content (`justify(Center)`).
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -105,6 +117,7 @@ impl Clone for GestureDetector {
         Self {
             key: self.key.clone(),
             child: self.child.clone_boxed(),
+            layout: self.layout.clone(),
             on_press: self.on_press.clone(),
             on_release: self.on_release.clone(),
         }
@@ -123,7 +136,9 @@ impl Widget for GestureDetector {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(GestureDetectorRenderObject::new())
+        Box::new(GestureDetectorRenderObject::new_with_layout(
+            self.layout.clone(),
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -389,15 +404,26 @@ pub struct GestureDetectorRenderObject {
     child: Option<RenderObjectKey>,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeKey>,
+    layout: Layout,
 }
 
 impl GestureDetectorRenderObject {
-    /// Create a new GestureDetector render object.
+    /// Create a new GestureDetector render object with the default layout.
     pub fn new() -> Self {
+        Self::new_with_layout(
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .align(AlignItems::Stretch),
+        )
+    }
+
+    /// Create a new GestureDetector render object with a specific layout.
+    pub fn new_with_layout(layout: Layout) -> Self {
         Self {
             child: None,
             computed_bounds: None,
             layout_node: None,
+            layout,
         }
     }
 }
@@ -410,12 +436,9 @@ impl Default for GestureDetectorRenderObject {
 
 impl RenderObject for GestureDetectorRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let layout = Layout::default()
-            .flex_direction(FlexDirection::Column)
-            .align(AlignItems::Stretch);
         match self.layout_node {
             Some(existing) => {
-                ctx.engine().set_style(existing, &layout);
+                ctx.engine().set_style(existing, &self.layout);
                 ctx.engine().set_children(existing, child_nodes);
                 LayoutResult {
                     node: existing,
@@ -423,7 +446,7 @@ impl RenderObject for GestureDetectorRenderObject {
                 }
             }
             None => {
-                let node = ctx.engine().create_container(&layout, child_nodes);
+                let node = ctx.engine().create_container(&self.layout, child_nodes);
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,
@@ -664,5 +687,52 @@ mod tests {
 
         let cloned = gd.clone();
         assert!(cloned.on_press.is_some());
+    }
+
+    #[test]
+    fn test_gesture_detector_with_custom_layout_stores_layout() {
+        let layout = Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .flex_grow(1.0);
+        let gd = GestureDetector::new(Text::new("Slot")).with_layout(layout.clone());
+
+        assert_eq!(gd.layout, layout, "with_layout must store the layout");
+        assert_eq!(gd.layout.flex_grow, Some(1.0));
+        assert_eq!(gd.layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(gd.layout.align_items, Some(AlignItems::Stretch));
+    }
+
+    #[test]
+    fn test_gesture_detector_default_layout_is_column_stretch() {
+        let gd = GestureDetector::new(Text::new("Default"));
+        assert_eq!(gd.layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(gd.layout.align_items, Some(AlignItems::Stretch));
+        assert_eq!(gd.layout.flex_grow, None, "default must not set flex_grow");
+    }
+
+    #[test]
+    fn test_gesture_detector_clone_preserves_custom_layout() {
+        let layout = Layout::default()
+            .flex_direction(FlexDirection::Row)
+            .flex_grow(2.0);
+        let gd = GestureDetector::new(Text::new("Clone Me")).with_layout(layout);
+        let cloned = gd.clone();
+        assert_eq!(cloned.layout.flex_direction, Some(FlexDirection::Row));
+        assert_eq!(cloned.layout.flex_grow, Some(2.0));
+    }
+
+    #[test]
+    fn test_gesture_detector_render_object_uses_custom_layout() {
+        let layout = Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .flex_grow(1.0);
+        let ro = GestureDetectorRenderObject::new_with_layout(layout.clone());
+        assert_eq!(
+            ro.layout, layout,
+            "RO must store the layout passed to new_with_layout"
+        );
+        assert_eq!(ro.layout.flex_grow, Some(1.0));
     }
 }

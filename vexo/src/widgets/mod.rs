@@ -6,7 +6,7 @@
 mod container;
 mod decorated_container;
 mod fractional_translation;
-mod gesture_detector;
+pub mod gesture_detector;
 mod grid;
 mod image;
 mod indexed_stack;
@@ -51,7 +51,7 @@ use crate::input::MouseCursor;
 use crate::layout::Layout;
 pub use decorated_container::DecoratedContainer;
 pub use fractional_translation::FractionalTranslation;
-pub(crate) use gesture_detector::GestureDetector;
+pub use gesture_detector::GestureDetector;
 pub use indexed_stack::IndexedStack;
 pub(crate) use mouse_region::MouseRegion;
 pub use offstage::Offstage;
