@@ -76,27 +76,18 @@ fn build_conversation_row(
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {
-    let circle = DecoratedContainer::new(Text::new(""))
-        .width(20.0)
-        .height(20.0)
-        .background(Color::rgb(1.0, 0.0, 0.0))
-        .corner_radius(10.0);
-    let label = DecoratedContainer::new(
+    DecoratedContainer::new(
         Text::new(count.to_string())
             .with_font_size(11.0)
             .with_color(Color::WHITE),
     )
     .width(20.0)
     .height(20.0)
+    .background(Color::rgb(1.0, 0.0, 0.0))
+    .corner_radius(10.0)
     .justify(JustifyContent::Center)
-    .align(AlignItems::Center);
-
-    Stack::new()
-        .width(20.0)
-        .height(20.0)
-        .push(circle)
-        .push(Positioned::new(label).top(0.0).left(0.0))
-        .boxed()
+    .align(AlignItems::Center)
+    .boxed()
 }
 
 fn format_timestamp(ts: u64) -> String {
