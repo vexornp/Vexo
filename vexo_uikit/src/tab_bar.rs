@@ -11,11 +11,10 @@ use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use vexo::layout::FlexDirection;
-use vexo::layout::JustifyContent;
+use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
-    Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext,
-    SafeArea, Text, Theme, Widget,
+    Component, ComponentState, Flex, GestureDetector, IndexedStack, Layout, LifecycleContext,
+    RenderContext, SafeArea, Text, Theme, Widget,
 };
 
 use crate::theme::tokens;
@@ -163,17 +162,24 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         // Build the tab bar row.
-        let mut bar = Flex::row().layout(
-            Layout::default()
-                .justify(JustifyContent::SpaceBetween)
-                .width_percent(1.0),
-        );
+        let mut bar = Flex::row()
+            .layout(Layout::default().width_percent(1.0))
+            .height(49.0);
         for tab in &self.tabs {
             let is_selected = *tab == self.controller.current();
             let ctrl = self.controller.clone();
             let tab_clone = tab.clone();
-            let item = (self.tab_bar_builder)(tab, is_selected)
-                .on_press(move || ctrl.switch_to(tab_clone.clone()));
+            let content = (self.tab_bar_builder)(tab, is_selected);
+            let item = GestureDetector::new(content)
+                .on_press(move || ctrl.switch_to(tab_clone.clone()))
+                .with_layout(
+                    Layout::default()
+                        .flex_direction(FlexDirection::Column)
+                        .align(AlignItems::Stretch)
+                        .flex_grow(1.0)
+                        .justify(JustifyContent::Center),
+                )
+                .boxed();
             bar = bar.push(item);
         }
 
@@ -225,6 +231,7 @@ mod tests {
     enum TestTab {
         A,
         B,
+        C,
     }
 
     #[test]
@@ -298,6 +305,7 @@ mod tests {
             |tab| match tab {
                 TestTab::A => Text::new("Page A").boxed(),
                 TestTab::B => Text::new("Page B").boxed(),
+                TestTab::C => Text::new("Page C").boxed(),
             },
             |_, is_selected| Text::new(if is_selected { "[A]" } else { "A" }).boxed(),
         );
@@ -352,6 +360,7 @@ mod tests {
             |tab| match tab {
                 TestTab::A => Text::new("Page A").boxed(),
                 TestTab::B => Text::new("Page B").boxed(),
+                TestTab::C => Text::new("Page C").boxed(),
             },
             |tab, is_selected| {
                 let label = if is_selected { "[A]" } else { "A" };
@@ -383,9 +392,227 @@ mod tests {
             |tab| match tab {
                 TestTab::A => Text::new("Page A").boxed(),
                 TestTab::B => Text::new("Page B").boxed(),
+                TestTab::C => Text::new("Page C").boxed(),
             },
             |_, is_selected| Text::new(if is_selected { "[B]" } else { "B" }).boxed(),
         )));
         // No panic = pass.
+    }
+
+    #[test]
+    fn test_tab_bar_items_are_equal_width_full_height_slots() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::widgets::gesture_detector::GestureDetectorRenderObject;
+        use vexo::ThreeTreePipeline;
+
+        let ctrl = TabController::new(TestTab::A);
+        let view = TabBarView::new(
+            ctrl,
+            vec![TestTab::A, TestTab::B, TestTab::C],
+            |tab| match tab {
+                TestTab::A => Text::new("Page A").boxed(),
+                TestTab::B => Text::new("Page B").boxed(),
+                TestTab::C => Text::new("Page C").boxed(),
+            },
+            |tab, _| match tab {
+                TestTab::A => Text::new("A").boxed(),
+                TestTab::B => Text::new("B").boxed(),
+                TestTab::C => Text::new("C").boxed(),
+            },
+        );
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(Box::new(view));
+        let mut engine = vexo::layout::TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(390.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("should have root");
+
+        fn find_gd_bounds(
+            ro_reg: &vexo::RenderObjectRegistry,
+            id: vexo::RenderObjectKey,
+            out: &mut Vec<vexo::core::Bounds<vexo::core::Logical>>,
+        ) {
+            if let Some(ro) = ro_reg.get(id) {
+                if ro
+                    .as_any()
+                    .downcast_ref::<GestureDetectorRenderObject>()
+                    .is_some()
+                {
+                    if let Some(b) = ro.computed_bounds() {
+                        out.push(b);
+                    }
+                }
+                for &c in ro.children() {
+                    find_gd_bounds(ro_reg, c, out);
+                }
+            }
+        }
+
+        let mut gd_bounds = Vec::new();
+        find_gd_bounds(ro_reg, root, &mut gd_bounds);
+        assert_eq!(
+            gd_bounds.len(),
+            3,
+            "expected 3 tab-item GestureDetectors, found {}",
+            gd_bounds.len()
+        );
+
+        // Sort by left so slot order is A, B, C.
+        gd_bounds.sort_by(|a, b| a.left.partial_cmp(&b.left).unwrap());
+
+        // Each slot must be 390/3 = 130 wide and 49 tall.
+        for (i, b) in gd_bounds.iter().enumerate() {
+            assert!(
+                (b.width() - 130.0).abs() < 1.0,
+                "slot {} width {} should be ~130 (390/3)",
+                i,
+                b.width()
+            );
+            assert!(
+                (b.height() - 49.0).abs() < 1.0,
+                "slot {} height {} should be ~49",
+                i,
+                b.height()
+            );
+            assert!(
+                (b.left - (i as f32) * 130.0).abs() < 1.0,
+                "slot {} left {} should be ~{}",
+                i,
+                b.left,
+                i * 130
+            );
+        }
+
+        // No dead space: widths sum to bar width.
+        let total: f32 = gd_bounds.iter().map(|b| b.width()).sum();
+        assert!(
+            (total - 390.0).abs() < 1.0,
+            "slot widths sum {} should be ~390 (no dead space)",
+            total
+        );
+    }
+
+    #[test]
+    fn test_tab_bar_tap_between_icons_selects_slot() {
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::input::{ButtonState, InputEvent, PointerButton};
+        use vexo::platform::stub_clipboard::StubClipboard;
+        use vexo::ThreeTreePipeline;
+
+        let ctrl = TabController::new(TestTab::B);
+        let ctrl_for_view = ctrl.clone();
+        let view = TabBarView::new(
+            ctrl_for_view,
+            vec![TestTab::A, TestTab::B, TestTab::C],
+            |tab| match tab {
+                TestTab::A => Text::new("Page A").boxed(),
+                TestTab::B => Text::new("Page B").boxed(),
+                TestTab::C => Text::new("Page C").boxed(),
+            },
+            |tab, _| match tab {
+                TestTab::A => Text::new("A").boxed(),
+                TestTab::B => Text::new("B").boxed(),
+                TestTab::C => Text::new("C").boxed(),
+            },
+        );
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(Box::new(view));
+        let mut engine = vexo::layout::TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(390.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Find the y of the bar (top of the first GestureDetector slot).
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("should have root");
+        use vexo::widgets::gesture_detector::GestureDetectorRenderObject;
+        fn find_first_gd_absolute_top(
+            ro_reg: &vexo::RenderObjectRegistry,
+            id: vexo::RenderObjectKey,
+            parent_abs_y: f32,
+        ) -> Option<f32> {
+            let ro = ro_reg.get(id)?;
+            let rel_y = ro.computed_bounds().map(|b| b.top).unwrap_or(0.0);
+            let abs_y = parent_abs_y + rel_y;
+            if ro
+                .as_any()
+                .downcast_ref::<GestureDetectorRenderObject>()
+                .is_some()
+            {
+                return Some(abs_y);
+            }
+            let child_parent_abs_y = if ro.is_pass_through() {
+                parent_abs_y
+            } else {
+                abs_y
+            };
+            for &c in ro.children() {
+                if let Some(t) = find_first_gd_absolute_top(ro_reg, c, child_parent_abs_y) {
+                    return Some(t);
+                }
+            }
+            None
+        }
+        let bar_top =
+            find_first_gd_absolute_top(ro_reg, root, 0.0).expect("should find a GestureDetector");
+        let tap_y = bar_top + 24.5; // middle of the 49pt slot
+
+        // Tap at x=110 (inside slot 0's 0..130 range, but well off the "A" icon
+        // which is centered at x~65). Before this change, this position was in
+        // dead space between the SpaceBetween-spread items and did nothing.
+        let tap_x = 110.0;
+        let event = InputEvent::PointerButton {
+            position: vexo::core::Point::new(tap_x, tap_y),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let clipboard: Arc<dyn vexo::platform::Clipboard> = Arc::new(StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(tap_x, tap_y),
+            &event,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+
+        assert_eq!(
+            ctrl.current(),
+            TestTab::A,
+            "tapping at x=110 (slot 0, off-icon) must select tab A"
+        );
+
+        // Tap at x=250 (inside slot 1's 130..260 range, off-icon).
+        // Must select tab B (the slot owning x=250).
+        let tap_x = 250.0;
+        let event = InputEvent::PointerButton {
+            position: vexo::core::Point::new(tap_x, tap_y),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            vexo::core::Point::new(tap_x, tap_y),
+            &event,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        assert_eq!(
+            ctrl.current(),
+            TestTab::B,
+            "tapping at x=250 (slot 1, off-icon) must select tab B"
+        );
     }
 }
