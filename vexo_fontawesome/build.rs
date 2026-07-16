@@ -184,7 +184,7 @@ fn main() {
     // `codepoint()` — returns the single-glyph string for this icon.
     out.push_str("impl Icons {\n");
     out.push_str("    /// The font family this icon belongs to.\n");
-    out.push_str("    pub const FONT_FAMILY: &'static str = \"Font Awesome 6 Free\";\n\n");
+    out.push_str("    pub const FONT_FAMILY: &'static str = \"Font Awesome 7 Free\";\n\n");
     out.push_str("    /// The font family name to pass to `Text::with_font_family`.\n");
     out.push_str("    pub fn family(&self) -> &'static str {\n");
     out.push_str("        Self::FONT_FAMILY\n");
