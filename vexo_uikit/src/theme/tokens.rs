@@ -114,6 +114,15 @@ pub mod navigation {
     pub const MOBILE_HEADER_HEIGHT: f32 = 44.0;
     pub const MOBILE_HEADER_PADDING: f32 = 8.0;
 
+    /// Thickness (logical px) of the hairline separator along a bar's edge
+    /// (nav bar bottom, tab bar top).
+    ///
+    /// Taffy floors layout dimensions to integers, so a sub-pixel height
+    /// (e.g. `1/scale` = 0.5 at 2×) collapses to 0 and renders nothing. 1
+    /// logical px is the smallest height that survives layout; it renders as
+    /// 1 physical px at 1× and 2 at 2×, matching macOS `Divider`.
+    pub const HAIRLINE_THICKNESS: f32 = 1.0;
+
     pub const BACK_CHEVRON: &str = "\u{2039}"; // ‹
     pub const BACK_LABEL: &str = "Back";
     pub const BACK_FONT_SIZE: f32 = 17.0;

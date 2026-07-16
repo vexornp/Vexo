@@ -15,8 +15,10 @@ use vexo::layout::FlexDirection;
 use vexo::layout::JustifyContent;
 use vexo::{
     Component, ComponentState, Flex, IndexedStack, Layout, LifecycleContext, RenderContext,
-    SafeArea, Text, Widget,
+    SafeArea, Text, Theme, Widget,
 };
+
+use crate::theme::tokens;
 
 // ============================================================================
 // TAB CONTROLLER
@@ -147,7 +149,7 @@ impl<D: Hash + Eq + Clone + 'static> Default for TabBarViewStateD<D> {
 impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
     type State = TabBarViewStateD<D>;
 
-    fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+    fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let current_index = self
             .tabs
             .iter()
@@ -187,6 +189,18 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // steal space from the page area above.
         let bar = SafeArea::new(bar.boxed()).top(false).boxed();
         let bar = bar.with_layout(Layout::default().flex_grow(0.0).flex_shrink(0.0));
+
+        // SwiftUI-style hairline along the tab bar's top edge (the seam
+        // between the page content and the bar). 1 logical px — Taffy floors
+        // sub-pixel heights to 0, so a true 1-physical-px `1/scale` height
+        // would vanish on Retina. Sits above the `SafeArea`-wrapped bar so it
+        // spans the full width edge-to-edge. See `HAIRLINE_THICKNESS`.
+        let nav = tokens::navigation::colors(&Theme::of(ctx));
+        let hairline = Flex::row()
+            .background(nav.divider)
+            .height(tokens::navigation::HAIRLINE_THICKNESS)
+            .flex_shrink(0.0);
+        let bar = Flex::column().flex_shrink(0.0).push(hairline).push(bar);
 
         Flex::column()
             .layout(
@@ -264,6 +278,64 @@ mod tests {
         let ctrl2 = ctrl.clone();
         ctrl2.switch_to(TestTab::B);
         assert_eq!(ctrl.current(), TestTab::B, "clone shares state");
+    }
+
+    #[test]
+    fn test_tab_bar_top_hairline_paints() {
+        // Regression: the tab bar's top hairline must actually paint. A
+        // sub-pixel height (e.g. `1/scale` = 0.5 at 2×) gets floored to 0 by
+        // Taffy and renders nothing — so the hairline must use a full logical
+        // pixel (`HAIRLINE_THICKNESS`).
+        use std::sync::Arc;
+        use vexo::animation::AnimationTicker;
+        use vexo::render::RenderCommand;
+        use vexo::ThreeTreePipeline;
+
+        let ctrl = TabController::new(TestTab::A);
+        let view = TabBarView::new(
+            ctrl,
+            vec![TestTab::A, TestTab::B],
+            |tab| match tab {
+                TestTab::A => Text::new("Page A").boxed(),
+                TestTab::B => Text::new("Page B").boxed(),
+            },
+            |_, is_selected| Text::new(if is_selected { "[A]" } else { "A" }).boxed(),
+        );
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(Box::new(view));
+        let mut engine = vexo::layout::TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        let commands = pipeline.paint();
+
+        let light = vexo::ThemeData::light();
+        let divider = crate::theme::tokens::navigation::colors(&light).divider;
+        let thickness = crate::theme::tokens::navigation::HAIRLINE_THICKNESS;
+
+        let hairline = commands.iter().find_map(|cmd| {
+            if let RenderCommand::Rect { bounds, fill, .. } = cmd {
+                if *fill == divider && bounds.width() >= 390.0 {
+                    return Some(bounds);
+                }
+            }
+            None
+        });
+
+        let b = hairline.expect("expected a full-width divider hairline at the tab seam");
+        assert_eq!(
+            b.height(),
+            thickness,
+            "hairline must use HAIRLINE_THICKNESS (sub-pixel heights floor to 0)"
+        );
+        assert!(
+            b.top >= 500.0 && b.top <= 600.0,
+            "hairline top {} should be near the bottom seam",
+            b.top
+        );
     }
 
     #[test]
