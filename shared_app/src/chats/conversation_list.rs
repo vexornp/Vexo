@@ -1,6 +1,10 @@
 //! Conversation list screen — the root of the Chats tab.
 
-use vexo::{Color, Column, DecoratedContainer, Flex, Row, ScrollView, Text, Widget};
+use vexo::layout::JustifyContent;
+use vexo::{
+    AlignItems, Color, Column, DecoratedContainer, Flex, Positioned, Row, ScrollView, Stack, Text,
+    Widget,
+};
 use vexo_uikit::NavigationController;
 
 use crate::data::{ChatsRoute, Conversation};
@@ -41,28 +45,58 @@ fn build_conversation_row(
         .with_font_size(12.0)
         .with_color(Color::rgb(0.6, 0.6, 0.6));
 
-    let right_col = if conv.unread_count > 0 {
-        let badge = DecoratedContainer::new(
-            Text::new(conv.unread_count.to_string())
-                .with_font_size(11.0)
-                .with_color(Color::WHITE),
+    let right_col = Column::new().push(time_text);
+
+    let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
+        Some(
+            Positioned::new(unread_badge(conv.unread_count))
+                .top(-4.0)
+                .right(-4.0)
+                .boxed(),
         )
-        .background(Color::rgb(0.0, 0.5, 1.0))
-        .corner_radius(10.0)
-        .boxed();
-        Column::new().gap(4.0).push(time_text).push(badge)
     } else {
-        Column::new().push(time_text)
+        None
     };
+
+    let avatar_with_badge = Stack::new()
+        .width(40.0)
+        .height(40.0)
+        .push(avatar)
+        .push(badge)
+        .boxed();
 
     Row::new()
         .gap(12.0)
-        .push(avatar)
+        .push(avatar_with_badge)
         .push(info_col.flex_grow(1.0))
         .push(right_col)
         .boxed()
         .padding(12.0)
         .on_press(on_press)
+}
+
+fn unread_badge(count: u32) -> Box<dyn Widget> {
+    let circle = DecoratedContainer::new(Text::new(""))
+        .width(20.0)
+        .height(20.0)
+        .background(Color::rgb(1.0, 0.0, 0.0))
+        .corner_radius(10.0);
+    let label = DecoratedContainer::new(
+        Text::new(count.to_string())
+            .with_font_size(11.0)
+            .with_color(Color::WHITE),
+    )
+    .width(20.0)
+    .height(20.0)
+    .justify(JustifyContent::Center)
+    .align(AlignItems::Center);
+
+    Stack::new()
+        .width(20.0)
+        .height(20.0)
+        .push(circle)
+        .push(Positioned::new(label).top(0.0).left(0.0))
+        .boxed()
 }
 
 fn format_timestamp(ts: u64) -> String {
