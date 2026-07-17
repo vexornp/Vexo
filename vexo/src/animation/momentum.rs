@@ -117,6 +117,14 @@ impl Default for MomentumSimulation {
     }
 }
 
+impl Drop for MomentumSimulation {
+    fn drop(&mut self) {
+        if self.tick_handle.is_some() {
+            self.stop();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
