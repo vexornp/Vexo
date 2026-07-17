@@ -14,7 +14,7 @@ use std::sync::Arc;
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
     Component, ComponentState, Flex, GestureDetector, IndexedStack, Layout, LifecycleContext,
-    RenderContext, SafeArea, Theme, Widget,
+    RenderContext, SafeArea, SafeAreaClaim, Theme, Widget,
 };
 
 use crate::theme::tokens;
@@ -215,7 +215,13 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
                     .width_percent(1.0)
                     .height_percent(1.0),
             )
-            .push(stack.flex_fill())
+            // The tab bar (a sibling below) owns the bottom safe-area edge
+            // (home indicator) — its SafeArea insets the bar's content.
+            // Wrap the page stack in SafeAreaClaim::bottom so the page's
+            // own SafeArea sees bottom=0 and doesn't re-apply the home-
+            // indicator padding, which would create a gap between the
+            // page content and the tab bar.
+            .push(SafeAreaClaim::bottom(stack).flex_fill())
             .push(bar)
             .boxed()
     }

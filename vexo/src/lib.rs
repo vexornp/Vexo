@@ -174,6 +174,7 @@ pub use reconcile::Reconcilable;
 )]
 pub use render_object::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
+    SafeAreaClaimEdges,
 };
 #[deprecated(
     since = "0.x",
@@ -202,9 +203,9 @@ pub use style::Style;
 pub use update_result::UpdateResult;
 pub use widgets::{
     Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, GestureDetector, Grid,
-    Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, ScrollController,
-    ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
-    TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
+    Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, SafeAreaClaim,
+    ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit,
+    TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

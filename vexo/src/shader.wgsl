@@ -71,6 +71,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // If no corner radius, use original rectangular rendering
     if (radius < 0.5) {
+        // Fast path: no border → return fill directly. The smoothstep-based
+        // border logic below would compute a sub-pixel ring at the rect's
+        // edges even when border_width is 0 (because the smoothstep range
+        // is 0.498..0.5, not 0.5..0.5). For tall rects this is invisible,
+        // but for a 1px-tall hairline the ring becomes a visible fraction
+        // of the height, making the fill look like two separate lines.
+        if (in.border_width <= 0.0) {
+            return in.color;
+        }
+
         let centered_uv = in.uv - 0.5;
         let border_px = in.border_width * globals.scale_factor;
         let uv_border_step = border_px / in.size;

@@ -38,7 +38,7 @@ pub use super::{GlobalKey, Key};
 pub use container::{ChildPush, Column, Flex, Row};
 pub use grid::Grid;
 pub use image::Image;
-pub use safe_area::SafeArea;
+pub use safe_area::{SafeArea, SafeAreaClaim};
 pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
 pub use text::Text;
