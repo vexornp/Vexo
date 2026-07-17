@@ -2260,6 +2260,7 @@ git commit -m "fix(chats): drag on conversation list scrolls instead of navigati
 **Files:**
 - Modify: `vexo_uikit/src/button.rs` (rename `on_press` → `on_tap`, split visual feedback from action in `render`)
 - Modify: `shared_app/src/chats/chat_screen.rs:176` (`.on_press` → `.on_tap`)
+- Modify: `vexo_uikit/src/navigation.rs:796` (back button `.on_press` → `.on_tap` — same rename, must update or compile breaks)
 - Modify: `vexo_uikit/tests/button_tests.rs:32,45` (`.on_press` → `.on_tap`)
 
 **Interfaces:**
@@ -2358,11 +2359,24 @@ to:
                 .on_tap(on_send),
 ```
 
-- [ ] **Step 4: Update button_tests.rs call sites**
+- [ ] **Step 4: Update navigation.rs back button call site**
+
+In `vexo_uikit/src/navigation.rs`, line 796, change `.on_press(` to `.on_tap(`:
+
+```rust
+            let back_button = Button::new(back_label)
+                .variant(ButtonVariant::Ghost)
+                .on_tap(move || {
+                    controller.pop();
+                })
+                .boxed();
+```
+
+- [ ] **Step 5: Update button_tests.rs call sites**
 
 In `vexo_uikit/tests/button_tests.rs`, lines 32 and 45, change `.on_press(` to `.on_tap(`.
 
-- [ ] **Step 5: Build and test**
+- [ ] **Step 7: Build and test**
 
 Run: `cargo build -p vexo_uikit && cargo build -p shared_app`
 Expected: compiles clean.
@@ -2373,10 +2387,10 @@ Expected: all button tests pass.
 Run: `cargo test -p shared_app`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add vexo_uikit/src/button.rs vexo_uikit/tests/button_tests.rs shared_app/src/chats/chat_screen.rs
+git add vexo_uikit/src/button.rs vexo_uikit/tests/button_tests.rs vexo_uikit/src/navigation.rs shared_app/src/chats/chat_screen.rs
 git commit -m "refactor(button): split visual feedback (on_press) from action (on_tap)"
 ```
 
