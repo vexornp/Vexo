@@ -1,5 +1,8 @@
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 use vexo_uikit::{Button, ButtonVariant, Platform, Widget};
-use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
 
 #[test]
 fn button_implements_widget() {
@@ -28,10 +31,9 @@ fn button_builder_methods_work() {
 fn button_on_press_callback_fires() {
     let counter = Arc::new(AtomicU32::new(0));
     let counter_clone = counter.clone();
-    let button = Button::new("Press")
-        .on_press(move || {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        });
+    let button = Button::new("Press").on_tap(move || {
+        counter_clone.fetch_add(1, Ordering::SeqCst);
+    });
     button.press();
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 }
@@ -40,11 +42,9 @@ fn button_on_press_callback_fires() {
 fn button_disabled_does_not_fire_callback() {
     let counter = Arc::new(AtomicU32::new(0));
     let counter_clone = counter.clone();
-    let button = Button::new("Press")
-        .disabled(true)
-        .on_press(move || {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        });
+    let button = Button::new("Press").disabled(true).on_tap(move || {
+        counter_clone.fetch_add(1, Ordering::SeqCst);
+    });
     button.press();
     assert_eq!(counter.load(Ordering::SeqCst), 0);
 }

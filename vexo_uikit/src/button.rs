@@ -46,13 +46,13 @@ pub struct ButtonState {
 /// ```ignore
 /// Button::new("Submit")
 ///     .variant(ButtonVariant::Primary)
-///     .on_press(|| submit())
+///     .on_tap(|| submit())
 ///     .boxed()
 /// ```
 #[derive(Clone)]
 pub struct Button {
     label: String,
-    on_press: Rc<RefCell<dyn FnMut()>>,
+    on_tap: Rc<RefCell<dyn FnMut()>>,
     variant: ButtonVariant,
     disabled: bool,
     platform: Option<Platform>,
@@ -63,7 +63,7 @@ impl Button {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
-            on_press: Rc::new(RefCell::new(|| {})),
+            on_tap: Rc::new(RefCell::new(|| {})),
             variant: ButtonVariant::Primary,
             disabled: false,
             platform: None,
@@ -76,9 +76,11 @@ impl Button {
         self
     }
 
-    /// Set the press callback.
-    pub fn on_press(mut self, callback: impl FnMut() + 'static) -> Self {
-        self.on_press = Rc::new(RefCell::new(callback));
+    /// Set the tap action callback. Fires when the tap is recognized
+    /// (pointer up, having won the gesture arena) — does NOT fire if a
+    /// drag wins instead.
+    pub fn on_tap(mut self, callback: impl FnMut() + 'static) -> Self {
+        self.on_tap = Rc::new(RefCell::new(callback));
         self
     }
 
@@ -111,7 +113,7 @@ impl Button {
     /// Primarily useful for testing.
     pub fn press(&self) {
         if !self.disabled {
-            (self.on_press.borrow_mut())();
+            (self.on_tap.borrow_mut())();
         }
     }
 
@@ -219,7 +221,7 @@ impl Component for Button {
         };
 
         let disabled = self.disabled;
-        let on_press_cb = self.on_press.clone();
+        let on_tap_cb = self.on_tap.clone();
         let is_pressed_signal = state.is_pressed.clone();
         let is_pressed_signal_release = state.is_pressed.clone();
         let is_pressed_signal_exit = state.is_pressed.clone();
@@ -252,7 +254,11 @@ impl Component for Button {
             .on_press(move || {
                 if !disabled {
                     is_pressed_signal.set(true);
-                    (on_press_cb.borrow_mut())();
+                }
+            })
+            .on_tap(move || {
+                if !disabled {
+                    (on_tap_cb.borrow_mut())();
                 }
             })
             .on_release(move || {
