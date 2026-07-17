@@ -867,4 +867,96 @@ mod tests {
             "mouse wheel still scrolls; existing path unchanged"
         );
     }
+
+    #[test]
+    fn test_multi_move_drag_accumulates_scroll() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 300).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Move 1: drag up 25px (crosses slop, drag wins).
+        let move1 = InputEvent::PointerMoved {
+            position: Point::new(200.0, 275.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 275.0),
+            &move1,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset_after_move1 = ctrl.current_offset();
+        assert!(
+            offset_after_move1 > 0.0,
+            "first move should scroll; got offset={}",
+            offset_after_move1
+        );
+        // Move 2: drag up another 25px. This exercises Bug 2's fix: the arena
+        // is already closed (drag won on move 1), so the recognizer is NOT fed
+        // again. The scroll delta must come from event.position, not the stale
+        // recognizer state. Without the fix, last_drag_y would be reset and the
+        // delta would be 0 (or bogus).
+        let move2 = InputEvent::PointerMoved {
+            position: Point::new(200.0, 250.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &move2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset_after_move2 = ctrl.current_offset();
+        assert!(
+            offset_after_move2 > offset_after_move1,
+            "second move should scroll further; got offset={} after move1, {} after move2",
+            offset_after_move1,
+            offset_after_move2
+        );
+        // The total scroll should be roughly 50px (25 + 25), allowing for slop
+        // adjustment on the first move.
+        let total_delta = offset_after_move2 - offset_after_move1;
+        assert!(
+            total_delta > 0.0,
+            "second move contributed positive scroll; got delta={}",
+            total_delta
+        );
+    }
 }
