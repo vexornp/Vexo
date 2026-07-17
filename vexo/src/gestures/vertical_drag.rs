@@ -2,7 +2,7 @@
 //!
 //! State transitions on ArenaEvent:
 //! - Down  → store positions, total_delta_y = 0, stay Pending
-//! - Move  → accumulate total_delta_y += delta.y; if |total| > VERTICAL_DRAG_SLOP → Accepted
+//! - Move  → accumulate total_delta_y += |delta.y|; if total > VERTICAL_DRAG_SLOP → Accepted
 //! - Up    → if Pending → Rejected (was a tap); if Accepted → stays Accepted
 //! - Cancel → Rejected
 //!
@@ -72,7 +72,7 @@ impl GestureRecognizer for VerticalDragRecognizer {
                 self.last_position = ctx.current_position;
                 self.total_delta_y += delta_y.abs();
                 if self.resolution == RecognizerResolution::Pending
-                    && self.total_delta_y.abs() > VERTICAL_DRAG_SLOP
+                    && self.total_delta_y > VERTICAL_DRAG_SLOP
                 {
                     self.resolution = RecognizerResolution::Accepted;
                 }
