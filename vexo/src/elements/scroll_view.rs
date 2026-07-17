@@ -230,6 +230,16 @@ impl Element for ScrollViewElement {
         _state: &mut StateStorage,
     ) -> Option<Box<dyn Any>> {
         match event {
+            InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            } => {
+                if context.is_pointer_inside() {
+                    context.request_focus(context.element_id());
+                    return Some(Box::new(()));
+                }
+            }
+
             InputEvent::Scroll { delta, .. } => {
                 let new_offset = self.scroll_offset - delta.y;
                 self.apply_scroll_offset(new_offset, context);
