@@ -1291,6 +1291,108 @@ mod tests {
     }
 
     #[test]
+    fn test_pause_then_lift_no_momentum() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 400).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 400.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Three fast upward moves to build up velocity.
+        for &y in &[350.0, 250.0, 150.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let offset_at_release = ctrl.current_offset();
+        assert!(
+            offset_at_release > 0.0,
+            "drag should have scrolled; got {}",
+            offset_at_release
+        );
+
+        // Pause with finger still down: 200ms with no movement. This exceeds
+        // the 100ms staleness guard in the Up arm, so the pre-pause velocity
+        // must NOT seed a fling on release.
+        thread::sleep(Duration::from_millis(200));
+
+        // Release at the last move position.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 150.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 150.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump the ticker + pipeline. If the staleness guard works, momentum
+        // never starts and the offset stays frozen at offset_at_release.
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        assert_eq!(
+            ctrl.current_offset(),
+            offset_at_release,
+            "pause-then-lift should NOT engage momentum; got {} before release, {} after pump",
+            offset_at_release,
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
     fn test_fling_clamps_at_bottom_edge() {
         use crate::animation::AnimationTicker;
         use crate::core::Point;
