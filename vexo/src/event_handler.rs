@@ -199,6 +199,15 @@ impl EventHandler {
         //     if still open, bubble for MouseRegion hover ===
         if is_move {
             if let Some(arena) = current_arena.as_mut() {
+                // Detect the Open→Resolved transition: the arena was open
+                // before this Move and is now closed with a winner. This is
+                // the FIRST winning Move — the element needs a Down call to
+                // initialize its drag state (e.g. ScrollViewElement sets
+                // last_drag_y from the recognizer's down_position). On
+                // subsequent Moves the arena is already closed; the
+                // recognizer is no longer fed, so we must NOT call Down
+                // (that would reset last_drag_y each time) — Move only.
+                let was_closed = arena.is_closed();
                 let outcome = arena.handle_event(ArenaEvent::Move { position });
                 if let ArenaOutcome::Resolved { winner_index: _ } = outcome {
                     if let Some(winner_id) = arena.winner_owner() {
@@ -219,14 +228,15 @@ impl EventHandler {
                                 clipboard.clone(),
                             );
                             let winner_recognizer = arena.winner_recognizer().unwrap();
-                            // First call Down so the winner can initialize state
-                            // (e.g. ScrollViewElement sets last_drag_y from the
-                            // recognizer's position before the first Move delta).
-                            element.on_arena_winner_update(
-                                winner_recognizer,
-                                &ArenaEvent::Down { position },
-                                &mut ctx,
-                            );
+                            if !was_closed {
+                                // First winning move — initialize element
+                                // state from Down, then apply the Move.
+                                element.on_arena_winner_update(
+                                    winner_recognizer,
+                                    &ArenaEvent::Down { position },
+                                    &mut ctx,
+                                );
+                            }
                             element.on_arena_winner_update(
                                 winner_recognizer,
                                 &ArenaEvent::Move { position },
