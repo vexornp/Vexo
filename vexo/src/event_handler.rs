@@ -219,6 +219,14 @@ impl EventHandler {
                                 clipboard.clone(),
                             );
                             let winner_recognizer = arena.winner_recognizer().unwrap();
+                            // First call Down so the winner can initialize state
+                            // (e.g. ScrollViewElement sets last_drag_y from the
+                            // recognizer's position before the first Move delta).
+                            element.on_arena_winner_update(
+                                winner_recognizer,
+                                &ArenaEvent::Down { position },
+                                &mut ctx,
+                            );
                             element.on_arena_winner_update(
                                 winner_recognizer,
                                 &ArenaEvent::Move { position },
