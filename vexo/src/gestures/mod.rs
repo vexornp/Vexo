@@ -8,12 +8,14 @@ pub mod arena;
 pub mod arena_event;
 pub mod recognizer;
 pub mod tap;
+pub mod velocity_tracker;
 pub mod vertical_drag;
 
 pub use arena::{ArenaOutcome, GestureArena};
 pub use arena_event::ArenaEvent;
 pub use recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 pub use tap::TapRecognizer;
+pub use velocity_tracker::VelocityTracker;
 pub use vertical_drag::VerticalDragRecognizer;
 
 /// Movement threshold (in logical pixels) beyond which a tap is rejected.
