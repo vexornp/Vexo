@@ -9,6 +9,7 @@ use crate::element_state::StateStorage;
 use crate::elements::RenderObjectElement;
 use crate::event_context::EventContext;
 use crate::focus::attachment::FocusAttachment;
+use crate::gestures::{ArenaEvent, GestureArena, GestureRecognizer, VerticalDragRecognizer};
 use crate::id::{ElementKey, RenderObjectKey};
 use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
@@ -41,8 +42,9 @@ pub struct ScrollViewElement {
     content_height: f32,
     viewport_height: f32,
     controller: Option<ScrollController>,
-    drag_active: bool,
-    drag_last_y: f32,
+    /// Tracks the last y position from the drag recognizer, to compute
+    /// per-move scroll deltas. Set when the drag recognizer wins.
+    last_drag_y: f32,
 }
 
 impl ScrollViewElement {
@@ -57,8 +59,7 @@ impl ScrollViewElement {
             content_height: 0.0,
             viewport_height: 0.0,
             controller: None,
-            drag_active: false,
-            drag_last_y: 0.0,
+            last_drag_y: 0.0,
         }
     }
 
@@ -231,31 +232,10 @@ impl Element for ScrollViewElement {
         match event {
             InputEvent::PointerButton {
                 state: ButtonState::Pressed,
-                position,
                 ..
             } => {
                 if context.is_pointer_inside() {
                     context.request_focus(context.element_id());
-                    self.drag_active = true;
-                    self.drag_last_y = position.y;
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerButton {
-                state: ButtonState::Released,
-                ..
-            } => {
-                if self.drag_active {
-                    self.drag_active = false;
-                    return Some(Box::new(()));
-                }
-            }
-            InputEvent::PointerMoved { position } => {
-                if self.drag_active {
-                    let delta = self.drag_last_y - position.y; // drag up → positive → scroll down
-                    self.drag_last_y = position.y;
-                    let new_offset = self.scroll_offset + delta;
-                    self.apply_scroll_offset(new_offset, context);
                     return Some(Box::new(()));
                 }
             }
@@ -289,6 +269,51 @@ impl Element for ScrollViewElement {
             _ => {}
         }
         None
+    }
+
+    fn register_gestures(&mut self, arena: &mut GestureArena, self_id: ElementKey) {
+        arena.add(Box::new(VerticalDragRecognizer::new()), self_id);
+    }
+
+    fn on_arena_winner_update(
+        &mut self,
+        recognizer: &dyn GestureRecognizer,
+        event: &ArenaEvent,
+        ctx: &mut EventContext,
+    ) {
+        // Downcast to read the drag recognizer's position.
+        let Some(drag) = recognizer.as_any().downcast_ref::<VerticalDragRecognizer>() else {
+            return;
+        };
+
+        match event {
+            ArenaEvent::Move { position } => {
+                // Compute scroll delta from the previous tracked position to
+                // the current event position. We use `event.position` (not
+                // `drag.last_position()`) because once the arena closes the
+                // recognizer is no longer fed Move events, so its
+                // `last_position` would be stale.
+                let delta = self.last_drag_y - position.y;
+                self.last_drag_y = position.y;
+                let new_offset = self.scroll_offset + delta;
+                self.apply_scroll_offset(new_offset, ctx);
+            }
+            ArenaEvent::Down { .. } => {
+                // Drag just won (on the move that crossed slop). Initialize
+                // last_drag_y from the recognizer's DOWN position so the
+                // first Move delta captures the full movement from press-down
+                // to current — matching Flutter's scroll-keeps-up-with-finger
+                // behavior. (The event_handler only calls Down on the FIRST
+                // winning move, so this runs once per drag.)
+                self.last_drag_y = drag.down_position().y;
+            }
+            ArenaEvent::Up { .. } => {
+                // Drag ended. No scroll applied on up (no momentum in v1).
+            }
+            ArenaEvent::Cancel => {
+                // Drag cancelled. No cleanup needed.
+            }
+        }
     }
 
     fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
@@ -458,137 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn test_touch_drag_scrolls_via_pipeline() {
-        use crate::animation::AnimationTicker;
-        use crate::core::Point;
-        use crate::core::ScaleSource;
-        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
-        use crate::widgets::ScrollView;
-        use crate::Flex;
-        use crate::ThreeTreePipeline;
-        use std::sync::Arc;
-
-        // Tall content (200 lines × ~40px = 8000px).
-        let mut col = Flex::column();
-        for i in 0..200 {
-            col = col.push(crate::Text::new(format!("line {}", i)));
-        }
-        let sv = ScrollView::new(col.boxed());
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.reconcile(Box::new(sv));
-        let mut engine = crate::layout::TaffyLayoutEngine::new();
-        let mut font_system = crate::resource::new_font_system();
-        pipeline.layout(
-            crate::core::Size::new(400.0, 600.0),
-            &mut engine,
-            &mut font_system,
-        );
-
-        // Press at (200, 100) inside the viewport.
-        let event = InputEvent::PointerButton {
-            position: Point::new(200.0, 100.0),
-            button: PointerButton::Primary,
-            state: ButtonState::Pressed,
-        };
-        pipeline.handle_event(
-            Point::new(200.0, 100.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        // Drag down 50px → content moves down 50px → offset decreases by 50.
-        // (Dragging the content down means scrolling toward the top, so
-        // offset should DECREASE. But we're at offset 0 already, so it stays
-        // clamped at 0. Drag UP instead to scroll toward bottom.)
-        let event = InputEvent::PointerMoved {
-            position: Point::new(200.0, 50.0), // y decreased by 50 → drag up
-        };
-        pipeline.handle_event(
-            Point::new(200.0, 50.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        let event = InputEvent::PointerButton {
-            position: Point::new(200.0, 50.0),
-            button: PointerButton::Primary,
-            state: ButtonState::Released,
-        };
-        pipeline.handle_event(
-            Point::new(200.0, 50.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        // After dragging up 50px, offset should be ~50 (clamped to max).
-        // We can't read the element's offset directly, so use a controller
-        // to observe. Re-do the test with a controller:
-        let ctrl = crate::widgets::ScrollController::new();
-        let mut col2 = Flex::column();
-        for i in 0..200 {
-            col2 = col2.push(crate::Text::new(format!("line {}", i)));
-        }
-        let sv2 = ScrollView::new(col2.boxed()).controller(ctrl.clone());
-        let mut p2 = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        p2.reconcile(Box::new(sv2));
-        p2.layout(
-            crate::core::Size::new(400.0, 600.0),
-            &mut engine,
-            &mut font_system,
-        );
-        assert_eq!(ctrl.current_offset(), 0.0, "starts at top");
-        let event = InputEvent::PointerButton {
-            position: Point::new(200.0, 300.0),
-            button: PointerButton::Primary,
-            state: ButtonState::Pressed,
-        };
-        p2.handle_event(
-            Point::new(200.0, 300.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        let event = InputEvent::PointerMoved {
-            position: Point::new(200.0, 250.0), // drag up 50px
-        };
-        p2.handle_event(
-            Point::new(200.0, 250.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        let event = InputEvent::PointerButton {
-            position: Point::new(200.0, 250.0),
-            button: PointerButton::Primary,
-            state: ButtonState::Released,
-        };
-        p2.handle_event(
-            Point::new(200.0, 250.0),
-            &event,
-            Modifiers::default(),
-            &mut font_system,
-            &ScaleSource::default(),
-            &test_clipboard(),
-        );
-        assert!(
-            ctrl.current_offset() > 0.0,
-            "drag-up should scroll toward bottom; got offset={}",
-            ctrl.current_offset()
-        );
-    }
-
-    #[test]
-    fn test_touch_drag_clamps_at_top() {
+    fn test_drag_in_tappable_row_scrolls_not_navigates() {
         use crate::animation::AnimationTicker;
         use crate::core::Point;
         use crate::core::ScaleSource;
@@ -596,12 +491,21 @@ mod tests {
         use crate::widgets::{ScrollController, ScrollView};
         use crate::Flex;
         use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
         use std::sync::Arc;
 
+        // Build a scroll view of tappable rows (GestureDetector.on_tap).
+        let tap_count = Rc::new(Cell::new(0u32));
         let ctrl = ScrollController::new();
         let mut col = Flex::column();
-        for i in 0..200 {
-            col = col.push(crate::Text::new(format!("line {}", i)));
+        for _ in 0..200 {
+            let tc = tap_count.clone();
+            col = col.push(
+                crate::Text::new("row")
+                    .boxed()
+                    .on_tap(move || tc.set(tc.get() + 1)),
+            );
         }
         let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -613,32 +517,314 @@ mod tests {
             &mut engine,
             &mut font_system,
         );
-        // Drag DOWN 1000px from offset 0 → should clamp at 0 (can't go above top).
-        let event = InputEvent::PointerButton {
+
+        // Press at (200, 300) inside the viewport.
+        let press = InputEvent::PointerButton {
             position: Point::new(200.0, 300.0),
             button: PointerButton::Primary,
             state: ButtonState::Pressed,
         };
         pipeline.handle_event(
             Point::new(200.0, 300.0),
-            &event,
+            &press,
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
             &test_clipboard(),
         );
-        let event = InputEvent::PointerMoved {
-            position: Point::new(200.0, 1300.0), // drag down 1000px
+        // Drag UP 50px (past slop) → should scroll toward bottom, NOT tap.
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 250.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &move_evt,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 250.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        assert!(
+            ctrl.current_offset() > 0.0,
+            "drag should scroll; got offset={}",
+            ctrl.current_offset()
+        );
+        assert_eq!(tap_count.get(), 0, "drag should NOT fire on_tap (navigate)");
+    }
+
+    #[test]
+    fn test_tap_in_tappable_row_navigates_not_scrolls() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        let tap_count = Rc::new(Cell::new(0u32));
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            let tc = tap_count.clone();
+            col = col.push(
+                crate::Text::new("row")
+                    .boxed()
+                    .on_tap(move || tc.set(tc.get() + 1)),
+            );
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press + Release with no move past slop → tap fires, no scroll.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        assert_eq!(tap_count.get(), 1, "tap should fire on_tap once");
+        assert_eq!(ctrl.current_offset(), 0.0, "tap should NOT scroll");
+    }
+
+    #[test]
+    fn test_drag_clamps_at_top_with_arena() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        // Drag DOWN 1000px from offset 0 → clamp at 0.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 1300.0),
         };
         pipeline.handle_event(
             Point::new(200.0, 1300.0),
-            &event,
+            &move_evt,
             Modifiers::default(),
             &mut font_system,
             &ScaleSource::default(),
             &test_clipboard(),
         );
         assert_eq!(ctrl.current_offset(), 0.0, "clamped at top");
+    }
+
+    #[test]
+    fn test_on_press_fires_on_down_regardless_of_drag_win() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        let press_count = Rc::new(Cell::new(0u32));
+        let tap_count = Rc::new(Cell::new(0u32));
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            let pc = press_count.clone();
+            let tc = tap_count.clone();
+            col = col.push(
+                crate::Text::new("row")
+                    .boxed()
+                    .on_press(move || pc.set(pc.get() + 1))
+                    .on_tap(move || tc.set(tc.get() + 1)),
+            );
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press → on_press fires immediately.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(press_count.get(), 1, "on_press fires on press-down");
+
+        // Drag past slop → drag wins, tap rejected.
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 250.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &move_evt,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 250.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(press_count.get(), 1, "on_press stays at 1 (no double-fire)");
+        assert_eq!(tap_count.get(), 0, "on_tap does NOT fire (drag won)");
+        assert!(ctrl.current_offset() > 0.0, "drag scrolled");
+    }
+
+    #[test]
+    fn test_tap_outside_scroll_view_unchanged() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        let tap_count = Rc::new(Cell::new(0u32));
+        let tc = tap_count.clone();
+        let widget = crate::Text::new("tap me")
+            .boxed()
+            .on_tap(move || tc.set(tc.get() + 1));
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(widget));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let press = InputEvent::PointerButton {
+            position: Point::new(50.0, 20.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(50.0, 20.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(50.0, 20.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(50.0, 20.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(tap_count.get(), 1, "tap fires outside scroll view");
     }
 
     #[test]
@@ -679,6 +865,207 @@ mod tests {
             ctrl.current_offset(),
             100.0,
             "mouse wheel still scrolls; existing path unchanged"
+        );
+    }
+
+    #[test]
+    fn test_multi_move_drag_accumulates_scroll() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 300).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Move 1: drag up 25px (crosses slop, drag wins).
+        let move1 = InputEvent::PointerMoved {
+            position: Point::new(200.0, 275.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 275.0),
+            &move1,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset_after_move1 = ctrl.current_offset();
+        assert!(
+            offset_after_move1 > 0.0,
+            "first move should scroll; got offset={}",
+            offset_after_move1
+        );
+        // Move 2: drag up another 25px. This exercises Bug 2's fix: the arena
+        // is already closed (drag won on move 1), so the recognizer is NOT fed
+        // again. The scroll delta must come from event.position, not the stale
+        // recognizer state. Without the fix, last_drag_y would be reset and the
+        // delta would be 0 (or bogus).
+        let move2 = InputEvent::PointerMoved {
+            position: Point::new(200.0, 250.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 250.0),
+            &move2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset_after_move2 = ctrl.current_offset();
+        assert!(
+            offset_after_move2 > offset_after_move1,
+            "second move should scroll further; got offset={} after move1, {} after move2",
+            offset_after_move1,
+            offset_after_move2
+        );
+        // The total scroll should be roughly 50px (25 + 25), allowing for slop
+        // adjustment on the first move.
+        let total_delta = offset_after_move2 - offset_after_move1;
+        assert!(
+            total_delta > 0.0,
+            "second move contributed positive scroll; got delta={}",
+            total_delta
+        );
+    }
+
+    #[test]
+    fn test_cancel_on_blur_drops_arena() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        let tap_count = Rc::new(Cell::new(0u32));
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            let tc = tap_count.clone();
+            col = col.push(
+                crate::Text::new("row")
+                    .boxed()
+                    .on_tap(move || tc.set(tc.get() + 1)),
+            );
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 300) inside the viewport — creates an arena.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Simulate window unfocus mid-press — cancels the arena.
+        pipeline.cancel_current_gesture();
+
+        // Release (would have completed the gesture) — should NOT fire tap
+        // because the arena was cancelled.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            tap_count.get(),
+            0,
+            "cancelled arena should not fire on_tap on subsequent release"
+        );
+
+        // Press again at a different location — should create a FRESH arena
+        // and a normal tap should fire on release.
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 350.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 350.0),
+            &press2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 350.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 350.0),
+            &release2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            tap_count.get(),
+            1,
+            "fresh arena after cancel should allow normal tap"
         );
     }
 }

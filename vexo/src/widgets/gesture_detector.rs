@@ -32,6 +32,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
+use crate::gestures::{ArenaEvent, GestureArena, GestureRecognizer, TapRecognizer};
 use crate::input::{ButtonState, InputEvent};
 use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 
@@ -64,6 +65,9 @@ pub struct GestureDetector {
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     /// Callback invoked when pointer is released inside the child bounds.
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
+    /// Callback invoked when a tap is recognized (pointer up, having won the
+    /// arena). Arena-mediated — does NOT fire if a drag wins instead.
+    on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
 }
 
 impl GestureDetector {
@@ -77,6 +81,7 @@ impl GestureDetector {
                 .align(AlignItems::Stretch),
             on_press: None,
             on_release: None,
+            on_tap: None,
         }
     }
 
@@ -112,6 +117,14 @@ impl GestureDetector {
         self
     }
 
+    /// Set the callback for tap events (arena-mediated: fires on pointer-up
+    /// after winning the arena). Use this for actions like navigation — it
+    /// will NOT fire if a drag (scroll) wins the gesture instead.
+    pub fn on_tap(mut self, callback: impl FnMut() + 'static) -> Self {
+        self.on_tap = Some(Rc::new(RefCell::new(callback)));
+        self
+    }
+
     /// Get the child widget.
     pub fn child(&self) -> &dyn Widget {
         self.child.as_ref()
@@ -126,6 +139,7 @@ impl Clone for GestureDetector {
             layout: self.layout.clone(),
             on_press: self.on_press.clone(),
             on_release: self.on_release.clone(),
+            on_tap: self.on_tap.clone(),
         }
     }
 }
@@ -178,6 +192,7 @@ pub struct GestureDetectorElement {
     widget: Option<Box<dyn Widget>>,
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
+    on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
     focus_attachment: Option<FocusAttachment>,
 }
 
@@ -191,6 +206,7 @@ impl GestureDetectorElement {
             widget: None,
             on_press: None,
             on_release: None,
+            on_tap: None,
             focus_attachment: None,
         }
     }
@@ -200,6 +216,7 @@ impl GestureDetectorElement {
         self.key = widget.key.clone();
         self.on_press = widget.on_press.clone();
         self.on_release = widget.on_release.clone();
+        self.on_tap = widget.on_tap.clone();
         self.widget = Some(widget.clone_boxed());
     }
 
@@ -227,6 +244,7 @@ impl RenderObjectElement for GestureDetectorElement {
             self.key = gd.key.clone();
             self.on_press = gd.on_press.clone();
             self.on_release = gd.on_release.clone();
+            self.on_tap = gd.on_tap.clone();
         }
         self.widget = Some(widget);
     }
@@ -339,6 +357,31 @@ impl Element for GestureDetectorElement {
         None
     }
 
+    fn register_gestures(&mut self, arena: &mut GestureArena, self_id: ElementKey) {
+        // Only register a tap recognizer if there's an on_tap callback.
+        // (on_press/on_release fire immediately via on_event and don't need
+        // the arena — they're press-down feedback, not actions.)
+        if self.on_tap.is_some() {
+            arena.add(Box::new(TapRecognizer::new()), self_id);
+        }
+    }
+
+    fn on_arena_winner_update(
+        &mut self,
+        recognizer: &dyn GestureRecognizer,
+        event: &ArenaEvent,
+        _ctx: &mut EventContext,
+    ) {
+        // Fire on_tap when the tap recognizer wins (on Up).
+        if let ArenaEvent::Up { .. } = event {
+            if recognizer.accepted() {
+                if let Some(callback) = &self.on_tap {
+                    (callback.borrow_mut())();
+                }
+            }
+        }
+    }
+
     fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         // Downcast and store the new widget
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
@@ -346,6 +389,7 @@ impl Element for GestureDetectorElement {
             if let Some(gd) = widget.as_any().downcast_ref::<GestureDetector>() {
                 self.on_press = gd.on_press.clone();
                 self.on_release = gd.on_release.clone();
+                self.on_tap = gd.on_tap.clone();
             }
             self.widget = Some(*widget);
 

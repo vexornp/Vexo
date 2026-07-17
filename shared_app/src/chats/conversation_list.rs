@@ -72,7 +72,7 @@ fn build_conversation_row(
         .push(right_col)
         .boxed()
         .padding(12.0)
-        .on_press(on_press)
+        .on_tap(on_press)
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {

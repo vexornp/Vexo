@@ -62,6 +62,7 @@ use super::painter::Painter;
 use super::reconciler::Reconciler;
 use super::render_object::RenderObjectRegistry;
 use super::widgets::Widget;
+use crate::gestures::GestureArena;
 use crate::state::CursorBlinkState;
 
 // ============================================================================
@@ -153,6 +154,10 @@ pub struct ThreeTreePipeline {
     /// inherits its parent's map (Arc clone), and `InheritedElement`s insert
     /// their own type. Cleared on unmount.
     inherited_maps: SecondaryMap<ElementKey, Arc<InheritedMap>>,
+
+    /// Per-pointer gesture arena. Created on press, dropped on release.
+    /// Single-pointer only (InputEvent has no pointer id).
+    pub(crate) current_arena: Option<GestureArena>,
 }
 
 impl ThreeTreePipeline {
@@ -176,6 +181,7 @@ impl ThreeTreePipeline {
             animation_ticker,
             inherited_registry: InheritedRegistry::new(),
             inherited_maps: SecondaryMap::new(),
+            current_arena: None,
         }
     }
 
@@ -539,6 +545,7 @@ impl ThreeTreePipeline {
             &self.build_owner,
             &self.dirty_sender,
             &mut self.focus_manager,
+            &mut self.current_arena,
             position,
             event,
             modifiers,
@@ -550,6 +557,16 @@ impl ThreeTreePipeline {
         self.focus_manager.apply_focus_changes();
 
         result
+    }
+
+    /// Cancel any active gesture arena (e.g. on window unfocus).
+    ///
+    /// Feeds Cancel to the arena (all recognizers reject, no winner fires),
+    /// then drops it. Safe to call when no arena is active (no-op).
+    pub fn cancel_current_gesture(&mut self) {
+        if let Some(mut arena) = self.current_arena.take() {
+            arena.handle_event(crate::gestures::ArenaEvent::Cancel);
+        }
     }
 
     /// Get the currently focused element.

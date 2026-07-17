@@ -793,7 +793,7 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             );
             let back_button = Button::new(back_label)
                 .variant(ButtonVariant::Ghost)
-                .on_press(move || {
+                .on_tap(move || {
                     controller.pop();
                 })
                 .boxed();

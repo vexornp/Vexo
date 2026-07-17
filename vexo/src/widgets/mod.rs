@@ -309,6 +309,13 @@ pub trait Widget: Any {
         Box::new(GestureDetector::new(self).on_release(callback))
     }
 
+    fn on_tap(self, callback: impl FnMut() + 'static) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(GestureDetector::new(self).on_tap(callback))
+    }
+
     fn cursor(self, cursor: MouseCursor) -> Box<dyn Widget>
     where
         Self: Sized + 'static,

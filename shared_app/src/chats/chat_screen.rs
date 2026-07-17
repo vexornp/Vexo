@@ -173,7 +173,7 @@ fn build_input_bar(
         .push(
             Button::new("Send")
                 .variant(ButtonVariant::Primary)
-                .on_press(on_send),
+                .on_tap(on_send),
         )
         .boxed()
         .padding(8.0)

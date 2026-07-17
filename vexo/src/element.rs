@@ -10,6 +10,7 @@ use super::element_context::ElementContext;
 use super::focus::attachment::FocusAttachment;
 use super::id::ElementKey;
 use super::key::WidgetKey;
+use crate::gestures::{ArenaEvent, GestureArena, GestureRecognizer};
 /// Persistent element with state and lifecycle.
 ///
 /// Elements represent the "live" state of the UI tree. They:
@@ -82,6 +83,25 @@ pub trait Element {
 
     /// Get mutable access to the focus attachment for this element.
     fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment>;
+
+    /// Register gesture recognizers into the arena for this pointer press.
+    ///
+    /// Called once on pointer press for every element in the hit-test path
+    /// (deepest first). Default: no-op. Override to add recognizers.
+    fn register_gestures(&mut self, _arena: &mut GestureArena, _self_id: ElementKey) {}
+
+    /// Called on each subsequent Move/Up event **only for the winning element**.
+    ///
+    /// The element downcasts the recognizer to read its state and apply
+    /// effects (e.g. ScrollView reads the drag recognizer's position delta).
+    /// Default: no-op.
+    fn on_arena_winner_update(
+        &mut self,
+        _recognizer: &dyn GestureRecognizer,
+        _event: &ArenaEvent,
+        _ctx: &mut super::EventContext,
+    ) {
+    }
 }
 
 /// Central registry for all live elements using generational keys.
