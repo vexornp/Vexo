@@ -32,6 +32,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
+use crate::gestures::{ArenaEvent, GestureArena, GestureRecognizer, TapRecognizer};
 use crate::input::{ButtonState, InputEvent};
 use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
 
@@ -354,6 +355,31 @@ impl Element for GestureDetectorElement {
             }
         }
         None
+    }
+
+    fn register_gestures(&mut self, arena: &mut GestureArena, self_id: ElementKey) {
+        // Only register a tap recognizer if there's an on_tap callback.
+        // (on_press/on_release fire immediately via on_event and don't need
+        // the arena — they're press-down feedback, not actions.)
+        if self.on_tap.is_some() {
+            arena.add(Box::new(TapRecognizer::new()), self_id);
+        }
+    }
+
+    fn on_arena_winner_update(
+        &mut self,
+        recognizer: &dyn GestureRecognizer,
+        event: &ArenaEvent,
+        _ctx: &mut EventContext,
+    ) {
+        // Fire on_tap when the tap recognizer wins (on Up).
+        if let ArenaEvent::Up { .. } = event {
+            if recognizer.accepted() {
+                if let Some(callback) = &self.on_tap {
+                    (callback.borrow_mut())();
+                }
+            }
+        }
     }
 
     fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
