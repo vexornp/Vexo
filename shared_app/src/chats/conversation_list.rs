@@ -113,7 +113,7 @@ mod tests {
         pipeline.update(view);
         assert!(
             pipeline.element_registry().len() > 5,
-            "expected multiple elements for 5 conversation rows"
+            "expected multiple elements for 25 conversation rows"
         );
     }
 }
