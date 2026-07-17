@@ -19,6 +19,7 @@ use super::focus::FocusManager;
 use super::hit_test::HitTestResult;
 use super::id::ElementKey;
 use super::render_object::RenderObjectRegistry;
+use crate::gestures::{ArenaEvent, ArenaOutcome, GestureArena};
 
 /// Zero-sized struct that serves as a namespace for event handling logic.
 ///
@@ -44,6 +45,7 @@ impl EventHandler {
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        current_arena: &mut Option<GestureArena>,
         _position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
@@ -59,6 +61,7 @@ impl EventHandler {
                 build_owner,
                 dirty_sender,
                 focus_manager,
+                current_arena,
                 *position,
                 event,
                 modifiers,
@@ -73,6 +76,7 @@ impl EventHandler {
                 build_owner,
                 dirty_sender,
                 focus_manager,
+                current_arena,
                 *position,
                 event,
                 modifiers,
@@ -128,20 +132,17 @@ impl EventHandler {
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
         focus_manager: &mut FocusManager,
+        current_arena: &mut Option<GestureArena>,
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
         scale_source: &ScaleSource,
         clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
-        // Convert Point to Position (absolute window coordinates)
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
-
-        // 1. Hit test to find target and build element path
         let hit_result = render_objects.hit_test(absolute_position);
 
         if !hit_result.is_hit() {
-            // Click outside all widgets — clear focus on pointer press
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
                 ..
@@ -152,27 +153,148 @@ impl EventHandler {
             return None;
         }
 
-        // 2. Compute local_position relative to the innermost hit target.
-        // This is equivalent to Flutter's globalToLocal().
         let local_position = hit_result
             .inner_bounds()
             .map(|b| Point::new(position.x - b.position().x, position.y - b.position().y))
             .unwrap_or(position);
 
-        // 3. Bubble event up the element path (deepest to shallowest)
         let element_path = hit_result.element_path();
-        let mut any_message: Option<Box<dyn Any>> = None;
 
-        // Iterate from deepest (last) to shallowest (first)
+        // Determine if this is a press, move, or release.
+        let is_press = matches!(
+            event,
+            InputEvent::PointerButton {
+                state: ButtonState::Pressed,
+                ..
+            }
+        );
+        let is_release = matches!(
+            event,
+            InputEvent::PointerButton {
+                state: ButtonState::Released,
+                ..
+            }
+        );
+        let is_move = matches!(event, InputEvent::PointerMoved { .. });
+
+        // === PRESS: create arena, register gestures, feed Down, then bubble press ===
+        if is_press {
+            // Defensive: if a stale arena exists (e.g. window blurred mid-press),
+            // drop it and start fresh.
+            *current_arena = Some(GestureArena::new(position));
+
+            if let Some(arena) = current_arena.as_mut() {
+                // Walk deepest→shallowest so deepest recognizer is at index 0.
+                for &element_id in element_path.iter().rev() {
+                    if let Some(element) = element_registry.get_mut(element_id) {
+                        element.register_gestures(arena, element_id);
+                    }
+                }
+                // Feed Down.
+                arena.handle_event(ArenaEvent::Down { position });
+            }
+        }
+
+        // === MOVE: feed Move to arena; if drag won, call winner (no bubble);
+        //     if still open, bubble for MouseRegion hover ===
+        if is_move {
+            if let Some(arena) = current_arena.as_mut() {
+                let outcome = arena.handle_event(ArenaEvent::Move { position });
+                if let ArenaOutcome::Resolved { winner_index: _ } = outcome {
+                    if let Some(winner_id) = arena.winner_owner() {
+                        let bounds = hit_result.bounds_for_element(winner_id).unwrap_or_default();
+                        if let Some(element) = element_registry.get_mut(winner_id) {
+                            let mut ctx = EventContext::with_build_owner(
+                                winner_id,
+                                position,
+                                local_position,
+                                focus_manager.primary_focus_element(),
+                                bounds,
+                                modifiers,
+                                scale_source.clone(),
+                                font_system,
+                                build_owner,
+                                dirty_sender,
+                                Some(render_objects),
+                                clipboard.clone(),
+                            );
+                            let winner_recognizer = arena.winner_recognizer().unwrap();
+                            element.on_arena_winner_update(
+                                winner_recognizer,
+                                &ArenaEvent::Move { position },
+                                &mut ctx,
+                            );
+                        }
+                        // Drag owns the pointer — do NOT bubble.
+                        return Some(Box::new(()));
+                    }
+                }
+                // Arena still open — fall through to bubble (MouseRegion hover).
+            }
+        }
+
+        // === RELEASE: feed Up + sweep; if tap won, call winner + bubble release;
+        //     if drag won, call winner (no bubble); drop arena ===
+        if is_release {
+            let mut drag_won = false;
+            if let Some(arena) = current_arena.as_mut() {
+                arena.handle_event(ArenaEvent::Up { position });
+                arena.sweep_on_up();
+                if let Some(winner_id) = arena.winner_owner() {
+                    let bounds = hit_result.bounds_for_element(winner_id).unwrap_or_default();
+                    // Check if the winner is a drag (not a tap) — drag consumes release.
+                    let is_drag_winner = arena
+                        .winner_recognizer()
+                        .map(|r| {
+                            r.as_any()
+                                .downcast_ref::<crate::gestures::VerticalDragRecognizer>()
+                                .is_some()
+                        })
+                        .unwrap_or(false);
+                    drag_won = is_drag_winner;
+
+                    if let Some(element) = element_registry.get_mut(winner_id) {
+                        let mut ctx = EventContext::with_build_owner(
+                            winner_id,
+                            position,
+                            local_position,
+                            focus_manager.primary_focus_element(),
+                            bounds,
+                            modifiers,
+                            scale_source.clone(),
+                            font_system,
+                            build_owner,
+                            dirty_sender,
+                            Some(render_objects),
+                            clipboard.clone(),
+                        );
+                        let winner_recognizer = arena.winner_recognizer().unwrap();
+                        element.on_arena_winner_update(
+                            winner_recognizer,
+                            &ArenaEvent::Up { position },
+                            &mut ctx,
+                        );
+                    }
+                }
+            }
+            // Drop the arena — gesture sequence complete.
+            *current_arena = None;
+
+            if drag_won {
+                // Drag consumed the release — do NOT bubble (on_release won't fire).
+                return Some(Box::new(()));
+            }
+            // Tap won (or no arena) — fall through to bubble release so
+            // on_release fires (release feedback).
+        }
+
+        // === BUBBLE: deepest→shallowest, first handler stops propagation ===
+        let mut any_message: Option<Box<dyn Any>> = None;
         for &element_id in element_path.iter().rev() {
             if let Some(element) = element_registry.get_mut(element_id) {
-                // Each element gets its own bounds from the hit test,
-                // so is_pointer_inside() works correctly even for
-                // ancestors of scrolled content.
                 let bounds = hit_result
                     .bounds_for_element(element_id)
                     .unwrap_or_default();
-
                 let mut ctx = EventContext::with_build_owner(
                     element_id,
                     position,
@@ -187,33 +309,24 @@ impl EventHandler {
                     Some(render_objects),
                     clipboard.clone(),
                 );
-
                 let message = element.on_event(event, &mut ctx, state);
-
-                // Handle focus requests from this element
                 if let Some(focus_element) = ctx.focus_request() {
-                    let node_id = focus_manager.node_for_element(focus_element).expect(
-                        "Focus node must exist — all mounted elements have FocusAttachments",
-                    );
+                    let node_id = focus_manager
+                        .node_for_element(focus_element)
+                        .expect("Focus node must exist");
                     focus_manager.request_focus(node_id);
                 } else if ctx.should_clear_focus() {
                     focus_manager.unfocus();
                 }
-
                 if message.is_some() {
                     any_message = message;
-                    break; // Event handled - stop bubbling
+                    break;
                 }
             }
         }
 
-        // If no element handled the event and it's a press, clear focus
         if any_message.is_none() {
-            if let InputEvent::PointerButton {
-                state: ButtonState::Pressed,
-                ..
-            } = event
-            {
+            if is_press {
                 focus_manager.unfocus();
             }
         }

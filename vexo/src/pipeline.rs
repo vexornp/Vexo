@@ -545,6 +545,7 @@ impl ThreeTreePipeline {
             &self.build_owner,
             &self.dirty_sender,
             &mut self.focus_manager,
+            &mut self.current_arena,
             position,
             event,
             modifiers,
