@@ -223,6 +223,15 @@ impl<A: Application + 'static> WindowState<A> {
                 }
             }
 
+            // Window focus changes — cancel any in-flight gesture when the
+            // window loses focus so the arena doesn't leak (a press without a
+            // matching release, e.g. Alt-Tab mid-press).
+            WindowEvent::Focused(focused) => {
+                if !focused {
+                    self.three_tree_pipeline.cancel_current_gesture();
+                }
+            }
+
             // Other events that may convert to InputEvent
             _ => {
                 if let Some(input_event) =
