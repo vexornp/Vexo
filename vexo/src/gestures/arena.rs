@@ -127,9 +127,9 @@ impl GestureArena {
         }
     }
 
-    /// Resolution sweep: if any recognizer accepted → it wins, reject others.
-    /// If on Up and none accepted but some are pending → sweep to first
-    /// non-rejected (Flutter default sweep).
+    /// Accept-phase resolution: if any recognizer has Accepted → declare it
+    /// the winner and reject all others. Does NOT sweep — the sweep to
+    /// first-non-rejected is in `sweep_on_up()`.
     fn try_resolve(&mut self) {
         if self.closed {
             return;
@@ -141,8 +141,6 @@ impl GestureArena {
                 return;
             }
         }
-        // If we reach here on an Up event, sweep to first non-rejected.
-        // (Called after feeding Up, so rejections are up-to-date.)
     }
 
     /// Called when the arena should attempt a sweep (e.g. on Up with no
