@@ -959,4 +959,113 @@ mod tests {
             total_delta
         );
     }
+
+    #[test]
+    fn test_cancel_on_blur_drops_arena() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        let tap_count = Rc::new(Cell::new(0u32));
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            let tc = tap_count.clone();
+            col = col.push(
+                crate::Text::new("row")
+                    .boxed()
+                    .on_tap(move || tc.set(tc.get() + 1)),
+            );
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 300) inside the viewport — creates an arena.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Simulate window unfocus mid-press — cancels the arena.
+        pipeline.cancel_current_gesture();
+
+        // Release (would have completed the gesture) — should NOT fire tap
+        // because the arena was cancelled.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            tap_count.get(),
+            0,
+            "cancelled arena should not fire on_tap on subsequent release"
+        );
+
+        // Press again at a different location — should create a FRESH arena
+        // and a normal tap should fire on release.
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 350.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 350.0),
+            &press2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 350.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 350.0),
+            &release2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            tap_count.get(),
+            1,
+            "fresh arena after cancel should allow normal tap"
+        );
+    }
 }

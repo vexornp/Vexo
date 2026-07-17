@@ -143,12 +143,90 @@ impl EventHandler {
         let hit_result = render_objects.hit_test(absolute_position);
 
         if !hit_result.is_hit() {
+            // Press in empty space: no arena, clear focus, return.
             if let InputEvent::PointerButton {
                 state: ButtonState::Pressed,
                 ..
             } = event
             {
                 focus_manager.unfocus();
+                return None;
+            }
+
+            // Move or Release in empty space: if an arena is active, feed it
+            // so the gesture sequence completes even when the pointer left
+            // all widgets (spec edge case #4: arena tracks the pointer, not
+            // hit-test).
+            if let Some(arena) = current_arena.as_mut() {
+                let is_move = matches!(event, InputEvent::PointerMoved { .. });
+                let is_release = matches!(
+                    event,
+                    InputEvent::PointerButton {
+                        state: ButtonState::Released,
+                        ..
+                    }
+                );
+
+                if is_move {
+                    let outcome = arena.handle_event(ArenaEvent::Move { position });
+                    if let ArenaOutcome::Resolved { winner_index: _ } = outcome {
+                        if let Some(winner_id) = arena.winner_owner() {
+                            if let Some(element) = element_registry.get_mut(winner_id) {
+                                let bounds = Bounds::default();
+                                let mut ctx = EventContext::with_build_owner(
+                                    winner_id,
+                                    position,
+                                    position,
+                                    focus_manager.primary_focus_element(),
+                                    bounds,
+                                    modifiers,
+                                    scale_source.clone(),
+                                    font_system,
+                                    build_owner,
+                                    dirty_sender,
+                                    Some(render_objects),
+                                    clipboard.clone(),
+                                );
+                                let winner_recognizer = arena.winner_recognizer().unwrap();
+                                element.on_arena_winner_update(
+                                    winner_recognizer,
+                                    &ArenaEvent::Move { position },
+                                    &mut ctx,
+                                );
+                            }
+                        }
+                    }
+                } else if is_release {
+                    arena.handle_event(ArenaEvent::Up { position });
+                    arena.sweep_on_up();
+                    if let Some(winner_id) = arena.winner_owner() {
+                        if let Some(element) = element_registry.get_mut(winner_id) {
+                            let bounds = Bounds::default();
+                            let mut ctx = EventContext::with_build_owner(
+                                winner_id,
+                                position,
+                                position,
+                                focus_manager.primary_focus_element(),
+                                bounds,
+                                modifiers,
+                                scale_source.clone(),
+                                font_system,
+                                build_owner,
+                                dirty_sender,
+                                Some(render_objects),
+                                clipboard.clone(),
+                            );
+                            let winner_recognizer = arena.winner_recognizer().unwrap();
+                            element.on_arena_winner_update(
+                                winner_recognizer,
+                                &ArenaEvent::Up { position },
+                                &mut ctx,
+                            );
+                        }
+                    }
+                    // Drop the arena — gesture sequence complete.
+                    *current_arena = None;
+                }
             }
             return None;
         }
