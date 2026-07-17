@@ -10,6 +10,7 @@ pub mod recognizer;
 pub mod tap;
 pub mod vertical_drag;
 
+pub use arena::{ArenaOutcome, GestureArena};
 pub use arena_event::ArenaEvent;
 pub use recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 pub use tap::TapRecognizer;
