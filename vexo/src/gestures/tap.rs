@@ -9,6 +9,8 @@
 use crate::core::Logical;
 use crate::core::Point;
 
+use std::any::Any;
+
 use super::arena_event::ArenaEvent;
 use super::recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 use super::TAP_SLOP;
@@ -62,6 +64,10 @@ impl GestureRecognizer for TapRecognizer {
 
     fn resolution(&self) -> RecognizerResolution {
         self.resolution
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

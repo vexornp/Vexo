@@ -12,6 +12,8 @@
 
 use crate::core::{Logical, Point};
 
+use std::any::Any;
+
 use super::arena_event::ArenaEvent;
 use super::recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 use super::VERTICAL_DRAG_SLOP;
@@ -91,6 +93,10 @@ impl GestureRecognizer for VerticalDragRecognizer {
 
     fn resolution(&self) -> RecognizerResolution {
         self.resolution
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

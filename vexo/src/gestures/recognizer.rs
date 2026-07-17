@@ -36,6 +36,14 @@ pub trait GestureRecognizer: Any {
     fn handle_event(&mut self, event: &ArenaEvent, ctx: &ArenaContext);
     fn resolution(&self) -> RecognizerResolution;
 
+    /// Downcast this `&dyn GestureRecognizer` to a concrete `&dyn Any`.
+    ///
+    /// Required because `Any` is a supertrait but not directly accessible
+    /// through a trait object — `&dyn GestureRecognizer` cannot be downcast
+    /// without an explicit `as_any()` method. Implementations just return
+    /// `self`.
+    fn as_any(&self) -> &dyn Any;
+
     fn accepted(&self) -> bool {
         matches!(self.resolution(), RecognizerResolution::Accepted)
     }
