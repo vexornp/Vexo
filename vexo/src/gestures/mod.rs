@@ -13,6 +13,7 @@ pub mod vertical_drag;
 pub use arena_event::ArenaEvent;
 pub use recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 pub use tap::TapRecognizer;
+pub use vertical_drag::VerticalDragRecognizer;
 
 /// Movement threshold (in logical pixels) beyond which a tap is rejected.
 /// Matches Flutter's `kTouchSlop`.
