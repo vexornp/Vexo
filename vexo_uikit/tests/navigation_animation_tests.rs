@@ -779,4 +779,43 @@ mod nav_push_shadow_tests {
             layout.height
         );
     }
+
+    #[test]
+    fn mobile_transition_shadow_wrapper_fills_parent() {
+        // Regression: DecoratedContainer::new() defaults to align_self(Start)
+        // with no flex_grow/width_percent/height_percent, which shrink-to-fits
+        // the page instead of filling the Positioned overlay. The page (e.g.
+        // chat screen with flex_fill) then has nothing to grow into and
+        // collapses — input bar appears at top-left instead of pinned to
+        // bottom. The shadow wrapper must explicitly fill its parent.
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: true,
+            direction: TransitionDir::Push,
+            platform: Platform::Mobile,
+        };
+        let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
+
+        let dc = find_first_shadowed(&*result)
+            .expect("shadow wrapper DecoratedContainer must be present");
+        let layout = dc.layout_ref();
+        assert!(
+            layout
+                .width
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "shadow wrapper width must be Percent(1.0) to fill Positioned overlay horizontally, got {:?}",
+            layout.width
+        );
+        assert!(
+            layout
+                .height
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "shadow wrapper height must be Percent(1.0) to fill Positioned overlay vertically, got {:?}",
+            layout.height
+        );
+    }
 }

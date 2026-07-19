@@ -15,7 +15,10 @@
 //! same transition code is correct at any width. No pixel width needs to be
 //! read back from layout.
 
-use vexo::{BoxShadow, Color, DecoratedContainer, FractionalTranslation, Opacity, Widget};
+use vexo::{
+    BoxShadow, Color, DecoratedContainer, FlexDirection, FractionalTranslation, Layout, Opacity,
+    Widget,
+};
 
 use crate::platform::Platform;
 use crate::theme::tokens;
@@ -81,10 +84,28 @@ pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) ->
         (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), 0.85 + 0.15 * t),
         (TransitionDir::PopToRoot, false) => (t, 1.0),
     };
-    let shadowed = DecoratedContainer::new(child).shadow(
-        BoxShadow::new(Color::BLACK.with_alpha(tokens::navigation::PAGE_SHADOW_ALPHA))
-            .blur(tokens::navigation::PAGE_SHADOW_BLUR),
-    );
+    let shadowed = DecoratedContainer::new(child)
+        .shadow(
+            BoxShadow::new(Color::BLACK.with_alpha(tokens::navigation::PAGE_SHADOW_ALPHA))
+                .blur(tokens::navigation::PAGE_SHADOW_BLUR),
+        )
+        // `DecoratedContainer::new()` defaults to `align_self(Start)` with no
+        // `flex_grow`/`width_percent`/`height_percent`, which would shrink-to-
+        // fit the page instead of filling the `Positioned` overlay. The page
+        // (typically a `Column` with `flex_fill`) then has nothing to grow
+        // into and collapses — e.g. a chat screen's input bar ends up at the
+        // top-left corner instead of pinned to the bottom.
+        //
+        // Force the wrapper to fill its parent (the `Positioned` overlay, which
+        // has insets 0/0/0/0 = full Stack size) so the page can use `flex_grow`
+        // to fill the wrapper. `flex_direction: Column` + `align: Stretch`
+        // match the Stack's layout, so the page stretches on both axes.
+        .layout(
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .width_percent(1.0)
+                .height_percent(1.0),
+        );
     Opacity::new(FractionalTranslation::new(shadowed, fx, 0.0), alpha).boxed()
 }
 
