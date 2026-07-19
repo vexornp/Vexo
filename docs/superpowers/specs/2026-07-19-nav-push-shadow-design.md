@@ -32,7 +32,7 @@ Vexo's `BoxShadow` system is fully implemented end-to-end (style → render obje
 | Shadow semantics | One shadow per moving page, on its leading edge (Option C) | iOS-faithful for both push (incoming page's left edge) and pop (outgoing page's left edge, which is its leading edge while moving right). Single shadow per frame; cheap. |
 | Where attached | Inside `default_mobile_transition` (Option A) | Localized to the transition fn, which already "owns" the moving-page visual. Custom `transition_fn` users opt out of the default shadow — they can add their own. Navigator stays shadow-agnostic. |
 | Edge restriction | Full-perimeter shadow + ancestor clip (Option B) | Uses existing `BoxShadow` infrastructure + existing clip infrastructure. iOS-faithful (iOS relies on screen-edge clipping the same way). Fixes a latent bleed bug where the sliding page can paint outside the nav stack bounds. Zero shader changes. |
-| Shadow params | `Color::BLACK.with_alpha(0.3)`, blur `12.0`, offset `(0,0)`, spread `0.0` | iOS-faithful values. Ancestor clip does the edge restriction, not the offset. |
+| Shadow params | `Color::BLACK.with_alpha(0.15)`, blur `8.0`, offset `(0,0)`, spread `0.0` | iOS-faithful values (subtle ambient shadow). Ancestor clip does the edge restriction, not the offset. |
 | Clip placement | Wrap `content_stack` inside `SafeArea`, outside `Stack` (Option A) | Minimum scope; exactly the region containing base + overlay; no semantic changes to `SafeArea`. |
 | Shadow position in overlay tree | Innermost: `Opacity(FractionalTranslation(DecoratedContainer(page, shadow)))` (Option A) | Shadow must translate and dim with the page (it's the page's cast shadow). Innermost placement guarantees both. |
 | Endpoint frames | Constant shadow throughout transition (Option A) | One-frame visibility at stationary endpoints is imperceptible at 60fps over a 350ms animation. Avoids per-frame `BoxShadow` mutation or extra `Opacity` wrapper. |
@@ -87,7 +87,7 @@ No overlay exists. The clip wrapper is still present (type-stability) but clips 
 
 ### 3.6 Composition with base dim
 
-The shadow is painted *after* the base's `Opacity(0.85)` has been applied (overlay is a `Positioned` sibling painted on top of the base in the `Stack`). The shadow's effective alpha is `0.3 × 1.0 (overlay opacity) = 0.3`, painted on top of the dimmed base. The composite is slightly darker than either effect alone — exactly iOS behavior.
+The shadow is painted *after* the base's `Opacity(0.85)` has been applied (overlay is a `Positioned` sibling painted on top of the base in the `Stack`). The shadow's effective alpha is `0.15 × 1.0 (overlay opacity) = 0.15`, painted on top of the dimmed base. The composite is slightly darker than either effect alone — exactly iOS behavior.
 
 ### 3.7 Paint order within the overlay
 
@@ -116,8 +116,8 @@ Add two constants in `pub mod navigation` (after the existing `MOBILE_TITLE_FONT
 /// Constructed as `Color::BLACK.with_alpha(PAGE_SHADOW_ALPHA)` with
 /// `.blur(PAGE_SHADOW_BLUR)`; zero offset, zero spread (the ancestor clip
 /// does the edge restriction, not the offset).
-pub const PAGE_SHADOW_ALPHA: f32 = 0.3;
-pub const PAGE_SHADOW_BLUR: f32 = 12.0;
+pub const PAGE_SHADOW_ALPHA: f32 = 0.15;
+pub const PAGE_SHADOW_BLUR: f32 = 8.0;
 ```
 
 ### 4.2 `vexo_uikit/src/transitions.rs`
@@ -228,7 +228,7 @@ The existing `transitions.rs` tests (`push_outgoing_dims_to_0_85_not_zero`, `pop
 
 Added to `vexo_uikit/tests/navigation_animation_tests.rs`:
 
-1. **`mobile_push_overlay_has_shadow_decorated_container`**: Build a `NavigationStackView` with `.platform(Platform::Mobile)`, trigger a push, render at `t=0.5`, traverse the overlay widget tree, assert a `DecoratedContainer` exists with `style_ref().shadows.len() == 1`, `shadows[0].blur_radius == 12.0`, `shadows[0].color == Color::BLACK.with_alpha(0.3)`, `shadows[0].offset == (0,0)`, `shadows[0].spread_radius == 0.0`.
+1. **`mobile_push_overlay_has_shadow_decorated_container`**: Build a `NavigationStackView` with `.platform(Platform::Mobile)`, trigger a push, render at `t=0.5`, traverse the overlay widget tree, assert a `DecoratedContainer` exists with `style_ref().shadows.len() == 1`, `shadows[0].blur_radius == PAGE_SHADOW_BLUR`, `shadows[0].color == Color::BLACK.with_alpha(PAGE_SHADOW_ALPHA)`, `shadows[0].offset == (0,0)`, `shadows[0].spread_radius == 0.0`.
 
 2. **`mobile_pop_overlay_has_shadow_decorated_container`**: Same, for `TransitionDir::Pop`.
 

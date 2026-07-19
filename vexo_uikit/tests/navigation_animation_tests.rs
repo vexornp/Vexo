@@ -555,6 +555,7 @@ mod nav_push_shadow_tests {
     use super::*;
     use vexo::{BoxShadow, DecoratedContainer, Text};
     use vexo_uikit::platform::Platform;
+    use vexo_uikit::theme::tokens::navigation::{PAGE_SHADOW_ALPHA, PAGE_SHADOW_BLUR};
     use vexo_uikit::transitions::{
         default_desktop_transition, default_mobile_transition, TransitionCtx,
     };
@@ -619,16 +620,18 @@ mod nav_push_shadow_tests {
             (s.color.r - 0.0).abs() < 1e-6
                 && (s.color.g - 0.0).abs() < 1e-6
                 && (s.color.b - 0.0).abs() < 1e-6
-                && (s.color.a - 0.3).abs() < 1e-6,
-            "shadow color must be BLACK at alpha 0.3, got r={} g={} b={} a={}",
+                && (s.color.a - PAGE_SHADOW_ALPHA).abs() < 1e-6,
+            "shadow color must be BLACK at alpha {}, got r={} g={} b={} a={}",
+            PAGE_SHADOW_ALPHA,
             s.color.r,
             s.color.g,
             s.color.b,
             s.color.a
         );
         assert!(
-            (s.blur_radius - 12.0).abs() < 1e-6,
-            "blur must be 12.0, got {}",
+            (s.blur_radius - PAGE_SHADOW_BLUR).abs() < 1e-6,
+            "blur must be {}, got {}",
+            PAGE_SHADOW_BLUR,
             s.blur_radius
         );
         assert!(
@@ -662,8 +665,9 @@ mod nav_push_shadow_tests {
             .expect("mobile pop outgoing overlay must have a shadowed DecoratedContainer");
         assert_eq!(dc.style_ref().shadows.len(), 1);
         assert!(
-            (dc.style_ref().shadows[0].blur_radius - 12.0).abs() < 1e-6,
-            "blur must be 12.0"
+            (dc.style_ref().shadows[0].blur_radius - PAGE_SHADOW_BLUR).abs() < 1e-6,
+            "blur must be {}",
+            PAGE_SHADOW_BLUR
         );
     }
 
