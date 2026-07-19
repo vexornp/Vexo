@@ -48,8 +48,8 @@ pub fn process_commands(
                 fill,
                 stroke,
                 corner_radius,
-                shadow_color: _,
-                shadow_blur: _,
+                shadow_color,
+                shadow_blur,
             } => {
                 let fill = fill.with_alpha(fill.a * current_opacity);
                 let stroke = stroke
@@ -60,9 +60,19 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                // Bake current transform into the frame builder before adding this rect
                 frame_builder.push_transform(current_transform);
-                frame_builder.add_rect(adjusted_bounds, fill, stroke, *corner_radius);
+                if shadow_color[3] > 0.0 {
+                    frame_builder.add_shadow_rect(
+                        adjusted_bounds,
+                        fill,
+                        stroke,
+                        *corner_radius,
+                        *shadow_color,
+                        *shadow_blur,
+                    );
+                } else {
+                    frame_builder.add_rect(adjusted_bounds, fill, stroke, *corner_radius);
+                }
                 frame_builder.pop_transform();
             }
             RenderCommand::Text {
@@ -600,5 +610,43 @@ mod tests {
         assert_eq!(ops.len(), 2);
         assert!(matches!(ops[0].0, crate::frame_builder::DrawOp::Image(_)));
         assert!(matches!(ops[1].0, crate::frame_builder::DrawOp::Quad(_)));
+    }
+
+    #[test]
+    fn test_process_shadow_rect_uses_add_shadow_rect() {
+        let mut frame_builder = FrameBuilder::new();
+        let shadow_color = [0.0, 0.0, 0.0, 0.5];
+        let commands = vec![RenderCommand::Rect {
+            bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            fill: Color::TRANSPARENT,
+            stroke: None,
+            corner_radius: 8.0,
+            shadow_color,
+            shadow_blur: 12.0,
+        }];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(quad.shadow_color, shadow_color);
+        assert_eq!(quad.shadow_blur, 12.0);
+        assert_eq!(quad.corner_radius, 8.0);
+    }
+
+    #[test]
+    fn test_process_non_shadow_rect_uses_add_rect() {
+        let mut frame_builder = FrameBuilder::new();
+        let commands = vec![RenderCommand::rect(
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Color::RED,
+        )];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(quad.shadow_color, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(quad.shadow_blur, 0.0);
     }
 }
