@@ -19,7 +19,7 @@ use crate::layout::{
 };
 use crate::layout_builder_methods;
 use crate::render_objects::ContainerRenderObject;
-use crate::style::Style;
+use crate::style::{BoxShadow, Style};
 #[allow(unused_imports)]
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
@@ -368,6 +368,16 @@ impl DecoratedContainer {
         self.style = self.style.clip();
         self
     }
+
+    pub fn shadow(mut self, shadow: BoxShadow) -> Self {
+        self.style = self.style.shadow(shadow);
+        self
+    }
+
+    pub fn shadows(mut self, shadows: Vec<BoxShadow>) -> Self {
+        self.style = self.style.shadows(shadows);
+        self
+    }
 }
 
 impl Clone for DecoratedContainer {
@@ -435,6 +445,7 @@ impl Widget for DecoratedContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BoxShadow;
     use crate::{GlobalKey, Key, Text};
 
     #[test]
@@ -595,5 +606,31 @@ mod tests {
         // .style() replaces the entire Style, so background is lost
         assert_eq!(dc.style.background, None);
         assert!(dc.style.border.is_some());
+    }
+
+    #[test]
+    fn test_decorated_container_shadow_builder() {
+        let dc =
+            DecoratedContainer::new(Text::new("Hi")).shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        assert_eq!(dc.style_ref().shadows.len(), 1);
+        assert_eq!(dc.style_ref().shadows[0].blur_radius, 8.0);
+    }
+
+    #[test]
+    fn test_decorated_container_shadows_builder() {
+        let dc = DecoratedContainer::new(Text::new("Hi")).shadows(vec![
+            BoxShadow::new(Color::BLACK),
+            BoxShadow::new(Color::RED),
+        ]);
+        assert_eq!(dc.style_ref().shadows.len(), 2);
+    }
+
+    #[test]
+    fn test_decorated_container_shadow_preserves_background() {
+        let dc = DecoratedContainer::new(Text::new("Hi"))
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK));
+        assert_eq!(dc.style_ref().background, Some(Color::WHITE));
+        assert_eq!(dc.style_ref().shadows.len(), 1);
     }
 }
