@@ -6,7 +6,7 @@ use crate::layout::{
     AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
 };
 use crate::render::RenderCommand;
-use crate::widgets::{DecoratedContainer, Transform};
+use crate::widgets::{DecoratedBox, DecoratedContainer, Transform};
 use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
@@ -678,4 +678,195 @@ fn test_grid_widget() {
 
     let commands = pipeline.paint();
     let _ = commands;
+}
+
+/// Test DecoratedBox widget in the pipeline.
+///
+/// Mirrors `test_decorated_container_widget_in_pipeline` (line 125) but
+/// verifies the pass-through proxy semantics:
+/// 1. The render object is `is_pass_through() == true`.
+/// 2. The child (Text) render object's Taffy node is linked directly to
+///    the DecoratedBox's parent — no intervening Taffy node.
+/// 3. Background/border/corner-radius commands appear in the paint output.
+#[test]
+fn test_decorated_box_in_pipeline() {
+    use crate::render::RenderCommand;
+
+    // Create a widget tree: DecoratedBox wrapping a Text.
+    let widget = DecoratedBox::new(Text::new("Hello"))
+        .background(Color::RED)
+        .border(Color::BLACK, 2.0)
+        .corner_radius(8.0);
+
+    // Create pipeline and reconcile.
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(widget));
+
+    // Should have created elements and render objects.
+    assert!(
+        pipeline.render_objects().len() >= 1,
+        "Should have at least root render object"
+    );
+
+    // === Verify render tree structure ===
+    let root_ro = pipeline
+        .render_objects()
+        .root()
+        .expect("should have root render object");
+    let root_obj = pipeline
+        .render_objects()
+        .get(root_ro)
+        .expect("root render object should exist");
+
+    // DecoratedBoxRenderObject must be pass-through.
+    assert!(
+        root_obj.is_pass_through(),
+        "DecoratedBox's render object must be pass-through"
+    );
+
+    // DecoratedBox render object should have the Text render object as its
+    // single child.
+    let children = root_obj.children();
+    assert_eq!(
+        children.len(),
+        1,
+        "DecoratedBox render object should have exactly one child"
+    );
+
+    let child_ro_id = children[0];
+    let child_obj = pipeline
+        .render_objects()
+        .get(child_ro_id)
+        .expect("child render object should exist");
+    assert_eq!(
+        child_obj.children().len(),
+        0,
+        "Text render object should be a leaf"
+    );
+
+    // === Layout ===
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    // === Paint ===
+    let commands = pipeline.paint();
+
+    // DecoratedBox should produce commands for background + border, plus
+    // PushCornerRadius/PopCornerRadius for the corner radius.
+    // Order: PushCornerRadius, background Rect, border Rect, PopCornerRadius.
+    assert!(
+        commands.len() >= 4,
+        "DecoratedBox should produce at least 4 commands (push radius + bg + border + pop radius), got {}",
+        commands.len()
+    );
+
+    // Verify the render commands include a rect command (the background fill).
+    let has_rect = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect,
+        "Commands should include a Rect command for background fill"
+    );
+
+    // Verify PushCornerRadius / PopCornerRadius are present.
+    let has_push = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PushCornerRadius { .. }));
+    let has_pop = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PopCornerRadius));
+    assert!(has_push, "Should have PushCornerRadius command");
+    assert!(has_pop, "Should have PopCornerRadius command");
+}
+
+/// Test that DecoratedBox passes width constraints through to its child.
+///
+/// Regression guard for the latent WidgetExt sizing bug: when a widget
+/// is wrapped in a decoration proxy, the parent's definite width must
+/// propagate to the child (so e.g. text wraps at that width). The
+/// `DecoratedBox` proxy shares the child's Taffy node, so the parent
+/// (Column with align: Stretch) stretches the *child* directly — no
+/// intervening "size to content" node breaking the fill chain.
+///
+/// Mirrors `test_passthrough_opacity_child_receives_grandparent_width`
+/// in `vexo/src/passthrough_integration.rs:63` but going through the
+/// full pipeline (widget → element → render object).
+///
+/// Note: we use `width_percent(1.0)` on the parent Flex + window size
+/// 300×200 instead of `.width(300.0)`, because `Layouter::layout()`
+/// calls `engine.set_root_size()` which overrides the root's size to
+/// 100%×100% (see `vexo/src/layout/taffy_engine.rs:175-188`).
+/// `width_percent(1.0)` + window width 300 yields the same 300px parent
+/// width without being overridden.
+#[test]
+fn test_decorated_box_width_propagates_to_child() {
+    use crate::layout::{AlignItems, FlexDirection, Layout};
+
+    // Column (width_percent=1.0, align: Stretch) > DecoratedBox(no layout) > Container(height=40).
+    // The Container is the "child" whose width we read back. If DecoratedBox
+    // were NOT a true pass-through, the Container would size to its intrinsic
+    // width (0) instead of stretching to the parent's width.
+    let child = crate::Flex::column()
+        .layout(Layout::default().height(40.0))
+        .boxed();
+    let widget = crate::Flex::column()
+        .layout(
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .align(AlignItems::Stretch)
+                .width_percent(1.0),
+        )
+        .push(DecoratedBox::new(child).background(Color::RED))
+        .boxed();
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(widget);
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(300.0, 200.0), &mut engine, &mut font_system);
+
+    // Render tree: Flex(column, width=300) → DecoratedBox → Flex(column, height=40)
+    let root_ro = pipeline
+        .render_objects()
+        .root()
+        .expect("should have root render object");
+    let root_obj = pipeline
+        .render_objects()
+        .get(root_ro)
+        .expect("root render object should exist");
+
+    // Root's child is the DecoratedBox RO.
+    let decorated_box_ro = root_obj.children()[0];
+    let decorated_box_obj = pipeline
+        .render_objects()
+        .get(decorated_box_ro)
+        .expect("DecoratedBox render object should exist");
+    assert!(
+        decorated_box_obj.is_pass_through(),
+        "DecoratedBox render object must be pass-through"
+    );
+
+    // DecoratedBox's child is the inner Flex RO.
+    let inner_flex_ro = decorated_box_obj.children()[0];
+    let inner_flex_obj = pipeline
+        .render_objects()
+        .get(inner_flex_ro)
+        .expect("inner Flex render object should exist");
+    let inner_bounds = inner_flex_obj
+        .computed_bounds()
+        .expect("inner Flex should have computed bounds after layout");
+
+    // The inner Flex has no explicit width, but the parent Column has
+    // align: Stretch and width_percent=1.0 (resolves to 300px at window
+    // width 300). With a true pass-through proxy in between, the stretch
+    // propagates to the inner Flex and it fills the 300px width.
+    assert_eq!(
+        inner_bounds.width(),
+        300.0,
+        "DecoratedBox (true pass-through) must let parent's width propagate to child. Got {}",
+        inner_bounds.width()
+    );
 }
