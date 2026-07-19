@@ -4,6 +4,7 @@
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
 mod container;
+mod decorated_box;
 mod decorated_container;
 mod fractional_translation;
 pub mod gesture_detector;
@@ -49,6 +50,7 @@ pub use theme::{Theme, ThemeData};
 use crate::core::Color;
 use crate::input::MouseCursor;
 use crate::layout::Layout;
+pub use decorated_box::DecoratedBox;
 pub use decorated_container::DecoratedContainer;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
