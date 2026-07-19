@@ -103,6 +103,13 @@ impl MomentumSimulation {
     }
 
     fn terminate(&mut self) {
+        self.cleanup();
+    }
+
+    /// Shared cleanup: mark inactive, clear start time, drop ticker registration.
+    /// Called by both `stop()` (public, user-initiated) and `terminate()` (private,
+    /// called when `advance` detects decay or MAX_DURATION).
+    fn cleanup(&mut self) {
         self.active = false;
         self.start_time = None;
         if let (Some(ticker), Some(handle)) = (self.ticker.clone(), self.tick_handle.take()) {
@@ -233,7 +240,20 @@ mod tests {
 
     #[test]
     fn advance_terminates_after_max_duration() {
-        let (mut sim, now, _rx, _ticker) = start_sim(100_000.0); // huge v0, won't decay fast
+        // To isolate the MAX_DURATION path from the V_STOP path, v0 must be
+        // large enough that velocity is still above V_STOP at dt = MAX_DURATION.
+        // v(MAX_DURATION) = v0·e^(-MAX_DURATION/τ) > V_STOP
+        //   ⇒  v0 > V_STOP · e^(MAX_DURATION/τ)
+        let v0 = V_STOP * (MAX_DURATION / TAU).exp() * 2.0; // 2× margin
+        let (mut sim, now, _rx, _ticker) = start_sim(v0);
+        // Just under MAX_DURATION: velocity is still above V_STOP, so this
+        // should NOT terminate via V_STOP — but dt < MAX_DURATION so it returns Some.
+        let just_under = now + Duration::from_secs_f32(MAX_DURATION - 0.1);
+        assert!(
+            sim.advance(just_under).is_some(),
+            "should still be active just under MAX_DURATION"
+        );
+        // Past MAX_DURATION: terminates via the MAX_DURATION check, NOT V_STOP.
         let way_later = now + Duration::from_secs_f32(MAX_DURATION + 1.0);
         assert!(sim.advance(way_later).is_none());
         assert!(!sim.is_active());

@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 
 /// Window over which samples contribute to velocity estimation. Matches iOS/Flutter.
 const WINDOW: Duration = Duration::from_millis(100);
+/// Epsilon for the least-squares denominator guard. Samples sharing an
+/// identical timestamp produce `denom == 0`; we treat anything below this
+/// as degenerate and return `0.0` rather than dividing by ~zero.
+const DENOM_EPSILON: f64 = 1e-12;
 
 pub struct VelocityTracker {
     samples: VecDeque<(Instant, f32)>,
@@ -57,7 +61,7 @@ impl VelocityTracker {
             sum_ty += dt * (y as f64);
         }
         let denom = n * sum_tt - sum_t * sum_t;
-        if denom.abs() < 1e-12 {
+        if denom.abs() < DENOM_EPSILON {
             return 0.0;
         }
         let slope = (n * sum_ty - sum_t * sum_y) / denom;
@@ -160,5 +164,21 @@ mod tests {
         vt.add(t(50), 100.0); // y decreasing → negative slope
         let v = vt.velocity();
         assert!(v < 0.0, "got {}", v);
+    }
+
+    #[test]
+    fn degenerate_denominator_returns_zero() {
+        // Two samples at the same timestamp → denom == 0 → guard fires.
+        let now = Instant::now();
+        let mut vt = VelocityTracker::new();
+        vt.add(now, 100.0);
+        vt.add(now, 200.0);
+        assert_eq!(vt.velocity(), 0.0);
+    }
+
+    #[test]
+    fn default_produces_empty_tracker() {
+        let vt = VelocityTracker::default();
+        assert_eq!(vt.velocity(), 0.0);
     }
 }
