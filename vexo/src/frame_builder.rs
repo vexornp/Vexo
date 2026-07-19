@@ -224,7 +224,10 @@ impl FrameBuilder {
             border_width,
             corner_radius: radius,
             transform: self.current_transform.to_array(),
-            _padding: [0.0; 2],
+            _padding: [0.0; 4],
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
+            _padding2: [0.0; 3],
         };
 
         let clip = self.current_clip();
