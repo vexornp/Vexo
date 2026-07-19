@@ -15,9 +15,10 @@
 //! same transition code is correct at any width. No pixel width needs to be
 //! read back from layout.
 
-use vexo::{FractionalTranslation, Opacity, Widget};
+use vexo::{BoxShadow, Color, DecoratedContainer, FractionalTranslation, Opacity, Widget};
 
 use crate::platform::Platform;
+use crate::theme::tokens;
 
 /// Direction of a navigation transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +64,13 @@ pub struct TransitionCtx {
 /// transition — matching SwiftUI's `UINavigationController` dual-view
 /// animation. The dimming mitigates text bleed-through when page backgrounds
 /// are transparent.
+///
+/// The moving page also casts a soft drop shadow (`Color::BLACK` at 0.3
+/// alpha, 12px blur, zero offset/spread) via a `DecoratedContainer`. The
+/// shadow is full-perimeter; `NavigationStackView` wraps the content `Stack`
+/// in a clipping `DecoratedContainer` so only the leading-edge strip is
+/// visible — matching iOS native push. Desktop transition is unchanged
+/// (fade-only, no shadow).
 pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) -> Box<dyn Widget> {
     let t = ctx.t as f32;
     let (fx, alpha) = match (ctx.direction, ctx.is_incoming) {
@@ -73,7 +81,11 @@ pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) ->
         (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), 0.85 + 0.15 * t),
         (TransitionDir::PopToRoot, false) => (t, 1.0),
     };
-    Opacity::new(FractionalTranslation::new(child, fx, 0.0), alpha).boxed()
+    let shadowed = DecoratedContainer::new(child).shadow(
+        BoxShadow::new(Color::BLACK.with_alpha(tokens::navigation::PAGE_SHADOW_ALPHA))
+            .blur(tokens::navigation::PAGE_SHADOW_BLUR),
+    );
+    Opacity::new(FractionalTranslation::new(shadowed, fx, 0.0), alpha).boxed()
 }
 
 /// Default desktop transition: fade only.
