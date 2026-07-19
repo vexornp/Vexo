@@ -62,12 +62,14 @@ pub fn process_commands(
                 );
                 frame_builder.push_transform(current_transform);
                 if shadow_color[3] > 0.0 {
+                    let mut adjusted_shadow_color = *shadow_color;
+                    adjusted_shadow_color[3] *= current_opacity;
                     frame_builder.add_shadow_rect(
                         adjusted_bounds,
                         fill,
                         stroke,
                         *corner_radius,
-                        *shadow_color,
+                        adjusted_shadow_color,
                         *shadow_blur,
                     );
                 } else {
@@ -531,6 +533,37 @@ mod tests {
         assert_eq!(frame_builder.quad_count(), 1);
         let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.color, Color::RED.with_alpha(0.5).to_array());
+    }
+
+    #[test]
+    fn test_process_shadow_rect_with_opacity() {
+        let mut frame_builder = FrameBuilder::new();
+        let shadow_color = [0.0, 0.0, 0.0, 0.8];
+        let commands = vec![
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::Rect {
+                bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+                fill: Color::TRANSPARENT,
+                stroke: None,
+                corner_radius: 8.0,
+                shadow_color,
+                shadow_blur: 12.0,
+            },
+            RenderCommand::PopOpacity,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        // shadow_color[3] should be 0.8 * 0.5 = 0.4
+        assert!(
+            (quad.shadow_color[3] - 0.4).abs() < 0.001,
+            "shadow alpha should be 0.8 * 0.5 = 0.4, got {}",
+            quad.shadow_color[3]
+        );
+        // shadow_blur is not affected by opacity
+        assert_eq!(quad.shadow_blur, 12.0);
     }
 
     #[test]
