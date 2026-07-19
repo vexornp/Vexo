@@ -128,6 +128,18 @@ pub mod navigation {
     pub const BACK_FONT_SIZE: f32 = 17.0;
 
     pub const MOBILE_TITLE_FONT_SIZE: f32 = 17.0;
+
+    /// Drop shadow cast by the moving page during mobile push/pop transitions.
+    ///
+    /// Full-perimeter `BoxShadow` clipped to the nav content area by the
+    /// ancestor clip wrapper in `NavigationStackView::render`, so only the
+    /// leading-edge strip is visible. Matches iOS native push animation.
+    ///
+    /// Constructed as `Color::BLACK.with_alpha(PAGE_SHADOW_ALPHA)` with
+    /// `.blur(PAGE_SHADOW_BLUR)`; zero offset, zero spread (the ancestor clip
+    /// does the edge restriction, not the offset).
+    pub const PAGE_SHADOW_ALPHA: f32 = 0.3;
+    pub const PAGE_SHADOW_BLUR: f32 = 12.0;
 }
 
 #[cfg(test)]
