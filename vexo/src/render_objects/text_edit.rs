@@ -475,6 +475,8 @@ fn emit_selection_rect(
         fill: SELECTION_COLOR,
         stroke: None,
         corner_radius: 0.0,
+        shadow_color: [0.0; 4],
+        shadow_blur: 0.0,
     });
 }
 

@@ -48,6 +48,8 @@ pub fn process_commands(
                 fill,
                 stroke,
                 corner_radius,
+                shadow_color: _,
+                shadow_blur: _,
             } => {
                 let fill = fill.with_alpha(fill.a * current_opacity);
                 let stroke = stroke

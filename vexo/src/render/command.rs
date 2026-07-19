@@ -34,6 +34,8 @@ pub enum RenderCommand {
         stroke: Option<Stroke>,
         /// Corner radius for rounded rectangles (0.0 = sharp corners).
         corner_radius: f32,
+        shadow_color: [f32; 4],
+        shadow_blur: f32,
     },
 
     /// Draw text at a position.
@@ -141,6 +143,8 @@ impl RenderCommand {
             fill,
             stroke: None,
             corner_radius: 0.0,
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
         }
     }
 
@@ -156,6 +160,8 @@ impl RenderCommand {
             fill,
             stroke: Some(Stroke::new(border_color, border_width)),
             corner_radius: 0.0,
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
         }
     }
 
@@ -166,6 +172,8 @@ impl RenderCommand {
             fill,
             stroke: None,
             corner_radius,
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
         }
     }
 
@@ -302,12 +310,31 @@ mod tests {
                 fill,
                 stroke,
                 corner_radius,
+                ..
             } => {
                 assert_eq!(b.left, 10.0);
                 assert_eq!(b.width(), 100.0);
                 assert_eq!(fill, Color::RED);
                 assert!(stroke.is_none());
                 assert_eq!(corner_radius, 0.0);
+            }
+            _ => panic!("Expected Rect command"),
+        }
+    }
+
+    #[test]
+    fn test_rect_command_shadow_fields_default_zero() {
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let cmd = RenderCommand::rect(bounds, Color::RED);
+
+        match cmd {
+            RenderCommand::Rect {
+                shadow_color,
+                shadow_blur,
+                ..
+            } => {
+                assert_eq!(shadow_color, [0.0, 0.0, 0.0, 0.0]);
+                assert_eq!(shadow_blur, 0.0);
             }
             _ => panic!("Expected Rect command"),
         }
