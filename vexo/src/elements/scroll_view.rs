@@ -2,14 +2,18 @@
 
 use std::any::Any;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use crate::animation::{AnimationTicker, MomentumSimulation};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
 use crate::elements::RenderObjectElement;
 use crate::event_context::EventContext;
 use crate::focus::attachment::FocusAttachment;
-use crate::gestures::{ArenaEvent, GestureArena, GestureRecognizer, VerticalDragRecognizer};
+use crate::gestures::{
+    ArenaEvent, GestureArena, GestureRecognizer, VelocityTracker, VerticalDragRecognizer,
+};
 use crate::id::{ElementKey, RenderObjectKey};
 use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
@@ -45,6 +49,21 @@ pub struct ScrollViewElement {
     /// Tracks the last y position from the drag recognizer, to compute
     /// per-move scroll deltas. Set when the drag recognizer wins.
     last_drag_y: f32,
+    /// Windowed least-squares pointer-velocity estimate. Sampled on every
+    /// drag Move; read on Up to seed the momentum simulation's v0.
+    velocity_tracker: VelocityTracker,
+    /// Exponential-decay fling simulation. Drives inertial scroll after the
+    /// pointer lifts. Stepped in `rebuild_from_state` while `is_active()`.
+    momentum: MomentumSimulation,
+    /// Stashed copy of the pipeline's animation ticker. `EventContext` does
+    /// not expose it, so we capture it in `mount` (which has ElementContext)
+    /// for use in the Up arm when starting momentum.
+    animation_ticker: Option<Arc<AnimationTicker>>,
+    /// Timestamp of the most recent drag Move. Used to detect a stale lift
+    /// (finger paused >100ms before release) — the VelocityTracker retains
+    /// 2 samples across a pause, so without this guard a pause-then-lift
+    /// would fling on the pre-pause velocity.
+    last_move_time: Option<Instant>,
 }
 
 impl ScrollViewElement {
@@ -60,6 +79,10 @@ impl ScrollViewElement {
             viewport_height: 0.0,
             controller: None,
             last_drag_y: 0.0,
+            velocity_tracker: VelocityTracker::new(),
+            momentum: MomentumSimulation::new(),
+            animation_ticker: None,
+            last_move_time: None,
         }
     }
 
@@ -156,6 +179,10 @@ impl RenderObjectElement for ScrollViewElement {
 
 impl Element for ScrollViewElement {
     fn mount(&mut self, context: &mut ElementContext) {
+        // Stash the animation ticker for the Up arm. EventContext (used by
+        // on_arena_winner_update) does not expose animation_ticker, so we
+        // capture it here at mount time when ElementContext is available.
+        self.animation_ticker = Some(context.animation_ticker.clone());
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
         let node_id = context
@@ -198,6 +225,11 @@ impl Element for ScrollViewElement {
     }
 
     fn unmount(&mut self, context: &mut ElementContext) {
+        // Stop any in-flight fling so its ticker callback is unregistered
+        // before the element (and its render object) goes away. Without
+        // this, the ticker would keep firing the dirty callback for a
+        // dead element_id.
+        self.momentum.stop();
         if let Some(ctrl) = self.controller.as_ref() {
             ctrl.clear_dirty_callback();
         }
@@ -235,6 +267,7 @@ impl Element for ScrollViewElement {
                 ..
             } => {
                 if context.is_pointer_inside() {
+                    self.momentum.stop();
                     context.request_focus(context.element_id());
                     return Some(Box::new(()));
                 }
@@ -288,6 +321,12 @@ impl Element for ScrollViewElement {
 
         match event {
             ArenaEvent::Move { position } => {
+                // Sample the pointer position into the velocity tracker FIRST,
+                // so the timestamp reflects when the pointer was here, not
+                // after the delta math below. The tracker keeps a 100ms window
+                // of samples for least-squares velocity estimation on Up.
+                self.velocity_tracker.add(Instant::now(), position.y);
+                self.last_move_time = Some(Instant::now());
                 // Compute scroll delta from the previous tracked position to
                 // the current event position. We use `event.position` (not
                 // `drag.last_position()`) because once the arena closes the
@@ -299,6 +338,13 @@ impl Element for ScrollViewElement {
                 self.apply_scroll_offset(new_offset, ctx);
             }
             ArenaEvent::Down { .. } => {
+                // Stop any in-flight fling BEFORE clearing the tracker, so a
+                // new drag's samples can't race with an old fling's dirty
+                // callback. This is one of the six termination conditions for
+                // momentum: a fresh touch-down cancels inertia.
+                self.momentum.stop();
+                self.velocity_tracker.clear();
+                self.last_move_time = None;
                 // Drag just won (on the move that crossed slop). Initialize
                 // last_drag_y from the recognizer's DOWN position so the
                 // first Move delta captures the full movement from press-down
@@ -308,7 +354,49 @@ impl Element for ScrollViewElement {
                 self.last_drag_y = drag.down_position().y;
             }
             ArenaEvent::Up { .. } => {
-                // Drag ended. No scroll applied on up (no momentum in v1).
+                // Skip momentum if the last move was stale (pause-then-lift).
+                // VelocityTracker retains 2 samples even across a pause, so
+                // velocity() would return the pre-pause velocity. Guard
+                // against that here.
+                // Must match VelocityTracker::WINDOW (100ms). The tracker's len > 2
+                // eviction guard retains stale samples across a pause; this check
+                // ensures we don't read pre-pause velocity after a pause-then-lift.
+                let is_stale = self
+                    .last_move_time
+                    .map(|t| Instant::now().duration_since(t) > Duration::from_millis(100))
+                    .unwrap_or(true);
+                if is_stale {
+                    return;
+                }
+                // Sign-flip: the tracker returns pointer-space dy/dt (y-down).
+                // The existing Move handler does `delta = last_drag_y -
+                // position.y` (negates pointer delta) before applying to
+                // scroll_offset, so an upward finger motion (dy/dt < 0)
+                // produces positive offset delta. To scroll the same direction
+                // after release, negate the tracker velocity so positive v0 =
+                // offset increases = scrolls toward bottom.
+                let v = -self.velocity_tracker.velocity();
+                const V_MIN_FLING: f32 = 50.0;
+                if v.abs() < V_MIN_FLING {
+                    return;
+                }
+                let Some(element_id) = self.id else {
+                    return;
+                };
+                let Some(tx) = ctx.dirty_sender.cloned() else {
+                    return;
+                };
+                let Some(ticker) = self.animation_ticker.clone() else {
+                    return;
+                };
+                self.momentum.start(
+                    self.scroll_offset,
+                    v,
+                    Instant::now(),
+                    tx,
+                    element_id,
+                    ticker,
+                );
             }
             ArenaEvent::Cancel => {
                 // Drag cancelled. No cleanup needed.
@@ -376,6 +464,9 @@ impl Element for ScrollViewElement {
             .and_then(|ctrl| ctrl.take_target_offset());
 
         if let Some(target) = pending {
+            // Programmatic jump (jump_to / jump_to_bottom) cancels any
+            // in-flight fling — the user's intent overrides inertia.
+            self.momentum.stop();
             if let Some(ro_key) = self.render_object {
                 if let Some(svro) = context
                     .render_objects
@@ -395,6 +486,42 @@ impl Element for ScrollViewElement {
                     if let Some(ctrl) = self.controller.as_ref() {
                         ctrl.set_current_offset(clamped);
                     }
+                }
+            }
+        }
+
+        if self.momentum.is_active() {
+            let now = Instant::now();
+            match self.momentum.advance(now) {
+                Some(physics_offset) => {
+                    let clamped = self.clamp_offset(physics_offset);
+                    let hit_edge = (clamped - physics_offset).abs() > f32::EPSILON;
+                    if hit_edge {
+                        self.momentum.stop();
+                    }
+                    if let Some(ro_key) = self.render_object {
+                        if let Some(svro) = context
+                            .render_objects
+                            .get(ro_key)
+                            .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                        {
+                            self.viewport_height = svro.viewport_size().height;
+                            self.content_height = svro.content_size().height;
+                            svro.set_scroll_offset(clamped);
+                        }
+                    }
+                    self.scroll_offset = clamped;
+                    if let Some(ctrl) = self.controller.as_ref() {
+                        ctrl.set_current_offset(clamped);
+                    }
+                    // The next frame's tick fires the dirty callback (registered
+                    // in momentum.start), which sends element_id through the
+                    // mpsc channel, which drain_dirty_to_build_owner picks up
+                    // to schedule the next rebuild_from_state. No explicit
+                    // mark_needs_build here.
+                }
+                None => {
+                    self.momentum.stop();
                 }
             }
         }
@@ -1066,6 +1193,745 @@ mod tests {
             tap_count.get(),
             1,
             "fresh arena after cancel should allow normal tap"
+        );
+    }
+
+    #[test]
+    fn test_fling_scrolls_after_release() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 300).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Three fast upward moves over ~60ms (synthetic — real time will vary,
+        // but VelocityTracker uses Instant::now() so we can't fake timestamps here).
+        // We rely on the moves being fast enough in wall-clock to exceed V_MIN_FLING.
+        for &y in &[290.0, 270.0, 240.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let offset_at_release = ctrl.current_offset();
+        assert!(
+            offset_at_release > 0.0,
+            "drag should have scrolled; got {}",
+            offset_at_release
+        );
+
+        // Release.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 240.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 240.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump the ticker + pipeline to let momentum run.
+        // Each tick fires the dirty callback → mpsc → drain_dirty_to_build_owner
+        // → rebuild_from_state → advance + apply.
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert!(
+            ticker.has_active(),
+            "momentum should have engaged after release; if this fails, the synthetic moves were too slow (wall-clock)"
+        );
+        for _ in 0..29 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        assert!(
+            ctrl.current_offset() > offset_at_release,
+            "momentum should have scrolled further after release; got {} after release, {} after pump",
+            offset_at_release,
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_pause_then_lift_no_momentum() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press at (200, 400).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 400.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Three fast upward moves to build up velocity.
+        for &y in &[350.0, 250.0, 150.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let offset_at_release = ctrl.current_offset();
+        assert!(
+            offset_at_release > 0.0,
+            "drag should have scrolled; got {}",
+            offset_at_release
+        );
+
+        // Pause with finger still down: 200ms with no movement. This exceeds
+        // the 100ms staleness guard in the Up arm, so the pre-pause velocity
+        // must NOT seed a fling on release.
+        thread::sleep(Duration::from_millis(200));
+
+        // Release at the last move position.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 150.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 150.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump the ticker + pipeline. If the staleness guard works, momentum
+        // never starts and the offset stays frozen at offset_at_release.
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        assert_eq!(
+            ctrl.current_offset(),
+            offset_at_release,
+            "pause-then-lift should NOT engage momentum; got {} before release, {} after pump",
+            offset_at_release,
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_fling_clamps_at_bottom_edge() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Hard upward fling from the middle.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Violent upward motion.
+        for &y in &[400.0, 200.0, 0.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 0.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 0.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump long enough for the fling to fully decay or hit the edge.
+        for _ in 0..120 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        // Compute max_scroll the same way the element does.
+        // We can't read it directly, but we know content > viewport, so just
+        // assert the offset is bounded and stable.
+        let final_offset = ctrl.current_offset();
+        assert!(
+            final_offset.is_finite(),
+            "offset should be finite; got {}",
+            final_offset
+        );
+        assert!(
+            final_offset >= 0.0,
+            "offset should be >= 0; got {}",
+            final_offset
+        );
+        // It should have scrolled significantly (the fling was violent).
+        assert!(
+            final_offset > 100.0,
+            "fling should have scrolled a lot; got {}",
+            final_offset
+        );
+    }
+
+    #[test]
+    fn test_fling_clamps_at_top_edge() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // First, scroll DOWN to a non-zero offset by dragging upward
+        // (press at y=500, moves to y=400, 300, 200 — scrolls toward bottom).
+        let press1 = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &press1,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        for &y in &[400.0, 300.0, 200.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let release1 = InputEvent::PointerButton {
+            position: Point::new(200.0, 200.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 200.0),
+            &release1,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset_after_first_drag = ctrl.current_offset();
+        assert!(
+            offset_after_first_drag > 0.0,
+            "first drag should have scrolled toward bottom; got {}",
+            offset_after_first_drag
+        );
+
+        // Pump a few times to let any momentum from the first drag settle.
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        // Now fling DOWNWARD (toward top): press at y=200, moves to y=300, 400, 500
+        // (finger moves down → scroll toward top, offset decreases).
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 200.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 200.0),
+            &press2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        for &y in &[300.0, 400.0, 500.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let release2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &release2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump long enough for the fling to fully decay or hit the top edge.
+        for _ in 0..120 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        // The fling should have scrolled all the way to the top (offset 0).
+        assert!(
+            ctrl.current_offset() < 50.0,
+            "downward fling should have clamped at the top edge; got {}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_touch_down_stops_in_flight_momentum() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Start a fling.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 400.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        for &y in &[350.0, 250.0, 100.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 100.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 100.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump once to let momentum start.
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert!(
+            ticker.has_active(),
+            "momentum should have engaged after release; if this fails, the synthetic moves were too slow (wall-clock)"
+        );
+        let offset_mid_fling = ctrl.current_offset();
+
+        // New touch Down — should stop momentum.
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump several more times — offset should NOT change (momentum stopped).
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+        assert_eq!(
+            ctrl.current_offset(),
+            offset_mid_fling,
+            "touch Down should have stopped momentum; offset should be frozen"
+        );
+    }
+
+    #[test]
+    fn test_jump_to_cancels_momentum() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Start a fling.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 400.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        for &y in &[350.0, 250.0, 100.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 100.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 100.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump once to let momentum start.
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert!(
+            ticker.has_active(),
+            "momentum should have engaged after release; if this fails, the synthetic moves were too slow (wall-clock)"
+        );
+
+        // Immediately jump to a specific offset.
+        ctrl.jump_to(50.0);
+
+        // Pump — the jump should win, momentum should be cancelled.
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        assert_eq!(
+            ctrl.current_offset(),
+            50.0,
+            "jump_to should have cancelled momentum and applied; got {}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_slow_drag_no_momentum() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::Flex;
+        use crate::ThreeTreePipeline;
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let ctrl = ScrollController::new();
+        let mut col = Flex::column();
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Press.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Slow moves: 10px each, 200ms apart → 50 px/s. Right at the threshold;
+        // we want BELOW threshold, so make it 250ms apart → 40 px/s.
+        for &y in &[290.0, 280.0, 270.0] {
+            thread::sleep(Duration::from_millis(250));
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            pipeline.handle_event(
+                Point::new(200.0, y),
+                &mv,
+                Modifiers::default(),
+                &mut font_system,
+                &ScaleSource::default(),
+                &test_clipboard(),
+            );
+        }
+        let offset_at_release = ctrl.current_offset();
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 270.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 270.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // Pump — no momentum should engage.
+        for _ in 0..10 {
+            ticker.tick();
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+
+        assert_eq!(
+            ctrl.current_offset(),
+            offset_at_release,
+            "slow drag (below V_MIN_FLING) should not engage momentum; got {} before release, {} after pump",
+            offset_at_release,
+            ctrl.current_offset()
         );
     }
 }
