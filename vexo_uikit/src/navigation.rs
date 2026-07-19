@@ -42,9 +42,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::{
-    AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve, Flex,
-    FractionalTranslation, IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext,
-    SafeArea, Stack, Text, Theme, Widget,
+    AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
+    DecoratedContainer, Flex, FractionalTranslation, IndexedStack, LifecycleContext, Opacity,
+    Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -718,12 +718,25 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             );
         }
 
-        let content: Box<dyn Widget> = content_stack.boxed();
+        // Wrap the content `Stack` in a clipping `DecoratedContainer` so the
+        // moving page's full-perimeter shadow (attached in
+        // `default_mobile_transition`) is clipped to the nav content area —
+        // only the leading-edge strip is visible, matching iOS native. Also
+        // fixes a latent bleed bug where the sliding overlay's `Positioned`
+        // page could paint outside the nav stack bounds.
+        //
+        // The wrapper is ALWAYS present (steady + transition, all platforms)
+        // for type-stability: if the type flipped between bare `Stack`
+        // (steady) and `DecoratedContainer(Stack)` (transition), the
+        // reconciler would remount the subtree and lose page state. At steady
+        // state the base page fills the content area exactly, so the clip is
+        // a cheap no-op scissor.
+        let clipped: Box<dyn Widget> = DecoratedContainer::new(content_stack).clip().boxed();
 
         // The nav bar handles the top safe-area inset itself (background
         // extends under the status bar). The content area only needs
         // left/right/bottom insets — top is already consumed by the bar.
-        let content = SafeArea::new(content).top(false).flex_fill();
+        let content = SafeArea::new(clipped).top(false).flex_fill();
 
         // flex_fill() fills the parent and prevents the column's content
         // (a tall scrollable page) from propagating its min-content upward.
