@@ -43,8 +43,8 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
-    DecoratedContainer, Flex, FractionalTranslation, IndexedStack, LifecycleContext, Opacity,
-    Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget,
+    DecoratedContainer, Flex, FractionalTranslation, IndexedStack, Layout, LifecycleContext,
+    Opacity, Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -731,7 +731,18 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // reconciler would remount the subtree and lose page state. At steady
         // state the base page fills the content area exactly, so the clip is
         // a cheap no-op scissor.
-        let clipped: Box<dyn Widget> = DecoratedContainer::new(content_stack).clip().boxed();
+        //
+        // `DecoratedContainer::new()` defaults to `align_self(Start)` with no
+        // `flex_grow`/`width_percent`/`height_percent`, which would size it to
+        // its content's intrinsic size rather than filling the `SafeArea`.
+        // Override the layout to `width_percent(1.0).height_percent(1.0)` so
+        // it fills the SafeArea exactly like the `Stack` did before the
+        // wrapper was introduced — otherwise the content overflows past the
+        // tab bar.
+        let clipped: Box<dyn Widget> = DecoratedContainer::new(content_stack)
+            .clip()
+            .layout(Layout::default().width_percent(1.0).height_percent(1.0))
+            .boxed();
 
         // The nav bar handles the top safe-area inset itself (background
         // extends under the status bar). The content area only needs

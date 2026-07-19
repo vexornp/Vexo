@@ -739,4 +739,44 @@ mod nav_push_shadow_tests {
             .expect("desktop nav content must also have the clip wrapper (unconditional for type-stability)");
         assert!(dc.style_ref().clip);
     }
+
+    #[test]
+    fn nav_content_clip_wrapper_fills_parent() {
+        // Regression: DecoratedContainer::new() defaults to align_self(Start)
+        // with no flex_grow/width_percent/height_percent, which sizes it to
+        // content instead of filling the SafeArea. The clip wrapper must
+        // explicitly fill its parent (width_percent=1.0, height_percent=1.0)
+        // or the content overflows past the tab bar.
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+
+        let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .platform(Platform::Mobile)
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+        let tree = render_stack(view, &mut state);
+
+        let dc = find_first_clipped(&*tree).expect("clip wrapper must be present");
+        let layout = dc.layout_ref();
+        assert!(
+            layout
+                .width
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "clip wrapper width must be Percent(1.0) to fill parent horizontally, got {:?}",
+            layout.width
+        );
+        assert!(
+            layout
+                .height
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "clip wrapper height must be Percent(1.0) to fill parent vertically, got {:?}",
+            layout.height
+        );
+    }
 }
