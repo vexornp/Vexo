@@ -3,12 +3,102 @@
 //! This module extracts the paint-related logic from `ThreeTreePipeline`
 //! into a standalone `Painter` struct for separation of concerns.
 
-use crate::core::{Absolute, Logical, Position, Relative};
+use crate::core::{Absolute, Bounds, Logical, Position, Relative};
 use crate::render::RenderCommand;
+use crate::style::Style;
 
 use super::dirty::DirtyTracking;
 use super::id::RenderObjectKey;
 use super::render_object::{PaintContext, RenderObjectRegistry};
+
+/// Paint decoration commands (background, border, corner radius, shadows)
+/// for a `Style` at the given bounds.
+///
+/// This is the single source of truth for decoration painting — used by both
+/// `ContainerRenderObject::paint()` and `DecoratedBoxRenderObject::paint()`.
+/// The caller's `computed_bounds` provide the local bounds; the paint context's
+/// `absolute_position()` provides the origin.
+///
+/// Note: `style.clip` is NOT handled here — it's exposed via
+/// `RenderObject::clip_bounds()` and the painter pushes `PushClip`/`PopClip`
+/// automatically around the RO's children.
+pub(crate) fn paint_style(
+    style: &Style,
+    bounds: Bounds<Logical>,
+    ctx: &mut PaintContext,
+) -> Vec<RenderCommand> {
+    let pos: Position<Logical, Absolute> = ctx.absolute_position();
+
+    let absolute_bounds = Bounds::new(
+        pos.x,
+        pos.y,
+        pos.x + bounds.width(),
+        pos.y + bounds.height(),
+    );
+
+    let base_corner_radius = style
+        .corner_radius
+        .as_ref()
+        .map(|cr| cr.radius)
+        .unwrap_or(0.0);
+
+    let mut commands = Vec::new();
+
+    // 1. Emit shadows BEFORE fill/border (shadows draw behind everything).
+    // Shadows bypass PushCornerRadius context — each shadow Rect carries its
+    // own corner_radius field (computed as base + spread).
+    // Shadows also bypass style.clip's PushClip — clipping the shadow to the
+    // very shape casting it would make it invisible.
+    for shadow in &style.shadows {
+        if shadow.color.a == 0.0 {
+            continue;
+        }
+        let blur = shadow.blur_radius.max(0.0);
+        let pad = blur + shadow.spread_radius;
+        let shadow_bounds = Bounds::new(
+            absolute_bounds.left + shadow.offset.x - pad,
+            absolute_bounds.top + shadow.offset.y - pad,
+            absolute_bounds.right + shadow.offset.x + pad,
+            absolute_bounds.bottom + shadow.offset.y + pad,
+        );
+        let shadow_corner_radius = (base_corner_radius + shadow.spread_radius).max(0.0);
+        commands.push(RenderCommand::Rect {
+            bounds: shadow_bounds,
+            fill: shadow.color,
+            stroke: None,
+            corner_radius: shadow_corner_radius,
+            shadow_color: shadow.color.to_array(),
+            shadow_blur: blur,
+        });
+    }
+
+    // 2. Push corner radius if set (affects fill/border only, NOT shadows)
+    if let Some(ref cr) = style.corner_radius {
+        commands.push(RenderCommand::PushCornerRadius { radius: cr.radius });
+    }
+
+    // 3. Draw background first (behind child)
+    if let Some(bg_color) = style.background {
+        commands.push(RenderCommand::rect(absolute_bounds, bg_color));
+    }
+
+    // 4. Draw border on top (after background)
+    if let Some(ref border) = style.border {
+        commands.push(RenderCommand::rect_with_border(
+            absolute_bounds,
+            crate::core::Color::TRANSPARENT,
+            border.color,
+            border.width,
+        ));
+    }
+
+    // 5. Pop corner radius
+    if style.corner_radius.is_some() {
+        commands.push(RenderCommand::PopCornerRadius);
+    }
+
+    commands
+}
 
 /// Zero-sized struct that holds paint-related methods.
 ///
