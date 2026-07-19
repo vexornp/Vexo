@@ -8,7 +8,6 @@ use crate::chats::build_chats_tab;
 use crate::contacts::build_contacts_tab;
 use crate::data::{seed, ImTab};
 use crate::me::build_me_tab;
-use crate::shadows::build_shadows_tab;
 
 use crate::data::ImState;
 
@@ -39,11 +38,10 @@ impl Application for ImState {
         let contacts_nav = state.contacts_nav.clone();
         let me_nav = state.me_nav.clone();
         let chats_nav = state.chats_nav.clone();
-        let shadows_nav = state.shadows_nav.clone();
 
         let tab_view = TabBarView::new(
             tab_controller,
-            vec![ImTab::Chats, ImTab::Contacts, ImTab::Me, ImTab::Shadows],
+            vec![ImTab::Chats, ImTab::Contacts, ImTab::Me],
             move |tab| match tab {
                 ImTab::Chats => build_chats_tab(
                     conversations.clone(),
@@ -53,14 +51,12 @@ impl Application for ImState {
                 ),
                 ImTab::Contacts => build_contacts_tab(contacts.clone(), contacts_nav.clone()),
                 ImTab::Me => build_me_tab(&profile, me_nav.clone()),
-                ImTab::Shadows => build_shadows_tab(shadows_nav.clone()),
             },
             |tab, is_selected| {
                 let (icon, label) = match tab {
                     ImTab::Chats => (Icons::Comment, "Chats"),
                     ImTab::Contacts => (Icons::User, "Contacts"),
                     ImTab::Me => (Icons::Gear, "Me"),
-                    ImTab::Shadows => (Icons::Box, "Shadows"),
                 };
                 let color = if is_selected {
                     Color::rgb(0.0, 0.5, 1.0)

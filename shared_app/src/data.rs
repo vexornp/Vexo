@@ -17,7 +17,6 @@ pub(crate) enum ImTab {
     Chats,
     Contacts,
     Me,
-    Shadows,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -74,7 +73,6 @@ pub struct ImState {
     pub(crate) chats_nav: NavigationController<ChatsRoute>,
     pub(crate) contacts_nav: NavigationController<()>,
     pub(crate) me_nav: NavigationController<()>,
-    pub(crate) shadows_nav: NavigationController<()>,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -442,7 +440,6 @@ pub(crate) fn seed() -> ImState {
         chats_nav: NavigationController::new(),
         contacts_nav: NavigationController::new(),
         me_nav: NavigationController::new(),
-        shadows_nav: NavigationController::new(),
     }
 }
 
