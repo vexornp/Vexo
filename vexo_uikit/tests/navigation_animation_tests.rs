@@ -348,8 +348,8 @@ fn transition_duration_builder_compiles() {
 fn transition_curve_builder_compiles() {
     use vexo::EaseInCurve;
     let controller: NavigationController<&'static str> = NavigationController::new();
-    let view = NavigationStackView::new(controller, Text::new("Root"))
-        .transition_curve(Box::new(EaseInCurve));
+    let view =
+        NavigationStackView::new(controller, Text::new("Root")).transition_curve(EaseInCurve);
     let _ = view;
 }
 
@@ -397,7 +397,7 @@ mod base_fx_alpha_tests {
             alpha
         );
 
-        // t=0.5: slid 15% left, dimmed to 0.8
+        // t=0.5: slid 15% left, dimmed to 0.925 (1.0 - 0.15 * 0.5)
         let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Mobile, 0.5);
         assert!(
             (fx - (-0.15)).abs() < 1e-6,
@@ -405,12 +405,12 @@ mod base_fx_alpha_tests {
             fx
         );
         assert!(
-            (alpha - 0.8).abs() < 1e-6,
-            "alpha at t=0.5 must be 0.8, got {}",
+            (alpha - 0.925).abs() < 1e-6,
+            "alpha at t=0.5 must be 0.925, got {}",
             alpha
         );
 
-        // t=1.0: slid 30% left, dimmed to 0.6
+        // t=1.0: slid 30% left, dimmed to 0.85
         let (fx, alpha) = base_fx_alpha(TransitionDir::Push, Platform::Mobile, 1.0);
         assert!(
             (fx - (-0.3)).abs() < 1e-6,
@@ -418,15 +418,15 @@ mod base_fx_alpha_tests {
             fx
         );
         assert!(
-            (alpha - 0.6).abs() < 1e-6,
-            "alpha at t=1.0 must be 0.6, got {}",
+            (alpha - 0.85).abs() < 1e-6,
+            "alpha at t=1.0 must be 0.85, got {}",
             alpha
         );
     }
 
     #[test]
     fn pop_mobile_slides_back_and_un_dims() {
-        // t=0: slid 30% left, dimmed to 0.6 (reverse of push end)
+        // t=0: slid 30% left, dimmed to 0.85 (reverse of push end)
         let (fx, alpha) = base_fx_alpha(TransitionDir::Pop, Platform::Mobile, 0.0);
         assert!(
             (fx - (-0.3)).abs() < 1e-6,
@@ -434,8 +434,8 @@ mod base_fx_alpha_tests {
             fx
         );
         assert!(
-            (alpha - 0.6).abs() < 1e-6,
-            "alpha at t=0 must be 0.6, got {}",
+            (alpha - 0.85).abs() < 1e-6,
+            "alpha at t=0 must be 0.85, got {}",
             alpha
         );
 

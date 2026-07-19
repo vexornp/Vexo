@@ -54,22 +54,23 @@ pub struct TransitionCtx {
 /// at any window size.
 ///
 /// - **Push, incoming**: slides in from the right (fraction `1.0 → 0.0`), full opacity.
-/// - **Push, outgoing**: slides slightly left (fraction `0.0 → -0.3`), dims to 0.6 alpha.
-/// - **Pop, incoming**: slides back to 0 (fraction `-0.3 → 0.0`), un-dims 0.6 → 1.0.
+/// - **Push, outgoing**: slides slightly left (fraction `0.0 → -0.3`), dims to 0.85 alpha.
+/// - **Pop, incoming**: slides back to 0 (fraction `-0.3 → 0.0`), un-dims 0.85 → 1.0.
 /// - **Pop, outgoing**: slides out to the right (fraction `0.0 → 1.0`), full opacity.
 ///
-/// The underneath page dims to 0.6 (not 0.0) so it stays visible peeking from
-/// the left edge during the transition — matching SwiftUI's `UINavigationController`
-/// dual-view animation. The dimming mitigates text bleed-through when page
-/// backgrounds are transparent.
+/// The underneath page dims to 0.85 (subtle, closer to iOS native than the
+/// previous 0.6) so it stays visible peeking from the left edge during the
+/// transition — matching SwiftUI's `UINavigationController` dual-view
+/// animation. The dimming mitigates text bleed-through when page backgrounds
+/// are transparent.
 pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) -> Box<dyn Widget> {
     let t = ctx.t as f32;
     let (fx, alpha) = match (ctx.direction, ctx.is_incoming) {
         (TransitionDir::Push, true) => (1.0 - t, 1.0),
-        (TransitionDir::Push, false) => (-0.3 * t, 1.0 - 0.4 * t),
-        (TransitionDir::Pop, true) => (-0.3 * (1.0 - t), 0.6 + 0.4 * t),
+        (TransitionDir::Push, false) => (-0.3 * t, 1.0 - 0.15 * t),
+        (TransitionDir::Pop, true) => (-0.3 * (1.0 - t), 0.85 + 0.15 * t),
         (TransitionDir::Pop, false) => (t, 1.0),
-        (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), 0.6 + 0.4 * t),
+        (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), 0.85 + 0.15 * t),
         (TransitionDir::PopToRoot, false) => (t, 1.0),
     };
     Opacity::new(FractionalTranslation::new(child, fx, 0.0), alpha).boxed()
@@ -156,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn push_outgoing_dims_to_0_6_not_zero() {
+    fn push_outgoing_dims_to_0_85_not_zero() {
         let ctx = TransitionCtx {
             t: 1.0,
             is_incoming: false,
@@ -171,14 +172,14 @@ mod tests {
             .downcast_ref::<vexo::Opacity>()
             .expect("top-level wrapper must be Opacity");
         assert!(
-            (opacity.opacity_value() - 0.6).abs() < 1e-6,
-            "push outgoing at t=1 must dim to 0.6, got {}",
+            (opacity.opacity_value() - 0.85).abs() < 1e-6,
+            "push outgoing at t=1 must dim to 0.85, got {}",
             opacity.opacity_value()
         );
     }
 
     #[test]
-    fn pop_incoming_un_dims_from_0_6_to_1() {
+    fn pop_incoming_un_dims_from_0_85_to_1() {
         let ctx = TransitionCtx {
             t: 1.0,
             is_incoming: true,

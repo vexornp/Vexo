@@ -42,7 +42,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::{
-    AlignItems, AnimationController, Component, ComponentState, Curve, EaseInOutCurve, Flex,
+    AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve, Flex,
     FractionalTranslation, IndexedStack, LifecycleContext, Opacity, Positioned, RenderContext,
     SafeArea, Stack, Text, Theme, Widget,
 };
@@ -274,7 +274,7 @@ pub struct NavigationStackView<Dest: Hash + Eq + Clone + 'static> {
     platform: Option<Platform>,
     transition: Option<Rc<dyn Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget>>>,
     transition_duration: Duration,
-    transition_curve: Box<dyn Curve>,
+    transition_curve: Rc<dyn Curve>,
 }
 
 impl<Dest: Hash + Eq + Clone + 'static> Clone for NavigationStackView<Dest> {
@@ -288,13 +288,13 @@ impl<Dest: Hash + Eq + Clone + 'static> Clone for NavigationStackView<Dest> {
             platform: self.platform,
             transition: self.transition.clone(),
             transition_duration: self.transition_duration,
-            transition_curve: Box::new(EaseInOutCurve),
+            transition_curve: Rc::clone(&self.transition_curve),
         }
     }
 }
 
-/// Default transition duration on mobile (iOS convention).
-const DEFAULT_MOBILE_TRANSITION_DURATION: Duration = Duration::from_millis(300);
+/// Default transition duration on mobile (iOS native push/pop duration).
+const DEFAULT_MOBILE_TRANSITION_DURATION: Duration = Duration::from_millis(350);
 /// Default transition duration on desktop.
 const DEFAULT_DESKTOP_TRANSITION_DURATION: Duration = Duration::from_millis(200);
 
@@ -310,7 +310,12 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             platform: None,
             transition: None,
             transition_duration: DEFAULT_MOBILE_TRANSITION_DURATION,
-            transition_curve: Box::new(EaseInOutCurve),
+            // iOS-style ease-out-cubic: strong end-deceleration produces the
+            // "more slow at finish" feel of native UINavigationController
+            // push/pop, and makes the incoming page cover most travel early
+            // (perceptually "appearing near settled position" rather than
+            // sliding in from the right edge).
+            transition_curve: Rc::new(CubicBezierCurve::new(0.33, 1.0, 0.68, 1.0)),
         }
     }
 
@@ -359,16 +364,17 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         self
     }
 
-    /// Override the transition duration. Default: 300ms (mobile), 200ms
+    /// Override the transition duration. Default: 350ms (mobile), 200ms
     /// (desktop).
     pub fn transition_duration(mut self, duration: Duration) -> Self {
         self.transition_duration = duration;
         self
     }
 
-    /// Override the transition curve. Default: `EaseInOutCurve`.
-    pub fn transition_curve(mut self, curve: Box<dyn Curve>) -> Self {
-        self.transition_curve = curve;
+    /// Override the transition curve. Default: cubic-bezier(0.33, 1, 0.68, 1)
+    /// (iOS-style ease-out-cubic).
+    pub fn transition_curve(mut self, curve: impl Curve + 'static) -> Self {
+        self.transition_curve = Rc::new(curve);
         self
     }
 
@@ -592,14 +598,13 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         //   Steady   : base index = path.len() (current top), no overlay,
         //              Opacity alpha = 1.0.
         //   Push     : base index = from_path.len() (old top, preserved state),
-        //              base Opacity alpha 1 → 0 so it fades out as the
-        //              incoming page slides over it (prevents the old page's
-        //              text from showing through the new page's transparent
-        //              background during the overlap). Overlay = incoming page.
+        //              base Opacity alpha 1 → 0.85 so it dims slightly as the
+        //              incoming page slides over it (mitigates text bleed-through
+        //              when the new page's background is transparent). Overlay = incoming page.
         //   Pop      : base index = to_path.len() (new top = path.len(), the
         //              destination we're popping back to, preserved state),
-        //              base Opacity alpha 0 → 1 (it's the incoming page,
-        //              fading in as the outgoing page slides away).
+        //              base Opacity alpha 0.85 → 1 (it's the incoming page,
+        //              un-dimming as the outgoing page slides away).
         //              Overlay = outgoing page animating out, revealing base.
         //
         // This split is what preserves state across navigation: the
@@ -638,8 +643,8 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         //
         // Offset/alpha rules (SwiftUI-style dual-view animation on mobile;
         // fade-only on desktop):
-        //   Push (mobile) : base (old top) slides left 30%, dims 1.0 → 0.6.
-        //   Pop  (mobile) : base (destination) slides back to 0, un-dims 0.6 → 1.0.
+        //   Push (mobile) : base (old top) slides left 30%, dims 1.0 → 0.85.
+        //   Pop  (mobile) : base (destination) slides back to 0, un-dims 0.85 → 1.0.
         //   Desktop       : base_fx = 0.0 always (no slide); alpha fades as before.
         //   Steady        : base_fx = 0.0, alpha = 1.0 (no-op wrappers).
         let (base_fx, base_alpha): (f32, f32) = match state.transition.as_ref() {
@@ -844,13 +849,13 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
 /// Compute the base (underneath) page's fractional offset and alpha for a
 /// navigation transition.
 ///
-/// On mobile, the underneath page slides left ~30% and dims to 0.6 alpha
+/// On mobile, the underneath page slides left ~30% and dims to 0.85 alpha
 /// (SwiftUI-style dual-view offset animation). On desktop, it fades in place
 /// (no offset — desktop has no stack metaphor).
 ///
-/// - Push: base is the outgoing (old top) page — slides left, dims 1.0 → 0.6.
+/// - Push: base is the outgoing (old top) page — slides left, dims 1.0 → 0.85.
 /// - Pop/PopToRoot: base is the incoming (destination) page — slides back to
-///   0, un-dims 0.6 → 1.0.
+///   0, un-dims 0.85 → 1.0.
 ///
 /// Returns `(base_fx, base_alpha)`. `base_fx` is the fractional horizontal
 /// offset (negative = left, resolved against page width at paint time).
@@ -858,10 +863,10 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
 pub fn base_fx_alpha(direction: TransitionDir, platform: Platform, eased: f64) -> (f32, f32) {
     match (direction, platform) {
         (TransitionDir::Push, Platform::Mobile) => {
-            ((-0.3 * eased) as f32, (1.0 - 0.4 * eased) as f32)
+            ((-0.3 * eased) as f32, (1.0 - 0.15 * eased) as f32)
         }
         (TransitionDir::Pop | TransitionDir::PopToRoot, Platform::Mobile) => {
-            ((-0.3 * (1.0 - eased)) as f32, (0.6 + 0.4 * eased) as f32)
+            ((-0.3 * (1.0 - eased)) as f32, (0.85 + 0.15 * eased) as f32)
         }
         (TransitionDir::Push, Platform::Desktop) => (0.0, (1.0 - eased) as f32),
         (TransitionDir::Pop | TransitionDir::PopToRoot, Platform::Desktop) => (0.0, eased as f32),

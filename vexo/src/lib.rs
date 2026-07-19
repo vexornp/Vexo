@@ -15,8 +15,9 @@ pub use app::{KeyBindingAction, VexoApp};
 pub mod animation;
 
 pub use animation::{
-    AnimationController, AnimationDirection, AnimationTicker, ColorTween, CurvedAnimation, Curve,
-    EaseInCurve, EaseInOutCurve, EaseOutCurve, FloatTween, LinearCurve, TickHandle, Tween,
+    AnimationController, AnimationDirection, AnimationTicker, ColorTween, CubicBezierCurve,
+    CurvedAnimation, Curve, EaseInCurve, EaseInOutCurve, EaseOutCurve, FloatTween, LinearCurve,
+    TickHandle, Tween,
 };
 pub mod core;
 pub mod editor;
