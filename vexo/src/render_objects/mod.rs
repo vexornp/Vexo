@@ -10,6 +10,7 @@
 //! - [`ContainerRenderObject`]: Container for child render objects (Flex)
 
 mod container;
+mod decorated_box;
 mod image;
 mod indexed_stack;
 mod offstage;
@@ -20,6 +21,7 @@ mod text;
 mod text_edit;
 
 pub use container::ContainerRenderObject;
+pub use decorated_box::DecoratedBoxRenderObject;
 pub use image::ImageRenderObject;
 pub use indexed_stack::IndexedStackRenderObject;
 pub use offstage::OffstageRenderObject;
