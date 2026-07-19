@@ -228,9 +228,11 @@ pub struct QuadInstance {
 }
 ```
 
-5 new f32s of payload plus 3 f32s of padding (20 + 12 = 32 bytes total).
-Existing `QuadInstance` is 88 bytes (22 f32s); the extended struct is 120
-bytes (30 f32s). Existing construction (`from_logical`, `with_transform`)
+5 new f32s of payload, 2 f32s of additional `_padding` expansion (the
+existing `_padding: [f32; 2]` is widened to `[f32; 4]` to push `shadow_color`
+to a 16-byte boundary), plus 3 f32s of new `_padding2` (20 + 8 + 12 = 40 bytes
+total). Existing `QuadInstance` is 88 bytes (22 f32s); the extended struct is
+128 bytes (32 f32s). Existing construction (`from_logical`, `with_transform`)
 initializes shadow fields to zero.
 
 ### `QuadInstance::desc()` — new vertex attributes
@@ -244,10 +246,11 @@ Two new `VertexAttribute`s (padding does not consume shader locations):
 
 The existing `desc()` uses shader locations 1-9 (splitting the 6-element
 `transform` array across locations 7-9 as `Float32x2` triples). The new
-shadow fields use locations 10-11. Offsets are computed from the existing
-80-byte offset of `_padding` (end of existing struct) plus the dropped
-`_padding` field — exact offsets are an implementation detail finalized
-during coding.
+shadow fields use locations 10-11, at offsets 96 (`shadow_color`, `Float32x4`,
+16-byte aligned) and 112 (`shadow_blur`, `Float32`). The `_padding` field
+(expanded from `[f32; 2]` to `[f32; 4]`) sits at offset 80 and does not
+consume a shader location; `_padding2` sits at offset 116 and is likewise
+padding-only.
 
 ## Paint Order & Clipping
 
