@@ -899,7 +899,9 @@ mod tests {
 
         // No background → only shadow emitted
         assert_eq!(cmds.len(), 1);
-        matches!(&cmds[0], RenderCommand::Rect { shadow_color, .. } if shadow_color[3] > 0.0);
+        assert!(
+            matches!(&cmds[0], RenderCommand::Rect { shadow_color, .. } if shadow_color[3] > 0.0)
+        );
     }
 
     #[test]
