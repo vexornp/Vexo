@@ -3,7 +3,52 @@
 //! Style is analogous to Flutter's BoxDecoration - it holds all visual
 //! properties in one place for efficient single-pass rendering.
 
-use crate::core::Color;
+use crate::core::{Color, Logical, Point};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BoxShadow {
+    pub color: Color,
+    pub offset: Point<Logical>,
+    pub blur_radius: f32,
+    pub spread_radius: f32,
+}
+
+impl Default for BoxShadow {
+    fn default() -> Self {
+        Self {
+            color: Color::TRANSPARENT,
+            offset: Point::zero(),
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+        }
+    }
+}
+
+impl BoxShadow {
+    pub fn new(color: Color) -> Self {
+        Self {
+            color,
+            offset: Point::zero(),
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+        }
+    }
+
+    pub fn offset(mut self, x: f32, y: f32) -> Self {
+        self.offset = Point::new(x, y);
+        self
+    }
+
+    pub fn blur(mut self, radius: f32) -> Self {
+        self.blur_radius = radius;
+        self
+    }
+
+    pub fn spread(mut self, radius: f32) -> Self {
+        self.spread_radius = radius;
+        self
+    }
+}
 
 /// Visual decoration properties for a DecoratedContainer.
 ///
@@ -84,6 +129,8 @@ impl Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{Logical, Point};
+    use crate::Color;
 
     #[test]
     fn test_style_new() {
@@ -149,5 +196,44 @@ mod tests {
 
         assert_eq!(cloned.background, Some(Color::RED));
         assert_eq!(cloned.border.unwrap().color, Color::BLACK);
+    }
+
+    #[test]
+    fn test_box_shadow_new() {
+        let s = BoxShadow::new(Color::RED);
+        assert_eq!(s.color, Color::RED);
+        assert_eq!(s.offset, Point::<Logical>::zero());
+        assert_eq!(s.blur_radius, 0.0);
+        assert_eq!(s.spread_radius, 0.0);
+    }
+
+    #[test]
+    fn test_box_shadow_builder_chain() {
+        let s = BoxShadow::new(Color::BLACK)
+            .offset(2.0, 4.0)
+            .blur(12.0)
+            .spread(2.0);
+        assert_eq!(s.color, Color::BLACK);
+        assert_eq!(s.offset, Point::new(2.0, 4.0));
+        assert_eq!(s.blur_radius, 12.0);
+        assert_eq!(s.spread_radius, 2.0);
+    }
+
+    #[test]
+    fn test_box_shadow_default() {
+        let s = BoxShadow::default();
+        assert_eq!(s.color, Color::TRANSPARENT);
+        assert_eq!(s.offset, Point::<Logical>::zero());
+        assert_eq!(s.blur_radius, 0.0);
+        assert_eq!(s.spread_radius, 0.0);
+    }
+
+    #[test]
+    fn test_box_shadow_clone_eq() {
+        let s1 = BoxShadow::new(Color::RED).blur(8.0);
+        let s2 = s1.clone();
+        assert_eq!(s1, s2);
+        let s3 = BoxShadow::new(Color::RED).blur(10.0);
+        assert_ne!(s1, s3);
     }
 }

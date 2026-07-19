@@ -201,7 +201,7 @@ pub use stateful_widget::SimpleState;
 )]
 pub use stateful_widget::StatefulElement;
 pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderContext};
-pub use style::Style;
+pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
     Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, GestureDetector, Grid,
