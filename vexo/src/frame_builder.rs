@@ -234,6 +234,44 @@ impl FrameBuilder {
         self.ops.push((DrawOp::Quad(instance), clip));
     }
 
+    pub fn add_shadow_rect(
+        &mut self,
+        bounds: Bounds,
+        fill: impl Into<Color>,
+        stroke: Option<Stroke>,
+        corner_radius: f32,
+        shadow_color: [f32; 4],
+        shadow_blur: f32,
+    ) {
+        let fill: Color = fill.into();
+        let (border_color, border_width) = stroke
+            .map(|s| (s.color, s.width))
+            .unwrap_or((Color::TRANSPARENT, 0.0));
+
+        let radius = if corner_radius > 0.0 {
+            corner_radius
+        } else {
+            self.current_corner_radius()
+        };
+
+        let instance = QuadInstance {
+            position: [bounds.left, bounds.top],
+            size: [bounds.width(), bounds.height()],
+            color: fill.to_array(),
+            border_color: border_color.to_array(),
+            border_width,
+            corner_radius: radius,
+            transform: self.current_transform.to_array(),
+            _padding: [0.0; 4],
+            shadow_color,
+            shadow_blur,
+            _padding2: [0.0; 3],
+        };
+
+        let clip = self.current_clip();
+        self.ops.push((DrawOp::Quad(instance), clip));
+    }
+
     pub fn add_text(
         &mut self,
         content: impl Into<String>,
@@ -541,5 +579,77 @@ mod tests {
         assert_eq!(locs[2], OpLocation::Quad { index: 1 });
         assert_eq!(locs[3], OpLocation::Quad { index: 2 });
         assert_eq!(locs[4], OpLocation::Image { index: 1 });
+    }
+
+    #[test]
+    fn test_add_shadow_rect_populates_shadow_fields() {
+        let mut fb = FrameBuilder::new();
+        let shadow_color = [0.0, 0.0, 0.0, 0.5];
+        fb.add_shadow_rect(
+            Bounds::from_xywh(10.0, 20.0, 100.0, 50.0),
+            Color::TRANSPARENT,
+            None,
+            8.0,
+            shadow_color,
+            12.0,
+        );
+
+        assert_eq!(fb.quad_count(), 1);
+        let quads = fb.quad_instances();
+        assert_eq!(quads[0].shadow_color, shadow_color);
+        assert_eq!(quads[0].shadow_blur, 12.0);
+        assert_eq!(quads[0].corner_radius, 8.0);
+    }
+
+    #[test]
+    fn test_add_shadow_rect_preserves_paint_order() {
+        let mut fb = FrameBuilder::new();
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::RED,
+            None,
+            0.0,
+        );
+        fb.add_shadow_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::TRANSPARENT,
+            None,
+            0.0,
+            [0.0, 0.0, 0.0, 0.5],
+            8.0,
+        );
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 20.0, 20.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+
+        let ops = fb.ops();
+        assert_eq!(ops.len(), 3);
+        assert!(matches!(ops[0].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[1].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[2].0, DrawOp::Quad(_)));
+    }
+
+    #[test]
+    fn test_add_shadow_rect_respects_transform_stack() {
+        let mut fb = FrameBuilder::new();
+        let transform = AffineTransform::translation(5.0, 10.0);
+        fb.push_transform(transform);
+        fb.add_shadow_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::TRANSPARENT,
+            None,
+            0.0,
+            [0.0, 0.0, 0.0, 0.5],
+            4.0,
+        );
+        fb.pop_transform();
+
+        let quads = fb.quad_instances();
+        assert_eq!(quads.len(), 1);
+        assert_eq!(quads[0].transform, transform.to_array());
+        assert_eq!(quads[0].shadow_blur, 4.0);
     }
 }
