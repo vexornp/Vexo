@@ -6,7 +6,6 @@ mod chats;
 mod contacts;
 mod data;
 mod me;
-mod shadows;
 mod widgets;
 
 #[cfg(test)]

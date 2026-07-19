@@ -4,9 +4,9 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    Color, Column, Component, ComponentState, DecoratedContainer, Flex, LifecycleContext,
-    RenderContext, Row, ScrollController, ScrollView, Text, TextEdit, TextEditingController, Theme,
-    Widget,
+    BoxShadow, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
+    LifecycleContext, RenderContext, Row, ScrollController, ScrollView, Text, TextEdit,
+    TextEditingController, Theme, Widget,
 };
 use vexo_uikit::{Button, ButtonVariant, NavigationController};
 
@@ -173,6 +173,11 @@ fn build_input_bar(
         .push(
             Button::new("Send")
                 .variant(ButtonVariant::Primary)
+                .shadow(
+                    BoxShadow::new(Color::BLACK.with_alpha(0.25))
+                        .blur(6.0)
+                        .offset(0.0, 2.0),
+                )
                 .on_tap(on_send),
         )
         .boxed()

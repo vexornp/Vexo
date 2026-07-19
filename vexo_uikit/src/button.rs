@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use vexo::{
-    AlignSelf, Color, Component, ComponentState, DecoratedContainer, RenderContext, Signal, Text,
-    Theme, Widget,
+    AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedContainer, RenderContext,
+    Signal, Text, Theme, Widget,
 };
 
 use crate::platform::Platform;
@@ -56,6 +56,7 @@ pub struct Button {
     variant: ButtonVariant,
     disabled: bool,
     platform: Option<Platform>,
+    shadows: Vec<BoxShadow>,
 }
 
 impl Button {
@@ -67,6 +68,7 @@ impl Button {
             variant: ButtonVariant::Primary,
             disabled: false,
             platform: None,
+            shadows: Vec::new(),
         }
     }
 
@@ -95,6 +97,18 @@ impl Button {
     /// If not set, uses `Platform::current()`.
     pub fn platform(mut self, platform: Platform) -> Self {
         self.platform = Some(platform);
+        self
+    }
+
+    /// Append a single box shadow to the button's decoration.
+    pub fn shadow(mut self, shadow: BoxShadow) -> Self {
+        self.shadows.push(shadow);
+        self
+    }
+
+    /// Replace the button's box shadows with the given list.
+    pub fn shadows(mut self, shadows: Vec<BoxShadow>) -> Self {
+        self.shadows = shadows;
         self
     }
 
@@ -247,6 +261,10 @@ impl Component for Button {
 
         if border_width > 0.0 {
             container = container.border(border_color, border_width);
+        }
+
+        if !self.shadows.is_empty() {
+            container = container.shadows(self.shadows.clone());
         }
 
         container
