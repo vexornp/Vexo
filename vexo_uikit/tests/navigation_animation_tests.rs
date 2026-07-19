@@ -535,3 +535,291 @@ mod base_fx_alpha_tests {
         }
     }
 }
+
+// ============================================================================
+// NAV PUSH SHADOW (iOS-NATIVE)
+// ============================================================================
+//
+// Tests that `default_mobile_transition` attaches a full-perimeter BoxShadow
+// to the moving page (clipped to the nav content area by the ancestor clip
+// wrapper in `navigation.rs`), and that `default_desktop_transition` does
+// not. Also verifies the clip wrapper is present in steady-state render.
+//
+// These tests call the transition fn directly with a synthetic TransitionCtx
+// because `render_stack` without a ticker falls back to steady-state (clears
+// pending), so mid-transition widget-tree inspection is not possible. The
+// transition fn is the unit that attaches the shadow; testing it in isolation
+// is the correct level of coverage.
+
+mod nav_push_shadow_tests {
+    use super::*;
+    use vexo::{BoxShadow, DecoratedContainer, Text};
+    use vexo_uikit::platform::Platform;
+    use vexo_uikit::theme::tokens::navigation::{PAGE_SHADOW_ALPHA, PAGE_SHADOW_BLUR};
+    use vexo_uikit::transitions::{
+        default_desktop_transition, default_mobile_transition, TransitionCtx,
+    };
+
+    fn collect_shadowed<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedContainer>) {
+        if let Some(dc) = w.as_any().downcast_ref::<DecoratedContainer>() {
+            if !dc.style_ref().shadows.is_empty() {
+                out.push(dc);
+            }
+        }
+        if let Some(child) = w.child() {
+            collect_shadowed(child, out);
+        }
+        for child in w.children() {
+            collect_shadowed(child.as_ref(), out);
+        }
+    }
+
+    fn collect_clipped<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedContainer>) {
+        if let Some(dc) = w.as_any().downcast_ref::<DecoratedContainer>() {
+            if dc.style_ref().clip {
+                out.push(dc);
+            }
+        }
+        if let Some(child) = w.child() {
+            collect_clipped(child, out);
+        }
+        for child in w.children() {
+            collect_clipped(child.as_ref(), out);
+        }
+    }
+
+    fn find_first_shadowed(w: &dyn Widget) -> Option<&DecoratedContainer> {
+        let mut found = Vec::new();
+        collect_shadowed(w, &mut found);
+        found.into_iter().next()
+    }
+
+    fn find_first_clipped(w: &dyn Widget) -> Option<&DecoratedContainer> {
+        let mut found = Vec::new();
+        collect_clipped(w, &mut found);
+        found.into_iter().next()
+    }
+
+    #[test]
+    fn mobile_push_incoming_overlay_has_shadow_decorated_container() {
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: true,
+            direction: TransitionDir::Push,
+            platform: Platform::Mobile,
+        };
+        let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
+
+        let dc = find_first_shadowed(&*result)
+            .expect("mobile push incoming overlay must have a shadowed DecoratedContainer");
+
+        let shadows = &dc.style_ref().shadows;
+        assert_eq!(shadows.len(), 1, "exactly one shadow expected");
+        let s: &BoxShadow = &shadows[0];
+        assert!(
+            (s.color.r - 0.0).abs() < 1e-6
+                && (s.color.g - 0.0).abs() < 1e-6
+                && (s.color.b - 0.0).abs() < 1e-6
+                && (s.color.a - PAGE_SHADOW_ALPHA).abs() < 1e-6,
+            "shadow color must be BLACK at alpha {}, got r={} g={} b={} a={}",
+            PAGE_SHADOW_ALPHA,
+            s.color.r,
+            s.color.g,
+            s.color.b,
+            s.color.a
+        );
+        assert!(
+            (s.blur_radius - PAGE_SHADOW_BLUR).abs() < 1e-6,
+            "blur must be {}, got {}",
+            PAGE_SHADOW_BLUR,
+            s.blur_radius
+        );
+        assert!(
+            (s.offset.x - 0.0).abs() < 1e-6,
+            "offset.x must be 0, got {}",
+            s.offset.x
+        );
+        assert!(
+            (s.offset.y - 0.0).abs() < 1e-6,
+            "offset.y must be 0, got {}",
+            s.offset.y
+        );
+        assert!(
+            (s.spread_radius - 0.0).abs() < 1e-6,
+            "spread must be 0, got {}",
+            s.spread_radius
+        );
+    }
+
+    #[test]
+    fn mobile_pop_outgoing_overlay_has_shadow_decorated_container() {
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: false,
+            direction: TransitionDir::Pop,
+            platform: Platform::Mobile,
+        };
+        let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
+
+        let dc = find_first_shadowed(&*result)
+            .expect("mobile pop outgoing overlay must have a shadowed DecoratedContainer");
+        assert_eq!(dc.style_ref().shadows.len(), 1);
+        assert!(
+            (dc.style_ref().shadows[0].blur_radius - PAGE_SHADOW_BLUR).abs() < 1e-6,
+            "blur must be {}",
+            PAGE_SHADOW_BLUR
+        );
+    }
+
+    #[test]
+    fn mobile_pop_to_root_outgoing_overlay_has_shadow_decorated_container() {
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: false,
+            direction: TransitionDir::PopToRoot,
+            platform: Platform::Mobile,
+        };
+        let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
+
+        let dc = find_first_shadowed(&*result)
+            .expect("mobile pop-to-root outgoing overlay must have a shadowed DecoratedContainer");
+        assert_eq!(dc.style_ref().shadows.len(), 1);
+    }
+
+    #[test]
+    fn desktop_overlay_has_no_shadow() {
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: true,
+            direction: TransitionDir::Push,
+            platform: Platform::Desktop,
+        };
+        let result = default_desktop_transition(&ctx, Text::new("Page").boxed());
+
+        let found = find_first_shadowed(&*result);
+        assert!(
+            found.is_none(),
+            "desktop transition must not attach a shadow; found a DecoratedContainer with {} shadows",
+            found.map(|d| d.style_ref().shadows.len()).unwrap_or(0)
+        );
+    }
+
+    #[test]
+    fn nav_content_is_clipped_in_steady_state() {
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+
+        let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .platform(Platform::Mobile)
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+        let tree = render_stack(view, &mut state);
+
+        let dc = find_first_clipped(&*tree)
+            .expect("steady-state nav content must be wrapped in a clipped DecoratedContainer");
+        assert!(
+            dc.style_ref().clip,
+            "clip wrapper must have clip=true, got clip={}",
+            dc.style_ref().clip
+        );
+    }
+
+    #[test]
+    fn nav_content_clip_wrapper_present_on_desktop_too() {
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+
+        let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .platform(Platform::Desktop)
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+        let tree = render_stack(view, &mut state);
+
+        let dc = find_first_clipped(&*tree)
+            .expect("desktop nav content must also have the clip wrapper (unconditional for type-stability)");
+        assert!(dc.style_ref().clip);
+    }
+
+    #[test]
+    fn nav_content_clip_wrapper_fills_parent() {
+        // Regression: DecoratedContainer::new() defaults to align_self(Start)
+        // with no flex_grow/width_percent/height_percent, which sizes it to
+        // content instead of filling the SafeArea. The clip wrapper must
+        // explicitly fill its parent (width_percent=1.0, height_percent=1.0)
+        // or the content overflows past the tab bar.
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+
+        let view = NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .platform(Platform::Mobile)
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed());
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+
+        let tree = render_stack(view, &mut state);
+
+        let dc = find_first_clipped(&*tree).expect("clip wrapper must be present");
+        let layout = dc.layout_ref();
+        assert!(
+            layout
+                .width
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "clip wrapper width must be Percent(1.0) to fill parent horizontally, got {:?}",
+            layout.width
+        );
+        assert!(
+            layout
+                .height
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "clip wrapper height must be Percent(1.0) to fill parent vertically, got {:?}",
+            layout.height
+        );
+    }
+
+    #[test]
+    fn mobile_transition_shadow_wrapper_fills_parent() {
+        // Regression: DecoratedContainer::new() defaults to align_self(Start)
+        // with no flex_grow/width_percent/height_percent, which shrink-to-fits
+        // the page instead of filling the Positioned overlay. The page (e.g.
+        // chat screen with flex_fill) then has nothing to grow into and
+        // collapses — input bar appears at top-left instead of pinned to
+        // bottom. The shadow wrapper must explicitly fill its parent.
+        let ctx = TransitionCtx {
+            t: 0.5,
+            is_incoming: true,
+            direction: TransitionDir::Push,
+            platform: Platform::Mobile,
+        };
+        let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
+
+        let dc = find_first_shadowed(&*result)
+            .expect("shadow wrapper DecoratedContainer must be present");
+        let layout = dc.layout_ref();
+        assert!(
+            layout
+                .width
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "shadow wrapper width must be Percent(1.0) to fill Positioned overlay horizontally, got {:?}",
+            layout.width
+        );
+        assert!(
+            layout
+                .height
+                .as_ref()
+                .map(|d| matches!(d, vexo::layout::Dimension::Percent(1.0)))
+                .unwrap_or(false),
+            "shadow wrapper height must be Percent(1.0) to fill Positioned overlay vertically, got {:?}",
+            layout.height
+        );
+    }
+}
