@@ -138,8 +138,8 @@ pub mod navigation {
     /// Constructed as `Color::BLACK.with_alpha(PAGE_SHADOW_ALPHA)` with
     /// `.blur(PAGE_SHADOW_BLUR)`; zero offset, zero spread (the ancestor clip
     /// does the edge restriction, not the offset).
-    pub const PAGE_SHADOW_ALPHA: f32 = 0.15;
-    pub const PAGE_SHADOW_BLUR: f32 = 8.0;
+    pub const PAGE_SHADOW_ALPHA: f32 = 0.08;
+    pub const PAGE_SHADOW_BLUR: f32 = 6.0;
 }
 
 #[cfg(test)]
