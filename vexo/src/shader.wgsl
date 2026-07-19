@@ -7,6 +7,8 @@ struct VertexOutput {
     @location(3) border_width: f32,
     @location(4) size: vec2<f32>,
     @location(5) corner_radius: f32,
+    @location(6) shadow_color: vec4<f32>,
+    @location(7) shadow_blur: f32,
 };
 
 struct GlobalUniforms {
@@ -28,27 +30,17 @@ fn vs_main(
     @location(7) inst_transform_ab: vec2<f32>,
     @location(8) inst_transform_cd: vec2<f32>,
     @location(9) inst_transform_ef: vec2<f32>,
+    @location(10) inst_shadow_color: vec4<f32>,
+    @location(11) inst_shadow_blur: f32,
 ) -> VertexOutput {
-    // Get local position within the quad (0 to size)
     let local_pos = model_pos * inst_size;
-
-    // Apply 2D affine transform around the quad's center.
-    // Shift origin to center, apply transform, then shift back.
     let half_size = inst_size * 0.5;
     let centered_x = local_pos.x - half_size.x;
     let centered_y = local_pos.y - half_size.y;
-
-    // Apply 2D affine transform: [a c e; b d f; 0 0 1] * [x; y; 1]
     let tx = inst_transform_ab.x * centered_x + inst_transform_cd.x * centered_y + inst_transform_ef.x;
     let ty = inst_transform_ab.y * centered_x + inst_transform_cd.y * centered_y + inst_transform_ef.y;
-
-    // Shift back to top-left origin and add instance position
     let logical_pos = vec2<f32>(tx + half_size.x + inst_pos.x, ty + half_size.y + inst_pos.y);
-
-    // Scale to physical pixels
     let pixel_pos = logical_pos * globals.scale_factor;
-
-    // Normalize to NDC (-1.0 to 1.0)
     let nx = (pixel_pos.x / globals.screen_size.x) * 2.0 - 1.0;
     let ny = 1.0 - (pixel_pos.y / globals.screen_size.y) * 2.0;
 
@@ -60,23 +52,38 @@ fn vs_main(
     out.size = inst_size * globals.scale_factor;
     out.border_width = inst_border_width;
     out.corner_radius = inst_corner_radius * globals.scale_factor;
+    out.shadow_color = inst_shadow_color;
+    out.shadow_blur = inst_shadow_blur * globals.scale_factor;
     return out;
 }
 
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Clamp radius to at most half the smallest dimension
+    // === SHADOW PATH (when shadow_color.a > 0) ===
+    if (in.shadow_color.a > 0.0) {
+        let blur_px = in.shadow_blur;
+        let silhouette_size = max(in.size - vec2<f32>(2.0 * blur_px), vec2<f32>(0.0));
+        let silhouette_half = silhouette_size * 0.5;
+        let silhouette_radius = min(in.corner_radius, min(silhouette_size.x, silhouette_size.y) * 0.5);
+
+        let pixel_pos = in.uv * in.size;
+        let center_pos = pixel_pos - (in.size * 0.5);
+
+        let inner_dist = abs(center_pos) - (silhouette_half - silhouette_radius);
+        let corner_dist = length(max(inner_dist, vec2<f32>(0.0))) - silhouette_radius;
+        let shadow_sdf = min(max(inner_dist.x, inner_dist.y), 0.0) + corner_dist;
+
+        let sigma = max(blur_px * 0.5, 0.5);
+        let d = max(shadow_sdf, 0.0);
+        let falloff = exp(-d * d / (2.0 * sigma * sigma));
+        return vec4<f32>(in.shadow_color.rgb, falloff * in.shadow_color.a);
+    }
+
+    // === EXISTING FILL/BORDER PATH (unchanged) ===
     let radius = min(in.corner_radius, min(in.size.x, in.size.y) * 0.5);
 
-    // If no corner radius, use original rectangular rendering
     if (radius < 0.5) {
-        // Fast path: no border → return fill directly. The smoothstep-based
-        // border logic below would compute a sub-pixel ring at the rect's
-        // edges even when border_width is 0 (because the smoothstep range
-        // is 0.498..0.5, not 0.5..0.5). For tall rects this is invisible,
-        // but for a 1px-tall hairline the ring becomes a visible fraction
-        // of the height, making the fill look like two separate lines.
         if (in.border_width <= 0.0) {
             return in.color;
         }
@@ -91,26 +98,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return mix(in.color, in.border_color, is_border);
     }
 
-    // SDF for rounded rectangle
-    // UV is 0-1, convert to pixel coordinates relative to center
     let pixel_pos = in.uv * in.size;
     let half_size = in.size * 0.5;
     let center_pos = pixel_pos - half_size;
 
-    // SDF: distance from rounded rectangle edge
     let inner_dist = abs(center_pos) - (half_size - radius);
     let corner_dist = length(max(inner_dist, vec2<f32>(0.0))) - radius;
     let sdf = min(max(inner_dist.x, inner_dist.y), 0.0) + corner_dist;
 
-    // Fill alpha with 1px anti-aliasing
     let fill_alpha = 1.0 - smoothstep(-1.0, 1.0, sdf);
 
-    // If completely outside, discard
     if (fill_alpha <= 0.0) {
         discard;
     }
 
-    // Calculate border - border is the ring between sdf and sdf + border_px
     let border_px = in.border_width * globals.scale_factor;
     let border_alpha = 1.0 - smoothstep(-1.0, 1.0, sdf + border_px);
     let in_border = 1.0 - smoothstep(-1.0, 1.0, sdf);

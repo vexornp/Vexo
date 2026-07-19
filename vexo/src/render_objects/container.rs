@@ -158,17 +158,52 @@ impl RenderObject for ContainerRenderObject {
             pos.y + bounds.height(),
         );
 
-        // 1. Push corner radius if set (affects all subsequent rects)
+        let base_corner_radius = self
+            .style
+            .corner_radius
+            .as_ref()
+            .map(|cr| cr.radius)
+            .unwrap_or(0.0);
+
+        // 1. Emit shadows BEFORE fill/border (shadows draw behind everything).
+        // Shadows bypass PushCornerRadius context — each shadow Rect carries its
+        // own corner_radius field (computed as base + spread).
+        // Shadows also bypass style.clip's PushClip — clipping the shadow to the
+        // very shape casting it would make it invisible.
+        for shadow in &self.style.shadows {
+            if shadow.color.a == 0.0 {
+                continue;
+            }
+            let blur = shadow.blur_radius.max(0.0);
+            let pad = blur + shadow.spread_radius;
+            let shadow_bounds = Bounds::new(
+                absolute_bounds.left + shadow.offset.x - pad,
+                absolute_bounds.top + shadow.offset.y - pad,
+                absolute_bounds.right + shadow.offset.x + pad,
+                absolute_bounds.bottom + shadow.offset.y + pad,
+            );
+            let shadow_corner_radius = (base_corner_radius + shadow.spread_radius).max(0.0);
+            commands.push(RenderCommand::Rect {
+                bounds: shadow_bounds,
+                fill: shadow.color,
+                stroke: None,
+                corner_radius: shadow_corner_radius,
+                shadow_color: shadow.color.to_array(),
+                shadow_blur: blur,
+            });
+        }
+
+        // 2. Push corner radius if set (affects fill/border only, NOT shadows)
         if let Some(ref cr) = self.style.corner_radius {
             commands.push(RenderCommand::PushCornerRadius { radius: cr.radius });
         }
 
-        // 2. Draw background first (behind child)
+        // 3. Draw background first (behind child)
         if let Some(bg_color) = self.style.background {
             commands.push(RenderCommand::rect(absolute_bounds, bg_color));
         }
 
-        // 3. Draw border on top (after background)
+        // 4. Draw border on top (after background)
         if let Some(ref border) = self.style.border {
             commands.push(RenderCommand::rect_with_border(
                 absolute_bounds,
@@ -178,7 +213,7 @@ impl RenderObject for ContainerRenderObject {
             ));
         }
 
-        // 4. Pop corner radius
+        // 5. Pop corner radius
         if self.style.corner_radius.is_some() {
             commands.push(RenderCommand::PopCornerRadius);
         }
@@ -237,7 +272,9 @@ impl RenderObject for ContainerRenderObject {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Point;
     use crate::layout::{AlignItems, FlexDirection, Layout, LayoutEngine, TaffyLayoutEngine};
+    use crate::style::BoxShadow;
 
     fn column_layout() -> Layout {
         Layout::default()
@@ -547,5 +584,340 @@ mod tests {
         obj.set_child_id(child3);
         assert_eq!(obj.child_count(), 1);
         assert_eq!(obj.children()[0], child3);
+    }
+
+    #[test]
+    fn test_container_paint_with_single_shadow() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // 1 shadow Rect + 1 background Rect
+        assert_eq!(cmds.len(), 2);
+
+        // First command is the shadow
+        match &cmds[0] {
+            RenderCommand::Rect {
+                shadow_color,
+                shadow_blur,
+                bounds,
+                corner_radius,
+                ..
+            } => {
+                assert_eq!(*shadow_color, Color::BLACK.to_array());
+                assert_eq!(*shadow_blur, 8.0);
+                // pad = blur(8) + spread(0) = 8; shadow rect grown by 8 on each side
+                assert_eq!(bounds.width(), 100.0 + 2.0 * 8.0);
+                assert_eq!(bounds.height(), 50.0 + 2.0 * 8.0);
+                assert_eq!(*corner_radius, 0.0); // base corner_radius is 0
+            }
+            _ => panic!("Expected shadow Rect as first command"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_with_multiple_shadows() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(8.0))
+            .shadow(BoxShadow::new(Color::RED).blur(4.0))
+            .shadow(BoxShadow::new(Color::BLUE).blur(12.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // 3 shadow Rects + 1 background Rect
+        assert_eq!(cmds.len(), 4);
+
+        // Verify shadows are in list order (first = back)
+        match &cmds[0] {
+            RenderCommand::Rect { shadow_color, .. } => {
+                assert_eq!(*shadow_color, Color::BLACK.to_array());
+            }
+            _ => panic!("Expected first shadow"),
+        }
+        match &cmds[1] {
+            RenderCommand::Rect { shadow_color, .. } => {
+                assert_eq!(*shadow_color, Color::RED.to_array());
+            }
+            _ => panic!("Expected second shadow"),
+        }
+        match &cmds[2] {
+            RenderCommand::Rect { shadow_color, .. } => {
+                assert_eq!(*shadow_color, Color::BLUE.to_array());
+            }
+            _ => panic!("Expected third shadow"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_respects_offset() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).offset(10.0, 20.0).blur(4.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        match &cmds[0] {
+            RenderCommand::Rect { bounds, .. } => {
+                // pad = 4; shadow left = base.left(0) + offset.x(10) - pad(4) = 6
+                // shadow top  = base.top(0)  + offset.y(20) - pad(4) = 16
+                assert_eq!(bounds.left, 6.0);
+                assert_eq!(bounds.top, 16.0);
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_respects_blur_and_spread() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(12.0).spread(4.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        match &cmds[0] {
+            RenderCommand::Rect { bounds, .. } => {
+                // pad = blur(12) + spread(4) = 16
+                assert_eq!(bounds.width(), 100.0 + 2.0 * 16.0);
+                assert_eq!(bounds.height(), 50.0 + 2.0 * 16.0);
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_with_corner_radius() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .corner_radius(8.0)
+            .shadow(BoxShadow::new(Color::BLACK).spread(4.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Shadow corner_radius = base(8) + spread(4) = 12
+        match &cmds[0] {
+            RenderCommand::Rect { corner_radius, .. } => {
+                assert_eq!(*corner_radius, 12.0);
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_skips_transparent_color() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::TRANSPARENT).blur(8.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Shadow is transparent → skipped → only background Rect emitted
+        assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn test_container_paint_shadow_negative_blur_clamped() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(-5.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        match &cmds[0] {
+            RenderCommand::Rect { shadow_blur, .. } => {
+                assert_eq!(*shadow_blur, 0.0);
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_zero_blur_sharp() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(0.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Shadow with blur=0 is still emitted (sharp shadow is valid)
+        assert_eq!(cmds.len(), 2);
+        match &cmds[0] {
+            RenderCommand::Rect { shadow_blur, .. } => {
+                assert_eq!(*shadow_blur, 0.0);
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_extends_beyond_bounds() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .clip()
+            .shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Shadow Rect must extend beyond computed_bounds (clip doesn't clip own shadow).
+        match &cmds[0] {
+            RenderCommand::Rect { bounds, .. } => {
+                assert!(bounds.left < 0.0, "Shadow should extend left of bounds");
+                assert!(bounds.top < 0.0, "Shadow should extend above bounds");
+                assert!(bounds.right > 100.0, "Shadow should extend right of bounds");
+                assert!(bounds.bottom > 50.0, "Shadow should extend below bounds");
+            }
+            _ => panic!("Expected shadow Rect"),
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadow_no_corner_radius_context() {
+        // Shadows must NOT be wrapped in PushCornerRadius/PopCornerRadius.
+        // Each shadow Rect carries its own corner_radius field.
+        let style = Style::new()
+            .corner_radius(8.0)
+            .shadow(BoxShadow::new(Color::BLACK).blur(4.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // Find the shadow Rect.
+        let shadow_idx = cmds.iter().position(
+            |c| matches!(c, RenderCommand::Rect { shadow_color, .. } if shadow_color[3] > 0.0),
+        );
+        assert!(shadow_idx.is_some());
+
+        // Verify NO PushCornerRadius appears before the shadow.
+        for cmd in cmds.iter().take(shadow_idx.unwrap()) {
+            assert!(
+                !matches!(cmd, RenderCommand::PushCornerRadius { .. }),
+                "Shadow must not be wrapped in PushCornerRadius"
+            );
+        }
+    }
+
+    #[test]
+    fn test_container_paint_shadows_do_not_affect_hit_test() {
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(20.0).spread(20.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        // Point is inside shadow area but outside computed_bounds
+        // Shadow extends 40px (blur+spread) beyond bounds in all directions
+        let outside_point = Point::new(-10.0, -10.0);
+        assert!(!obj.hit_test(outside_point, &HitTestContext::mock()));
+
+        // Point inside bounds still hits
+        let inside_point = Point::new(50.0, 25.0);
+        assert!(obj.hit_test(inside_point, &HitTestContext::mock()));
+    }
+
+    #[test]
+    fn test_container_set_style_detects_shadow_change() {
+        let mut obj = ContainerRenderObject::new(column_layout());
+
+        let style1 = Style::new().shadow(BoxShadow::new(Color::BLACK));
+        obj.set_style(style1);
+
+        let style2 = Style::new()
+            .shadow(BoxShadow::new(Color::BLACK))
+            .shadow(BoxShadow::new(Color::RED));
+        assert!(
+            obj.set_style(style2),
+            "Adding a shadow should trigger style change"
+        );
+    }
+
+    #[test]
+    fn test_container_set_style_same_shadows_no_change() {
+        let mut obj = ContainerRenderObject::new(column_layout());
+
+        let style = Style::new()
+            .background(Color::WHITE)
+            .shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        obj.set_style(style.clone());
+
+        assert!(
+            !obj.set_style(style),
+            "Setting same style should not trigger change"
+        );
+    }
+
+    #[test]
+    fn test_container_paint_shadow_no_background_still_emits_shadow() {
+        let style = Style::new().shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // No background → only shadow emitted
+        assert_eq!(cmds.len(), 1);
+        assert!(
+            matches!(&cmds[0], RenderCommand::Rect { shadow_color, .. } if shadow_color[3] > 0.0)
+        );
+    }
+
+    #[test]
+    fn test_container_paint_no_shadows_unchanged_behavior() {
+        // Regression: existing behavior with empty shadows must be unchanged.
+        let style = Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0);
+        let mut obj = ContainerRenderObject::new_with_style(column_layout(), style);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = obj.paint(&mut ctx);
+
+        // 2 commands: background + border (same as existing test_container_paint_with_background_and_border)
+        assert_eq!(cmds.len(), 2);
     }
 }

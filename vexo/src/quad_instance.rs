@@ -16,7 +16,10 @@ pub struct QuadInstance {
     // | b  d  f |
     // | 0  0  1 |
     pub transform: [f32; 6],
-    pub _padding: [f32; 2], // Maintain 16-byte alignment for safety
+    pub _padding: [f32; 4],
+    pub shadow_color: [f32; 4],
+    pub shadow_blur: f32,
+    pub _padding2: [f32; 3],
 }
 
 impl QuadInstance {
@@ -37,7 +40,10 @@ impl QuadInstance {
             border_width,
             corner_radius,
             transform: IDENTITY_TRANSFORM,
-            _padding: [0.0; 2],
+            _padding: [0.0; 4],
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
+            _padding2: [0.0; 3],
         }
     }
 
@@ -59,7 +65,10 @@ impl QuadInstance {
             border_width,
             corner_radius,
             transform: transform.to_array(),
-            _padding: [0.0; 2],
+            _padding: [0.0; 4],
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
+            _padding2: [0.0; 3],
         }
     }
 
@@ -114,7 +123,57 @@ impl QuadInstance {
                     shader_location: 9,
                     format: wgpu::VertexFormat::Float32x2,
                 }, // transform [e, f]
+                wgpu::VertexAttribute {
+                    offset: 96,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x4,
+                }, // shadow_color
+                wgpu::VertexAttribute {
+                    offset: 112,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32,
+                }, // shadow_blur
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{AffineTransform, Color, Logical, Point, Size};
+
+    #[test]
+    fn test_quad_instance_shadow_fields_default_zero() {
+        let q = QuadInstance::from_logical(
+            Point::new(0.0, 0.0),
+            Size::new(10.0, 10.0),
+            Color::RED,
+            Color::BLACK,
+            0.0,
+            0.0,
+        );
+        assert_eq!(q.shadow_color, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(q.shadow_blur, 0.0);
+    }
+
+    #[test]
+    fn test_quad_instance_size_is_128_bytes() {
+        assert_eq!(std::mem::size_of::<QuadInstance>(), 128);
+    }
+
+    #[test]
+    fn test_quad_instance_with_transform_zero_shadow() {
+        let q = QuadInstance::with_transform(
+            Point::new(0.0, 0.0),
+            Size::new(10.0, 10.0),
+            Color::RED,
+            Color::BLACK,
+            0.0,
+            0.0,
+            AffineTransform::identity(),
+        );
+        assert_eq!(q.shadow_color, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(q.shadow_blur, 0.0);
     }
 }

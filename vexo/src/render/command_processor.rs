@@ -48,6 +48,8 @@ pub fn process_commands(
                 fill,
                 stroke,
                 corner_radius,
+                shadow_color,
+                shadow_blur,
             } => {
                 let fill = fill.with_alpha(fill.a * current_opacity);
                 let stroke = stroke
@@ -58,9 +60,21 @@ pub fn process_commands(
                     bounds.right + current_offset.x,
                     bounds.bottom + current_offset.y,
                 );
-                // Bake current transform into the frame builder before adding this rect
                 frame_builder.push_transform(current_transform);
-                frame_builder.add_rect(adjusted_bounds, fill, stroke, *corner_radius);
+                if shadow_color[3] > 0.0 {
+                    let mut adjusted_shadow_color = *shadow_color;
+                    adjusted_shadow_color[3] *= current_opacity;
+                    frame_builder.add_shadow_rect(
+                        adjusted_bounds,
+                        fill,
+                        stroke,
+                        *corner_radius,
+                        adjusted_shadow_color,
+                        *shadow_blur,
+                    );
+                } else {
+                    frame_builder.add_rect(adjusted_bounds, fill, stroke, *corner_radius);
+                }
                 frame_builder.pop_transform();
             }
             RenderCommand::Text {
@@ -522,6 +536,37 @@ mod tests {
     }
 
     #[test]
+    fn test_process_shadow_rect_with_opacity() {
+        let mut frame_builder = FrameBuilder::new();
+        let shadow_color = [0.0, 0.0, 0.0, 0.8];
+        let commands = vec![
+            RenderCommand::PushOpacity { opacity: 0.5 },
+            RenderCommand::Rect {
+                bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+                fill: Color::TRANSPARENT,
+                stroke: None,
+                corner_radius: 8.0,
+                shadow_color,
+                shadow_blur: 12.0,
+            },
+            RenderCommand::PopOpacity,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        // shadow_color[3] should be 0.8 * 0.5 = 0.4
+        assert!(
+            (quad.shadow_color[3] - 0.4).abs() < 0.001,
+            "shadow alpha should be 0.8 * 0.5 = 0.4, got {}",
+            quad.shadow_color[3]
+        );
+        // shadow_blur is not affected by opacity
+        assert_eq!(quad.shadow_blur, 12.0);
+    }
+
+    #[test]
     fn test_process_nested_opacity() {
         let mut frame_builder = FrameBuilder::new();
         let commands = vec![
@@ -598,5 +643,43 @@ mod tests {
         assert_eq!(ops.len(), 2);
         assert!(matches!(ops[0].0, crate::frame_builder::DrawOp::Image(_)));
         assert!(matches!(ops[1].0, crate::frame_builder::DrawOp::Quad(_)));
+    }
+
+    #[test]
+    fn test_process_shadow_rect_uses_add_shadow_rect() {
+        let mut frame_builder = FrameBuilder::new();
+        let shadow_color = [0.0, 0.0, 0.0, 0.5];
+        let commands = vec![RenderCommand::Rect {
+            bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            fill: Color::TRANSPARENT,
+            stroke: None,
+            corner_radius: 8.0,
+            shadow_color,
+            shadow_blur: 12.0,
+        }];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(quad.shadow_color, shadow_color);
+        assert_eq!(quad.shadow_blur, 12.0);
+        assert_eq!(quad.corner_radius, 8.0);
+    }
+
+    #[test]
+    fn test_process_non_shadow_rect_uses_add_rect() {
+        let mut frame_builder = FrameBuilder::new();
+        let commands = vec![RenderCommand::rect(
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Color::RED,
+        )];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.quad_count(), 1);
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(quad.shadow_color, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(quad.shadow_blur, 0.0);
     }
 }

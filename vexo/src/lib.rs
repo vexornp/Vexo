@@ -32,6 +32,7 @@ pub mod image_atlas;
 mod image_data;
 mod image_instance;
 mod quad_instance;
+mod shadow_math;
 pub mod render;
 pub use frame_builder::FrameBuilder;
 pub mod reactive;
@@ -201,7 +202,7 @@ pub use stateful_widget::SimpleState;
 )]
 pub use stateful_widget::StatefulElement;
 pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderContext};
-pub use style::Style;
+pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
     Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, GestureDetector, Grid,
