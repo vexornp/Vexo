@@ -77,6 +77,8 @@ pub struct Style {
 
     /// Whether to clip children to this container's bounds.
     pub clip: bool,
+
+    pub shadows: Vec<BoxShadow>,
 }
 
 /// Border decoration properties.
@@ -122,6 +124,16 @@ impl Style {
     /// Enable clipping of children to this container's bounds.
     pub fn clip(mut self) -> Self {
         self.clip = true;
+        self
+    }
+
+    pub fn shadow(mut self, shadow: BoxShadow) -> Self {
+        self.shadows.push(shadow);
+        self
+    }
+
+    pub fn shadows(mut self, shadows: Vec<BoxShadow>) -> Self {
+        self.shadows = shadows;
         self
     }
 }
@@ -235,5 +247,57 @@ mod tests {
         assert_eq!(s1, s2);
         let s3 = BoxShadow::new(Color::RED).blur(10.0);
         assert_ne!(s1, s3);
+    }
+
+    #[test]
+    fn test_style_shadow_default_empty() {
+        let style = Style::default();
+        assert!(style.shadows.is_empty());
+    }
+
+    #[test]
+    fn test_style_shadow_appends() {
+        let s1 = BoxShadow::new(Color::RED);
+        let s2 = BoxShadow::new(Color::BLACK);
+        let style = Style::new().shadow(s1.clone()).shadow(s2.clone());
+        assert_eq!(style.shadows.len(), 2);
+        assert_eq!(style.shadows[0], s1);
+        assert_eq!(style.shadows[1], s2);
+    }
+
+    #[test]
+    fn test_style_shadows_replaces() {
+        let s1 = BoxShadow::new(Color::RED);
+        let s2 = BoxShadow::new(Color::BLACK);
+        let style = Style::new().shadow(s1);
+        let style = style.shadows(vec![s2.clone()]);
+        assert_eq!(style.shadows.len(), 1);
+        assert_eq!(style.shadows[0], s2);
+    }
+
+    #[test]
+    fn test_style_with_shadows_clone() {
+        let style = Style::new().shadow(BoxShadow::new(Color::RED).blur(8.0));
+        let cloned = style.clone();
+        assert_eq!(style, cloned);
+        assert_eq!(cloned.shadows.len(), 1);
+    }
+
+    #[test]
+    fn test_style_with_shadows_eq() {
+        let s1 = Style::new().shadow(BoxShadow::new(Color::RED));
+        let s2 = Style::new().shadow(BoxShadow::new(Color::RED));
+        let s3 = Style::new().shadow(BoxShadow::new(Color::BLACK));
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+    }
+
+    #[test]
+    fn test_style_shadow_does_not_overwrite_background() {
+        let style = Style::new()
+            .background(Color::RED)
+            .shadow(BoxShadow::new(Color::BLACK));
+        assert_eq!(style.background, Some(Color::RED));
+        assert_eq!(style.shadows.len(), 1);
     }
 }
