@@ -7,7 +7,7 @@ use crate::layout::{
 };
 use crate::render::RenderCommand;
 use crate::widgets::{DecoratedBox, Transform, WithLayout};
-use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
+use crate::{children, Grid, MultiChild, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -28,9 +28,10 @@ fn create_test_font_system() -> glyphon::FontSystem {
 #[test]
 fn test_retain_pipeline_e2e() {
     // === Step 1: Create widget tree ===
-    let widget: Flex = Flex::column()
-        .push(Text::new("Hello"))
-        .push(Text::new("World"));
+    let widget = MultiChild::new(
+        children![Text::new("Hello"), Text::new("World")],
+        Layout::column(),
+    );
 
     // === Step 2: Create pipeline and reconcile ===
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -567,21 +568,18 @@ fn test_rotate_transform_with_rounded_rect() {
     );
 }
 
-/// Test Flex::column() with CSS-like layout properties (padding, gap, justify, align).
+/// Test MultiChild(column) with CSS-like layout properties (padding, gap, justify, align).
 #[test]
 fn test_column_with_layout() {
-    let widget = Flex::column()
-        .push(Text::new("First"))
-        .push(Text::new("Second"))
-        .push(Text::new("Third"))
-        .layout(
-            Layout::default()
-                .flex_direction(crate::layout::FlexDirection::Column)
-                .padding(12.0)
-                .gap(8.0)
-                .justify(JustifyContent::Center)
-                .align(AlignItems::Center),
-        );
+    let widget = MultiChild::new(
+        children![Text::new("First"), Text::new("Second"), Text::new("Third"),],
+        Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Column)
+            .padding(12.0)
+            .gap(8.0)
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center),
+    );
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
@@ -604,27 +602,19 @@ fn test_column_with_layout() {
     let _ = commands;
 }
 
-/// Test Flex::row() with gap on container and flex_grow/width on children via .with_layout().
+/// Test MultiChild(row) with gap on container and flex_grow/width on children via .with_layout().
 #[test]
 fn test_with_layout_on_children() {
-    let widget = Flex::row()
-        .push(WithLayout::new(
-            Text::new("Left"),
-            Layout::default().flex_grow(1.0),
-        ))
-        .push(WithLayout::new(
-            Text::new("Center"),
-            Layout::default().width(100.0),
-        ))
-        .push(WithLayout::new(
-            Text::new("Right"),
-            Layout::default().flex_grow(2.0),
-        ))
-        .layout(
-            Layout::default()
-                .flex_direction(crate::layout::FlexDirection::Row)
-                .gap(10.0),
-        );
+    let widget = MultiChild::new(
+        children![
+            WithLayout::new(Text::new("Left"), Layout::default().flex_grow(1.0)),
+            WithLayout::new(Text::new("Center"), Layout::default().width(100.0)),
+            WithLayout::new(Text::new("Right"), Layout::default().flex_grow(2.0)),
+        ],
+        Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Row)
+            .gap(10.0),
+    );
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
@@ -804,7 +794,7 @@ fn test_decorated_box_in_pipeline() {
 
 /// Test that DecoratedBox passes width constraints through to its child.
 ///
-/// Regression guard for the latent WidgetExt sizing bug: when a widget
+/// Regression guard for the latent pass-through sizing bug: when a widget
 /// is wrapped in a decoration proxy, the parent's definite width must
 /// propagate to the child (so e.g. text wraps at that width). The
 /// `DecoratedBox` proxy shares the child's Taffy node, so the parent
@@ -815,7 +805,7 @@ fn test_decorated_box_in_pipeline() {
 /// in `vexo/src/passthrough_integration.rs:63` but going through the
 /// full pipeline (widget → element → render object).
 ///
-/// Note: we use `width_percent(1.0)` on the parent Flex + window size
+/// Note: we use `width_percent(1.0)` on the parent MultiChild + window size
 /// 300×200 instead of `.width(300.0)`, because `Layouter::layout()`
 /// calls `engine.set_root_size()` which overrides the root's size to
 /// 100%×100% (see `vexo/src/layout/taffy_engine.rs:175-188`).
@@ -829,18 +819,15 @@ fn test_decorated_box_width_propagates_to_child() {
     // The Container is the "child" whose width we read back. If DecoratedBox
     // were NOT a true pass-through, the Container would size to its intrinsic
     // width (0) instead of stretching to the parent's width.
-    let child = crate::Flex::column()
-        .layout(Layout::default().height(40.0))
-        .boxed();
-    let widget = crate::Flex::column()
-        .layout(
-            Layout::default()
-                .flex_direction(FlexDirection::Column)
-                .align(AlignItems::Stretch)
-                .width_percent(1.0),
-        )
-        .push(DecoratedBox::new(child).background(Color::RED))
-        .boxed();
+    let child = MultiChild::empty(Layout::default().height(40.0)).boxed();
+    let widget = MultiChild::new(
+        children![DecoratedBox::new(child).background(Color::RED)],
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0),
+    )
+    .boxed();
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(widget);
@@ -849,7 +836,7 @@ fn test_decorated_box_width_propagates_to_child() {
     let mut font_system = create_test_font_system();
     pipeline.layout(Size::new(300.0, 200.0), &mut engine, &mut font_system);
 
-    // Render tree: Flex(column, width=300) → DecoratedBox → Flex(column, height=40)
+    // Render tree: MultiChild(column, width=300) → DecoratedBox → MultiChild(column, height=40)
     let root_ro = pipeline
         .render_objects()
         .root()
@@ -870,20 +857,20 @@ fn test_decorated_box_width_propagates_to_child() {
         "DecoratedBox render object must be pass-through"
     );
 
-    // DecoratedBox's child is the inner Flex RO.
+    // DecoratedBox's child is the inner MultiChild RO.
     let inner_flex_ro = decorated_box_obj.children()[0];
     let inner_flex_obj = pipeline
         .render_objects()
         .get(inner_flex_ro)
-        .expect("inner Flex render object should exist");
+        .expect("inner MultiChild render object should exist");
     let inner_bounds = inner_flex_obj
         .computed_bounds()
-        .expect("inner Flex should have computed bounds after layout");
+        .expect("inner MultiChild should have computed bounds after layout");
 
-    // The inner Flex has no explicit width, but the parent Column has
+    // The inner MultiChild has no explicit width, but the parent Column has
     // align: Stretch and width_percent=1.0 (resolves to 300px at window
     // width 300). With a true pass-through proxy in between, the stretch
-    // propagates to the inner Flex and it fills the 300px width.
+    // propagates to the inner MultiChild and it fills the 300px width.
     assert_eq!(
         inner_bounds.width(),
         300.0,
