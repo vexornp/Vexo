@@ -665,6 +665,20 @@ impl Layout {
             .align(AlignItems::Stretch)
     }
 
+    /// Create a Stack layout: column + stretch + fills parent + `min_height: 0`.
+    ///
+    /// `min_height(0.0)` allows the stack to shrink below its content's
+    /// min-content when the parent is shorter, matching CSS block layout
+    /// semantics where `min-height: auto` is `0`.
+    pub fn stack() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0)
+            .height_percent(1.0)
+            .min_height(0.0)
+    }
+
     /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
     /// propagating min-content upward.
     ///
@@ -1462,5 +1476,15 @@ mod tests {
         assert_eq!(layout.flex_direction, Some(FlexDirection::Row));
         assert_eq!(layout.align_items, Some(AlignItems::Stretch));
         assert!(layout.gap.is_none());
+    }
+
+    #[test]
+    fn test_layout_stack_constructor() {
+        let layout = Layout::stack();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        assert_eq!(layout.width, Some(Dimension::Percent(1.0)));
+        assert_eq!(layout.height, Some(Dimension::Percent(1.0)));
+        assert_eq!(layout.min_height, Some(Dimension::Length(0.0)));
     }
 }
