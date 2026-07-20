@@ -36,7 +36,7 @@ use super::UpdateResult;
 
 // Public API - leaf and container widgets
 pub use super::{GlobalKey, Key};
-pub use container::{ChildPush, Column, Flex, Row};
+pub use container::ChildPush;
 pub use grid::Grid;
 pub use image::Image;
 pub use multi_child::MultiChild;
