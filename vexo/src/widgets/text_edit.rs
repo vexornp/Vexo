@@ -1014,10 +1014,10 @@ mod tests {
         let controller = TextEditingController::new("Hello", &mut fs);
         let text_edit = TextEdit::new(controller.clone());
 
-        // Put TextEdit inside a Flex::column(), like the real app does
-        let column = crate::Flex::column()
-            .push(crate::Text::new("Title"))
-            .push(text_edit);
+        let column = crate::MultiChild::new(
+            crate::children![crate::Text::new("Title"), text_edit],
+            crate::Layout::column(),
+        );
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.reconcile(Box::new(column));
@@ -1031,8 +1031,7 @@ mod tests {
         // Find the TextEdit's StatefulElement by walking the tree
         let root = pipeline.element_registry().root().unwrap();
         let children = pipeline.element_registry().children(root).to_vec();
-        // Flex has 2 children: Text and TextEdit
-        assert_eq!(children.len(), 2, "Flex should have 2 children");
+        assert_eq!(children.len(), 2, "column should have 2 children");
         let text_edit_element_id = children[1]; // TextEdit is the second child
 
         // Click inside the TextEdit area (below the title text)
@@ -1056,7 +1055,7 @@ mod tests {
         let focused = pipeline.focused_element();
         assert!(
             focused.is_some(),
-            "TextEdit should be focused after clicking inside it (when inside a Flex::column())"
+            "TextEdit should be focused after clicking inside it (when inside a column)"
         );
         assert_eq!(
             focused,
