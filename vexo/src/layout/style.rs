@@ -570,6 +570,19 @@ impl Layout {
     }
 
     // ========================================================================
+    // Display Builders
+    // ========================================================================
+
+    /// Set the display mode (block, flex, grid, none).
+    ///
+    /// Default is `Display::Block`. Set to `Display::Flex` for flexbox layout,
+    /// `Display::Grid` for CSS Grid layout.
+    pub fn display(mut self, value: Display) -> Self {
+        self.display = Some(value);
+        self
+    }
+
+    // ========================================================================
     // Sizing Builders
     // ========================================================================
 
@@ -1403,5 +1416,14 @@ mod tests {
         assert!(layout.flex_shrink.is_none());
         assert!(layout.align_self.is_none());
         assert!(layout.position.is_none());
+    }
+
+    #[test]
+    fn test_layout_display_setter() {
+        let layout = Layout::default().display(Display::Grid);
+        assert_eq!(layout.display, Some(Display::Grid));
+
+        let layout = Layout::default().display(Display::Flex);
+        assert_eq!(layout.display, Some(Display::Flex));
     }
 }
