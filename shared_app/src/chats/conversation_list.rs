@@ -62,8 +62,7 @@ fn build_conversation_row(
     };
 
     let avatar_with_badge = Stack::new()
-        .width(40.0)
-        .height(40.0)
+        .with_layout(Layout::stack().width(40.0).height(40.0))
         .push(avatar)
         .push(badge)
         .boxed();

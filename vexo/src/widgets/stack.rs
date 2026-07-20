@@ -32,10 +32,6 @@ use super::super::render_objects::ContainerRenderObject;
 use super::super::{RenderObject, UpdateResult};
 use super::container::ChildPush;
 use super::{Element, Widget};
-#[allow(unused_imports)]
-use crate::core::Color;
-use crate::layout_builder_methods;
-use crate::style::Style;
 
 /// Default layout for a Stack: relative positioning context, fills parent, column direction.
 ///
@@ -65,7 +61,6 @@ pub struct Stack {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,
     layout: Layout,
-    style: Style,
 }
 
 impl Stack {
@@ -75,7 +70,6 @@ impl Stack {
             key: None,
             children: Vec::new(),
             layout: stack_layout(),
-            style: Style::default(),
         }
     }
 
@@ -93,33 +87,9 @@ impl Stack {
         self
     }
 
-    /// Override the layout properties.
-    pub fn layout(mut self, layout: Layout) -> Self {
+    /// Replace the layout.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
-        self
-    }
-}
-
-impl Stack {
-    layout_builder_methods!();
-
-    pub fn background(mut self, color: Color) -> Self {
-        self.style = self.style.background(color);
-        self
-    }
-
-    pub fn border(mut self, color: Color, width: f32) -> Self {
-        self.style = self.style.border(color, width);
-        self
-    }
-
-    pub fn corner_radius(mut self, radius: f32) -> Self {
-        self.style = self.style.corner_radius(radius);
-        self
-    }
-
-    pub fn clip(mut self) -> Self {
-        self.style = self.style.clip();
         self
     }
 }
@@ -136,7 +106,6 @@ impl Clone for Stack {
             key: self.key.clone(),
             children: self.children.iter().map(|c| c.clone_boxed()).collect(),
             layout: self.layout.clone(),
-            style: self.style.clone(),
         }
     }
 }
@@ -153,10 +122,7 @@ impl Widget for Stack {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ContainerRenderObject::new_with_style(
-            self.layout.clone(),
-            self.style.clone(),
-        ))
+        Box::new(ContainerRenderObject::new(self.layout.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -172,12 +138,8 @@ impl Widget for Stack {
             .as_any_mut()
             .downcast_mut::<ContainerRenderObject>()
         {
-            let layout_changed = container_ro.set_layout(self.layout.clone());
-            let style_changed = container_ro.set_style(self.style.clone());
-            if layout_changed {
+            if container_ro.set_layout(self.layout.clone()) {
                 UpdateResult::LAYOUT
-            } else if style_changed {
-                UpdateResult::PAINT
             } else {
                 UpdateResult::NONE
             }
@@ -223,11 +185,5 @@ mod tests {
     fn test_stack_with_key() {
         let s = Stack::new().with_key("my-stack");
         assert_eq!(s.key(), Some(WidgetKey::Local(crate::Key::new("my-stack"))));
-    }
-
-    #[test]
-    fn test_stack_background() {
-        let s = Stack::new().background(Color::RED);
-        assert_eq!(s.style.background, Some(Color::RED));
     }
 }
