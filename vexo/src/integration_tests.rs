@@ -15,18 +15,20 @@ fn test_full_reconciliation_flow() {
     let dirty = DirtyTracking::new();
 
     // 2. Mount initial widget tree
-    let root_widget: Flex = Flex::column()
-        .push(Text::new("First"))
-        .push(Text::new("Second"));
+    let root_widget = MultiChild::new(
+        children![Text::new("First"), Text::new("Second")],
+        Layout::column(),
+    );
 
     let root_element = element_registry.insert(root_widget.create_element(), None);
 
     assert_eq!(element_registry.len(), 1);
 
     // 3. Reconcile with updated tree
-    let _new_widget: Flex = Flex::column()
-        .push(Text::new("First Updated"))
-        .push(Text::new("Second"));
+    let _new_widget = MultiChild::new(
+        children![Text::new("First Updated"), Text::new("Second")],
+        Layout::column(),
+    );
 
     // This would call reconcile_children in a full implementation
     // For now, just verify the infrastructure works
@@ -72,8 +74,8 @@ fn test_key_preserves_identity() {
 mod full_pipeline_tests {
     use crate::animation::AnimationTicker;
     use crate::core::{Position, Size};
-    use crate::layout::TaffyLayoutEngine;
-    use crate::{Flex, Text, ThreeTreePipeline};
+    use crate::layout::{Layout, TaffyLayoutEngine};
+    use crate::{children, MultiChild, Text, ThreeTreePipeline};
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -193,9 +195,9 @@ mod full_pipeline_tests {
         pipeline.reconcile(Box::new(Text::new("Text content")));
         let root_after_first = pipeline.element_registry().root();
 
-        // Second frame with Flex::row() (different type)
+        // Second frame with MultiChild(Layout::row()) (different type)
         // This would cause a remount since the types don't match
-        pipeline.reconcile(Box::new(Flex::row()));
+        pipeline.reconcile(Box::new(MultiChild::empty(Layout::row())));
 
         // Root element should be different after remount
         // Note: Current implementation unmounts and remounts for different types
@@ -449,7 +451,7 @@ mod global_key_tests {
     use crate::layout::TaffyLayoutEngine;
     use crate::render_objects::ScrollViewRenderObject;
     use crate::Color;
-    use crate::Flex;
+    use crate::MultiChild;
     use crate::ScrollView;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -465,11 +467,17 @@ mod global_key_tests {
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
-        // ScrollView(width=200, height=300) > Column > Text items with .padding(16).background(color)
-        let mut column = Flex::column().gap(0.0);
+        // ScrollView(width=200, height=300) > MultiChild(column) > Text items with .padding(16).background(color)
+        let mut column = MultiChild::empty(Layout::column().gap(0.0));
         for i in 0..5 {
             let label = format!("Item {}", i + 1);
-            column = column.push(Text::new(&label).padding(16.0).background(Color::WHITE));
+            column = column.push(
+                DecoratedBox::new(WithLayout::new(
+                    Text::new(&label),
+                    Layout::default().padding(16.0),
+                ))
+                .background(Color::WHITE),
+            );
         }
 
         let scroll_view = WithLayout::new(
