@@ -164,6 +164,15 @@ impl<A: Application + 'static> WindowState<A> {
             WindowEvent::RedrawRequested => {
                 if let Err(err) = self.render() {
                     eprintln!("Error drawing window: {err}");
+                    // On transient surface errors (Occluded at startup,
+                    // Timeout, Outdated), request another frame to retry.
+                    // The first RedrawRequested often fires while the window
+                    // is still occluded — without this retry, the window
+                    // stays dark gray until the next external event triggers
+                    // a redraw.
+                    if err.starts_with("Surface transient") {
+                        self.request_frame();
+                    }
                 }
             }
             WindowEvent::CloseRequested => {

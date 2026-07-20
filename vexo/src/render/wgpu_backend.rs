@@ -767,7 +767,32 @@ impl WgpuBackend {
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
-            other => return Err(RenderError::AcquireFailed(format!("{:?}", other))),
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                // Texture acquired successfully, but the surface config is
+                // suboptimal (e.g. after a resize). Render this frame; the
+                // next SurfaceResized event will reconfigure.
+                frame
+            }
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                // Window not fully on screen yet (common at startup).
+                // Caller should retry next frame.
+                return Err(RenderError::SurfaceTransient("Occluded".to_string()));
+            }
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                return Err(RenderError::SurfaceTransient("Timeout".to_string()));
+            }
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                // Surface config is stale — reconfigure and let the next
+                // frame retry. SurfaceResized normally handles this, but
+                // race conditions are possible.
+                return Err(RenderError::SurfaceTransient("Outdated".to_string()));
+            }
+            wgpu::CurrentSurfaceTexture::Lost => {
+                return Err(RenderError::AcquireFailed("Lost".to_string()));
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err(RenderError::AcquireFailed("Validation".to_string()));
+            }
         };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
