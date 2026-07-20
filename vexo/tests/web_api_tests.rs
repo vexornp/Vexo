@@ -3,8 +3,8 @@
 //! These tests ensure that the new names, macros, and trait implementations
 //! work correctly.
 
-use vexo::*;
 use vexo::reactive::Signal;
+use vexo::*;
 
 // --- Signal tests ---
 
@@ -24,24 +24,23 @@ fn signal_set_triggers_callback() {
     assert_eq!(s.get(), 5);
 }
 
-// --- Column/Row tests ---
+// --- MultiChild column/row tests ---
 
 #[test]
-fn column_new_returns_flex() {
-    let col = Column::new();
+fn multi_child_empty_column_has_no_children() {
+    let col = MultiChild::empty(Layout::column());
     assert_eq!(col.children().len(), 0);
 }
 
 #[test]
-fn row_new_returns_flex() {
-    let row = Row::new();
+fn multi_child_empty_row_has_no_children() {
+    let row = MultiChild::empty(Layout::row());
     assert_eq!(row.children().len(), 0);
 }
 
 #[test]
-fn column_with_children() {
-    let col = Column::new()
-        .gap(16.0)
+fn multi_child_column_with_children() {
+    let col = MultiChild::empty(Layout::column().gap(16.0))
         .push(Text::new("A"))
         .push(Text::new("B"));
     assert_eq!(col.children().len(), 2);
@@ -51,22 +50,20 @@ fn column_with_children() {
 
 #[test]
 fn children_macro_basic() {
-    let col = vexo::children![Column::new(),
-        Text::new("A"),
-        Text::new("B"),
-    ];
+    let col = MultiChild::new(
+        vexo::children![Text::new("A"), Text::new("B")],
+        Layout::column(),
+    );
     assert_eq!(col.children().len(), 2);
 }
 
 #[test]
 fn children_macro_nested() {
-    let col = vexo::children![Column::new(),
-        Text::new("Title"),
-        vexo::children![Row::new(),
-            Text::new("A"),
-            Text::new("B"),
-        ],
-    ];
+    let inner = MultiChild::new(
+        vexo::children![Text::new("A"), Text::new("B")],
+        Layout::row(),
+    );
+    let col = MultiChild::new(vexo::children![Text::new("Title"), inner], Layout::column());
     assert_eq!(col.children().len(), 2);
 }
 
@@ -121,7 +118,9 @@ struct TestComponentState {
 
 impl Default for TestComponentState {
     fn default() -> Self {
-        Self { value: Signal::new(0) }
+        Self {
+            value: Signal::new(0),
+        }
     }
 }
 
@@ -141,25 +140,20 @@ fn component_trait_works() {
     let _widget: Box<dyn Widget> = comp.clone_boxed();
 }
 
-// --- Column/Row alias tests ---
+// --- MultiChild direction tests ---
 
 #[test]
-fn column_new_produces_column_flex_direction() {
-    // Column::new() should return a Flex with column direction.
-    // We verify by checking that the children count and push work
-    // (the direction is an internal layout detail, but the API contract
-    // is that Column::new() == Flex::column()).
-    let col = Column::new();
+fn multi_child_column_has_column_flex_direction() {
+    let col = MultiChild::empty(Layout::column());
     assert_eq!(col.children().len(), 0);
-    // Flex::column() is the canonical way, Column::new() should behave identically
-    let direct = Flex::column();
+    let direct = MultiChild::empty(Layout::column());
     assert_eq!(col.children().len(), direct.children().len());
 }
 
 #[test]
-fn row_new_produces_row_flex_direction() {
-    let row = Row::new();
-    let direct = Flex::row();
+fn multi_child_row_has_row_flex_direction() {
+    let row = MultiChild::empty(Layout::row());
+    let direct = MultiChild::empty(Layout::row());
     assert_eq!(row.children().len(), direct.children().len());
 }
 
@@ -187,10 +181,7 @@ fn widget_boxed_returns_box_dyn_widget() {
 
 #[test]
 fn widget_with_layout_modifier() {
-    let widget = Text::new("Padded")
-        .padding(8.0)
-        .width(100.0)
-        .height(50.0);
+    let widget = Text::new("Padded").padding(8.0).width(100.0).height(50.0);
     // These return Box<dyn Widget> wrapping WithLayout, so just verify
     // they compile and produce a valid widget.
     let _ = widget.clone_boxed();
