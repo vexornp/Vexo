@@ -37,7 +37,7 @@ fn column_layout() -> Layout {
         .width_percent(1.0)
 }
 
-/// Build a tree: Flex::column → Opacity → (child RO provided).
+/// Build a tree: MultiChild(column) → Opacity → (child RO provided).
 /// Returns (root_key, opacity_key, child_key).
 fn build_opacity_tree(
     registry: &mut RenderObjectRegistry,
@@ -91,7 +91,7 @@ fn test_passthrough_opacity_child_receives_grandparent_width() {
         .expect("child should have computed bounds");
 
     // Without Opacity in the way, the child (width unset, stretch) would fill
-    // the Flex's width (300). With pass-through Opacity, the child should STILL
+    // the parent MultiChild's width (300). With pass-through Opacity, the child should STILL
     // receive 300 — the grandparent links the grandchild directly.
     assert_eq!(
         child_bounds.width(),
@@ -403,8 +403,8 @@ fn test_nav_transition_text_does_not_wrap() {
     let mut dirty = DirtyTracking::new();
 
     // Tree (outgoing page only, for simplicity):
-    //   Flex::column (root, fills 375 width)
-    //   ├── nav_bar (Flex::row, width 140, flex_shrink 0)
+    //   MultiChild(column) (root, fills 375 width)
+    //   ├── nav_bar (MultiChild(row), width 140, flex_shrink 0)
     //   └── Stack
     //       └── Positioned(L=R=T=B=0)
     //           └── Opacity(0.5)            ← pass-through
