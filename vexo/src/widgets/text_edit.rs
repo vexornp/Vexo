@@ -595,15 +595,22 @@ impl Component for TextEdit {
 
         let border_width = if is_focused { 2.0 } else { 1.0 };
 
-        super::TextEditContent::new(self.controller.text(), self.controller.editor())
+        let content = super::TextEditContent::new(self.controller.text(), self.controller.editor())
             .with_font_size(self.controller.font_size())
             .with_focused(is_focused)
-            .with_cursor_blink_visible(false)
-            .background(crate::core::Color::WHITE)
-            .border(border_color, border_width)
-            .corner_radius(4.0)
-            .padding(8.0)
+            .with_cursor_blink_visible(false);
+
+        let styled = crate::DecoratedBox::with_style(
+            crate::WithLayout::new(content, crate::Layout::default().padding(8.0)),
+            crate::Style::default()
+                .background(crate::core::Color::WHITE)
+                .border(border_color, border_width)
+                .corner_radius(4.0),
+        );
+
+        crate::widgets::MouseRegion::new(styled)
             .cursor(MouseCursor::System(SystemCursorKind::Text))
+            .boxed()
     }
 
     /// Return the key set via `with_key()`. Without this override, the
@@ -846,8 +853,8 @@ mod tests {
 
         // Should have elements in the tree
         assert!(pipeline.element_registry().root().is_some());
-        // StatefulElement + MouseRegion + TextEditContent = 3 elements
-        assert_eq!(pipeline.element_registry().len(), 3);
+        // StatefulElement + MouseRegion + DecoratedBox + WithLayout + TextEditContent = 5 elements
+        assert_eq!(pipeline.element_registry().len(), 5);
     }
 
     #[test]
