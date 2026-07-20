@@ -671,7 +671,7 @@ fn test_grid_widget() {
                 .grid_column(GridPlacement::start(2))
                 .grid_row(GridPlacement::start(2)),
         ))
-        .layout(
+        .with_layout(
             Layout::default()
                 .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])
                 .rows(vec![TrackSizing::Auto, TrackSizing::Auto])
