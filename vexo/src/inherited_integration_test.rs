@@ -18,9 +18,10 @@ mod tests {
 
     use crate::animation::AnimationTicker;
     use crate::core::Color;
+    use crate::layout::Layout;
     use crate::stateful_widget::RenderContext;
-    use crate::widgets::{Flex, Text, Theme, ThemeData};
-    use crate::{Component, ComponentState, ThreeTreePipeline, Widget};
+    use crate::widgets::{MultiChild, Text, Theme, ThemeData};
+    use crate::{children, Component, ComponentState, ThreeTreePipeline, Widget};
 
     /// Per-test capture slot. The reader `Component` writes the `ThemeData`
     /// it observed via `Theme::of(ctx)` here during `render()`.
@@ -203,28 +204,28 @@ mod tests {
     //
     // This is the test that would have caught the InheritedMap propagation
     // bug: only `InheritedElement::mount` wrote to `inherited_map_storage`,
-    // so a non-provider parent (like `Flex`) left no map for its children.
+    // so a non-provider parent (like `MultiChild`) left no map for its children.
     // The reader then got an empty map and `Theme::of` fell back to light().
     //
     // After the fix, every element stores its computed map at mount, so the
-    // reader sees the dark theme through the intermediate `Flex`.
+    // reader sees the dark theme through the intermediate `MultiChild`.
 
     #[test]
     fn theme_propagates_through_intermediate_container() {
         let slot = new_slot();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-        // Theme(dark) → Flex → ThemeReader
+        // Theme(dark) → MultiChild(row) → ThemeReader
         let tree = Theme::new(
             ThemeData::dark(),
-            Flex::new().push(ThemeReader { slot: slot.clone() }),
+            MultiChild::new(children![ThemeReader { slot: slot.clone() }], Layout::row()),
         );
         pipeline.reconcile(Box::new(tree));
 
         assert_eq!(
             slot.lock().unwrap().clone(),
             Some(ThemeData::dark()),
-            "ThemeReader nested under a non-provider Flex should still see the dark Theme \
+            "ThemeReader nested under a non-provider MultiChild should still see the dark Theme \
              from its grandparent — InheritedMap must propagate through intermediate containers"
         );
     }
@@ -235,7 +236,7 @@ mod tests {
     // ========================================================================
 
     /// App that holds the OUTER theme data and wraps the reader in
-    /// `Theme(outer) → Flex → Theme(light, inner) → ThemeReader`. The inner
+    /// `Theme(outer) → MultiChild(row) → Theme(light, inner) → ThemeReader`. The inner
     /// theme is constant so the reader always depends on `light()`.
     #[derive(Clone)]
     struct OuterThemeApp {
@@ -258,12 +259,15 @@ mod tests {
         ) -> Box<dyn Widget> {
             Box::new(Theme::new(
                 self.outer.clone(),
-                Flex::new().push(Theme::new(
-                    ThemeData::light(),
-                    ThemeReader {
-                        slot: self.slot.clone(),
-                    },
-                )),
+                MultiChild::new(
+                    children![Theme::new(
+                        ThemeData::light(),
+                        ThemeReader {
+                            slot: self.slot.clone(),
+                        },
+                    )],
+                    Layout::row(),
+                ),
             ))
         }
     }
