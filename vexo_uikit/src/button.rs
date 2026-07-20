@@ -252,8 +252,7 @@ impl Component for Button {
         // All decoration on the DecoratedBox. The WithLayout inside sets
         // padding + flex_shrink(0.0) so the container sizes to its content
         // (text intrinsic width + padding).
-        // Note: layout_builder_methods!()'s padding_each takes (left, right, top, bottom),
-        // unlike modifier_methods!()'s (top, right, bottom, left) on Text.
+        // Note: Layout::padding_each takes (left, right, top, bottom) argument order.
         let inner = WithLayout::new(
             text,
             Layout::default()
