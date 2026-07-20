@@ -4,9 +4,9 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    AlignSelf, BoxShadow, Color, Column, Component, ComponentState, DecoratedBox, Flex,
-    FlexDirection, Layout, LifecycleContext, RenderContext, Row, ScrollController, ScrollView,
-    Text, TextEdit, TextEditingController, Theme, Widget, WithLayout,
+    children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
+    Layout, LifecycleContext, MultiChild, RenderContext, ScrollController, ScrollView, Style, Text,
+    TextEdit, TextEditingController, Theme, Widget, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, NavigationController};
 
@@ -77,7 +77,7 @@ impl Component for ChatScreen {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
-        let mut list = Flex::column().gap(8.0).padding(12.0);
+        let mut list = MultiChild::empty(Layout::column().gap(8.0).padding(12.0));
         for msg in &self.messages {
             list = list.push(build_message_bubble(
                 msg,
@@ -106,15 +106,21 @@ impl Component for ChatScreen {
 
         let input_bar = build_input_bar(tc, on_send_closure);
 
-        Column::new()
-            .flex_fill()
-            .push(WithLayout::new(
-                ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
-                Layout::flex_fill(),
-            ))
-            .push(input_bar)
-            .background(theme.background)
-            .boxed()
+        DecoratedBox::new(MultiChild::new(
+            children![
+                WithLayout::new(
+                    ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
+                    Layout::flex_fill(),
+                ),
+                input_bar,
+            ],
+            Layout::column()
+                .flex_grow(1.0)
+                .flex_basis(0.0)
+                .min_height(0.0),
+        ))
+        .style(Style::default().background(theme.background))
+        .boxed()
     }
 }
 
@@ -138,31 +144,40 @@ fn build_message_bubble(
             .align_self(AlignSelf::Start)
             .flex_shrink(0.0),
     ))
-    .corner_radius(12.0)
-    .background(if msg.author == MessageAuthor::Me {
-        Color::rgb(0.0, 0.5, 1.0)
-    } else {
-        Color::WHITE
-    })
-    .border(Color::rgb(0.85, 0.85, 0.85), 1.0)
+    .style(
+        Style::default()
+            .corner_radius(12.0)
+            .background(if msg.author == MessageAuthor::Me {
+                Color::rgb(0.0, 0.5, 1.0)
+            } else {
+                Color::WHITE
+            })
+            .border(Color::rgb(0.85, 0.85, 0.85), 1.0),
+    )
     .boxed();
 
     if msg.author == MessageAuthor::Me {
         let me_avatar = avatar(me_avatar_bytes, 32.0);
-        Row::new()
-            .gap(8.0)
-            .push(Flex::new().flex_grow(1.0))
-            .push(bubble)
-            .push(me_avatar)
-            .boxed()
+        MultiChild::new(
+            children![
+                MultiChild::empty(Layout::default().flex_grow(1.0)),
+                bubble,
+                me_avatar,
+            ],
+            Layout::row().gap(8.0),
+        )
+        .boxed()
     } else {
         let them_avatar = avatar(them_avatar_bytes, 32.0);
-        Row::new()
-            .gap(8.0)
-            .push(them_avatar)
-            .push(bubble)
-            .push(Flex::new().flex_grow(1.0))
-            .boxed()
+        MultiChild::new(
+            children![
+                them_avatar,
+                bubble,
+                MultiChild::empty(Layout::default().flex_grow(1.0)),
+            ],
+            Layout::row().gap(8.0),
+        )
+        .boxed()
     }
 }
 
@@ -171,13 +186,9 @@ fn build_input_bar(
     on_send: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
     WithLayout::new(
-        Row::new()
-            .gap(8.0)
-            .push(WithLayout::new(
-                TextEdit::new(controller),
-                Layout::default().flex_grow(1.0),
-            ))
-            .push(
+        MultiChild::new(
+            children![
+                WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
                 Button::new("Send")
                     .variant(ButtonVariant::Primary)
                     .shadow(
@@ -186,8 +197,9 @@ fn build_input_bar(
                             .offset(0.0, 2.0),
                     )
                     .on_tap(on_send),
-            )
-            .boxed(),
+            ],
+            Layout::row().gap(8.0),
+        ),
         Layout::default().padding(8.0),
     )
     .boxed()
@@ -258,7 +270,7 @@ mod tests {
             scroll_controller: ScrollController::new(),
         };
 
-        let view = vexo::Column::new().height(600.0).push(chat).boxed();
+        let view = MultiChild::new(children![chat], Layout::column().height(600.0)).boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
@@ -282,7 +294,11 @@ mod tests {
         }
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
-        let chat_col = find_child(ro_reg, proxy, 0).expect("chat column");
+        // Chat screen root is now `DecoratedBox(MultiChild(...))` — the
+        // background lives on the DecoratedBox wrapper, the column layout
+        // on the inner MultiChild. Navigate through both layers.
+        let chat_decorated = find_child(ro_reg, proxy, 0).expect("chat decorated root");
+        let chat_col = find_child(ro_reg, chat_decorated, 0).expect("chat column");
         let input_wrapper = find_child(ro_reg, chat_col, 1).expect("input bar wrapper");
         let input_bounds = ro_reg
             .get(input_wrapper)
