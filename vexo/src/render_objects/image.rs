@@ -5,6 +5,17 @@ use crate::layout::{Dimension, Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
 
+/// RenderObject for image display.
+///
+/// This render object handles layout and hit testing for image content.
+/// Image rendering is handled by the GPU pipeline via `RenderCommand::Image`.
+///
+/// # Image Registration
+///
+/// On first paint, the render object signals that it needs image registration
+/// via `needs_image_registration()`. The pipeline calls `register_images()`
+/// which uploads the pixel data to the GPU atlas and calls `set_image_key()`
+/// with the resulting key. Subsequent paint calls use this key.
 pub struct ImageRenderObject {
     image_data: ImageData,
     image_key: Option<ImageKey>,
