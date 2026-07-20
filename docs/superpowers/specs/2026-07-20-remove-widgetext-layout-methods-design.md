@@ -1,8 +1,23 @@
 # Remove Widget Trait Layout Methods — Design
 
 **Date:** 2026-07-20
-**Status:** Approved (section-by-section)
+**Status:** Superseded by the "Pure WithLayout-Only" model (see
+`docs/superpowers/plans/2026-07-20-pure-withlayout-model.md`)
 **Scope:** `vexo`, `shared_app`, `vexo_uikit` crates
+
+> **Note (2026-07-21):** This design has been superseded. The migration went
+> further than removing `Widget` trait layout methods — it eliminated
+> `Flex`/`Column`/`Row` types, the `column!`/`row!`/`grid!` macros, and the
+> `layout_builder_methods!`/`modifier_methods!`/`modifier_fields!` macros.
+> The framework now uses only:
+> - `WithLayout::new(child, layout)` for single-child layout
+> - `MultiChild::new(children, layout)` for multi-child layout
+> - `DecoratedBox::with_style(child, style)` for decoration
+> - `Layout::column()` / `Layout::row()` / `Layout::stack()` / `Layout::grid()`
+>   constructors for the common layouts
+> - `children![...]` macro to build `Vec<Box<dyn Widget>>`
+>
+> See the plan linked above for the full migration history.
 
 ## Motivation
 
