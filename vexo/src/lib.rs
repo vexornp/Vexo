@@ -206,7 +206,7 @@ pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
     Column, DecoratedBox, FadeTransition, Flex, FractionalTranslation,
-    GestureDetector, Grid, Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea,
+    GestureDetector, Grid, Image, IndexedStack, MultiChild, Offstage, Opacity, Positioned, Row, SafeArea,
     SafeAreaClaim, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text,
     TextEdit, TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget,
     WithLayout,
