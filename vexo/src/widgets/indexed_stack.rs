@@ -31,8 +31,6 @@ use super::super::layout::{
 use super::super::render_objects::IndexedStackRenderObject;
 use super::super::{RenderObject, UpdateResult};
 use super::{Element, Offstage, Widget};
-use crate::layout_builder_methods;
-use crate::style::Style;
 
 /// Default layout for an IndexedStack: fills parent, column direction, stretched.
 ///
@@ -66,7 +64,6 @@ pub struct IndexedStack {
     children: Vec<Box<dyn Widget>>,
     index: usize,
     layout: Layout,
-    style: Style,
 }
 
 impl IndexedStack {
@@ -77,13 +74,18 @@ impl IndexedStack {
             children: Vec::new(),
             index,
             layout: indexed_stack_layout(),
-            style: Style::default(),
         }
     }
 
     /// Set the widget key.
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Replace the layout.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -105,30 +107,6 @@ impl IndexedStack {
     }
 }
 
-impl IndexedStack {
-    layout_builder_methods!();
-
-    pub fn background(mut self, color: crate::core::Color) -> Self {
-        self.style = self.style.background(color);
-        self
-    }
-
-    pub fn border(mut self, color: crate::core::Color, width: f32) -> Self {
-        self.style = self.style.border(color, width);
-        self
-    }
-
-    pub fn corner_radius(mut self, radius: f32) -> Self {
-        self.style = self.style.corner_radius(radius);
-        self
-    }
-
-    pub fn clip(mut self) -> Self {
-        self.style = self.style.clip();
-        self
-    }
-}
-
 impl Default for IndexedStack {
     fn default() -> Self {
         Self::new(0)
@@ -142,7 +120,6 @@ impl Clone for IndexedStack {
             children: self.children.iter().map(|c| c.clone_boxed()).collect(),
             index: self.index,
             layout: self.layout.clone(),
-            style: self.style.clone(),
         }
     }
 }
@@ -159,10 +136,9 @@ impl Widget for IndexedStack {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(IndexedStackRenderObject::new_with_style(
+        Box::new(IndexedStackRenderObject::new(
             self.index,
             self.layout.clone(),
-            self.style.clone(),
         ))
     }
 
@@ -181,11 +157,8 @@ impl Widget for IndexedStack {
         {
             let index_changed = ro.set_index(self.index);
             let layout_changed = ro.set_layout(self.layout.clone());
-            let style_changed = ro.set_style(self.style.clone());
             if index_changed || layout_changed {
                 UpdateResult::LAYOUT
-            } else if style_changed {
-                UpdateResult::PAINT
             } else {
                 UpdateResult::NONE
             }

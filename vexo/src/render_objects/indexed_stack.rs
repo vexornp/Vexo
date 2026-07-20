@@ -7,10 +7,9 @@
 
 use std::any::Any;
 
-use crate::core::{Absolute, Bounds, Color, Logical, Point, Position};
+use crate::core::{Absolute, Bounds, Logical, Point, Position};
 use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
-use crate::style::Style;
 use crate::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey,
 };
@@ -19,22 +18,16 @@ pub struct IndexedStackRenderObject {
     children: Vec<RenderObjectKey>,
     index: usize,
     layout: Layout,
-    style: Style,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeKey>,
 }
 
 impl IndexedStackRenderObject {
-    pub fn new(index: usize) -> Self {
-        Self::new_with_style(index, indexed_stack_layout(), Style::default())
-    }
-
-    pub fn new_with_style(index: usize, layout: Layout, style: Style) -> Self {
+    pub fn new(index: usize, layout: Layout) -> Self {
         Self {
             children: Vec::new(),
             index,
             layout,
-            style,
             computed_bounds: None,
             layout_node: None,
         }
@@ -58,28 +51,9 @@ impl IndexedStackRenderObject {
         }
     }
 
-    pub fn set_style(&mut self, style: Style) -> bool {
-        if self.style != style {
-            self.style = style;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn index(&self) -> usize {
         self.index
     }
-}
-
-fn indexed_stack_layout() -> Layout {
-    use crate::layout::{AlignItems, FlexDirection};
-    Layout::default()
-        .flex_direction(FlexDirection::Column)
-        .align(AlignItems::Stretch)
-        .width_percent(1.0)
-        .height_percent(1.0)
-        .min_height(0.0)
 }
 
 impl RenderObject for IndexedStackRenderObject {
@@ -117,44 +91,9 @@ impl RenderObject for IndexedStackRenderObject {
         }
     }
 
-    fn paint(&self, ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        let bounds = match &self.computed_bounds {
-            Some(b) => b,
-            None => return vec![],
-        };
-
-        let mut commands = Vec::new();
-        let pos: Position<Logical, Absolute> = ctx.absolute_position();
-
-        let absolute_bounds = Bounds::new(
-            pos.x,
-            pos.y,
-            pos.x + bounds.width(),
-            pos.y + bounds.height(),
-        );
-
-        if let Some(ref cr) = self.style.corner_radius {
-            commands.push(RenderCommand::PushCornerRadius { radius: cr.radius });
-        }
-
-        if let Some(bg_color) = self.style.background {
-            commands.push(RenderCommand::rect(absolute_bounds, bg_color));
-        }
-
-        if let Some(ref border) = self.style.border {
-            commands.push(RenderCommand::rect_with_border(
-                absolute_bounds,
-                Color::TRANSPARENT,
-                border.color,
-                border.width,
-            ));
-        }
-
-        if self.style.corner_radius.is_some() {
-            commands.push(RenderCommand::PopCornerRadius);
-        }
-
-        commands
+    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+        // No intrinsic decoration — surround with DecoratedBox for visuals.
+        vec![]
     }
 
     fn hit_test(&self, position: Point<Logical>, _ctx: &HitTestContext) -> bool {
@@ -199,14 +138,6 @@ impl RenderObject for IndexedStackRenderObject {
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
     }
-
-    fn clip_bounds(&self) -> Option<Bounds<Logical>> {
-        if self.style.clip {
-            self.computed_bounds
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]
@@ -223,14 +154,14 @@ mod tests {
 
     #[test]
     fn test_indexed_stack_ro_creation() {
-        let ro = IndexedStackRenderObject::new(0);
+        let ro = IndexedStackRenderObject::new(0, Layout::default());
         assert_eq!(ro.index(), 0);
         assert!(ro.layout_node().is_none());
     }
 
     #[test]
     fn test_indexed_stack_ro_set_index() {
-        let mut ro = IndexedStackRenderObject::new(0);
+        let mut ro = IndexedStackRenderObject::new(0, Layout::default());
         assert!(ro.set_index(2));
         assert_eq!(ro.index(), 2);
         assert!(!ro.set_index(2));
@@ -238,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_indexed_stack_ro_layout_filters_to_visible_child() {
-        let mut ro = IndexedStackRenderObject::new(1);
+        let mut ro = IndexedStackRenderObject::new(1, Layout::default());
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -277,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_indexed_stack_ro_layout_index_out_of_bounds_links_nothing() {
-        let mut ro = IndexedStackRenderObject::new(5);
+        let mut ro = IndexedStackRenderObject::new(5, Layout::default());
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -300,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_indexed_stack_ro_index_change_relays_children() {
-        let mut ro = IndexedStackRenderObject::new(0);
+        let mut ro = IndexedStackRenderObject::new(0, Layout::default());
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
@@ -338,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_indexed_stack_ro_apply_layout_reads_bounds() {
-        let mut ro = IndexedStackRenderObject::new(0);
+        let mut ro = IndexedStackRenderObject::new(0, Layout::stack());
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = create_test_font_system();
 
