@@ -646,6 +646,25 @@ impl Layout {
         Self::default().flex_grow(1.0)
     }
 
+    /// Create a column flex layout: `flex_direction: Column` + `align_items: Stretch`.
+    ///
+    /// This is the Vexo equivalent of CSS `display: flex; flex-direction: column`.
+    /// Children stretch to fill the cross-axis (width) by default.
+    pub fn column() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+    }
+
+    /// Create a row flex layout: `flex_direction: Row` + `align_items: Stretch`.
+    ///
+    /// This is the Vexo equivalent of CSS `display: flex; flex-direction: row`.
+    pub fn row() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Row)
+            .align(AlignItems::Stretch)
+    }
+
     /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
     /// propagating min-content upward.
     ///
@@ -1425,5 +1444,23 @@ mod tests {
 
         let layout = Layout::default().display(Display::Flex);
         assert_eq!(layout.display, Some(Display::Flex));
+    }
+
+    #[test]
+    fn test_layout_column_constructor() {
+        let layout = Layout::column();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        // Other fields stay at default
+        assert!(layout.gap.is_none());
+        assert!(layout.padding.is_none());
+    }
+
+    #[test]
+    fn test_layout_row_constructor() {
+        let layout = Layout::row();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Row));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        assert!(layout.gap.is_none());
     }
 }
