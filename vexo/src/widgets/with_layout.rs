@@ -11,12 +11,7 @@ use crate::core::{Bounds, Logical, Size};
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
-#[allow(unused_imports)]
-use crate::layout::{
-    AlignContent, AlignItems, AlignSelf, Dimension, EdgeInsets, FlexDirection, FlexWrap, Inset,
-    JustifyContent, Layout, LayoutNodeKey, Overflow, Position,
-};
-use crate::layout_builder_methods;
+use crate::layout::{AlignItems, FlexDirection, Layout};
 use crate::render_objects::ContainerRenderObject;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
@@ -287,10 +282,6 @@ impl WithLayout {
     }
 }
 
-impl WithLayout {
-    layout_builder_methods!();
-}
-
 impl Clone for WithLayout {
     fn clone(&self) -> Self {
         Self {
@@ -347,7 +338,7 @@ impl Widget for WithLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{AlignItems, FlexDirection};
+    use crate::layout::{AlignItems, AlignSelf, FlexDirection};
     use crate::{GlobalKey, Key, Text};
 
     #[test]
@@ -468,8 +459,8 @@ mod tests {
 
     #[test]
     fn test_with_layout_gap_preserves_padding() {
-        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0)).gap(4.0);
-        assert!(w.layout.padding.is_some());
-        assert!(w.layout.gap.is_some());
+        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0).gap(4.0));
+        assert!(w.layout_ref().padding.is_some());
+        assert!(w.layout_ref().gap.is_some());
     }
 }
