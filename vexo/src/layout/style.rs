@@ -633,6 +633,16 @@ impl Layout {
         Self::default().flex_grow(1.0)
     }
 
+    /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
+    /// propagating min-content upward.
+    ///
+    /// Convenience for `Layout::default().flex_grow(1.0).flex_basis(0.0).min_height(0.0)`.
+    /// Use this for scrollable content areas that should fill the remaining
+    /// space in a flex column without pushing siblings off screen.
+    pub fn flex_fill() -> Self {
+        Self::default().flex_grow(1.0).flex_basis(0.0).min_height(0.0)
+    }
+
     /// Create a layout with fixed dimensions.
     pub fn fixed(width: f32, height: f32) -> Self {
         Self::default().width(width).height(height)
@@ -1377,5 +1387,21 @@ mod tests {
         assert!(layout.grid_auto_columns.is_some());
         let cols = layout.grid_auto_columns.unwrap();
         assert_eq!(cols.len(), 2);
+    }
+
+    #[test]
+    fn test_layout_flex_fill_constructor() {
+        let layout = Layout::flex_fill();
+        assert_eq!(layout.flex_grow, Some(1.0));
+        assert_eq!(layout.flex_basis, Some(Dimension::Length(0.0)));
+        assert_eq!(layout.min_height, Some(Dimension::Length(0.0)));
+        // All other fields stay at default (None)
+        assert!(layout.padding.is_none());
+        assert!(layout.margin.is_none());
+        assert!(layout.width.is_none());
+        assert!(layout.height.is_none());
+        assert!(layout.flex_shrink.is_none());
+        assert!(layout.align_self.is_none());
+        assert!(layout.position.is_none());
     }
 }
