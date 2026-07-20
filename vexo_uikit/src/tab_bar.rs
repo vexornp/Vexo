@@ -201,12 +201,14 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // would vanish on Retina. Sits above the `SafeArea`-wrapped bar so it
         // spans the full width edge-to-edge. See `HAIRLINE_THICKNESS`.
         let nav = tokens::navigation::colors(&Theme::of(ctx));
-        let hairline = DecoratedBox::new(MultiChild::empty(
-            Layout::row()
-                .height(tokens::navigation::HAIRLINE_THICKNESS)
-                .flex_shrink(0.0),
-        ))
-        .style(Style::default().background(nav.divider));
+        let hairline = DecoratedBox::with_style(
+            MultiChild::empty(
+                Layout::row()
+                    .height(tokens::navigation::HAIRLINE_THICKNESS)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.divider),
+        );
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
         MultiChild::new(

@@ -1,6 +1,7 @@
 //! Integration tests for the retain-mode system.
 
 use super::*;
+use crate::style::Style;
 
 fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
     std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
@@ -471,13 +472,10 @@ mod global_key_tests {
         let mut column = MultiChild::empty(Layout::column().gap(0.0));
         for i in 0..5 {
             let label = format!("Item {}", i + 1);
-            column = column.push(
-                DecoratedBox::new(WithLayout::new(
-                    Text::new(&label),
-                    Layout::default().padding(16.0),
-                ))
-                .background(Color::WHITE),
-            );
+            column = column.push(DecoratedBox::with_style(
+                WithLayout::new(Text::new(&label), Layout::default().padding(16.0)),
+                Style::default().background(Color::WHITE),
+            ));
         }
 
         let scroll_view = WithLayout::new(

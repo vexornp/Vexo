@@ -271,7 +271,7 @@ impl Component for Button {
             style = style.shadows(self.shadows.clone());
         }
 
-        let container = DecoratedBox::new(inner).style(style);
+        let container = DecoratedBox::with_style(inner, style);
 
         WithLayout::new(
             container

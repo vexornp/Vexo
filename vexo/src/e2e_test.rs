@@ -7,7 +7,7 @@ use crate::layout::{
 };
 use crate::render::RenderCommand;
 use crate::widgets::{DecoratedBox, Transform, WithLayout};
-use crate::{children, Grid, MultiChild, Text, ThreeTreePipeline, Widget};
+use crate::{children, Grid, MultiChild, Style, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -135,13 +135,13 @@ fn test_decorated_composition_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree: DecoratedBox(WithLayout(Text))
-    let container = DecoratedBox::new(WithLayout::new(Text::new("Hello"), Layout::default()))
-        .style(
-            crate::Style::new()
-                .background(Color::RED)
-                .border(Color::BLACK, 2.0)
-                .corner_radius(8.0),
-        );
+    let container = DecoratedBox::with_style(
+        WithLayout::new(Text::new("Hello"), Layout::default()),
+        crate::Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0),
+    );
 
     // Create pipeline and reconcile
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -233,11 +233,13 @@ fn test_translate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Shifted"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Shifted"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
 
     let widget = Transform::translate(child, 50.0, 30.0);
 
@@ -315,11 +317,13 @@ fn test_rotate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Rotated"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rotated"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let widget = Transform::rotate(child, angle);
@@ -389,11 +393,13 @@ fn test_scale_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Scaled"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::GREEN);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Scaled"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::GREEN),
+    );
 
     let widget = Transform::scale(child, 2.0, 3.0);
 
@@ -538,12 +544,13 @@ fn test_rotate_transform_with_rounded_rect() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Rounded"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE)
-    .corner_radius(12.0);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rounded"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE).corner_radius(12.0),
+    );
 
     let widget = Transform::rotate(child, 0.3);
 
@@ -704,10 +711,13 @@ fn test_decorated_box_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree: DecoratedBox wrapping a Text.
-    let widget = DecoratedBox::new(Text::new("Hello"))
-        .background(Color::RED)
-        .border(Color::BLACK, 2.0)
-        .corner_radius(8.0);
+    let widget = DecoratedBox::with_style(
+        Text::new("Hello"),
+        Style::default()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0),
+    );
 
     // Create pipeline and reconcile.
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -821,7 +831,10 @@ fn test_decorated_box_width_propagates_to_child() {
     // width (0) instead of stretching to the parent's width.
     let child = MultiChild::empty(Layout::default().height(40.0)).boxed();
     let widget = MultiChild::new(
-        children![DecoratedBox::new(child).background(Color::RED)],
+        children![DecoratedBox::with_style(
+            child,
+            Style::default().background(Color::RED)
+        )],
         Layout::default()
             .flex_direction(FlexDirection::Column)
             .align(AlignItems::Stretch)

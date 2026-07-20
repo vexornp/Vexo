@@ -16,8 +16,10 @@
 //! ```ignore
 //! // Tap pattern (press = click)
 //! GestureDetector::new(Box::new(
-//!     DecoratedBox::new(Box::new(Text::new("Click Me")))
-//!         .background(Color::BLUE).corner_radius(4.0)
+//!     DecoratedBox::with_style(
+//!         Box::new(Text::new("Click Me")),
+//!         Style::default().background(Color::BLUE).corner_radius(4.0),
+//!     )
 //! ))
 //! .on_press(|| { log::info!("Clicked!"); })
 //!

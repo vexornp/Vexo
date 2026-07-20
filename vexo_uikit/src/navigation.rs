@@ -736,11 +736,13 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // The composition is `DecoratedBox(WithLayout(content_stack))` with
         // `width_percent(1.0).height_percent(1.0)` so it fills the SafeArea
         // exactly — otherwise the content overflows past the tab bar.
-        let clipped: Box<dyn Widget> = DecoratedBox::new(WithLayout::new(
-            content_stack,
-            Layout::default().width_percent(1.0).height_percent(1.0),
-        ))
-        .style(Style::default().clip())
+        let clipped: Box<dyn Widget> = DecoratedBox::with_style(
+            WithLayout::new(
+                content_stack,
+                Layout::default().width_percent(1.0).height_percent(1.0),
+            ),
+            Style::default().clip(),
+        )
         .boxed();
 
         // The nav bar handles the top safe-area inset itself (background
@@ -845,26 +847,30 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             ));
 
         // Outer bar: background edge-to-edge, height includes top inset.
-        let bar_row = DecoratedBox::new(MultiChild::new(
-            children![leading, title_text, trailing],
-            Layout::row()
-                .align(AlignItems::Center)
-                .padding_each(0.0, 0.0, safe.top, 0.0)
-                .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
-                .flex_shrink(0.0),
-        ))
-        .style(Style::default().background(nav.mobile_header_bg));
+        let bar_row = DecoratedBox::with_style(
+            MultiChild::new(
+                children![leading, title_text, trailing],
+                Layout::row()
+                    .align(AlignItems::Center)
+                    .padding_each(0.0, 0.0, safe.top, 0.0)
+                    .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.mobile_header_bg),
+        );
 
         // SwiftUI-style hairline along the bar's bottom edge. 1 logical pixel
         // (Taffy floors sub-pixel heights to 0, so a true 1-physical-px
         // `1/scale` height would vanish on Retina). 1 logical px renders as 1
         // physical px at 1× and 2 at 2× — matching macOS `Divider`.
-        let hairline = DecoratedBox::new(MultiChild::empty(
-            Layout::row()
-                .height(tokens::navigation::HAIRLINE_THICKNESS)
-                .flex_shrink(0.0),
-        ))
-        .style(Style::default().background(nav.divider));
+        let hairline = DecoratedBox::with_style(
+            MultiChild::empty(
+                Layout::row()
+                    .height(tokens::navigation::HAIRLINE_THICKNESS)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.divider),
+        );
 
         // Wrap bar + hairline in a fixed-height column so the outer
         // NavigationStackView column keeps a single nav-bar child; the

@@ -8,6 +8,7 @@ mod tests {
     use crate::input::{ButtonState, InputEvent, PointerButton};
     use crate::layout::{Layout, TaffyLayoutEngine};
     use crate::reactive::Signal;
+    use crate::style::Style;
     use crate::widgets::{DecoratedBox, GestureDetector, WithLayout};
     use crate::{
         children, Component, ComponentState, MultiChild, RenderContext, Text, ThreeTreePipeline,
@@ -261,13 +262,13 @@ mod tests {
                 Box::new(MultiChild::new(
                     children![
                         Text::new(format!("Count: {}", count)),
-                        GestureDetector::new(
-                            DecoratedBox::new(WithLayout::new(
+                        GestureDetector::new(DecoratedBox::with_style(
+                            WithLayout::new(
                                 Text::new("Click Me"),
                                 crate::layout::Layout::default(),
-                            ))
-                            .corner_radius(4.0),
-                        )
+                            ),
+                            Style::default().corner_radius(4.0),
+                        ))
                         .on_press(move || {
                             count_clone.set(count_clone.get() + 1);
                             click_count.fetch_add(1, Ordering::SeqCst);

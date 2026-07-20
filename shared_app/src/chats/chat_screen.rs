@@ -106,20 +106,22 @@ impl Component for ChatScreen {
 
         let input_bar = build_input_bar(tc, on_send_closure);
 
-        DecoratedBox::new(MultiChild::new(
-            children![
-                WithLayout::new(
-                    ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
-                    Layout::flex_fill(),
-                ),
-                input_bar,
-            ],
-            Layout::column()
-                .flex_grow(1.0)
-                .flex_basis(0.0)
-                .min_height(0.0),
-        ))
-        .style(Style::default().background(theme.background))
+        DecoratedBox::with_style(
+            MultiChild::new(
+                children![
+                    WithLayout::new(
+                        ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
+                        Layout::flex_fill(),
+                    ),
+                    input_bar,
+                ],
+                Layout::column()
+                    .flex_grow(1.0)
+                    .flex_basis(0.0)
+                    .min_height(0.0),
+            ),
+            Style::default().background(theme.background),
+        )
         .boxed()
     }
 }
@@ -129,22 +131,22 @@ fn build_message_bubble(
     them_avatar_bytes: &Rc<[u8]>,
     me_avatar_bytes: &Rc<[u8]>,
 ) -> Box<dyn Widget> {
-    let bubble = DecoratedBox::new(WithLayout::new(
-        Text::new(msg.text.as_str())
-            .with_font_size(15.0)
-            .with_color(if msg.author == MessageAuthor::Me {
-                Color::WHITE
-            } else {
-                Color::BLACK
-            }),
-        Layout::default()
-            .flex_direction(FlexDirection::Row)
-            .padding(10.0)
-            .max_width(220.0)
-            .align_self(AlignSelf::Start)
-            .flex_shrink(0.0),
-    ))
-    .style(
+    let bubble = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new(msg.text.as_str())
+                .with_font_size(15.0)
+                .with_color(if msg.author == MessageAuthor::Me {
+                    Color::WHITE
+                } else {
+                    Color::BLACK
+                }),
+            Layout::default()
+                .flex_direction(FlexDirection::Row)
+                .padding(10.0)
+                .max_width(220.0)
+                .align_self(AlignSelf::Start)
+                .flex_shrink(0.0),
+        ),
         Style::default()
             .corner_radius(12.0)
             .background(if msg.author == MessageAuthor::Me {
