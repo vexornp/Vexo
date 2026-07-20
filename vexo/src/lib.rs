@@ -205,10 +205,11 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Column, DecoratedContainer, FadeTransition, Flex, FractionalTranslation, GestureDetector, Grid,
-    Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea, SafeAreaClaim,
-    ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit,
-    TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
+    Column, DecoratedBox, DecoratedContainer, FadeTransition, Flex, FractionalTranslation,
+    GestureDetector, Grid, Image, IndexedStack, Offstage, Opacity, Positioned, Row, SafeArea,
+    SafeAreaClaim, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text,
+    TextEdit, TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget,
+    WithLayout,
 };
 
 extern crate alloc;

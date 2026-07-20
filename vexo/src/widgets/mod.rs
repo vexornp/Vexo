@@ -4,6 +4,7 @@
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
 mod container;
+mod decorated_box;
 mod decorated_container;
 mod fractional_translation;
 pub mod gesture_detector;
@@ -49,6 +50,7 @@ pub use theme::{Theme, ThemeData};
 use crate::core::Color;
 use crate::input::MouseCursor;
 use crate::layout::Layout;
+pub use decorated_box::DecoratedBox;
 pub use decorated_container::DecoratedContainer;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
@@ -193,34 +195,36 @@ pub trait Widget: Any {
         Box::new(self)
     }
 
-    // Decoration modifiers (fallback: wrap in DecoratedContainer)
+    // Decoration modifiers (wrap in DecoratedBox — pass-through, no layout
+    // opinion. Use .with_layout(Layout::default().padding(...)) or
+    // DecoratedContainer directly if you need layout alongside decoration.)
 
     fn background(self, color: Color) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
     {
-        Box::new(DecoratedContainer::new(self).background(color))
+        Box::new(DecoratedBox::new(self).background(color))
     }
 
     fn border(self, color: Color, width: f32) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
     {
-        Box::new(DecoratedContainer::new(self).border(color, width))
+        Box::new(DecoratedBox::new(self).border(color, width))
     }
 
     fn corner_radius(self, radius: f32) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
     {
-        Box::new(DecoratedContainer::new(self).corner_radius(radius))
+        Box::new(DecoratedBox::new(self).corner_radius(radius))
     }
 
     fn clip(self) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
     {
-        Box::new(DecoratedContainer::new(self).clip())
+        Box::new(DecoratedBox::new(self).clip())
     }
 
     // Layout modifiers (fallback: wrap in WithLayout)
@@ -617,5 +621,52 @@ mod tests {
     fn test_widget_trait_boxed() {
         let widget = Text::new("Hello").boxed();
         assert!(widget.as_any().downcast_ref::<Text>().is_some());
+    }
+
+    #[test]
+    fn test_widget_ext_background_wraps_in_decorated_box() {
+        // `Text` has an inherent `.background()`, so to trigger WidgetExt
+        // (which fires on `Box<dyn Widget>` / `Self: Sized + 'static` only
+        // when no inherent method matches), we box the Text first. The
+        // outer `.background()` then resolves to WidgetExt.
+        let widget: Box<dyn Widget> = Text::new("x").boxed().background(Color::RED);
+        let outer = widget
+            .as_any()
+            .downcast_ref::<DecoratedBox>()
+            .expect("WidgetExt::background should wrap in DecoratedBox, not DecoratedContainer");
+        assert_eq!(outer.style_ref().background, Some(Color::RED));
+    }
+
+    #[test]
+    fn test_widget_ext_clip_wraps_in_decorated_box() {
+        let widget: Box<dyn Widget> = Text::new("x").boxed().clip();
+        let outer = widget
+            .as_any()
+            .downcast_ref::<DecoratedBox>()
+            .expect("WidgetExt::clip should wrap in DecoratedBox");
+        assert!(outer.style_ref().clip);
+    }
+
+    #[test]
+    fn test_widget_ext_border_wraps_in_decorated_box() {
+        let widget: Box<dyn Widget> = Text::new("x").boxed().border(Color::BLACK, 2.0);
+        let outer = widget
+            .as_any()
+            .downcast_ref::<DecoratedBox>()
+            .expect("WidgetExt::border should wrap in DecoratedBox");
+        assert_eq!(outer.style_ref().border.as_ref().unwrap().width, 2.0);
+    }
+
+    #[test]
+    fn test_widget_ext_corner_radius_wraps_in_decorated_box() {
+        let widget: Box<dyn Widget> = Text::new("x").boxed().corner_radius(8.0);
+        let outer = widget
+            .as_any()
+            .downcast_ref::<DecoratedBox>()
+            .expect("WidgetExt::corner_radius should wrap in DecoratedBox");
+        assert_eq!(
+            outer.style_ref().corner_radius.as_ref().unwrap().radius,
+            8.0
+        );
     }
 }
