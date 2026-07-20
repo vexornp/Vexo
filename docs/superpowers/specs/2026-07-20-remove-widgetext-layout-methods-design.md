@@ -169,19 +169,20 @@ both resolve to `Flex`'s inherent `flex_fill()` via
 | `vexo/src/focus/integration_tests.rs:804` | `ScrollView::new(column).width(200.0).height(100.0)` | `WithLayout::new(ScrollView::new(column), Layout::default().width(200.0).height(100.0))` |
 | `shared_app/src/chats/chat_screen.rs:176` | `TextEdit::new(controller).flex_grow(1.0)` | `WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0))` |
 
-### Group C: `.with_layout(Layout)` call sites (12 sites)
+### Group C: `.with_layout(Layout)` call sites that resolve to the trait default (9 sites)
+
+These are call sites where the receiver is `Text` (no inherent `with_layout`) or `Box<dyn Widget>` — they resolve to the trait default and must migrate.
+
+Note: `GestureDetector` has an **inherent** `with_layout` at `gesture_detector.rs:103` that sets `self.layout` directly (no wrapping). Call sites like `GestureDetector::new(content).on_press(...).with_layout(layout)` (`tab_bar.rs:175`) and the test sites at `gesture_detector.rs:748, 769` resolve to the inherent method and are **not migrated** — they're already safe.
 
 | File:line | Before | After |
 |---|---|---|
-| `vexo_uikit/src/tab_bar.rs:175` | `GestureDetector::new(content).on_press(...).with_layout(Layout::default()...)` | `WithLayout::new(GestureDetector::new(content).on_press(...), Layout::default()...)` |
 | `vexo_uikit/src/tab_bar.rs:197` | `bar.with_layout(Layout::default()...)` (`bar: Box<dyn Widget>`) | `WithLayout::new(bar, Layout::default()...)` |
 | `vexo/src/widgets/with_layout.rs:447` (test) | `Text::new("Hello").with_layout(Layout::default().padding(10.0))` | `WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0))` |
 | `vexo/src/e2e_test.rs:611` | `Text::new("Left").with_layout(Layout::default().flex_grow(1.0))` | `WithLayout::new(Text::new("Left"), Layout::default().flex_grow(1.0))` |
 | `vexo/src/e2e_test.rs:612` | `Text::new("Center").with_layout(Layout::default().width(100.0))` | `WithLayout::new(Text::new("Center"), Layout::default().width(100.0))` |
 | `vexo/src/e2e_test.rs:613` | `Text::new("Right").with_layout(Layout::default().flex_grow(2.0))` | `WithLayout::new(Text::new("Right"), Layout::default().flex_grow(2.0))` |
 | `vexo/src/e2e_test.rs:645, 652, 659, 666` (4 sites) | `Text::new(...).with_layout(...)` | `WithLayout::new(Text::new(...), ...)` |
-| `vexo/src/widgets/gesture_detector.rs:748` (test) | `GestureDetector::new(Text::new("Slot")).with_layout(layout.clone())` | `WithLayout::new(GestureDetector::new(Text::new("Slot")), layout.clone())` |
-| `vexo/src/widgets/gesture_detector.rs:769` (test) | `GestureDetector::new(Text::new("Clone Me")).with_layout(layout)` | `WithLayout::new(GestureDetector::new(Text::new("Clone Me")), layout)` |
 
 ### Out-of-scope call sites (no migration)
 
@@ -192,6 +193,12 @@ both resolve to `Flex`'s inherent `flex_fill()` via
   Left unchanged.
 - `vexo/src/render_objects/text.rs:543` and
   `vexo/src/render_objects/text_edit.rs:753` — same, render objects.
+- `vexo_uikit/src/tab_bar.rs:175` — `GestureDetector::new(content)
+  .on_press(...).with_layout(...)`. `GestureDetector` has an inherent
+  `with_layout` (`gesture_detector.rs:103`) that sets `self.layout`
+  directly. No wrapping, no footgun. Left unchanged.
+- `vexo/src/widgets/gesture_detector.rs:748, 769` (test sites) — same,
+  resolve to `GestureDetector`'s inherent `with_layout`. Left unchanged.
 
 ### Migration strategy
 
@@ -227,12 +234,11 @@ implicitly. After removal:
 ### Migration edge cases
 
 1. **`GestureDetector::new(content).on_press(...).with_layout(layout)`**
-   (`tab_bar.rs:175`) — `on_press` returns `Box<dyn Widget>`.
-   `.with_layout()` is currently the only way to apply layout to a
-   `Box<dyn Widget>` receiver. After migration:
-   `WithLayout::new(GestureDetector::new(content).on_press(...), layout)`.
-   The `WithLayout` wraps the boxed `GestureDetector`. No semantic change
-   — same wrapper node, same layout, just constructed explicitly.
+   (`tab_bar.rs:175`) — `GestureDetector` has an **inherent** `with_layout`
+   at `gesture_detector.rs:103` that sets `self.layout` directly (no
+   wrapping). `on_press` returns `Self` (not `Box<dyn Widget>`), so the
+   chain resolves to the inherent method. **No migration needed** — already
+   safe.
 
 2. **`bar.with_layout(...)`** where `bar: Box<dyn Widget>`
    (`tab_bar.rs:197`) — same pattern. `WithLayout::new(bar, layout)`
@@ -376,7 +382,6 @@ agent does not run the GUI itself.
 | `vexo/src/layout/style.rs` | **ADD** `Layout::flex_fill()` constructor with the doc text currently on the trait method (CSS `flex: 1 1 0` + `min-height: 0` explanation). **ADD** `test_layout_flex_fill_constructor` unit test. |
 | `vexo/src/widgets/with_layout.rs` | **UPDATE** doc example at lines 233–247 to use `WithLayout::new(...)` form instead of `Text::new(...).with_layout(...)`. **DELETE** `test_with_layout_method_on_widget` test at lines 446–449 (tests removed method). **ADD** `test_with_layout_doc_example_compiles` test. |
 | `vexo/src/e2e_test.rs` | **MIGRATE** 7 `.with_layout()` call sites (lines 611, 612, 613, 645, 652, 659, 666) to `WithLayout::new(...)` form. |
-| `vexo/src/widgets/gesture_detector.rs` | **MIGRATE** 2 test call sites (lines 748, 769) — `GestureDetector::new(...).with_layout(...)` → `WithLayout::new(GestureDetector::new(...), ...)`. |
 | `vexo/src/integration_tests.rs` | **MIGRATE** line 475 — `ScrollView::new(...).width(200.0).height(300.0)` → `WithLayout::new(ScrollView::new(...), Layout::default().width(200.0).height(300.0))`. |
 | `vexo/src/focus/integration_tests.rs` | **MIGRATE** line 804 — `ScrollView::new(...).width(200.0).height(100.0)` → `WithLayout::new(...)` form. |
 | `vexo/src/widgets/safe_area.rs` | **MIGRATE** line 1414 (test) — `SafeArea::new(Text::new("Hi")).flex_fill()` → `WithLayout::new(SafeArea::new(Text::new("Hi")), Layout::flex_fill())`. |
@@ -384,16 +389,18 @@ agent does not run the GUI itself.
 | `shared_app/src/chats/chat_screen.rs` | **MIGRATE** line 114 — `ScrollView::new(...).flex_fill()` → `WithLayout::new(...)` form. **MIGRATE** line 176 — `TextEdit::new(controller).flex_grow(1.0)` → `WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0))`. |
 | `shared_app/src/contacts/contacts_screen.rs` | **MIGRATE** line 13 — `ScrollView::new(...).flex_fill().boxed()` → `WithLayout::new(...)` form. |
 | `vexo_uikit/src/navigation.rs` | **MIGRATE** line 748 — `SafeArea::new(clipped).top(false).flex_fill()` → `WithLayout::new(SafeArea::new(clipped).top(false), Layout::flex_fill())`. |
-| `vexo_uikit/src/tab_bar.rs` | **MIGRATE** line 175 — `GestureDetector::new(content).on_press(...).with_layout(...)` → `WithLayout::new(GestureDetector::new(content).on_press(...), ...)`. **MIGRATE** line 197 — `bar.with_layout(...)` → `WithLayout::new(bar, ...)`. **MIGRATE** line 224 — `SafeAreaClaim::bottom(stack).flex_fill()` → `WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill())`. |
+| `vexo_uikit/src/tab_bar.rs` | **MIGRATE** line 197 — `bar.with_layout(...)` → `WithLayout::new(bar, ...)`. **MIGRATE** line 224 — `SafeAreaClaim::bottom(stack).flex_fill()` → `WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill())`. (Line 175 `GestureDetector.with_layout(...)` is NOT migrated — uses inherent method.) |
 
-**Total: 13 files edited, ~21 call sites migrated, 9 methods removed, 1
+**Total: 11 files edited, ~18 call sites migrated, 9 methods removed, 1
 constructor + 2 tests added, 1 test deleted.**
 
 ## Resolved Decisions
 
 1. **Fate of `.with_layout(Layout)`** → Remove it too. Maximum symmetry
-   with `DecoratedBox::new(...)`. The 9 `.with_layout()` call sites
-   migrate to `WithLayout::new(...)` form.
+   with `DecoratedBox::new(...)`. The 9 `.with_layout()` call sites that
+   resolve to the trait default migrate to `WithLayout::new(...)` form.
+   (Call sites that resolve to `GestureDetector`'s inherent `with_layout`
+   are already safe and unchanged.)
 2. **`Layout::flex_fill()` constructor** → Add it. The `flex_fill`
    preset (CSS `flex: 1 1 0` + `min-height: 0`) is a meaningful concept
    that deserves a named home on `Layout`. Call sites stay readable:
