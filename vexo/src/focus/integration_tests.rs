@@ -10,7 +10,7 @@ use crate::animation::AnimationTicker;
 use crate::core::{Point, ScaleSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
 use crate::layout::{Layout, TaffyLayoutEngine};
-use crate::{Flex, Focus, Text, ThreeTreePipeline, WithLayout};
+use crate::{children, Focus, MultiChild, Text, ThreeTreePipeline, WithLayout};
 
 fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
     std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
@@ -184,12 +184,11 @@ fn test_set_focus_creates_node_on_demand() {
 fn test_multiple_focus_requests_last_wins() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Reconcile a Flex::column() with two Text children
-    pipeline.reconcile(Box::new(
-        Flex::column()
-            .push(Text::new("First"))
-            .push(Text::new("Second")),
-    ));
+    // Reconcile a MultiChild(column) with two Text children
+    pipeline.reconcile(Box::new(MultiChild::new(
+        children![Text::new("First"), Text::new("Second")],
+        Layout::column(),
+    )));
 
     // Get the root element
     let root = pipeline.element_registry().root().unwrap();
@@ -258,16 +257,17 @@ fn test_focus_wrapper_inflates_child() {
 fn test_mount_creates_focus_node_for_every_element() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() + 2 Texts = 3 application focus nodes
-    let widget = Flex::column()
-        .push(Text::new("first"))
-        .push(Text::new("second"));
+    // MultiChild(column) + 2 Texts = 3 application focus nodes
+    let widget = MultiChild::new(
+        children![Text::new("first"), Text::new("second")],
+        Layout::column(),
+    );
     pipeline.reconcile(Box::new(widget));
 
     assert_eq!(
         pipeline.focus_manager().app_node_count(),
         3,
-        "Expected 3 focus nodes (Flex::column() + 2 Texts)"
+        "Expected 3 focus nodes (MultiChild(column) + 2 Texts)"
     );
 }
 
@@ -276,11 +276,11 @@ fn test_mount_creates_focus_node_for_every_element() {
 fn test_unmount_removes_all_focus_nodes() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
+    let widget = MultiChild::new(children![Text::new("a"), Text::new("b")], Layout::column());
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
-    // Reconcile a leaf widget — the old Flex::column() subtree is unmounted
+    // Reconcile a leaf widget — the old MultiChild(column) subtree is unmounted
     pipeline.reconcile(Box::new(Text::new("replacement")));
 
     assert!(
@@ -294,12 +294,12 @@ fn test_unmount_removes_all_focus_nodes() {
 fn test_rebuild_replaces_focus_nodes() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() [ Text("old") ]
-    let widget = Flex::column().push(Text::new("old"));
+    // MultiChild(column) [ Text("old") ]
+    let widget = MultiChild::new(children![Text::new("old")], Layout::column());
     pipeline.reconcile(Box::new(widget));
 
-    // Flex::column() [ Text("new") ]
-    let updated = Flex::column().push(Text::new("new"));
+    // MultiChild(column) [ Text("new") ]
+    let updated = MultiChild::new(children![Text::new("new")], Layout::column());
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -314,13 +314,13 @@ fn test_rebuild_replaces_focus_nodes() {
 fn test_rebuild_adds_focus_node_for_new_child() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() [ Text("a") ]
-    let widget = Flex::column().push(Text::new("a"));
+    // MultiChild(column) [ Text("a") ]
+    let widget = MultiChild::new(children![Text::new("a")], Layout::column());
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 2);
 
-    // Flex::column() [ Text("a"), Text("b") ]
-    let updated = Flex::column().push(Text::new("a")).push(Text::new("b"));
+    // MultiChild(column) [ Text("a"), Text("b") ]
+    let updated = MultiChild::new(children![Text::new("a"), Text::new("b")], Layout::column());
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -335,13 +335,13 @@ fn test_rebuild_adds_focus_node_for_new_child() {
 fn test_rebuild_removes_focus_node_for_removed_child() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() [ Text("a"), Text("b") ]
-    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
+    // MultiChild(column) [ Text("a"), Text("b") ]
+    let widget = MultiChild::new(children![Text::new("a"), Text::new("b")], Layout::column());
     pipeline.reconcile(Box::new(widget));
     assert_eq!(pipeline.focus_manager().app_node_count(), 3);
 
-    // Flex::column() [ Text("a") ]
-    let updated = Flex::column().push(Text::new("a"));
+    // MultiChild(column) [ Text("a") ]
+    let updated = MultiChild::new(children![Text::new("a")], Layout::column());
     pipeline.update(Box::new(updated));
 
     assert_eq!(
@@ -356,27 +356,27 @@ fn test_rebuild_removes_focus_node_for_removed_child() {
 fn test_focus_tree_mirrors_element_tree_structure() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() [ Text("a"), Text("b") ]
-    let widget = Flex::column().push(Text::new("a")).push(Text::new("b"));
+    // MultiChild(column) [ Text("a"), Text("b") ]
+    let widget = MultiChild::new(children![Text::new("a"), Text::new("b")], Layout::column());
     pipeline.reconcile(Box::new(widget));
 
     let fm = pipeline.focus_manager();
 
-    // Root should have one child (Flex)
+    // Root should have one child (MultiChild)
     let root_node = fm.get(fm.root_scope()).unwrap();
     assert_eq!(
         root_node.children.len(),
         1,
-        "Root should have one child (Flex)"
+        "Root should have one child (MultiChild)"
     );
 
-    // Flex's node should have 2 children (Texts)
+    // MultiChild's node should have 2 children (Texts)
     let column_id = root_node.children[0];
     let column_node = fm.get(column_id).unwrap();
     assert_eq!(
         column_node.children.len(),
         2,
-        "Flex focus node should have 2 children"
+        "MultiChild focus node should have 2 children"
     );
 }
 
@@ -385,10 +385,11 @@ fn test_focus_tree_mirrors_element_tree_structure() {
 fn test_unmount_focused_element_clears_focus() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
-    // Flex::column() [ Focus(Text("a")), Text("b") ]
-    let widget = Flex::column()
-        .push(Focus::new(Text::new("a")))
-        .push(Text::new("b"));
+    // MultiChild(column) [ Focus(Text("a")), Text("b") ]
+    let widget = MultiChild::new(
+        children![Focus::new(Text::new("a")), Text::new("b")],
+        Layout::column(),
+    );
     pipeline.reconcile(Box::new(widget));
 
     let initial_node_count = pipeline.focus_manager().app_node_count();
@@ -419,10 +420,10 @@ fn test_unmount_focused_element_clears_focus() {
     }
 
     // Rebuild with a completely different root type to force full unmount/remount.
-    // This unmounts the entire Flex::column() subtree (including the focused Focus element).
+    // This unmounts the entire MultiChild(column) subtree (including the focused Focus element).
     pipeline.reconcile(Box::new(Text::new("replacement")));
 
-    // Focus node count should decrease (Flex::column() subtree unmounted)
+    // Focus node count should decrease (MultiChild(column) subtree unmounted)
     let new_node_count = pipeline.focus_manager().app_node_count();
     assert!(
         new_node_count < initial_node_count,
@@ -507,9 +508,13 @@ fn test_repeated_reconcile_no_leaks() {
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
 
     for i in 0..5 {
-        let widget = Flex::column()
-            .push(Text::new(format!("cycle-{i}-a")))
-            .push(Text::new(format!("cycle-{i}-b")));
+        let widget = MultiChild::new(
+            children![
+                Text::new(format!("cycle-{i}-a")),
+                Text::new(format!("cycle-{i}-b")),
+            ],
+            Layout::column(),
+        );
         pipeline.reconcile(Box::new(widget));
         assert_eq!(
             pipeline.focus_manager().app_node_count(),
@@ -602,11 +607,10 @@ mod on_focus_change_tests {
         let focus_lost_clone = focus_lost.clone();
 
         let focus_widget = Focus::new(WithLayout::new(
-            ScrollView::new(
-                Flex::column()
-                    .push(Text::new("Line 1"))
-                    .push(Text::new("Line 2")),
-            ),
+            ScrollView::new(MultiChild::new(
+                children![Text::new("Line 1"), Text::new("Line 2")],
+                Layout::column(),
+            )),
             Layout::default().width(200.0).height(100.0),
         ))
         .on_focus_change(move |focused| {
@@ -708,11 +712,10 @@ mod on_focus_change_tests {
                 let is_focused_clone = state.is_focused.clone();
                 let fs = state.focus_state.clone();
                 Focus::new(WithLayout::new(
-                    ScrollView::new(
-                        Flex::column()
-                            .push(Text::new("Line 1"))
-                            .push(Text::new("Line 2")),
-                    ),
+                    ScrollView::new(MultiChild::new(
+                        children![Text::new("Line 1"), Text::new("Line 2")],
+                        Layout::column(),
+                    )),
                     Layout::default().width(200.0).height(100.0),
                 ))
                 .on_focus_change(move |focused| {
@@ -794,7 +797,7 @@ mod on_focus_change_tests {
         let focus_gained_clone = focus_gained.clone();
 
         // Create a ScrollView with many items so it can scroll
-        let mut column = Flex::column();
+        let mut column = MultiChild::empty(Layout::column());
         for i in 0..20 {
             column = column.push(Text::new(&format!("Item {}", i)));
         }
