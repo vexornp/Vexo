@@ -679,6 +679,13 @@ impl Layout {
             .min_height(0.0)
     }
 
+    /// Create a Grid layout: `display: Grid`.
+    ///
+    /// Use `.columns(...)` / `.rows(...)` to set the grid template.
+    pub fn grid() -> Self {
+        Self::default().display(Display::Grid)
+    }
+
     /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
     /// propagating min-content upward.
     ///
@@ -1486,5 +1493,14 @@ mod tests {
         assert_eq!(layout.width, Some(Dimension::Percent(1.0)));
         assert_eq!(layout.height, Some(Dimension::Percent(1.0)));
         assert_eq!(layout.min_height, Some(Dimension::Length(0.0)));
+    }
+
+    #[test]
+    fn test_layout_grid_constructor() {
+        let layout = Layout::grid();
+        assert_eq!(layout.display, Some(Display::Grid));
+        // Other fields stay at default
+        assert!(layout.gap.is_none());
+        assert!(layout.grid_template_columns.is_none());
     }
 }
