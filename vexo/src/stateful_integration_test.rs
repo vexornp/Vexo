@@ -8,8 +8,7 @@ mod tests {
     use crate::input::{ButtonState, InputEvent, PointerButton};
     use crate::layout::TaffyLayoutEngine;
     use crate::reactive::Signal;
-    use crate::widgets::{DecoratedContainer, GestureDetector};
-    use crate::Style;
+    use crate::widgets::{DecoratedBox, GestureDetector, WithLayout};
     use crate::{Component, ComponentState, Flex, RenderContext, Text, ThreeTreePipeline, Widget};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -213,9 +212,9 @@ mod tests {
     #[test]
     fn test_gesture_detector_updates_stateful_widget() {
         // This test creates a widget tree with GestureDetector wrapping a
-        // DecoratedContainer, inside a Component. When the GestureDetector
-        // fires on_press, it should update the Signal, which should
-        // trigger a rebuild that updates the text.
+        // DecoratedBox(WithLayout(Text)), inside a Component. When the
+        // GestureDetector fires on_press, it should update the Signal, which
+        // should trigger a rebuild that updates the text.
 
         let click_count = Arc::new(AtomicU32::new(0));
 
@@ -255,8 +254,11 @@ mod tests {
                         .push(Text::new(format!("Count: {}", count)))
                         .push(
                             GestureDetector::new(
-                                DecoratedContainer::new(Text::new("Click Me"))
-                                    .style(Style::new().corner_radius(4.0)),
+                                DecoratedBox::new(WithLayout::new(
+                                    Text::new("Click Me"),
+                                    crate::layout::Layout::default(),
+                                ))
+                                .corner_radius(4.0),
                             )
                             .on_press(move || {
                                 count_clone.set(count_clone.get() + 1);

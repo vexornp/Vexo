@@ -552,7 +552,7 @@ impl ComponentState for TextEditState {
 /// - TextEditState is the state (lifecycle)
 /// - TextEditingController is the controller (editing state)
 ///
-/// render() returns a DecoratedContainer wrapping a TextEditContent widget, with
+/// render() returns a DecoratedBox wrapping a TextEditContent widget, with
 /// focus-dependent border styling.
 #[derive(Clone)]
 pub struct TextEdit {
@@ -1037,7 +1037,7 @@ mod tests {
 
         // Click inside the TextEdit area (below the title text)
         // The title is roughly 29px tall, so clicking at y=30 should be
-        // inside the TextEdit's DecoratedContainer.
+        // inside the TextEdit's DecoratedBox.
         let event = InputEvent::PointerButton {
             position: Point::<Logical>::new(10.0, 30.0),
             button: PointerButton::Primary,

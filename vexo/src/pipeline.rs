@@ -682,7 +682,7 @@ impl ThreeTreePipeline {
     /// Focus-dependent styling (e.g., TextEdit's border color) is computed
     /// in Component::render() via RenderContext::is_focused(). A repaint
     /// alone doesn't help because ProxyRenderObject.paint() returns empty
-    /// commands — the visual output comes from the child DecoratedContainer
+    /// commands — the visual output comes from the child DecoratedBox
     /// which needs a new widget configuration from render().
     ///
     /// Also marks ancestor elements with `on_focus_change` callbacks for

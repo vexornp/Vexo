@@ -6,7 +6,7 @@
 //!
 //! # Architecture
 //!
-//! GestureDetector is a modifier widget (like DecoratedContainer):
+//! GestureDetector is a modifier widget (like DecoratedBox):
 //! - Wraps a single child widget
 //! - Has its own element (GestureDetectorElement) for event handling
 //! - Has a pass-through render object (invisible, delegates layout to child)
@@ -16,8 +16,8 @@
 //! ```ignore
 //! // Tap pattern (press = click)
 //! GestureDetector::new(Box::new(
-//!     DecoratedContainer::new(Box::new(Text::new("Click Me")))
-//!         .style(Style::new().background(Color::BLUE).corner_radius(4.0))
+//!     DecoratedBox::new(Box::new(Text::new("Click Me")))
+//!         .background(Color::BLUE).corner_radius(4.0)
 //! ))
 //! .on_press(|| { log::info!("Clicked!"); })
 //!

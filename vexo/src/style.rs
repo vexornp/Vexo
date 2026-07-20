@@ -50,7 +50,7 @@ impl BoxShadow {
     }
 }
 
-/// Visual decoration properties for a DecoratedContainer.
+/// Visual decoration properties for DecoratedBox (and multi-child containers like Flex/Stack/Grid).
 ///
 /// Holds all decoration properties (background, border, corner radius)
 /// in a single struct for efficient rendering. This allows multiple

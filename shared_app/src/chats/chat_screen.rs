@@ -4,9 +4,9 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    BoxShadow, Color, Column, Component, ComponentState, DecoratedContainer, Flex,
-    LifecycleContext, RenderContext, Row, ScrollController, ScrollView, Text, TextEdit,
-    TextEditingController, Theme, Widget,
+    AlignSelf, BoxShadow, Color, Column, Component, ComponentState, DecoratedBox, Flex,
+    FlexDirection, Layout, LifecycleContext, RenderContext, Row, ScrollController, ScrollView,
+    Text, TextEdit, TextEditingController, Theme, Widget, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, NavigationController};
 
@@ -124,7 +124,7 @@ fn build_message_bubble(
     them_avatar_bytes: &Rc<[u8]>,
     me_avatar_bytes: &Rc<[u8]>,
 ) -> Box<dyn Widget> {
-    let bubble = DecoratedContainer::new(
+    let bubble = DecoratedBox::new(WithLayout::new(
         Text::new(msg.text.as_str())
             .with_font_size(15.0)
             .with_color(if msg.author == MessageAuthor::Me {
@@ -132,8 +132,13 @@ fn build_message_bubble(
             } else {
                 Color::BLACK
             }),
-    )
-    .padding(10.0)
+        Layout::default()
+            .flex_direction(FlexDirection::Row)
+            .padding(10.0)
+            .max_width(220.0)
+            .align_self(AlignSelf::Start)
+            .flex_shrink(0.0),
+    ))
     .corner_radius(12.0)
     .background(if msg.author == MessageAuthor::Me {
         Color::rgb(0.0, 0.5, 1.0)
@@ -141,7 +146,6 @@ fn build_message_bubble(
         Color::WHITE
     })
     .border(Color::rgb(0.85, 0.85, 0.85), 1.0)
-    .max_width(220.0)
     .boxed();
 
     if msg.author == MessageAuthor::Me {

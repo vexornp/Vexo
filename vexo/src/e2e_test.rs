@@ -6,7 +6,7 @@ use crate::layout::{
     AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
 };
 use crate::render::RenderCommand;
-use crate::widgets::{DecoratedBox, DecoratedContainer, Transform};
+use crate::widgets::{DecoratedBox, Transform, WithLayout};
 use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
@@ -122,24 +122,25 @@ fn test_retain_pipeline_update_flow() {
     assert!(pipeline.needs_layout() || pipeline.needs_paint());
 }
 
-/// Test DecoratedContainer widget in the pipeline.
+/// Test DecoratedBox(WithLayout(child)) composition in the pipeline.
 ///
-/// This test verifies that the DecoratedContainer widget correctly:
+/// This test verifies that composing WithLayout inside DecoratedBox:
 /// 1. Reconciles with the element tree
-/// 2. Creates render objects with proper tree structure
+/// 2. Creates render objects with proper tree structure (3 levels)
 /// 3. Performs layout
 /// 4. Paints and produces render commands
 #[test]
-fn test_decorated_container_widget_in_pipeline() {
+fn test_decorated_composition_in_pipeline() {
     use crate::render::RenderCommand;
 
-    // Create a widget tree with DecoratedContainer wrapping a Text
-    let container = DecoratedContainer::new(Text::new("Hello")).style(
-        crate::Style::new()
-            .background(Color::RED)
-            .border(Color::BLACK, 2.0)
-            .corner_radius(8.0),
-    );
+    // Create a widget tree: DecoratedBox(WithLayout(Text))
+    let container = DecoratedBox::new(WithLayout::new(Text::new("Hello"), Layout::default()))
+        .style(
+            crate::Style::new()
+                .background(Color::RED)
+                .border(Color::BLACK, 2.0)
+                .corner_radius(8.0),
+        );
 
     // Create pipeline and reconcile
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -155,7 +156,7 @@ fn test_decorated_container_widget_in_pipeline() {
         "Should have at least root render object"
     );
 
-    // === Verify render tree structure ===
+    // === Verify render tree structure (3 levels: DecoratedBox → WithLayout → Text) ===
     let root_ro = pipeline
         .render_objects()
         .root()
@@ -165,24 +166,34 @@ fn test_decorated_container_widget_in_pipeline() {
         .get(root_ro)
         .expect("root render object should exist");
 
-    // DecoratedContainer render object should have the Text render object as a child
+    // DecoratedBox render object should have WithLayout's render object as its child
     let children = root_obj.children();
     assert_eq!(
         children.len(),
         1,
-        "DecoratedContainer render object should have exactly one child"
+        "DecoratedBox render object should have exactly one child"
     );
 
-    // The child render object should exist
+    // WithLayout's render object should have Text render object as its child
     let child_ro_id = children[0];
     let child_obj = pipeline
         .render_objects()
         .get(child_ro_id)
         .expect("child render object should exist");
-    // The child should be a leaf (no children of its own)
-    // TextRenderObject returns empty children by default
     assert_eq!(
         child_obj.children().len(),
+        1,
+        "WithLayout render object should have one child"
+    );
+
+    // Text render object should be a leaf
+    let grandchild_ro_id = child_obj.children()[0];
+    let grandchild_obj = pipeline
+        .render_objects()
+        .get(grandchild_ro_id)
+        .expect("grandchild render object should exist");
+    assert_eq!(
+        grandchild_obj.children().len(),
         0,
         "Text render object should be a leaf"
     );
@@ -195,10 +206,10 @@ fn test_decorated_container_widget_in_pipeline() {
     // === Paint ===
     let commands = pipeline.paint();
 
-    // DecoratedContainer should produce rect commands for background and border
+    // DecoratedBox should produce rect commands for background and border
     assert!(
         commands.len() >= 2,
-        "DecoratedContainer should produce at least two commands"
+        "DecoratedBox should produce at least two commands"
     );
 
     // Verify the render commands include a rect command (the background fill)
@@ -221,9 +232,11 @@ fn test_translate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedContainer::new(Text::new("Shifted"))
-        .style(crate::Style::new().background(Color::BLUE))
-        .layout(crate::layout::Layout::default().padding(8.0));
+    let child = DecoratedBox::new(WithLayout::new(
+        Text::new("Shifted"),
+        crate::layout::Layout::default().padding(8.0),
+    ))
+    .background(Color::BLUE);
 
     let widget = Transform::translate(child, 50.0, 30.0);
 
@@ -268,7 +281,7 @@ fn test_translate_transform_in_pipeline() {
     let mut frame_builder = FrameBuilder::new();
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
-    // Should have at least one quad (background rect from DecoratedContainer)
+    // Should have at least one quad (background rect from DecoratedBox)
     assert!(
         frame_builder.quad_count() >= 1,
         "Should have at least one quad"
@@ -301,9 +314,11 @@ fn test_rotate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedContainer::new(Text::new("Rotated"))
-        .style(crate::Style::new().background(Color::BLUE))
-        .layout(crate::layout::Layout::default().padding(8.0));
+    let child = DecoratedBox::new(WithLayout::new(
+        Text::new("Rotated"),
+        crate::layout::Layout::default().padding(8.0),
+    ))
+    .background(Color::BLUE);
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let widget = Transform::rotate(child, angle);
@@ -373,9 +388,11 @@ fn test_scale_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedContainer::new(Text::new("Scaled"))
-        .style(crate::Style::new().background(Color::GREEN))
-        .layout(crate::layout::Layout::default().padding(8.0));
+    let child = DecoratedBox::new(WithLayout::new(
+        Text::new("Scaled"),
+        crate::layout::Layout::default().padding(8.0),
+    ))
+    .background(Color::GREEN);
 
     let widget = Transform::scale(child, 2.0, 3.0);
 
@@ -520,13 +537,12 @@ fn test_rotate_transform_with_rounded_rect() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedContainer::new(Text::new("Rounded"))
-        .style(
-            crate::Style::new()
-                .background(Color::BLUE)
-                .corner_radius(12.0),
-        )
-        .layout(crate::layout::Layout::default().padding(8.0));
+    let child = DecoratedBox::new(WithLayout::new(
+        Text::new("Rounded"),
+        crate::layout::Layout::default().padding(8.0),
+    ))
+    .background(Color::BLUE)
+    .corner_radius(12.0);
 
     let widget = Transform::rotate(child, 0.3);
 
@@ -682,7 +698,7 @@ fn test_grid_widget() {
 
 /// Test DecoratedBox widget in the pipeline.
 ///
-/// Mirrors `test_decorated_container_widget_in_pipeline` (line 125) but
+/// Mirrors `test_decorated_composition_in_pipeline` (line 125) but
 /// verifies the pass-through proxy semantics:
 /// 1. The render object is `is_pass_through() == true`.
 /// 2. The child (Text) render object's Taffy node is linked directly to

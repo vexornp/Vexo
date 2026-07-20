@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use vexo::{
-    AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedContainer, RenderContext,
-    Signal, Text, Theme, Widget,
+    AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection, Layout,
+    RenderContext, Signal, Text, Theme, Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -249,15 +249,21 @@ impl Component for Button {
             .with_font_size(self.resolve_font_size())
             .with_color(text_color);
 
-        // All decoration on the container. DecoratedContainer defaults to
-        // align_self(Start).flex_shrink(0.0), so the container sizes to its
-        // content (text intrinsic width + padding + border).
+        // All decoration on the DecoratedBox. The WithLayout inside sets
+        // padding + flex_shrink(0.0) so the container sizes to its content
+        // (text intrinsic width + padding).
         // Note: layout_builder_methods!()'s padding_each takes (left, right, top, bottom),
         // unlike modifier_methods!()'s (top, right, bottom, left) on Text.
-        let mut container = DecoratedContainer::new(text)
+        let inner = WithLayout::new(
+            text,
+            Layout::default()
+                .flex_direction(FlexDirection::Row)
+                .padding_each(pl, pr, pt, pb)
+                .flex_shrink(0.0),
+        );
+        let mut container = DecoratedBox::new(inner)
             .background(bg)
-            .corner_radius(corner_radius)
-            .padding_each(pl, pr, pt, pb);
+            .corner_radius(corner_radius);
 
         if border_width > 0.0 {
             container = container.border(border_color, border_width);

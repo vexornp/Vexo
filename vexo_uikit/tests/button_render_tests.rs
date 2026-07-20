@@ -1,7 +1,7 @@
 use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
 use vexo::layout::AlignSelf;
 use vexo::{BuildOwner, DirtyTracking, ElementKey, RenderContext, RenderObjectRegistry, ThemeData};
-use vexo::{DecoratedContainer, Opacity, Text, Widget, WithLayout};
+use vexo::{DecoratedBox, Opacity, Text, Widget, WithLayout};
 use vexo_uikit::theme::tokens;
 use vexo_uikit::{Button, ButtonState, ButtonVariant, Component, Platform};
 
@@ -130,7 +130,7 @@ fn button_all_variants_render() {
 
 // ============================================================================
 // Structural tests — verify the widget tree shape after the intrinsic-sizing
-// fix. Decoration must live on DecoratedContainer (not on the Text leaf),
+// fix. Decoration must live on DecoratedBox (not on the Text leaf),
 // and align_self(Start) must be the outermost modifier to break the parent
 // Column's AlignItems::Stretch cascade.
 // ============================================================================
@@ -158,28 +158,33 @@ fn button_outermost_has_align_self_start() {
 fn button_decoration_on_container_not_text() {
     let tree = render_button(Button::new("Submit").variant(ButtonVariant::Primary));
 
-    // Find the DecoratedContainer anywhere in the child chain. The
+    // Find the DecoratedBox anywhere in the child chain. The
     // pass-through wrappers (GestureDetector, MouseRegion) between the
-    // outermost WithLayout and the DecoratedContainer are pub(crate) in
+    // outermost WithLayout and the DecoratedBox are pub(crate) in
     // vexo, so we walk generically rather than asserting each layer.
-    let dc = find_in_chain::<DecoratedContainer>(tree.as_ref(), 8)
-        .expect("expected a DecoratedContainer carrying the visual decoration");
+    let db = find_in_chain::<DecoratedBox>(tree.as_ref(), 8)
+        .expect("expected a DecoratedBox carrying the visual decoration");
 
     // Background must be on the container, not on the Text leaf.
     assert_eq!(
-        dc.style_ref().background,
+        db.style_ref().background,
         Some(ThemeData::light().primary),
-        "background should live on DecoratedContainer, not Text"
+        "background should live on DecoratedBox, not Text"
     );
 
-    // Padding must match the Desktop token values.
+    // Padding lives on the WithLayout inside DecoratedBox.
     // Button::resolve_padding returns (PADDING_V, PADDING_H, PADDING_V, PADDING_H)
     // in TRBL order; padding_each(top, right, bottom, left) delegates to
     // Layout::padding_each(left, right, top, bottom).
-    let padding = dc
+    let wl = db
+        .child()
+        .as_any()
+        .downcast_ref::<WithLayout>()
+        .expect("DecoratedBox's child should be WithLayout with padding");
+    let padding = wl
         .layout_ref()
         .padding
-        .expect("DecoratedContainer should have padding");
+        .expect("WithLayout should have padding");
     assert_eq!(padding.top, tokens::button::PADDING_V_DESKTOP);
     assert_eq!(padding.bottom, tokens::button::PADDING_V_DESKTOP);
     assert_eq!(padding.left, tokens::button::PADDING_H_DESKTOP);
@@ -190,15 +195,20 @@ fn button_decoration_on_container_not_text() {
 fn button_text_is_pure_leaf() {
     let tree = render_button(Button::new("Submit").variant(ButtonVariant::Primary));
 
-    let dc = find_in_chain::<DecoratedContainer>(tree.as_ref(), 8)
-        .expect("expected a DecoratedContainer");
+    let db = find_in_chain::<DecoratedBox>(tree.as_ref(), 8).expect("expected a DecoratedBox");
 
-    // The DecoratedContainer's child must be a Text leaf.
-    let text = dc
+    // The DecoratedBox's child is WithLayout; its child must be a Text leaf.
+    let wl = db
         .child()
         .as_any()
+        .downcast_ref::<WithLayout>()
+        .expect("DecoratedBox's child should be WithLayout");
+    let text = wl
+        .child()
+        .expect("WithLayout should have a child")
+        .as_any()
         .downcast_ref::<Text>()
-        .expect("DecoratedContainer's child should be a Text leaf");
+        .expect("WithLayout's child should be a Text leaf");
     assert_eq!(text.content(), "Submit");
 
     // And Text must be a true leaf (no further children).
@@ -212,15 +222,14 @@ fn button_text_is_pure_leaf() {
 fn button_secondary_has_border_on_container() {
     let tree = render_button(Button::new("Cancel").variant(ButtonVariant::Secondary));
 
-    let dc = find_in_chain::<DecoratedContainer>(tree.as_ref(), 8)
-        .expect("expected a DecoratedContainer");
+    let dc = find_in_chain::<DecoratedBox>(tree.as_ref(), 8).expect("expected a DecoratedBox");
 
     // Secondary variant has a 1px border on the container.
     let border = dc
         .style_ref()
         .border
         .as_ref()
-        .expect("Secondary should have a border on DecoratedContainer");
+        .expect("Secondary should have a border on DecoratedBox");
     assert_eq!(border.color, ThemeData::light().outline);
     assert_eq!(border.width, 1.0);
 
@@ -249,12 +258,17 @@ fn button_disabled_applies_opacity() {
 
 /// Extract the Text leaf from a rendered Button tree.
 fn text_leaf_from_tree(tree: &Box<dyn Widget>) -> &Text {
-    let dc = find_in_chain::<DecoratedContainer>(tree.as_ref(), 8)
-        .expect("expected a DecoratedContainer");
-    dc.child()
+    let db = find_in_chain::<DecoratedBox>(tree.as_ref(), 8).expect("expected a DecoratedBox");
+    let wl = db
+        .child()
+        .as_any()
+        .downcast_ref::<WithLayout>()
+        .expect("DecoratedBox's child should be WithLayout");
+    wl.child()
+        .expect("WithLayout should have a child")
         .as_any()
         .downcast_ref::<Text>()
-        .expect("DecoratedContainer's child should be a Text leaf")
+        .expect("WithLayout's child should be a Text leaf")
 }
 
 #[test]

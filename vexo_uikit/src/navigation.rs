@@ -43,8 +43,8 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
-    DecoratedContainer, Flex, FractionalTranslation, IndexedStack, Layout, LifecycleContext,
-    Opacity, Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget,
+    DecoratedBox, Flex, FractionalTranslation, IndexedStack, Layout, LifecycleContext, Opacity,
+    Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget, WithLayout,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -718,7 +718,7 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             );
         }
 
-        // Wrap the content `Stack` in a clipping `DecoratedContainer` so the
+        // Wrap the content `Stack` in a clipping `DecoratedBox` so the
         // moving page's full-perimeter shadow (attached in
         // `default_mobile_transition`) is clipped to the nav content area —
         // only the leading-edge strip is visible, matching iOS native. Also
@@ -727,22 +727,20 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         //
         // The wrapper is ALWAYS present (steady + transition, all platforms)
         // for type-stability: if the type flipped between bare `Stack`
-        // (steady) and `DecoratedContainer(Stack)` (transition), the
+        // (steady) and `DecoratedBox(Stack)` (transition), the
         // reconciler would remount the subtree and lose page state. At steady
         // state the base page fills the content area exactly, so the clip is
         // a cheap no-op scissor.
         //
-        // `DecoratedContainer::new()` defaults to `align_self(Start)` with no
-        // `flex_grow`/`width_percent`/`height_percent`, which would size it to
-        // its content's intrinsic size rather than filling the `SafeArea`.
-        // Override the layout to `width_percent(1.0).height_percent(1.0)` so
-        // it fills the SafeArea exactly like the `Stack` did before the
-        // wrapper was introduced — otherwise the content overflows past the
-        // tab bar.
-        let clipped: Box<dyn Widget> = DecoratedContainer::new(content_stack)
-            .clip()
-            .layout(Layout::default().width_percent(1.0).height_percent(1.0))
-            .boxed();
+        // The composition is `DecoratedBox(WithLayout(content_stack))` with
+        // `width_percent(1.0).height_percent(1.0)` so it fills the SafeArea
+        // exactly — otherwise the content overflows past the tab bar.
+        let clipped: Box<dyn Widget> = DecoratedBox::new(WithLayout::new(
+            content_stack,
+            Layout::default().width_percent(1.0).height_percent(1.0),
+        ))
+        .clip()
+        .boxed();
 
         // The nav bar handles the top safe-area inset itself (background
         // extends under the status bar). The content area only needs

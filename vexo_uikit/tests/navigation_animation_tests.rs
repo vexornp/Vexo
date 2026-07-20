@@ -553,17 +553,17 @@ mod base_fx_alpha_tests {
 
 mod nav_push_shadow_tests {
     use super::*;
-    use vexo::{BoxShadow, DecoratedContainer, Text};
+    use vexo::{BoxShadow, DecoratedBox, Layout, Text, WithLayout};
     use vexo_uikit::platform::Platform;
     use vexo_uikit::theme::tokens::navigation::{PAGE_SHADOW_ALPHA, PAGE_SHADOW_BLUR};
     use vexo_uikit::transitions::{
         default_desktop_transition, default_mobile_transition, TransitionCtx,
     };
 
-    fn collect_shadowed<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedContainer>) {
-        if let Some(dc) = w.as_any().downcast_ref::<DecoratedContainer>() {
-            if !dc.style_ref().shadows.is_empty() {
-                out.push(dc);
+    fn collect_shadowed<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedBox>) {
+        if let Some(db) = w.as_any().downcast_ref::<DecoratedBox>() {
+            if !db.style_ref().shadows.is_empty() {
+                out.push(db);
             }
         }
         if let Some(child) = w.child() {
@@ -574,10 +574,10 @@ mod nav_push_shadow_tests {
         }
     }
 
-    fn collect_clipped<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedContainer>) {
-        if let Some(dc) = w.as_any().downcast_ref::<DecoratedContainer>() {
-            if dc.style_ref().clip {
-                out.push(dc);
+    fn collect_clipped<'a>(w: &'a dyn Widget, out: &mut Vec<&'a DecoratedBox>) {
+        if let Some(db) = w.as_any().downcast_ref::<DecoratedBox>() {
+            if db.style_ref().clip {
+                out.push(db);
             }
         }
         if let Some(child) = w.child() {
@@ -588,20 +588,41 @@ mod nav_push_shadow_tests {
         }
     }
 
-    fn find_first_shadowed(w: &dyn Widget) -> Option<&DecoratedContainer> {
+    fn find_first_shadowed(w: &dyn Widget) -> Option<&DecoratedBox> {
         let mut found = Vec::new();
         collect_shadowed(w, &mut found);
         found.into_iter().next()
     }
 
-    fn find_first_clipped(w: &dyn Widget) -> Option<&DecoratedContainer> {
+    fn find_first_clipped(w: &dyn Widget) -> Option<&DecoratedBox> {
         let mut found = Vec::new();
         collect_clipped(w, &mut found);
         found.into_iter().next()
     }
 
+    /// Find the `WithLayout` child of the first shadowed `DecoratedBox`,
+    /// returning its layout ref. The composition is `DecoratedBox(WithLayout(child))`,
+    /// so the layout lives on the inner `WithLayout`, not the `DecoratedBox`.
+    fn find_shadowed_wrapper_layout(w: &dyn Widget) -> Option<&Layout> {
+        let db = find_first_shadowed(w)?;
+        db.child()
+            .as_any()
+            .downcast_ref::<WithLayout>()
+            .map(|wl| wl.layout_ref())
+    }
+
+    /// Find the `WithLayout` child of the first clipped `DecoratedBox`,
+    /// returning its layout ref.
+    fn find_clipped_wrapper_layout(w: &dyn Widget) -> Option<&Layout> {
+        let db = find_first_clipped(w)?;
+        db.child()
+            .as_any()
+            .downcast_ref::<WithLayout>()
+            .map(|wl| wl.layout_ref())
+    }
+
     #[test]
-    fn mobile_push_incoming_overlay_has_shadow_decorated_container() {
+    fn mobile_push_incoming_overlay_has_shadow_decorated_box() {
         let ctx = TransitionCtx {
             t: 0.5,
             is_incoming: true,
@@ -611,7 +632,7 @@ mod nav_push_shadow_tests {
         let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
 
         let dc = find_first_shadowed(&*result)
-            .expect("mobile push incoming overlay must have a shadowed DecoratedContainer");
+            .expect("mobile push incoming overlay must have a shadowed DecoratedBox");
 
         let shadows = &dc.style_ref().shadows;
         assert_eq!(shadows.len(), 1, "exactly one shadow expected");
@@ -652,7 +673,7 @@ mod nav_push_shadow_tests {
     }
 
     #[test]
-    fn mobile_pop_outgoing_overlay_has_shadow_decorated_container() {
+    fn mobile_pop_outgoing_overlay_has_shadow_decorated_box() {
         let ctx = TransitionCtx {
             t: 0.5,
             is_incoming: false,
@@ -662,7 +683,7 @@ mod nav_push_shadow_tests {
         let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
 
         let dc = find_first_shadowed(&*result)
-            .expect("mobile pop outgoing overlay must have a shadowed DecoratedContainer");
+            .expect("mobile pop outgoing overlay must have a shadowed DecoratedBox");
         assert_eq!(dc.style_ref().shadows.len(), 1);
         assert!(
             (dc.style_ref().shadows[0].blur_radius - PAGE_SHADOW_BLUR).abs() < 1e-6,
@@ -672,7 +693,7 @@ mod nav_push_shadow_tests {
     }
 
     #[test]
-    fn mobile_pop_to_root_outgoing_overlay_has_shadow_decorated_container() {
+    fn mobile_pop_to_root_outgoing_overlay_has_shadow_decorated_box() {
         let ctx = TransitionCtx {
             t: 0.5,
             is_incoming: false,
@@ -682,7 +703,7 @@ mod nav_push_shadow_tests {
         let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
 
         let dc = find_first_shadowed(&*result)
-            .expect("mobile pop-to-root outgoing overlay must have a shadowed DecoratedContainer");
+            .expect("mobile pop-to-root outgoing overlay must have a shadowed DecoratedBox");
         assert_eq!(dc.style_ref().shadows.len(), 1);
     }
 
@@ -699,7 +720,7 @@ mod nav_push_shadow_tests {
         let found = find_first_shadowed(&*result);
         assert!(
             found.is_none(),
-            "desktop transition must not attach a shadow; found a DecoratedContainer with {} shadows",
+            "desktop transition must not attach a shadow; found a DecoratedBox with {} shadows",
             found.map(|d| d.style_ref().shadows.len()).unwrap_or(0)
         );
     }
@@ -718,7 +739,7 @@ mod nav_push_shadow_tests {
         let tree = render_stack(view, &mut state);
 
         let dc = find_first_clipped(&*tree)
-            .expect("steady-state nav content must be wrapped in a clipped DecoratedContainer");
+            .expect("steady-state nav content must be wrapped in a clipped DecoratedBox");
         assert!(
             dc.style_ref().clip,
             "clip wrapper must have clip=true, got clip={}",
@@ -746,11 +767,10 @@ mod nav_push_shadow_tests {
 
     #[test]
     fn nav_content_clip_wrapper_fills_parent() {
-        // Regression: DecoratedContainer::new() defaults to align_self(Start)
-        // with no flex_grow/width_percent/height_percent, which sizes it to
-        // content instead of filling the SafeArea. The clip wrapper must
-        // explicitly fill its parent (width_percent=1.0, height_percent=1.0)
-        // or the content overflows past the tab bar.
+        // Regression: the clip wrapper must fill its parent so the content
+        // doesn't overflow past the tab bar. The composition is
+        // `DecoratedBox(WithLayout(content))`, so the layout lives on the
+        // inner `WithLayout` — verify its width/height are Percent(1.0).
         let controller: NavigationController<&'static str> = NavigationController::new();
         controller.push("a");
         controller.clear_pending();
@@ -762,8 +782,8 @@ mod nav_push_shadow_tests {
 
         let tree = render_stack(view, &mut state);
 
-        let dc = find_first_clipped(&*tree).expect("clip wrapper must be present");
-        let layout = dc.layout_ref();
+        let layout =
+            find_clipped_wrapper_layout(&*tree).expect("clip wrapper's WithLayout must be present");
         assert!(
             layout
                 .width
@@ -786,12 +806,11 @@ mod nav_push_shadow_tests {
 
     #[test]
     fn mobile_transition_shadow_wrapper_fills_parent() {
-        // Regression: DecoratedContainer::new() defaults to align_self(Start)
-        // with no flex_grow/width_percent/height_percent, which shrink-to-fits
-        // the page instead of filling the Positioned overlay. The page (e.g.
-        // chat screen with flex_fill) then has nothing to grow into and
-        // collapses — input bar appears at top-left instead of pinned to
-        // bottom. The shadow wrapper must explicitly fill its parent.
+        // Regression: the shadow wrapper must fill its parent (the Positioned
+        // overlay) so the page (e.g. chat screen with flex_fill) has space to
+        // grow into. The composition is `DecoratedBox(WithLayout(page))`, so
+        // the layout lives on the inner `WithLayout` — verify its width/height
+        // are Percent(1.0).
         let ctx = TransitionCtx {
             t: 0.5,
             is_incoming: true,
@@ -800,9 +819,8 @@ mod nav_push_shadow_tests {
         };
         let result = default_mobile_transition(&ctx, Text::new("Page").boxed());
 
-        let dc = find_first_shadowed(&*result)
-            .expect("shadow wrapper DecoratedContainer must be present");
-        let layout = dc.layout_ref();
+        let layout = find_shadowed_wrapper_layout(&*result)
+            .expect("shadow wrapper's WithLayout must be present");
         assert!(
             layout
                 .width

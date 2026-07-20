@@ -8,19 +8,16 @@
 //! naturally; `DecoratedBox` adopts the child's bounds and paints the
 //! decoration there.
 //!
-//! Contrast with [`DecoratedContainer`](crate::DecoratedContainer), which
-//! owns both a `Style` and a `Layout` and defaults to
-//! `align_self(Start).flex_shrink(0.0)` (size-to-content). Use
-//! `DecoratedContainer` when you want decoration + sizing; use `DecoratedBox`
-//! when you want decoration only.
+//! To combine decoration with layout (padding, sizing, flex), compose:
+//! `DecoratedBox::new(WithLayout::new(child, layout)).background(...)`.
+//! The `WithLayout` owns the Taffy node; `DecoratedBox` adopts its bounds.
 //!
 //! # Border semantics
 //!
 //! `DecoratedBox::border(color, width)` does NOT add padding — the border
 //! paints over the child's edge pixels (Flutter semantics). If you want the
 //! child inset from the border, compose with [`WithLayout`](crate::WithLayout)
-//! padding or use [`DecoratedContainer`](crate::DecoratedContainer) whose
-//! `border()` adds padding automatically.
+//! padding.
 
 use std::any::Any;
 
@@ -43,9 +40,8 @@ use crate::{
 /// Element for `DecoratedBox` widget.
 ///
 /// Manages a single child element and updates the render object when the
-/// style changes. Structurally identical to `DecoratedContainerElement`
-/// minus the layout bookkeeping — `DecoratedBox` has no `Layout` field, so
-/// the element never marks layout dirty (only paint).
+/// style changes. Structurally identical to other single-child render-object
+/// elements — no layout bookkeeping since `DecoratedBox` has no `Layout` field.
 pub struct DecoratedBoxElement {
     id: Option<ElementKey>,
     key: Option<WidgetKey>,
@@ -121,7 +117,7 @@ impl RenderObjectElement for DecoratedBoxElement {
 impl Element for DecoratedBoxElement {
     fn mount(&mut self, context: &mut ElementContext) {
         // Create focus attachment BEFORE mounting child (same rationale as
-        // DecoratedContainerElement::mount): the child looks up this element's
+        // other single-child elements): the child looks up this element's
         // focus node as its parent when it mounts.
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
@@ -259,9 +255,8 @@ impl Element for DecoratedBoxElement {
 /// naturally; `DecoratedBox` adopts the child's bounds and paints the
 /// decoration there.
 ///
-/// Use `DecoratedBox` when you want decoration only. Use
-/// [`DecoratedContainer`](crate::DecoratedContainer) when you want
-/// decoration + sized layout.
+/// To combine decoration with layout, compose:
+/// `DecoratedBox::new(WithLayout::new(child, layout)).background(...)`.
 ///
 /// # Example
 ///
@@ -277,8 +272,7 @@ impl Element for DecoratedBoxElement {
 /// `DecoratedBox::border(color, width)` does NOT add padding — the border
 /// paints over the child's edge pixels (Flutter semantics). If you want the
 /// child inset from the border, compose with [`WithLayout`](crate::WithLayout)
-/// padding or use [`DecoratedContainer`](crate::DecoratedContainer) whose
-/// `border()` adds padding automatically.
+/// padding.
 pub struct DecoratedBox {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
@@ -288,10 +282,9 @@ pub struct DecoratedBox {
 impl DecoratedBox {
     /// Create a new `DecoratedBox` with a child and default (empty) style.
     ///
-    /// Unlike `DecoratedContainer::new()`, this does NOT set any
-    /// `align_self`/`flex_shrink` defaults — the widget imposes zero layout
-    /// opinion. If you want padding/sizing, compose with `WithLayout` or
-    /// use `DecoratedContainer`.
+    /// This does NOT set any `align_self`/`flex_shrink` defaults — the
+    /// widget imposes zero layout opinion. If you want padding/sizing,
+    /// compose with `WithLayout`.
     pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             key: None,
@@ -315,8 +308,7 @@ impl DecoratedBox {
     /// Set the border. **Does NOT add padding** (Flutter semantics).
     ///
     /// The border paints over the child's edge pixels. To inset the child
-    /// from the border, compose with `WithLayout::padding` or use
-    /// `DecoratedContainer::border` which adds padding automatically.
+    /// from the border, compose with `WithLayout::padding`.
     pub fn border(mut self, color: Color, width: f32) -> Self {
         self.style = self.style.border(color, width);
         self
@@ -498,11 +490,9 @@ mod tests {
     #[test]
     fn test_decorated_box_border_does_not_add_padding() {
         // Regression guard: DecoratedBox has no Layout field at all, so it
-        // cannot add padding. This is the semantic difference from
-        // DecoratedContainer::border(), which adds padding equal to border
-        // width. Verifying the field doesn't exist is implicit in the type
-        // signature; this test instead verifies the border is set without
-        // any layout side effect by checking the style only.
+        // cannot add padding. Verifying the field doesn't exist is implicit
+        // in the type signature; this test verifies the border is set
+        // without any layout side effect by checking the style only.
         let widget = DecoratedBox::new(Text::new("Hello")).border(Color::BLACK, 2.0);
         assert_eq!(widget.style_ref().border.as_ref().unwrap().width, 2.0);
         // No layout field to check — compilation itself proves there's no
@@ -558,21 +548,6 @@ mod tests {
         assert!(
             elem.can_update(w2.as_any()),
             "two DecoratedBox widgets must be able to update each other"
-        );
-    }
-
-    #[test]
-    fn test_decorated_box_cannot_update_different_type() {
-        // DecoratedBox and DecoratedContainer have distinct type_ids, so the
-        // reconciler cannot accidentally reconcile one into the other.
-        use crate::DecoratedContainer;
-        let w1 = DecoratedBox::new(Text::new("Hi"));
-        let w2 = DecoratedContainer::new(Text::new("Hi"));
-        let mut elem = DecoratedBoxElement::new();
-        elem.set_widget(&w1);
-        assert!(
-            !elem.can_update(w2.as_any()),
-            "DecoratedBox must not be able to update a DecoratedContainer"
         );
     }
 

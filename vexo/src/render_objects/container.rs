@@ -1,4 +1,4 @@
-//! ContainerRenderObject implementation for Flex, Grid, and DecoratedContainer.
+//! ContainerRenderObject implementation for Flex, Grid, and other container widgets.
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::layout::{Layout, LayoutNodeKey};
@@ -8,7 +8,7 @@ use crate::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectKey,
 };
 
-/// RenderObject for container widgets (Flex, Grid, DecoratedContainer).
+/// RenderObject for container widgets (Flex, Grid, Stack, IndexedStack).
 ///
 /// Container render objects hold references to child render objects,
 /// participate in layout, and optionally paint decorations (background,

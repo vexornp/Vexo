@@ -2,8 +2,8 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    AlignItems, Color, Column, DecoratedContainer, Flex, Positioned, Row, ScrollView, Stack, Text,
-    Widget,
+    AlignItems, AlignSelf, Color, Column, DecoratedBox, Flex, Layout, Positioned, Row, ScrollView,
+    Stack, Text, Widget, WithLayout,
 };
 use vexo_uikit::NavigationController;
 
@@ -76,17 +76,20 @@ fn build_conversation_row(
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {
-    DecoratedContainer::new(
+    DecoratedBox::new(WithLayout::new(
         Text::new(count.to_string())
             .with_font_size(11.0)
             .with_color(Color::WHITE),
-    )
-    .width(20.0)
-    .height(20.0)
+        Layout::default()
+            .width(20.0)
+            .height(20.0)
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center)
+            .align_self(AlignSelf::Start)
+            .flex_shrink(0.0),
+    ))
     .background(Color::rgb(1.0, 0.0, 0.0))
     .corner_radius(10.0)
-    .justify(JustifyContent::Center)
-    .align(AlignItems::Center)
     .boxed()
 }
 
