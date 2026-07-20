@@ -255,9 +255,6 @@ impl RenderObject for TextRenderObject {
                     .unwrap_or(self.font_size * self.line_height);
                 let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
 
-                // Draw text (vertically centered). Decoration (background,
-                // border, corner radius, clip) is now the responsibility of a
-                // `DecoratedBox` wrapping this `Text`, not the leaf itself.
                 let text_pos = Point::new(pos.x, pos.y + vertical_offset);
                 // Match apply_layout's tolerance: Taffy floors layout widths
                 // to integers, so a box slightly narrower than the natural
