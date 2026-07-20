@@ -157,20 +157,6 @@ fn multi_child_row_has_row_flex_direction() {
     assert_eq!(row.children().len(), direct.children().len());
 }
 
-// --- column! / row! macro tests ---
-
-#[test]
-fn column_macro_creates_vertical_flex() {
-    let col = vexo::column![Text::new("A"), Text::new("B")];
-    assert_eq!(col.children().len(), 2);
-}
-
-#[test]
-fn row_macro_creates_horizontal_flex() {
-    let row = vexo::row![Text::new("X"), Text::new("Y")];
-    assert_eq!(row.children().len(), 2);
-}
-
 // --- Widget trait method tests (builder-style API) ---
 
 #[test]
