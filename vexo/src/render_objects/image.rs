@@ -8,15 +8,17 @@ use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObj
 pub struct ImageRenderObject {
     image_data: ImageData,
     image_key: Option<ImageKey>,
+    corner_radius: f32,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeKey>,
 }
 
 impl ImageRenderObject {
-    pub fn new(image_data: &ImageData) -> Self {
+    pub fn new(image_data: &ImageData, corner_radius: f32) -> Self {
         Self {
             image_data: image_data.clone(),
             image_key: None,
+            corner_radius,
             computed_bounds: None,
             layout_node: None,
         }
@@ -33,6 +35,15 @@ impl ImageRenderObject {
         {
             self.image_data = image_data.clone();
             self.image_key = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn set_corner_radius(&mut self, radius: f32) -> bool {
+        if self.corner_radius != radius {
+            self.corner_radius = radius;
             true
         } else {
             false
@@ -98,7 +109,7 @@ impl RenderObject for ImageRenderObject {
                         commands.push(RenderCommand::Image {
                             bounds: absolute_bounds,
                             image_key: key,
-                            corner_radius: 0.0,
+                            corner_radius: self.corner_radius,
                         });
                     }
                 }
@@ -173,7 +184,7 @@ mod tests {
     #[test]
     fn test_image_render_object_new() {
         let data = make_test_image_data();
-        let obj = ImageRenderObject::new(&data);
+        let obj = ImageRenderObject::new(&data, 0.0);
         assert!(obj.computed_bounds().is_none());
         assert!(obj.image_key.is_none());
     }
@@ -181,7 +192,7 @@ mod tests {
     #[test]
     fn test_image_render_object_layout_creates_node() {
         let data = make_larger_image_data();
-        let mut obj = ImageRenderObject::new(&data);
+        let mut obj = ImageRenderObject::new(&data, 0.0);
         let mut engine = TaffyLayoutEngine::new();
         let font_data = include_bytes!("../../font.ttf").to_vec();
         let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
@@ -197,7 +208,7 @@ mod tests {
     #[test]
     fn test_image_render_object_hit_test_no_layout() {
         let data = make_test_image_data();
-        let obj = ImageRenderObject::new(&data);
+        let obj = ImageRenderObject::new(&data, 0.0);
 
         assert!(!obj.hit_test(Point::new(10.0, 10.0), &HitTestContext::mock()));
     }
@@ -205,7 +216,7 @@ mod tests {
     #[test]
     fn test_image_render_object_paint_no_layout() {
         let data = make_test_image_data();
-        let obj = ImageRenderObject::new(&data);
+        let obj = ImageRenderObject::new(&data, 0.0);
 
         let mut commands = Vec::new();
         let mut ctx = PaintContext::new(&mut commands);
@@ -217,7 +228,7 @@ mod tests {
     #[test]
     fn test_image_render_object_paint_no_key() {
         let data = make_test_image_data();
-        let mut obj = ImageRenderObject::new(&data);
+        let mut obj = ImageRenderObject::new(&data, 0.0);
         obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
 
         let mut commands = Vec::new();
@@ -230,7 +241,7 @@ mod tests {
     #[test]
     fn test_image_render_object_paint_with_key() {
         let data = make_test_image_data();
-        let mut obj = ImageRenderObject::new(&data);
+        let mut obj = ImageRenderObject::new(&data, 0.0);
         obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
         obj.image_key = Some(42);
 
@@ -248,10 +259,39 @@ mod tests {
     }
 
     #[test]
+    fn test_image_render_object_paint_emits_corner_radius() {
+        let data = make_test_image_data();
+        let mut obj = ImageRenderObject::new(&data, 16.0);
+        obj.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        obj.image_key = Some(42);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let result = obj.paint(&mut ctx);
+
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            RenderCommand::Image { corner_radius, .. } => {
+                assert_eq!(*corner_radius, 16.0);
+            }
+            _ => panic!("Expected Image command"),
+        }
+    }
+
+    #[test]
+    fn test_image_render_object_set_corner_radius_change_detection() {
+        let data = make_test_image_data();
+        let mut obj = ImageRenderObject::new(&data, 0.0);
+        assert!(obj.set_corner_radius(8.0));
+        assert!(!obj.set_corner_radius(8.0));
+        assert!(obj.set_corner_radius(0.0));
+    }
+
+    #[test]
     fn test_image_render_object_set_image_data_change_detection() {
         let data1 = make_test_image_data();
         let data2 = make_larger_image_data();
-        let mut obj = ImageRenderObject::new(&data1);
+        let mut obj = ImageRenderObject::new(&data1, 0.0);
 
         obj.image_key = Some(1);
 
@@ -268,7 +308,7 @@ mod tests {
     #[test]
     fn test_image_render_object_needs_image_registration() {
         let data = make_test_image_data();
-        let mut obj = ImageRenderObject::new(&data);
+        let mut obj = ImageRenderObject::new(&data, 0.0);
 
         assert!(obj.needs_image_registration().is_some());
 

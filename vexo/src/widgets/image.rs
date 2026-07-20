@@ -10,6 +10,7 @@ use crate::widgets::Widget;
 pub struct Image {
     key: Option<WidgetKey>,
     image_data: ImageData,
+    corner_radius: f32,
 }
 
 impl Image {
@@ -17,6 +18,7 @@ impl Image {
         Self {
             key: None,
             image_data,
+            corner_radius: 0.0,
         }
     }
 
@@ -30,8 +32,17 @@ impl Image {
         self
     }
 
+    pub fn with_corner_radius(mut self, radius: f32) -> Self {
+        self.corner_radius = radius;
+        self
+    }
+
     pub fn image_data(&self) -> &ImageData {
         &self.image_data
+    }
+
+    pub fn corner_radius(&self) -> f32 {
+        self.corner_radius
     }
 }
 
@@ -40,6 +51,7 @@ impl Clone for Image {
         Self {
             key: self.key.clone(),
             image_data: self.image_data.clone(),
+            corner_radius: self.corner_radius,
         }
     }
 }
@@ -56,7 +68,7 @@ impl Widget for Image {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ImageRenderObject::new(&self.image_data))
+        Box::new(ImageRenderObject::new(&self.image_data, self.corner_radius))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -70,6 +82,9 @@ impl Widget for Image {
         {
             let mut result = UpdateResult::NONE;
             if ro.set_image_data(&self.image_data) {
+                result |= UpdateResult::PAINT;
+            }
+            if ro.set_corner_radius(self.corner_radius) {
                 result |= UpdateResult::PAINT;
             }
             result
@@ -127,5 +142,27 @@ mod tests {
 
         assert_eq!(widget.image_data().width, cloned.image_data().width);
         assert_eq!(widget.key(), cloned.key());
+    }
+
+    #[test]
+    fn test_image_widget_with_corner_radius() {
+        let data = make_test_image_data();
+        let widget = Image::new(data).with_corner_radius(8.0);
+        assert_eq!(widget.corner_radius(), 8.0);
+    }
+
+    #[test]
+    fn test_image_widget_corner_radius_default_zero() {
+        let data = make_test_image_data();
+        let widget = Image::new(data);
+        assert_eq!(widget.corner_radius(), 0.0);
+    }
+
+    #[test]
+    fn test_image_widget_clone_preserves_corner_radius() {
+        let data = make_test_image_data();
+        let widget = Image::new(data).with_corner_radius(12.0);
+        let cloned = widget.clone();
+        assert_eq!(cloned.corner_radius(), 12.0);
     }
 }
