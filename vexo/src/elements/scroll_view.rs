@@ -555,10 +555,10 @@ mod tests {
     ) {
         use crate::animation::AnimationTicker;
         use crate::widgets::ScrollView;
-        use crate::Flex;
+        use crate::{Layout, MultiChild};
         use std::sync::Arc;
 
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             col = col.push(crate::Text::new("row"));
         }
@@ -649,12 +649,12 @@ mod tests {
     fn test_scroll_controller_wired_on_mount_via_pipeline() {
         use crate::animation::AnimationTicker;
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::sync::Arc;
 
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for i in 0..200 {
             col = col.push(crate::Text::new(format!("line {}", i)));
         }
@@ -698,8 +698,8 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::cell::Cell;
         use std::rc::Rc;
         use std::sync::Arc;
@@ -707,7 +707,7 @@ mod tests {
         // Build a scroll view of tappable rows (GestureDetector.on_tap).
         let tap_count = Rc::new(Cell::new(0u32));
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             let tc = tap_count.clone();
             col = col.push(
@@ -782,15 +782,15 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::cell::Cell;
         use std::rc::Rc;
         use std::sync::Arc;
 
         let tap_count = Rc::new(Cell::new(0u32));
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             let tc = tap_count.clone();
             col = col.push(
@@ -849,12 +849,12 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::sync::Arc;
 
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             col = col.push(crate::Text::new("row"));
         }
@@ -903,8 +903,8 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::cell::Cell;
         use std::rc::Rc;
         use std::sync::Arc;
@@ -912,7 +912,7 @@ mod tests {
         let press_count = Rc::new(Cell::new(0u32));
         let tap_count = Rc::new(Cell::new(0u32));
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             let pc = press_count.clone();
             let tc = tap_count.clone();
@@ -1043,12 +1043,12 @@ mod tests {
         use crate::core::{Point, Size};
         use crate::input::{InputEvent, Modifiers};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::sync::Arc;
 
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for i in 0..200 {
             col = col.push(crate::Text::new(format!("line {}", i)));
         }
@@ -1084,12 +1084,12 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::sync::Arc;
 
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             col = col.push(crate::Text::new("row"));
         }
@@ -1176,15 +1176,15 @@ mod tests {
         use crate::core::ScaleSource;
         use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
         use crate::widgets::{ScrollController, ScrollView};
-        use crate::Flex;
         use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
         use std::cell::Cell;
         use std::rc::Rc;
         use std::sync::Arc;
 
         let tap_count = Rc::new(Cell::new(0u32));
         let ctrl = ScrollController::new();
-        let mut col = Flex::column();
+        let mut col = MultiChild::empty(Layout::column());
         for _ in 0..200 {
             let tc = tap_count.clone();
             col = col.push(
