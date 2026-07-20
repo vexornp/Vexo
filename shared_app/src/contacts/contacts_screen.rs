@@ -1,6 +1,6 @@
 //! Contacts list screen.
 
-use vexo::{Color, Column, Flex, Row, ScrollView, Text, Widget};
+use vexo::{Color, Column, Flex, Layout, Row, ScrollView, Text, Widget, WithLayout};
 
 use crate::data::Contact;
 use crate::widgets::avatar::avatar;
@@ -10,7 +10,7 @@ pub(crate) fn build_contacts_screen(contacts: Vec<Contact>) -> Box<dyn Widget> {
     for c in &contacts {
         list = list.push(build_contact_row(c));
     }
-    ScrollView::new(list.boxed()).flex_fill().boxed()
+    WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
 }
 
 fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
@@ -23,18 +23,21 @@ fn build_contact_row(c: &Contact) -> Box<dyn Widget> {
         .with_font_size(13.0)
         .with_color(Color::rgb(0.5, 0.5, 0.5));
 
-    Row::new()
-        .gap(12.0)
-        .push(avatar)
-        .push(
-            Column::new()
-                .gap(2.0)
-                .push(name)
-                .push(status)
-                .flex_grow(1.0),
-        )
-        .boxed()
-        .padding(12.0)
+    WithLayout::new(
+        Row::new()
+            .gap(12.0)
+            .push(avatar)
+            .push(
+                Column::new()
+                    .gap(2.0)
+                    .push(name)
+                    .push(status)
+                    .flex_grow(1.0),
+            )
+            .boxed(),
+        Layout::default().padding(12.0),
+    )
+    .boxed()
 }
 
 #[cfg(test)]

@@ -472,7 +472,10 @@ mod global_key_tests {
             column = column.push(Text::new(&label).padding(16.0).background(Color::WHITE));
         }
 
-        let scroll_view = ScrollView::new(column.boxed()).width(200.0).height(300.0);
+        let scroll_view = WithLayout::new(
+            ScrollView::new(column.boxed()),
+            Layout::default().width(200.0).height(300.0),
+        );
 
         pipeline.reconcile(Box::new(scroll_view));
         pipeline.layout(CoreSize::new(800.0, 600.0), &mut engine, &mut font_system);

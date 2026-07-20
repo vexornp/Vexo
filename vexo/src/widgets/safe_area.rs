@@ -1033,6 +1033,7 @@ mod tests {
     use super::*;
     use crate::core::SafeAreaSource;
     use crate::layout::{LayoutEngine, TaffyLayoutEngine};
+    use crate::widgets::WithLayout;
     use crate::Text;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -1411,7 +1412,10 @@ mod tests {
 
         // Tree: SafeAreaClaim::bottom(SafeArea(Text))
         //       — the claim zeroes bottom for the SafeArea.
-        let tree = SafeAreaClaim::bottom(SafeArea::new(Text::new("Hi")).flex_fill());
+        let tree = SafeAreaClaim::bottom(WithLayout::new(
+            SafeArea::new(Text::new("Hi")),
+            Layout::flex_fill(),
+        ));
 
         let mut pipeline = ThreeTreePipeline::new(std::sync::Arc::new(AnimationTicker::new()));
         pipeline.update(tree.boxed());

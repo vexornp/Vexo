@@ -608,9 +608,18 @@ fn test_column_with_layout() {
 #[test]
 fn test_with_layout_on_children() {
     let widget = Flex::row()
-        .push(Text::new("Left").with_layout(Layout::default().flex_grow(1.0)))
-        .push(Text::new("Center").with_layout(Layout::default().width(100.0)))
-        .push(Text::new("Right").with_layout(Layout::default().flex_grow(2.0)))
+        .push(WithLayout::new(
+            Text::new("Left"),
+            Layout::default().flex_grow(1.0),
+        ))
+        .push(WithLayout::new(
+            Text::new("Center"),
+            Layout::default().width(100.0),
+        ))
+        .push(WithLayout::new(
+            Text::new("Right"),
+            Layout::default().flex_grow(2.0),
+        ))
         .layout(
             Layout::default()
                 .flex_direction(crate::layout::FlexDirection::Row)
@@ -641,34 +650,30 @@ fn test_with_layout_on_children() {
 #[test]
 fn test_grid_widget() {
     let widget = Grid::new()
-        .push(
-            Text::new("A").with_layout(
-                Layout::default()
-                    .grid_column(GridPlacement::start(1))
-                    .grid_row(GridPlacement::start(1)),
-            ),
-        )
-        .push(
-            Text::new("B").with_layout(
-                Layout::default()
-                    .grid_column(GridPlacement::start(2))
-                    .grid_row(GridPlacement::start(1)),
-            ),
-        )
-        .push(
-            Text::new("C").with_layout(
-                Layout::default()
-                    .grid_column(GridPlacement::start(1))
-                    .grid_row(GridPlacement::start(2)),
-            ),
-        )
-        .push(
-            Text::new("D").with_layout(
-                Layout::default()
-                    .grid_column(GridPlacement::start(2))
-                    .grid_row(GridPlacement::start(2)),
-            ),
-        )
+        .push(WithLayout::new(
+            Text::new("A"),
+            Layout::default()
+                .grid_column(GridPlacement::start(1))
+                .grid_row(GridPlacement::start(1)),
+        ))
+        .push(WithLayout::new(
+            Text::new("B"),
+            Layout::default()
+                .grid_column(GridPlacement::start(2))
+                .grid_row(GridPlacement::start(1)),
+        ))
+        .push(WithLayout::new(
+            Text::new("C"),
+            Layout::default()
+                .grid_column(GridPlacement::start(1))
+                .grid_row(GridPlacement::start(2)),
+        ))
+        .push(WithLayout::new(
+            Text::new("D"),
+            Layout::default()
+                .grid_column(GridPlacement::start(2))
+                .grid_row(GridPlacement::start(2)),
+        ))
         .layout(
             Layout::default()
                 .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])

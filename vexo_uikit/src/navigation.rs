@@ -745,7 +745,7 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // The nav bar handles the top safe-area inset itself (background
         // extends under the status bar). The content area only needs
         // left/right/bottom insets — top is already consumed by the bar.
-        let content = SafeArea::new(clipped).top(false).flex_fill();
+        let content = WithLayout::new(SafeArea::new(clipped).top(false), Layout::flex_fill());
 
         // flex_fill() fills the parent and prevents the column's content
         // (a tall scrollable page) from propagating its min-content upward.

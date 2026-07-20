@@ -14,7 +14,7 @@ use std::sync::Arc;
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
     Component, ComponentState, Flex, GestureDetector, IndexedStack, Layout, LifecycleContext,
-    RenderContext, SafeArea, SafeAreaClaim, Theme, Widget,
+    RenderContext, SafeArea, SafeAreaClaim, Theme, Widget, WithLayout,
 };
 
 use crate::theme::tokens;
@@ -194,7 +194,7 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // + `flex_shrink(0.0)` pins the bar to its content height so it doesn't
         // steal space from the page area above.
         let bar = SafeArea::new(bar.boxed()).top(false).boxed();
-        let bar = bar.with_layout(Layout::default().flex_grow(0.0).flex_shrink(0.0));
+        let bar = WithLayout::new(bar, Layout::default().flex_grow(0.0).flex_shrink(0.0));
 
         // SwiftUI-style hairline along the tab bar's top edge (the seam
         // between the page content and the bar). 1 logical px — Taffy floors
@@ -221,7 +221,10 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             // own SafeArea sees bottom=0 and doesn't re-apply the home-
             // indicator padding, which would create a gap between the
             // page content and the tab bar.
-            .push(SafeAreaClaim::bottom(stack).flex_fill())
+            .push(WithLayout::new(
+                SafeAreaClaim::bottom(stack),
+                Layout::flex_fill(),
+            ))
             .push(bar)
             .boxed()
     }

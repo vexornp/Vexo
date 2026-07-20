@@ -108,11 +108,10 @@ impl Component for ChatScreen {
 
         Column::new()
             .flex_fill()
-            .push(
-                ScrollView::new(list.boxed())
-                    .controller(self.scroll_controller.clone())
-                    .flex_fill(),
-            )
+            .push(WithLayout::new(
+                ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
+                Layout::flex_fill(),
+            ))
             .push(input_bar)
             .background(theme.background)
             .boxed()
@@ -171,21 +170,27 @@ fn build_input_bar(
     controller: TextEditingController,
     on_send: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
-    Row::new()
-        .gap(8.0)
-        .push(TextEdit::new(controller).flex_grow(1.0))
-        .push(
-            Button::new("Send")
-                .variant(ButtonVariant::Primary)
-                .shadow(
-                    BoxShadow::new(Color::BLACK.with_alpha(0.25))
-                        .blur(6.0)
-                        .offset(0.0, 2.0),
-                )
-                .on_tap(on_send),
-        )
-        .boxed()
-        .padding(8.0)
+    WithLayout::new(
+        Row::new()
+            .gap(8.0)
+            .push(WithLayout::new(
+                TextEdit::new(controller),
+                Layout::default().flex_grow(1.0),
+            ))
+            .push(
+                Button::new("Send")
+                    .variant(ButtonVariant::Primary)
+                    .shadow(
+                        BoxShadow::new(Color::BLACK.with_alpha(0.25))
+                            .blur(6.0)
+                            .offset(0.0, 2.0),
+                    )
+                    .on_tap(on_send),
+            )
+            .boxed(),
+        Layout::default().padding(8.0),
+    )
+    .boxed()
 }
 
 #[cfg(test)]
