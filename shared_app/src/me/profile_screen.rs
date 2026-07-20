@@ -1,6 +1,6 @@
 //! Profile screen — the root of the Me tab.
 
-use vexo::{Color, Column, Flex, Row, Text, Widget};
+use vexo::{Color, Column, Flex, Layout, Row, Text, Widget, WithLayout};
 
 use crate::data::Profile;
 use crate::widgets::avatar::avatar;
@@ -15,18 +15,20 @@ pub(crate) fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
         .with_font_size(14.0)
         .with_color(Color::rgb(0.5, 0.5, 0.5));
 
-    let header = Column::new()
-        .gap(4.0)
-        .push(avatar)
-        .push(name)
-        .push(email)
-        .boxed()
-        .padding(24.0);
+    let header = WithLayout::new(
+        Column::new()
+            .gap(4.0)
+            .push(avatar)
+            .push(name)
+            .push(email)
+            .boxed(),
+        Layout::default().padding(24.0),
+    );
 
     let settings = vec!["Settings", "Notifications", "About"];
     let mut settings_list = Flex::column();
     for label in settings {
-        settings_list = settings_list.push(
+        settings_list = settings_list.push(WithLayout::new(
             Row::new()
                 .gap(8.0)
                 .push(
@@ -40,9 +42,9 @@ pub(crate) fn build_profile_screen(profile: &Profile) -> Box<dyn Widget> {
                         .with_font_size(20.0)
                         .with_color(Color::rgb(0.6, 0.6, 0.6)),
                 )
-                .boxed()
-                .padding(16.0),
-        );
+                .boxed(),
+            Layout::default().padding(16.0),
+        ));
     }
 
     Column::new()

@@ -23,7 +23,7 @@ pub(crate) fn build_conversation_list_screen(
         });
         list = list.push(row);
     }
-    ScrollView::new(list.boxed()).flex_fill().boxed()
+    WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
 }
 
 fn build_conversation_row(
@@ -65,14 +65,16 @@ fn build_conversation_row(
         .push(badge)
         .boxed();
 
-    Row::new()
-        .gap(12.0)
-        .push(avatar_with_badge)
-        .push(info_col.flex_grow(1.0))
-        .push(right_col)
-        .boxed()
-        .padding(12.0)
-        .on_tap(on_press)
+    WithLayout::new(
+        Row::new()
+            .gap(12.0)
+            .push(avatar_with_badge)
+            .push(info_col.flex_grow(1.0))
+            .push(right_col)
+            .boxed(),
+        Layout::default().padding(12.0),
+    )
+    .on_tap(on_press)
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {

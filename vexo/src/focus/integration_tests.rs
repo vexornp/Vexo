@@ -9,8 +9,8 @@ use std::sync::Arc;
 use crate::animation::AnimationTicker;
 use crate::core::{Point, ScaleSource, Size};
 use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
-use crate::layout::TaffyLayoutEngine;
-use crate::{Flex, Focus, Text, ThreeTreePipeline};
+use crate::layout::{Layout, TaffyLayoutEngine};
+use crate::{Flex, Focus, Text, ThreeTreePipeline, WithLayout};
 
 fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
     std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
@@ -601,15 +601,14 @@ mod on_focus_change_tests {
         let focus_gained_clone = focus_gained.clone();
         let focus_lost_clone = focus_lost.clone();
 
-        let focus_widget = Focus::new(
+        let focus_widget = Focus::new(WithLayout::new(
             ScrollView::new(
                 Flex::column()
                     .push(Text::new("Line 1"))
                     .push(Text::new("Line 2")),
-            )
-            .width(200.0)
-            .height(100.0),
-        )
+            ),
+            Layout::default().width(200.0).height(100.0),
+        ))
         .on_focus_change(move |focused| {
             if focused {
                 focus_gained_clone.store(true, Ordering::Relaxed);
@@ -708,15 +707,14 @@ mod on_focus_change_tests {
             ) -> Box<dyn Widget> {
                 let is_focused_clone = state.is_focused.clone();
                 let fs = state.focus_state.clone();
-                Focus::new(
+                Focus::new(WithLayout::new(
                     ScrollView::new(
                         Flex::column()
                             .push(Text::new("Line 1"))
                             .push(Text::new("Line 2")),
-                    )
-                    .width(200.0)
-                    .height(100.0),
-                )
+                    ),
+                    Layout::default().width(200.0).height(100.0),
+                ))
                 .on_focus_change(move |focused| {
                     is_focused_clone.set(focused);
                     fs.store(if focused { 1 } else { -1 }, Ordering::Relaxed);
@@ -801,12 +799,15 @@ mod on_focus_change_tests {
             column = column.push(Text::new(&format!("Item {}", i)));
         }
 
-        let focus_widget = Focus::new(ScrollView::new(column).width(200.0).height(100.0))
-            .on_focus_change(move |focused| {
-                if focused {
-                    focus_gained_clone.store(true, Ordering::Relaxed);
-                }
-            });
+        let focus_widget = Focus::new(WithLayout::new(
+            ScrollView::new(column),
+            Layout::default().width(200.0).height(100.0),
+        ))
+        .on_focus_change(move |focused| {
+            if focused {
+                focus_gained_clone.store(true, Ordering::Relaxed);
+            }
+        });
 
         pipeline.reconcile(Box::new(focus_widget));
         layout_pipeline(&mut pipeline, &mut font_system);

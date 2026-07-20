@@ -234,10 +234,11 @@ impl Element for WithLayoutElement {
 ///
 /// ```ignore
 /// // Add padding and center a text widget
-/// Text::new("Hello").with_layout(
+/// WithLayout::new(
+///     Text::new("Hello"),
 ///     Layout::default()
 ///         .padding(16.0)
-///         .align_self(AlignSelf::Center)
+///         .align_self(AlignSelf::Center),
 /// )
 ///
 /// // Fixed-size container
@@ -443,9 +444,19 @@ mod tests {
     }
 
     #[test]
-    fn test_with_layout_method_on_widget() {
-        let w = Text::new("Hello").with_layout(Layout::default().padding(10.0));
+    fn test_with_layout_doc_example_compiles() {
+        // Mirrors the updated doc example — verifies the explicit
+        // constructor form compiles and produces a widget with the
+        // expected layout.
+        let w = WithLayout::new(
+            Text::new("Hello"),
+            Layout::default()
+                .padding(16.0)
+                .align_self(AlignSelf::Center),
+        );
         assert!(w.child().is_some());
+        assert!(w.layout_ref().padding.is_some());
+        assert_eq!(w.layout_ref().align_self, Some(AlignSelf::Center));
     }
 
     #[test]

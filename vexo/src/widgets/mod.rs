@@ -48,7 +48,6 @@ pub use theme::{Theme, ThemeData};
 // Crate-internal modifier widgets (not part of public API)
 use crate::core::Color;
 use crate::input::MouseCursor;
-use crate::layout::Layout;
 pub use decorated_box::DecoratedBox;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
@@ -175,92 +174,12 @@ pub trait Widget: Any {
     /// to enable cloning of widget trees stored as trait objects.
     fn clone_boxed(&self) -> Box<dyn Widget>;
 
-    /// Wrap this widget with layout properties.
-    ///
-    /// The Vexo equivalent of inline styles on a child element in CSS.
-    fn with_layout(self, layout: Layout) -> WithLayout
-    where
-        Self: Sized + 'static,
-    {
-        WithLayout::new(self, layout)
-    }
-
     /// Box this widget into a `Box<dyn Widget>`.
     fn boxed(self) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
     {
         Box::new(self)
-    }
-
-    // Layout modifiers (fallback: wrap in WithLayout)
-
-    fn padding(self, value: f32) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().padding(value)))
-    }
-
-    fn margin(self, value: f32) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().margin(value)))
-    }
-
-    fn width(self, value: f32) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().width(value)))
-    }
-
-    fn height(self, value: f32) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().height(value)))
-    }
-
-    fn flex_grow(self, value: f32) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().flex_grow(value)))
-    }
-
-    /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
-    /// propagating min-content upward.
-    ///
-    /// Convenience for `.with_layout(Layout::default().flex_grow(1.0).flex_basis(0.0).min_height(0.0))`.
-    /// Use this for scrollable content areas that should fill the remaining
-    /// space in a flex column without pushing siblings off screen.
-    fn flex_fill(self) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(
-            self,
-            Layout::default()
-                .flex_grow(1.0)
-                .flex_basis(0.0)
-                .min_height(0.0),
-        ))
-    }
-
-    fn align_self(self, value: crate::layout::AlignSelf) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().align_self(value)))
-    }
-
-    fn absolute(self) -> Box<dyn Widget>
-    where
-        Self: Sized + 'static,
-    {
-        Box::new(WithLayout::new(self, Layout::default().absolute()))
     }
 
     // Behavioral modifiers (always wrap)

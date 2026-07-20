@@ -273,31 +273,34 @@ impl Component for Button {
             container = container.shadows(self.shadows.clone());
         }
 
-        container
-            .boxed()
-            .on_press(move || {
-                if !disabled {
-                    is_pressed_signal.set(true);
-                }
-            })
-            .on_tap(move || {
-                if !disabled {
-                    (on_tap_cb.borrow_mut())();
-                }
-            })
-            .on_release(move || {
-                is_pressed_signal_release.set(false);
-            })
-            .on_enter(move || {
-                if !disabled {
-                    is_hovered_signal.set(true);
-                }
-            })
-            .on_exit(move || {
-                is_hovered_signal_exit.set(false);
-                is_pressed_signal_exit.set(false);
-            })
-            .opacity(opacity)
-            .align_self(AlignSelf::Start)
+        WithLayout::new(
+            container
+                .boxed()
+                .on_press(move || {
+                    if !disabled {
+                        is_pressed_signal.set(true);
+                    }
+                })
+                .on_tap(move || {
+                    if !disabled {
+                        (on_tap_cb.borrow_mut())();
+                    }
+                })
+                .on_release(move || {
+                    is_pressed_signal_release.set(false);
+                })
+                .on_enter(move || {
+                    if !disabled {
+                        is_hovered_signal.set(true);
+                    }
+                })
+                .on_exit(move || {
+                    is_hovered_signal_exit.set(false);
+                    is_pressed_signal_exit.set(false);
+                })
+                .opacity(opacity),
+            Layout::default().align_self(AlignSelf::Start),
+        )
+        .boxed()
     }
 }
