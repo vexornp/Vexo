@@ -54,28 +54,25 @@ macro_rules! grid {
     }};
 }
 
-/// Declarative child composition macro — reads like JSX children.
+/// Build a `Vec<Box<dyn Widget>>` from child expressions.
 ///
-/// Takes a parent widget expression followed by child expressions.
-/// Expands to chained `.push()` calls. Each child must implement `Widget`.
+/// Each child must implement `ChildPush` (any `impl Widget` or
+/// `Option<Box<dyn Widget>>` for conditional children). The resulting
+/// `Vec` is typically passed to `MultiChild::new(children, layout)`.
 ///
-/// Conditional children are supported via `Option`:
+/// # Example
+///
 /// ```ignore
-/// children![Column::new().gap(16.0),
-///     Text::new("Always shown"),
-///     if show_extra { Text::new("Extra").boxed() },
-/// ]
+/// MultiChild::new(children![Text::new("A"), Text::new("B")], Layout::column())
 /// ```
-/// `if` expressions that don't evaluate produce `None`, which is skipped.
-/// Conditional children must be `Option<Box<dyn Widget>>` (use `.boxed()`).
 #[macro_export]
 macro_rules! children {
-    ($parent:expr, $($child:expr),* $(,)?) => {{
-        let mut __vexo_parent = $parent;
+    ($($child:expr),* $(,)?) => {{
+        let mut __vexo_children: Vec<::std::boxed::Box<dyn $crate::Widget>> = Vec::new();
         $(
-            __vexo_parent = __vexo_parent.push($child);
+            $crate::widgets::ChildPush::push_into($child, &mut __vexo_children);
         )*
-        __vexo_parent
+        __vexo_children
     }};
 }
 
@@ -631,59 +628,34 @@ mod tests {
     // --- children! macro tests ---
 
     #[test]
-    fn children_macro_pushes_children() {
-        let col = children![
-            crate::Flex::column(),
+    fn children_macro_builds_vec() {
+        let kids: Vec<Box<dyn crate::Widget>> = children![
             crate::Text::new("A"),
             crate::Text::new("B"),
             crate::Text::new("C"),
         ];
-        assert_eq!(col.children().len(), 3);
-    }
-
-    #[test]
-    fn children_macro_nesting() {
-        let col = children![
-            crate::Flex::column(),
-            crate::Text::new("Title"),
-            children![
-                crate::Flex::row(),
-                crate::Text::new("A"),
-                crate::Text::new("B"),
-            ],
-        ];
-        assert_eq!(col.children().len(), 2);
-    }
-
-    #[test]
-    fn children_macro_with_builder_methods() {
-        let col = children![
-            crate::Flex::column().gap(16.0),
-            crate::Text::new("Title").padding(8.0),
-            crate::Text::new("Body"),
-        ];
-        assert_eq!(col.children().len(), 2);
-    }
-
-    #[test]
-    fn children_macro_with_grid() {
-        let grid = children![
-            crate::Grid::new(),
-            crate::Text::new("Cell 1"),
-            crate::Text::new("Cell 2"),
-        ];
-        assert_eq!(grid.children().len(), 2);
+        assert_eq!(kids.len(), 3);
     }
 
     #[test]
     fn children_macro_single_child() {
-        let col = children![crate::Flex::column(), crate::Text::new("Only child"),];
-        assert_eq!(col.children().len(), 1);
+        let kids: Vec<Box<dyn crate::Widget>> = children![crate::Text::new("Only"),];
+        assert_eq!(kids.len(), 1);
     }
 
     #[test]
     fn children_macro_no_children() {
-        let col = children![crate::Flex::column(),];
-        assert_eq!(col.children().len(), 0);
+        let kids: Vec<Box<dyn crate::Widget>> = children![];
+        assert_eq!(kids.len(), 0);
+    }
+
+    #[test]
+    fn children_macro_with_multi_child() {
+        use crate::layout::Layout;
+        let mc = crate::MultiChild::new(
+            children![crate::Text::new("A"), crate::Text::new("B")],
+            Layout::column().gap(16.0),
+        );
+        assert_eq!(mc.children().len(), 2);
     }
 }
