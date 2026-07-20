@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use vexo::{
     AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection, Layout,
-    RenderContext, Signal, Text, Theme, Widget, WithLayout,
+    RenderContext, Signal, Style, Text, Theme, Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -261,17 +261,17 @@ impl Component for Button {
                 .padding_each(pl, pr, pt, pb)
                 .flex_shrink(0.0),
         );
-        let mut container = DecoratedBox::new(inner)
-            .background(bg)
-            .corner_radius(corner_radius);
+        let mut style = Style::default().background(bg).corner_radius(corner_radius);
 
         if border_width > 0.0 {
-            container = container.border(border_color, border_width);
+            style = style.border(border_color, border_width);
         }
 
         if !self.shadows.is_empty() {
-            container = container.shadows(self.shadows.clone());
+            style = style.shadows(self.shadows.clone());
         }
+
+        let container = DecoratedBox::new(inner).style(style);
 
         WithLayout::new(
             container
