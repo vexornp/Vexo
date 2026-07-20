@@ -6,10 +6,13 @@ mod tests {
     use crate::core::Size;
     use crate::core::{Point, ScaleSource};
     use crate::input::{ButtonState, InputEvent, PointerButton};
-    use crate::layout::TaffyLayoutEngine;
+    use crate::layout::{Layout, TaffyLayoutEngine};
     use crate::reactive::Signal;
     use crate::widgets::{DecoratedBox, GestureDetector, WithLayout};
-    use crate::{Component, ComponentState, Flex, RenderContext, Text, ThreeTreePipeline, Widget};
+    use crate::{
+        children, Component, ComponentState, MultiChild, RenderContext, Text, ThreeTreePipeline,
+        Widget,
+    };
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
 
@@ -142,7 +145,10 @@ mod tests {
 
         fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
             let count = state.count.get();
-            Box::new(Flex::column().push(Text::new(format!("Count: {}", count))))
+            Box::new(MultiChild::new(
+                children![Text::new(format!("Count: {}", count))],
+                Layout::column(),
+            ))
         }
     }
 
@@ -185,7 +191,10 @@ mod tests {
 
         let child_id = root_children[0];
         let child_children = pipeline.element_registry().children(child_id).to_vec();
-        assert!(!child_children.is_empty(), "Flex should have children");
+        assert!(
+            !child_children.is_empty(),
+            "MultiChild should have children"
+        );
 
         // 5. Test the state update flow via pipeline update
         pipeline.update(Box::new(ReactiveCounter));
@@ -249,23 +258,23 @@ mod tests {
                 let count_clone = state.count.clone();
                 let click_count = self.click_count.clone();
 
-                Box::new(
-                    Flex::column()
-                        .push(Text::new(format!("Count: {}", count)))
-                        .push(
-                            GestureDetector::new(
-                                DecoratedBox::new(WithLayout::new(
-                                    Text::new("Click Me"),
-                                    crate::layout::Layout::default(),
-                                ))
-                                .corner_radius(4.0),
-                            )
-                            .on_press(move || {
-                                count_clone.set(count_clone.get() + 1);
-                                click_count.fetch_add(1, Ordering::SeqCst);
-                            }),
-                        ),
-                )
+                Box::new(MultiChild::new(
+                    children![
+                        Text::new(format!("Count: {}", count)),
+                        GestureDetector::new(
+                            DecoratedBox::new(WithLayout::new(
+                                Text::new("Click Me"),
+                                crate::layout::Layout::default(),
+                            ))
+                            .corner_radius(4.0),
+                        )
+                        .on_press(move || {
+                            count_clone.set(count_clone.get() + 1);
+                            click_count.fetch_add(1, Ordering::SeqCst);
+                        }),
+                    ],
+                    Layout::column(),
+                ))
             }
         }
 
@@ -730,11 +739,13 @@ mod tests {
                 let count = state.count.get();
                 let count_clone = state.count.clone();
                 // GestureDetector wraps the entire column so any click triggers on_press
-                GestureDetector::new(
-                    Flex::column()
-                        .push(Text::new(format!("Count: {}", count)))
-                        .push(Text::new("Increment")),
-                )
+                GestureDetector::new(MultiChild::new(
+                    children![
+                        Text::new(format!("Count: {}", count)),
+                        Text::new("Increment"),
+                    ],
+                    Layout::column(),
+                ))
                 .on_press(move || {
                     count_clone.set(count_clone.get() + 1);
                 })
@@ -896,13 +907,15 @@ mod tests {
                 let count = state.count.get();
                 let count_clone = state.count.clone();
                 // GestureDetector wrapping everything so clicks always hit
-                GestureDetector::new(
-                    Flex::column()
-                        .push(Text::new(format!("Count: {}", count)))
-                        .push(ChildButton {
+                GestureDetector::new(MultiChild::new(
+                    children![
+                        Text::new(format!("Count: {}", count)),
+                        ChildButton {
                             label: format!("Clicked {} times", count),
-                        }),
-                )
+                        },
+                    ],
+                    Layout::column(),
+                ))
                 .on_press(move || {
                     count_clone.set(count_clone.get() + 1);
                 })
@@ -1086,11 +1099,10 @@ mod tests {
                 };
 
                 // Wrap everything in a GestureDetector to catch clicks
-                GestureDetector::new(
-                    Flex::column()
-                        .push(Text::new(format!("Count: {}", count)))
-                        .push(button),
-                )
+                GestureDetector::new(MultiChild::new(
+                    children![Text::new(format!("Count: {}", count)), button,],
+                    Layout::column(),
+                ))
                 .on_press({
                     let on_press = on_press.clone();
                     move || {
@@ -1285,16 +1297,19 @@ mod tests {
                 let count_clone = state.click_count.clone();
 
                 // Exactly mirrors real shared_app view()
-                Flex::column()
-                    .gap(16.0)
-                    .push(Text::new(format!("Count: {}", count)))
-                    .push(ButtonLike {
-                        label: format!("Clicked {} times", count),
-                        on_press: Rc::new(RefCell::new(move || {
-                            count_clone.set(count_clone.get() + 1);
-                        })),
-                    })
-                    .boxed()
+                MultiChild::new(
+                    children![
+                        Text::new(format!("Count: {}", count)),
+                        ButtonLike {
+                            label: format!("Clicked {} times", count),
+                            on_press: Rc::new(RefCell::new(move || {
+                                count_clone.set(count_clone.get() + 1);
+                            })),
+                        },
+                    ],
+                    Layout::column().gap(16.0),
+                )
+                .boxed()
             }
         }
 
@@ -1546,10 +1561,9 @@ mod tests {
                 // Exactly mirrors real shared_app view():
                 // Button::new(...).on_press(...).boxed()
                 // This creates an OUTER GestureDetector wrapping the Button
-                Flex::column()
-                    .gap(16.0)
-                    .push(Text::new(format!("Count: {}", count)))
-                    .push(
+                MultiChild::new(
+                    children![
+                        Text::new(format!("Count: {}", count)),
                         ButtonLike {
                             label: format!("Clicked {} times", count),
                             on_press: Rc::new(RefCell::new({
@@ -1566,8 +1580,10 @@ mod tests {
                             }
                         })
                         .boxed(),
-                    )
-                    .boxed()
+                    ],
+                    Layout::column().gap(16.0),
+                )
+                .boxed()
             }
         }
 
