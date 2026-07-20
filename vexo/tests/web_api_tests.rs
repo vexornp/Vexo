@@ -181,9 +181,11 @@ fn widget_boxed_returns_box_dyn_widget() {
 
 #[test]
 fn widget_with_layout_modifier() {
-    let widget = Text::new("Padded").padding(8.0).width(100.0).height(50.0);
-    // These return Box<dyn Widget> wrapping WithLayout, so just verify
-    // they compile and produce a valid widget.
+    let widget = WithLayout::new(
+        Text::new("Padded"),
+        Layout::default().padding(8.0).width(100.0).height(50.0),
+    );
+    // Verify it compiles and produces a valid widget.
     let _ = widget.clone_boxed();
 }
 

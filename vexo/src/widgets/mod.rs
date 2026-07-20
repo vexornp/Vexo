@@ -309,7 +309,7 @@ mod tests {
     use crate::element::Element;
     use crate::input::SystemCursorKind;
     use crate::key::{Key, WidgetKey};
-    use crate::layout::TaffyLayoutEngine;
+    use crate::layout::{Layout, TaffyLayoutEngine};
     use crate::style::Style;
     use crate::{LayoutContext, RenderObject};
     use std::sync::Arc;
@@ -498,12 +498,12 @@ mod tests {
     #[test]
     fn test_widget_trait_on_press_chain() {
         let widget = DecoratedBox::with_style(
-            Text::new("Click").padding(8.0),
+            WithLayout::new(Text::new("Click"), Layout::default().padding(8.0)),
             Style::default().background(Color::RED),
         )
         .boxed()
         .on_press(|| {});
-        // Text with style/layout set, then wrapped in GestureDetector
+        // Text wrapped in WithLayout + DecoratedBox, then wrapped in GestureDetector
         assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
     }
 

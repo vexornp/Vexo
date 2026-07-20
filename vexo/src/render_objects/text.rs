@@ -6,7 +6,6 @@ use crate::layout::{
     DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
 };
 use crate::render::RenderCommand;
-use crate::style::Style;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
 
 /// RenderObject for text display.
@@ -35,8 +34,6 @@ pub struct TextRenderObject {
     /// Optional font family name. When set, text is shaped against this
     /// family; when `None`, the framework default is used.
     font_family: Option<String>,
-    style: Style,
-    layout: Layout,
     computed_bounds: Option<Bounds<Logical>>,
     /// Actual height of the text when wrapped at the computed box width.
     /// Measured during `apply_layout` so `paint` can vertically center the
@@ -60,8 +57,6 @@ impl TextRenderObject {
             line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
             color: Color::BLACK,
             font_family: None,
-            style: Style::default(),
-            layout: Layout::default(),
             computed_bounds: None,
             measured_text_height: None,
             natural_text_width: None,
@@ -92,18 +87,6 @@ impl TextRenderObject {
     /// Set the font family. Pass `None` to use the framework default.
     pub fn with_font_family(mut self, family: Option<String>) -> Self {
         self.font_family = family;
-        self
-    }
-
-    /// Set the style.
-    pub fn with_style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    /// Set the layout.
-    pub fn with_layout(mut self, layout: Layout) -> Self {
-        self.layout = layout;
         self
     }
 
@@ -178,30 +161,6 @@ impl TextRenderObject {
             false
         }
     }
-
-    /// Set the style configuration.
-    ///
-    /// Returns true if the style changed.
-    pub fn set_style(&mut self, style: Style) -> bool {
-        if self.style != style {
-            self.style = style;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set the layout configuration.
-    ///
-    /// Returns true if the layout changed.
-    pub fn set_layout(&mut self, layout: Layout) -> bool {
-        if self.layout != layout {
-            self.layout = layout;
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl RenderObject for TextRenderObject {
@@ -213,7 +172,7 @@ impl RenderObject for TextRenderObject {
             font_family: self.font_family.clone(),
         });
 
-        let layout = self.layout.clone();
+        let layout = Layout::default();
 
         match self.layout_node {
             Some(existing) => {
@@ -296,39 +255,9 @@ impl RenderObject for TextRenderObject {
                     .unwrap_or(self.font_size * self.line_height);
                 let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
 
-                let absolute_bounds = Bounds::new(
-                    pos.x,
-                    pos.y,
-                    pos.x + bounds.width(),
-                    pos.y + bounds.height(),
-                );
-
-                // 1. Push corner radius if set (affects all subsequent rects)
-                if let Some(ref cr) = self.style.corner_radius {
-                    commands.push(RenderCommand::PushCornerRadius { radius: cr.radius });
-                }
-
-                // 2. Draw background first (behind text)
-                if let Some(bg_color) = self.style.background {
-                    commands.push(RenderCommand::rect(absolute_bounds, bg_color));
-                }
-
-                // 3. Draw border on top (after background)
-                if let Some(ref border) = self.style.border {
-                    commands.push(RenderCommand::rect_with_border(
-                        absolute_bounds,
-                        Color::TRANSPARENT,
-                        border.color,
-                        border.width,
-                    ));
-                }
-
-                // 4. Pop corner radius
-                if self.style.corner_radius.is_some() {
-                    commands.push(RenderCommand::PopCornerRadius);
-                }
-
-                // 5. Draw text on top of decorations (vertically centered)
+                // Draw text (vertically centered). Decoration (background,
+                // border, corner radius, clip) is now the responsibility of a
+                // `DecoratedBox` wrapping this `Text`, not the leaf itself.
                 let text_pos = Point::new(pos.x, pos.y + vertical_offset);
                 // Match apply_layout's tolerance: Taffy floors layout widths
                 // to integers, so a box slightly narrower than the natural
@@ -374,14 +303,6 @@ impl RenderObject for TextRenderObject {
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
-    }
-
-    fn clip_bounds(&self) -> Option<Bounds<Logical>> {
-        if self.style.clip {
-            self.computed_bounds
-        } else {
-            None
-        }
     }
 }
 
@@ -508,41 +429,6 @@ mod tests {
         let result = obj.paint(&mut ctx);
 
         assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_text_render_object_with_style_background_paint() {
-        let style = crate::Style::new().background(crate::core::Color::RED);
-        let mut ro = TextRenderObject::new("Hello").with_style(style);
-        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
-        let mut commands = Vec::new();
-        let mut ctx = PaintContext::new(&mut commands);
-        let cmds = ro.paint(&mut ctx);
-        assert!(
-            cmds.len() >= 2,
-            "expected at least 2 commands, got {}",
-            cmds.len()
-        );
-    }
-
-    #[test]
-    fn test_text_render_object_set_style_change_detection() {
-        let style1 = crate::Style::new().background(crate::core::Color::RED);
-        let style2 = crate::Style::new().background(crate::core::Color::BLUE);
-        let style2_dup = style2.clone();
-        let mut ro = TextRenderObject::new("Hello").with_style(style1);
-        assert!(ro.set_style(style2));
-        assert!(!ro.set_style(style2_dup));
-    }
-
-    #[test]
-    fn test_text_render_object_set_layout_change_detection() {
-        let layout1 = Layout::default().padding(8.0);
-        let layout2 = Layout::default().padding(16.0);
-        let layout2_dup = layout2.clone();
-        let mut ro = TextRenderObject::new("Hello").with_layout(layout1);
-        assert!(ro.set_layout(layout2));
-        assert!(!ro.set_layout(layout2_dup));
     }
 
     #[test]
