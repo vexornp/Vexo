@@ -106,6 +106,11 @@ impl RClipUniform {
 /// `min_uniform_buffer_offset_alignment` (typically 256 bytes).
 const RCLIP_UNIFORM_ALIGN: wgpu::BufferAddress = 256;
 
+/// Number of slots in the rclip uniform buffer. Slot 0 is the ZERO slot
+/// (no rclip); slots 1..INITIAL_RCLIP_CAPACITY hold per-op rclip data.
+/// Ops beyond this capacity fall back to the ZERO slot with a warning.
+const INITIAL_RCLIP_CAPACITY: usize = 1_000;
+
 /// WGPU-based render backend.
 ///
 /// Encapsulates all GPU resources and rendering operations.
@@ -360,7 +365,6 @@ impl WgpuBackend {
             }],
         });
 
-        const INITIAL_RCLIP_CAPACITY: usize = 1_000;
         let rclip_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RClip Uniform Buffer"),
             size: RCLIP_UNIFORM_ALIGN * INITIAL_RCLIP_CAPACITY as wgpu::BufferAddress,
@@ -840,10 +844,24 @@ impl WgpuBackend {
         // Compute per-op rclip offsets. Each op gets a slot in the
         // rclip uniform buffer. Ops with no rclip point to offset 0
         // (the ZERO slot). Ops with rclip data point to their slot.
+        // Slots are bounded by INITIAL_RCLIP_CAPACITY; ops beyond that
+        // fall back to the ZERO slot (no rclip) with a warning, matching
+        // the warn-and-drop pattern in FrameBuilder::push_rclip.
         let mut rclip_offsets: Vec<u32> = Vec::with_capacity(frame_builder.ops().len());
         let mut next_slot: u32 = 1; // slot 0 is ZERO
+        let mut overflow_warned = false;
         for (_, _, rclip_snapshot) in frame_builder.ops() {
             if rclip_snapshot.is_empty() {
+                rclip_offsets.push(0);
+            } else if (next_slot as usize) >= INITIAL_RCLIP_CAPACITY {
+                if !overflow_warned {
+                    log::warn!(
+                        "[ClipRRect] rclip uniform buffer capacity {} exceeded, \
+                         excess ops fall back to no rclip",
+                        INITIAL_RCLIP_CAPACITY
+                    );
+                    overflow_warned = true;
+                }
                 rclip_offsets.push(0);
             } else {
                 rclip_offsets.push(next_slot * RCLIP_UNIFORM_ALIGN as u32);
@@ -858,10 +876,12 @@ impl WgpuBackend {
             bytemuck::bytes_of(&RClipUniform::ZERO),
         );
 
-        // Write each non-zero op's rclip data.
+        // Write each non-zero op's rclip data. The slot counter is
+        // already bounded by INITIAL_RCLIP_CAPACITY via the offset loop
+        // above, so this loop only writes slots that were allocated.
         let mut slot: u32 = 1;
         for (_, _, rclip_snapshot) in frame_builder.ops() {
-            if !rclip_snapshot.is_empty() {
+            if !rclip_snapshot.is_empty() && (slot as usize) < INITIAL_RCLIP_CAPACITY {
                 let uniform = RClipUniform::from_entries(rclip_snapshot);
                 self.queue.write_buffer(
                     &self.rclip_uniform_buffer,
