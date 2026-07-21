@@ -71,8 +71,6 @@ pub enum RenderCommand {
         bounds: Bounds<Logical>,
         /// Key identifying the image in the atlas.
         image_key: ImageKey,
-        /// Corner radius for rounded image clipping (0.0 = sharp corners).
-        corner_radius: f32,
     },
 
     /// Push a clipping region onto the stack.

@@ -5,7 +5,6 @@ struct VertexOutput {
     @location(1) uv_origin: vec2<f32>,
     @location(2) uv_size: vec2<f32>,
     @location(3) size: vec2<f32>,
-    @location(4) corner_radius: f32,
     @location(5) opacity: f32,
 };
 
@@ -71,7 +70,6 @@ fn vs_main(
     @location(2) inst_size: vec2<f32>,
     @location(3) inst_uv_origin: vec2<f32>,
     @location(4) inst_uv_size: vec2<f32>,
-    @location(5) inst_corner_radius: f32,
     @location(9) inst_opacity: f32,
     @location(6) inst_transform_ab: vec2<f32>,
     @location(7) inst_transform_cd: vec2<f32>,
@@ -96,32 +94,14 @@ fn vs_main(
     out.uv_origin = inst_uv_origin;
     out.uv_size = inst_uv_size;
     out.size = inst_size * globals.scale_factor;
-    out.corner_radius = inst_corner_radius * globals.scale_factor;
     out.opacity = inst_opacity;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let radius = min(in.corner_radius, min(in.size.x, in.size.y) * 0.5);
     let atlas_uv = in.uv_origin + in.uv * in.uv_size;
     let tex_color = textureSample(image_atlas, image_sampler, atlas_uv);
 
-    if (radius < 0.5) {
-        return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity * rclip_alpha(in.uv * in.size));
-    }
-
-    let pixel_pos = in.uv * in.size;
-    let half_size = in.size * 0.5;
-    let center_pos = pixel_pos - half_size;
-    let inner_dist = abs(center_pos) - (half_size - radius);
-    let corner_dist = length(max(inner_dist, vec2<f32>(0.0))) - radius;
-    let sdf = min(max(inner_dist.x, inner_dist.y), 0.0) + corner_dist;
-    let fill_alpha = 1.0 - smoothstep(-1.0, 1.0, sdf);
-
-    if (fill_alpha <= 0.0) {
-        discard;
-    }
-
-    return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha * in.opacity * rclip_alpha(in.uv * in.size));
+    return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity * rclip_alpha(in.uv * in.size));
 }

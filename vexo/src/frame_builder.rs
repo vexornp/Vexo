@@ -57,7 +57,6 @@ pub struct ImageRequest {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub image_key: ImageKey,
-    pub corner_radius: f32,
     pub transform: [f32; 6],
     pub opacity: f32,
 }
@@ -424,7 +423,6 @@ mod tests {
             position: [10.0, 20.0],
             size: [100.0, 50.0],
             image_key: 1,
-            corner_radius: 8.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -438,7 +436,6 @@ mod tests {
             position: [10.0, 20.0],
             size: [100.0, 50.0],
             image_key: 1,
-            corner_radius: 8.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 0.5,
         };
@@ -452,7 +449,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [50.0, 50.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -462,7 +458,6 @@ mod tests {
             position: [10.0, 10.0],
             size: [30.0, 30.0],
             image_key: 2,
-            corner_radius: 4.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -485,7 +480,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [10.0, 10.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -518,7 +512,6 @@ mod tests {
             position: [10.0, 10.0],
             size: [10.0, 10.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -603,7 +596,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [1.0, 1.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -627,7 +619,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [1.0, 1.0],
             image_key: 10,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -636,7 +627,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [2.0, 2.0],
             image_key: 20,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -656,7 +646,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [1.0, 1.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -666,7 +655,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [1.0, 1.0],
             image_key: 2,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });
@@ -818,7 +806,6 @@ mod tests {
             position: [0.0, 0.0],
             size: [50.0, 50.0],
             image_key: 1,
-            corner_radius: 0.0,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
         });

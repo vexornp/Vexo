@@ -812,7 +812,6 @@ impl WgpuBackend {
                         req.size,
                         region,
                         atlas_size,
-                        req.corner_radius,
                         AffineTransform::from_array(req.transform),
                         req.opacity,
                     );

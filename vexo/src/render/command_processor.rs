@@ -143,11 +143,7 @@ pub fn process_commands(
                 frame_builder.add_rect(bounds, color, None, 0.0);
                 frame_builder.pop_transform();
             }
-            RenderCommand::Image {
-                bounds,
-                image_key,
-                corner_radius,
-            } => {
+            RenderCommand::Image { bounds, image_key } => {
                 let offset_bounds: Bounds<Logical> = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
@@ -158,7 +154,6 @@ pub fn process_commands(
                     position: [offset_bounds.left, offset_bounds.top],
                     size: [offset_bounds.width(), offset_bounds.height()],
                     image_key: *image_key,
-                    corner_radius: *corner_radius,
                     transform: current_transform.to_array(),
                     opacity: current_opacity,
                 });
@@ -628,7 +623,6 @@ mod tests {
             RenderCommand::Image {
                 bounds: Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
                 image_key: ImageKey::default(),
-                corner_radius: 0.0,
             },
         ];
 
@@ -649,7 +643,6 @@ mod tests {
             RenderCommand::Image {
                 bounds: Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
                 image_key: ImageKey::default(),
-                corner_radius: 0.0,
             },
             RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 10.0, 10.0), Color::RED),
         ];
