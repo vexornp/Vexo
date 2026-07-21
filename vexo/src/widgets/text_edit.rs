@@ -404,7 +404,7 @@ impl ComponentState for TextEditState {
                 text,
                 ..
             } => {
-                // Use ctx.modifiers as the single source of truth — it is kept
+                // Use ctx.modifiers() as the single source of truth — it is kept
                 // in sync by WindowState and threaded through EventHandler.
                 let modifiers = ctx.modifiers();
                 let cmd = modifiers.is_command();
