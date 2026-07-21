@@ -183,7 +183,7 @@ pub fn process_commands(
             RenderCommand::PopClip => {
                 frame_builder.pop_clip();
             }
-            RenderCommand::PushClipRRect { bounds, radius: _ } => {
+            RenderCommand::PushClipRRect { bounds, radius } => {
                 let adjusted_bounds = Bounds::new(
                     bounds.left + current_offset.x,
                     bounds.top + current_offset.y,
@@ -195,10 +195,10 @@ pub fn process_commands(
                 } else {
                     current_transform.transform_bounds(&adjusted_bounds)
                 };
-                frame_builder.push_clip(effective_bounds);
+                frame_builder.push_rclip(effective_bounds, *radius);
             }
             RenderCommand::PopClipRRect => {
-                frame_builder.pop_clip();
+                frame_builder.pop_rclip();
             }
             RenderCommand::PushCornerRadius { radius } => {
                 frame_builder.push_corner_radius(*radius);
@@ -698,5 +698,54 @@ mod tests {
         let quad = &frame_builder.quad_instances()[0];
         assert_eq!(quad.shadow_color, [0.0, 0.0, 0.0, 0.0]);
         assert_eq!(quad.shadow_blur, 0.0);
+    }
+
+    #[test]
+    fn test_process_push_clip_rrect() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let commands = vec![RenderCommand::PushClipRRect {
+            bounds,
+            radius: 8.0,
+        }];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert_eq!(frame_builder.current_rclip().len(), 1);
+        assert_eq!(frame_builder.current_rclip()[0], (bounds, 8.0));
+    }
+
+    #[test]
+    fn test_process_pop_clip_rrect() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let commands = vec![
+            RenderCommand::PushClipRRect {
+                bounds,
+                radius: 8.0,
+            },
+            RenderCommand::PopClipRRect,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        assert!(frame_builder.current_rclip().is_empty());
+    }
+
+    #[test]
+    fn test_process_push_clip_rrect_with_offset() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let commands = vec![RenderCommand::PushClipRRect {
+            bounds,
+            radius: 8.0,
+        }];
+
+        process_commands(&commands, &mut frame_builder, Point::new(5.0, 7.0));
+
+        let entry = &frame_builder.current_rclip()[0];
+        assert_eq!(entry.0.left, 15.0); // 10 + 5
+        assert_eq!(entry.0.top, 27.0); // 20 + 7
+        assert_eq!(entry.1, 8.0);
     }
 }
