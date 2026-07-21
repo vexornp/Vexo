@@ -974,6 +974,12 @@ impl WgpuBackend {
             // we still need to set the scissor once.
             let mut prev_kind: Option<OpKind> = None;
             let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
+            // Last rclip dynamic offset set on each slot this pass.
+            // `None` = slot has not been set yet. Bind group bindings persist
+            // across pipeline switches within a render pass, so we only need
+            // to re-set when the offset for the target slot changes.
+            // Index 0 = Quad slot (group 1), Index 1 = Image slot (group 2).
+            let mut prev_rclip_offset_per_slot: [Option<u32>; 2] = [None, None];
 
             for (i, (loc, clip)) in self.current_op_locations
                 .iter()
@@ -1032,15 +1038,26 @@ impl WgpuBackend {
                 // 3. RClip bind group: per-op dynamic offset.
                 //    Quad pipeline: group 1. Image pipeline: group 2
                 //    (group 1 is the image atlas).
-                let rclip_group = match kind {
-                    OpKind::Quad => 1,
-                    OpKind::Image => 2,
+                //    Skip when the target slot already has this offset —
+                //    bind group bindings persist across pipeline switches
+                //    within a render pass.
+                let rclip_slot_idx = match kind {
+                    OpKind::Quad => 0,
+                    OpKind::Image => 1,
                 };
-                render_pass.set_bind_group(
-                    rclip_group,
-                    &self.rclip_bind_group,
-                    &[self.current_op_rclip_offsets[i]],
-                );
+                let rclip_offset = self.current_op_rclip_offsets[i];
+                if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
+                    let rclip_group = match kind {
+                        OpKind::Quad => 1,
+                        OpKind::Image => 2,
+                    };
+                    render_pass.set_bind_group(
+                        rclip_group,
+                        &self.rclip_bind_group,
+                        &[rclip_offset],
+                    );
+                    prev_rclip_offset_per_slot[rclip_slot_idx] = Some(rclip_offset);
+                }
 
                 // 4. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
                 match kind {
