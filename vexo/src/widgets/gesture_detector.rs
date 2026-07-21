@@ -338,8 +338,11 @@ impl Element for GestureDetectorElement {
         context: &mut EventContext,
         _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
-        if let InputEvent::PointerButton { state, .. } = event {
-            if context.is_pointer_inside() {
+        if let InputEvent::PointerButton {
+            state, position, ..
+        } = event
+        {
+            if context.bounds().contains(position) {
                 match state {
                     ButtonState::Pressed => {
                         if let Some(callback) = &self.on_press {
@@ -629,11 +632,8 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(50.0, 25.0),
-            Point::new(50.0, 25.0),
-            None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
             test_clipboard(),
@@ -668,11 +668,8 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(50.0, 25.0),
-            Point::new(50.0, 25.0),
-            None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
             test_clipboard(),
@@ -704,11 +701,8 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(200.0, 200.0), // Outside bounds
-            Point::new(200.0, 200.0),
-            None,
             bounds,
             crate::input::Modifiers::default(),
-            crate::core::ScaleSource::default(),
             &mut font_system,
             None,
             test_clipboard(),

@@ -126,7 +126,7 @@ impl ScrollViewElement {
             }
         }
 
-        if let Some(bo) = ctx.build_owner {
+        if let Some(bo) = ctx.build_owner() {
             bo.mark_needs_build(ctx.element_id());
         }
         true
@@ -264,9 +264,10 @@ impl Element for ScrollViewElement {
         match event {
             InputEvent::PointerButton {
                 state: ButtonState::Pressed,
+                position,
                 ..
             } => {
-                if context.is_pointer_inside() {
+                if context.bounds().contains(position) {
                     self.momentum.stop();
                     context.request_focus(context.element_id());
                     return Some(Box::new(()));
@@ -384,7 +385,7 @@ impl Element for ScrollViewElement {
                 let Some(element_id) = self.id else {
                     return;
                 };
-                let Some(tx) = ctx.dirty_sender.cloned() else {
+                let Some(tx) = ctx.dirty_sender().cloned() else {
                     return;
                 };
                 let Some(ticker) = self.animation_ticker.clone() else {

@@ -176,11 +176,8 @@ impl EventHandler {
                                 let mut ctx = EventContext::with_build_owner(
                                     winner_id,
                                     position,
-                                    position,
-                                    focus_manager.primary_focus_element(),
                                     bounds,
                                     modifiers,
-                                    scale_source.clone(),
                                     font_system,
                                     build_owner,
                                     dirty_sender,
@@ -205,11 +202,8 @@ impl EventHandler {
                             let mut ctx = EventContext::with_build_owner(
                                 winner_id,
                                 position,
-                                position,
-                                focus_manager.primary_focus_element(),
                                 bounds,
                                 modifiers,
-                                scale_source.clone(),
                                 font_system,
                                 build_owner,
                                 dirty_sender,
@@ -293,12 +287,9 @@ impl EventHandler {
                         if let Some(element) = element_registry.get_mut(winner_id) {
                             let mut ctx = EventContext::with_build_owner(
                                 winner_id,
-                                position,
                                 local_position,
-                                focus_manager.primary_focus_element(),
                                 bounds,
                                 modifiers,
-                                scale_source.clone(),
                                 font_system,
                                 build_owner,
                                 dirty_sender,
@@ -352,12 +343,9 @@ impl EventHandler {
                     if let Some(element) = element_registry.get_mut(winner_id) {
                         let mut ctx = EventContext::with_build_owner(
                             winner_id,
-                            position,
                             local_position,
-                            focus_manager.primary_focus_element(),
                             bounds,
                             modifiers,
-                            scale_source.clone(),
                             font_system,
                             build_owner,
                             dirty_sender,
@@ -393,12 +381,9 @@ impl EventHandler {
                     .unwrap_or_default();
                 let mut ctx = EventContext::with_build_owner(
                     element_id,
-                    position,
                     local_position,
-                    focus_manager.primary_focus_element(),
                     bounds,
                     modifiers,
-                    scale_source.clone(),
                     font_system,
                     build_owner,
                     dirty_sender,
@@ -453,11 +438,8 @@ impl EventHandler {
         let mut ctx = EventContext::with_build_owner(
             focused,
             Point::zero(),
-            Point::zero(), // no pointer position for keyboard events
-            focus_manager.primary_focus_element(),
             bounds,
             modifiers,
-            scale_source.clone(),
             font_system,
             build_owner,
             dirty_sender,
@@ -527,12 +509,9 @@ impl EventHandler {
                     if let Some(element) = element_registry.get_mut(element_id) {
                         let mut ctx = EventContext::with_build_owner(
                             element_id,
-                            position,
                             local_position,
-                            focus_manager.primary_focus_element(),
                             bounds,
                             modifiers,
-                            scale_source.clone(),
                             font_system,
                             build_owner,
                             dirty_sender,

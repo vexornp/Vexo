@@ -6,7 +6,7 @@
 //! borrow conflicts when StatefulElement needs both `&mut W::State` and
 //! `&mut EventContext`.
 
-use crate::core::{Bounds, Logical, Point, Scale, ScaleSource};
+use crate::core::{Bounds, Logical, Point};
 use crate::input::Modifiers;
 
 use super::build_owner::BuildOwner;
@@ -16,39 +16,33 @@ use super::render_object::RenderObjectRegistry;
 /// Context provided to elements during event handling.
 ///
 /// Contains information about the event environment:
-/// - The element's own ID (for focus requests and focus checks)
-/// - Pointer position for hit testing
-/// - Focus state for keyboard event routing
-/// - Font system for text editing operations
-/// - Build owner for marking elements dirty from event handlers
+/// - The element's own ID (for focus requests)
+/// - The pointer position in the hit target's local space
+/// - Bounds, keyboard modifiers, and font system for text editing
+/// - Clipboard for copy/paste/cut
+/// - Build owner and dirty sender for marking elements dirty from event handlers
 pub struct EventContext<'a> {
     /// The element receiving this event.
     element_id: ElementKey,
 
-    /// Current pointer position in logical coordinates.
-    pub pointer_position: Point<Logical>,
-
-    /// Currently focused element (if any).
-    pub focused_element: Option<ElementKey>,
-
     /// Bounds of the element receiving the event.
-    pub bounds: Bounds<Logical>,
+    bounds: Bounds<Logical>,
 
     /// Current keyboard modifiers.
-    pub modifiers: Modifiers,
+    modifiers: Modifiers,
 
     /// Font system for text editing operations.
     ///
     /// Required by TextEdit for editor actions (insert, delete, cursor movement)
     /// which need font_system for text shaping.
-    pub font_system: &'a mut glyphon::FontSystem,
+    font_system: &'a mut glyphon::FontSystem,
 
     /// Clipboard access for copy/paste/cut operations.
     ///
     /// Shared via `Arc` so that the same backend (arboard on desktop, stub on iOS)
     /// can be cheaply cloned into every `EventContext` constructed during event
     /// dispatch without taking ownership of the underlying platform handle.
-    pub clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
+    clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
 
     /// Build owner for marking elements dirty from event handlers.
     ///
@@ -57,13 +51,13 @@ pub struct EventContext<'a> {
     ///
     /// This is `Some` when the pipeline provides BuildOwner access
     /// (which is the normal case), and `None` in test contexts.
-    pub build_owner: Option<&'a BuildOwner>,
+    build_owner: Option<&'a BuildOwner>,
 
     /// Channel sender for dirty element signals from Signal callbacks.
     ///
     /// When a `Signal::set()` fires its dirty callback from within
     /// an event handler, it sends the element ID through this channel.
-    pub dirty_sender: Option<&'a std::sync::mpsc::Sender<ElementKey>>,
+    dirty_sender: Option<&'a std::sync::mpsc::Sender<ElementKey>>,
 
     /// Render object registry for element-to-render-object communication.
     ///
@@ -82,33 +76,24 @@ pub struct EventContext<'a> {
     /// Equivalent to Flutter's `localPosition` — computed as
     /// `pointer_position - inner_bounds.origin`.
     local_position: Point<Logical>,
-
-    /// Shared scale factor source.
-    scale_source: ScaleSource,
 }
 
 impl<'a> EventContext<'a> {
     /// Create a new event context.
     pub fn new(
         element_id: ElementKey,
-        pointer_position: Point<Logical>,
         local_position: Point<Logical>,
-        focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        scale_source: ScaleSource,
         font_system: &'a mut glyphon::FontSystem,
         render_objects: Option<&'a RenderObjectRegistry>,
         clipboard: std::sync::Arc<dyn crate::platform::Clipboard>,
     ) -> Self {
         Self {
             element_id,
-            pointer_position,
             local_position,
-            focused_element,
             bounds,
             modifiers,
-            scale_source,
             font_system,
             clipboard,
             build_owner: None,
@@ -122,12 +107,9 @@ impl<'a> EventContext<'a> {
     /// Create a new event context with BuildOwner access.
     pub fn with_build_owner(
         element_id: ElementKey,
-        pointer_position: Point<Logical>,
         local_position: Point<Logical>,
-        focused_element: Option<ElementKey>,
         bounds: Bounds<Logical>,
         modifiers: Modifiers,
-        scale_source: ScaleSource,
         font_system: &'a mut glyphon::FontSystem,
         build_owner: &'a BuildOwner,
         dirty_sender: &'a std::sync::mpsc::Sender<ElementKey>,
@@ -136,12 +118,9 @@ impl<'a> EventContext<'a> {
     ) -> Self {
         Self {
             element_id,
-            pointer_position,
             local_position,
-            focused_element,
             bounds,
             modifiers,
-            scale_source,
             font_system,
             clipboard,
             build_owner: Some(build_owner),
@@ -157,36 +136,49 @@ impl<'a> EventContext<'a> {
         self.element_id
     }
 
-    /// Check if the pointer is inside the element bounds.
-    pub fn is_pointer_inside(&self) -> bool {
-        self.bounds.contains(&self.pointer_position)
-    }
-
     /// Get the pointer position in the deepest hit target's local space.
     /// Equivalent to Flutter's `localPosition`.
     pub fn local_position(&self) -> Point<Logical> {
         self.local_position
     }
 
-    /// Get the DPI scale factor.
-    pub fn scale(&self) -> Scale {
-        self.scale_source.get()
+    /// Get the bounds of the element receiving the event.
+    pub fn bounds(&self) -> Bounds<Logical> {
+        self.bounds
     }
 
-    /// Check if this element is currently focused.
-    /// Uses the element's own ID stored in this context.
-    pub fn is_focused_self(&self) -> bool {
-        self.focused_element == Some(self.element_id)
+    /// Get the keyboard modifiers active during this event.
+    pub fn modifiers(&self) -> Modifiers {
+        self.modifiers
     }
 
-    /// Check if a specific element is currently focused.
-    pub fn is_focused(&self, element: ElementKey) -> bool {
-        self.focused_element == Some(element)
+    /// Get the font system for text editing operations.
+    ///
+    /// Returns `&mut` so handlers can pass it to controller methods
+    /// (insert, delete, cursor movement) that need font_system for
+    /// text shaping.
+    pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
+        self.font_system
     }
 
-    /// Check if any element has focus.
-    pub fn has_focus(&self) -> bool {
-        self.focused_element.is_some()
+    /// Get the clipboard for copy/paste/cut operations.
+    pub fn clipboard(&self) -> &std::sync::Arc<dyn crate::platform::Clipboard> {
+        &self.clipboard
+    }
+
+    /// Get the build owner, if available.
+    ///
+    /// Returns `None` in test contexts; `Some` in production.
+    pub fn build_owner(&self) -> Option<&BuildOwner> {
+        self.build_owner
+    }
+
+    /// Get the dirty sender, if available.
+    ///
+    /// Used by `Signal::set()` callbacks fired from event handlers
+    /// to send the element ID through the channel for rebuild scheduling.
+    pub fn dirty_sender(&self) -> Option<&std::sync::mpsc::Sender<ElementKey>> {
+        self.dirty_sender
     }
 
     /// Request focus for an element.
@@ -213,28 +205,6 @@ impl<'a> EventContext<'a> {
         self.clear_focus_request
     }
 
-    /// Check if the control key is pressed.
-    pub fn is_control_pressed(&self) -> bool {
-        self.modifiers.control
-    }
-
-    /// Check if the shift key is pressed.
-    pub fn is_shift_pressed(&self) -> bool {
-        self.modifiers.shift
-    }
-
-    /// Check if the alt key is pressed.
-    pub fn is_alt_pressed(&self) -> bool {
-        self.modifiers.alt
-    }
-
-    /// Mark an element as needing rebuild.
-    pub fn mark_needs_build(&self, element_id: ElementKey) {
-        if let Some(bo) = self.build_owner {
-            bo.mark_needs_build(element_id);
-        }
-    }
-
     /// Get the render object registry, if available.
     pub fn render_objects(&self) -> Option<&RenderObjectRegistry> {
         self.render_objects
@@ -244,11 +214,11 @@ impl<'a> EventContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
-    std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
-}
+    fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
+        std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
 
-    use crate::core::{Bounds, ScaleSource};
+    use crate::core::Bounds;
     use std::sync::Arc;
 
     fn create_test_font_system() -> glyphon::FontSystem {
@@ -262,13 +232,6 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
         sm.insert(())
     }
 
-    fn make_two_keys() -> (ElementKey, ElementKey) {
-        let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
-        let k1 = sm.insert(());
-        let k2 = sm.insert(());
-        (k1, k2)
-    }
-
     #[test]
     fn test_event_context_element_id() {
         let element = make_key();
@@ -276,84 +239,13 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
         let ctx = EventContext::new(
             element,
             Point::zero(),
-            Point::zero(),
-            None,
             Bounds::default(),
             Modifiers::default(),
-            ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
         assert_eq!(ctx.element_id(), element);
-    }
-
-    #[test]
-    fn test_event_context_is_pointer_inside() {
-        let element = make_key();
-        let mut font_system = create_test_font_system();
-        let ctx = EventContext::new(
-            element,
-            Point::new(50.0, 50.0),
-            Point::new(50.0, 50.0),
-            None,
-            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
-            Modifiers::default(),
-            ScaleSource::default(),
-            &mut font_system,
-            None,
-        test_clipboard(),
-        );
-        assert!(ctx.is_pointer_inside());
-
-        let mut font_system = create_test_font_system();
-        let ctx = EventContext::new(
-            element,
-            Point::new(150.0, 50.0),
-            Point::new(150.0, 50.0),
-            None,
-            Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
-            Modifiers::default(),
-            ScaleSource::default(),
-            &mut font_system,
-            None,
-        test_clipboard(),
-        );
-        assert!(!ctx.is_pointer_inside());
-    }
-
-    #[test]
-    fn test_event_context_is_focused_self() {
-        let (element, _other) = make_two_keys();
-        let mut font_system = create_test_font_system();
-        let ctx = EventContext::new(
-            element,
-            Point::zero(),
-            Point::zero(),
-            Some(element),
-            Bounds::default(),
-            Modifiers::default(),
-            ScaleSource::default(),
-            &mut font_system,
-            None,
-        test_clipboard(),
-        );
-        assert!(ctx.is_focused_self());
-
-        let mut font_system = create_test_font_system();
-        let ctx = EventContext::new(
-            element,
-            Point::zero(),
-            Point::zero(),
-            None,
-            Bounds::default(),
-            Modifiers::default(),
-            ScaleSource::default(),
-            &mut font_system,
-            None,
-        test_clipboard(),
-        );
-        assert!(!ctx.is_focused_self());
     }
 
     #[test]
@@ -363,14 +255,11 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
         let mut ctx = EventContext::new(
             element,
             Point::zero(),
-            Point::zero(),
-            None,
             Bounds::default(),
             Modifiers::default(),
-            ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
 
         let target = make_key();
@@ -386,40 +275,15 @@ fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
         let mut ctx = EventContext::new(
             element,
             Point::zero(),
-            Point::zero(),
-            None,
             Bounds::default(),
             Modifiers::default(),
-            ScaleSource::default(),
             &mut font_system,
             None,
-        test_clipboard(),
+            test_clipboard(),
         );
 
         ctx.clear_focus();
         assert!(ctx.should_clear_focus());
         assert_eq!(ctx.focus_request(), None);
-    }
-
-    #[test]
-    fn test_event_context_modifiers() {
-        let element = make_key();
-        let mut font_system = create_test_font_system();
-        let ctx = EventContext::new(
-            element,
-            Point::zero(),
-            Point::zero(),
-            None,
-            Bounds::default(),
-            Modifiers::control(),
-            ScaleSource::default(),
-            &mut font_system,
-            None,
-        test_clipboard(),
-        );
-
-        assert!(ctx.is_control_pressed());
-        assert!(!ctx.is_shift_pressed());
-        assert!(!ctx.is_alt_pressed());
     }
 }

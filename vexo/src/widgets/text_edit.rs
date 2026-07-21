@@ -387,13 +387,13 @@ impl ComponentState for TextEditState {
                         h
                     }
                 };
-                let vertical_offset = ((ctx.bounds.height() - text_height) / 2.0).max(0.0);
+                let vertical_offset = ((ctx.bounds().height() - text_height) / 2.0).max(0.0);
                 let adjusted_y = local.y - vertical_offset;
                 let buffer_x = local.x as i32;
                 let buffer_y = adjusted_y as i32;
                 text_edit
                     .controller
-                    .click_at(buffer_x, buffer_y, ctx.font_system);
+                    .click_at(buffer_x, buffer_y, ctx.font_system());
 
                 Some(Box::new(()))
             }
@@ -406,7 +406,7 @@ impl ComponentState for TextEditState {
             } => {
                 // Use ctx.modifiers as the single source of truth — it is kept
                 // in sync by WindowState and threaded through EventHandler.
-                let modifiers = ctx.modifiers;
+                let modifiers = ctx.modifiers();
                 let cmd = modifiers.is_command();
                 let shift = modifiers.shift;
 
@@ -415,52 +415,52 @@ impl ComponentState for TextEditState {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::Left,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::Right,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::Up,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::Down,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::Home) => {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::Home,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::End) => {
                         text_edit.controller.move_cursor_with_selection(
                             Motion::End,
                             shift,
-                            ctx.font_system,
+                            ctx.font_system(),
                         );
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        text_edit.controller.delete_backward(ctx.font_system);
+                        text_edit.controller.delete_backward(ctx.font_system());
                     }
                     Key::Named(NamedKey::Delete) => {
-                        text_edit.controller.delete_forward(ctx.font_system);
+                        text_edit.controller.delete_forward(ctx.font_system());
                     }
                     Key::Named(NamedKey::Enter) => {
-                        text_edit.controller.insert_newline(ctx.font_system);
+                        text_edit.controller.insert_newline(ctx.font_system());
                     }
                     Key::Named(NamedKey::Escape) => {
                         return None;
@@ -471,21 +471,21 @@ impl ComponentState for TextEditState {
                             // Match case-insensitively so both Ctrl+C and Ctrl+Shift+C work.
                             match ch.to_lowercase().as_str() {
                                 "a" => {
-                                    text_edit.controller.select_all(ctx.font_system);
+                                    text_edit.controller.select_all(ctx.font_system());
                                 }
                                 "c" => {
                                     if let Some(s) = text_edit.controller.copy() {
-                                        ctx.clipboard.set_text(&s);
+                                        ctx.clipboard().set_text(&s);
                                     }
                                 }
                                 "x" => {
-                                    if let Some(s) = text_edit.controller.cut(ctx.font_system) {
-                                        ctx.clipboard.set_text(&s);
+                                    if let Some(s) = text_edit.controller.cut(ctx.font_system()) {
+                                        ctx.clipboard().set_text(&s);
                                     }
                                 }
                                 "v" => {
-                                    if let Some(s) = ctx.clipboard.get_text() {
-                                        text_edit.controller.paste(&s, ctx.font_system);
+                                    if let Some(s) = ctx.clipboard().get_text() {
+                                        text_edit.controller.paste(&s, ctx.font_system());
                                     }
                                 }
                                 _ => {
@@ -507,11 +507,11 @@ impl ComponentState for TextEditState {
                                         // works. (Desktop Enter arrives as
                                         // NamedKey::Enter and never hits this
                                         // branch, so this is a no-op there.)
-                                        text_edit.controller.insert_newline(ctx.font_system);
+                                        text_edit.controller.insert_newline(ctx.font_system());
                                     } else if c.is_control() {
                                         continue;
                                     } else {
-                                        text_edit.controller.insert_char(c, ctx.font_system);
+                                        text_edit.controller.insert_char(c, ctx.font_system());
                                     }
                                 }
                             }
