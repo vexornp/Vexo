@@ -163,8 +163,18 @@ impl FrameBuilder {
     }
 
     /// Get the current effective clipping region.
-    /// Returns the intersection of all clips on the stack, or None if no clip is set
-    /// (or if nested clips have no overlap, meaning content is fully clipped).
+    ///
+    /// Returns the intersection of all clips on the stack:
+    /// - `None` when no clip is set (clip_stack empty) → full viewport.
+    /// - `Some(bounds)` when clips overlap → the intersection region.
+    /// - `Some(degenerate)` when clips don't overlap → fully clipped.
+    ///
+    /// The degenerate case (zero-area bounds) is distinct from `None`: the
+    /// GPU backend interprets `None` as "no clip = full viewport scissor",
+    /// so returning `None` for a non-overlapping stack would make fully-
+    /// clipped content (e.g. an avatar scrolled under the nav bar) draw
+    /// without any clipping. A degenerate bounds makes the GPU backend's
+    /// `w == 0 || h == 0` check skip the op instead.
     pub fn current_clip(&self) -> Option<Bounds> {
         if self.clip_stack.is_empty() {
             return None;
@@ -173,7 +183,9 @@ impl FrameBuilder {
         for bounds in &self.clip_stack[1..] {
             result = match result.intersect(bounds) {
                 Some(i) => i,
-                None => return None, // Empty intersection = fully clipped
+                None => {
+                    return Some(Bounds::ZERO);
+                }
             };
         }
         Some(result)
@@ -466,6 +478,37 @@ mod tests {
         assert_eq!(ops[0].1, Some(clip));
         assert_eq!(ops[1].1, Some(clip));
         assert_eq!(ops[2].1, None);
+    }
+
+    #[test]
+    fn test_non_overlapping_clips_produce_degenerate_not_none() {
+        // Regression: when two nested clips don't overlap, current_clip()
+        // must return Some(degenerate_bounds), NOT None. Returning None
+        // means "no clip" (full viewport) to the GPU backend, which causes
+        // fully-clipped content (e.g. an avatar scrolled under the nav bar)
+        // to be drawn without clipping.
+        //
+        // The GPU backend skips ops with zero-width/height scissor rects
+        // (wgpu_backend.rs execute_render_pass), so a degenerate bounds
+        // correctly means "don't draw".
+        let mut fb = FrameBuilder::new();
+        let outer = Bounds::from_xywh(0.0, 45.0, 800.0, 505.0); // nav content area
+        let inner = Bounds::from_xywh(12.0, 569.0, 40.0, 40.0); // avatar below tab bar
+        fb.push_clip(outer);
+        fb.push_clip(inner);
+        let clip = fb.current_clip();
+        // Must NOT be None — None means "no clip = full viewport".
+        assert!(
+            clip.is_some(),
+            "non-overlapping clips must return Some(degenerate), not None"
+        );
+        let c = clip.unwrap();
+        assert_eq!(
+            c,
+            Bounds::ZERO,
+            "degenerate clip must equal Bounds::ZERO, got {:?}",
+            c
+        );
     }
 
     #[test]
