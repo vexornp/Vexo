@@ -205,7 +205,7 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
-    ChildPush, DecoratedBox, FadeTransition, FractionalTranslation,
+    ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
     GestureDetector, Grid, Image, IndexedStack, MultiChild, Offstage, Opacity, Positioned, SafeArea,
     SafeAreaClaim, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text,
     TextEdit, TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget,

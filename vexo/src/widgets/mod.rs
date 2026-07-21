@@ -3,6 +3,7 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
+mod clip_rrect;
 mod container;
 mod decorated_box;
 mod fractional_translation;
@@ -50,6 +51,7 @@ pub use theme::{Theme, ThemeData};
 // Crate-internal modifier widgets (not part of public API)
 use crate::core::Color;
 use crate::input::MouseCursor;
+pub use clip_rrect::ClipRRect;
 pub use decorated_box::DecoratedBox;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
