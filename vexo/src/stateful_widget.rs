@@ -1345,6 +1345,7 @@ mod tests {
     #[derive(Default)]
     struct RebuildCounterState {
         on_rebuild_fired: bool,
+        render_observed_on_rebuild_fired: bool,
         render_count: u32,
     }
 
@@ -1362,6 +1363,9 @@ mod tests {
             state: &mut RebuildCounterState,
             _ctx: &mut RenderContext,
         ) -> Box<dyn Widget> {
+            // Snapshot whether on_rebuild has fired by the time render() runs.
+            // If on_rebuild fires AFTER render(), this snapshot stays false.
+            state.render_observed_on_rebuild_fired = state.on_rebuild_fired;
             state.render_count += 1;
             Box::new(Text::new(format!(
                 "{}: render={}",
@@ -1422,6 +1426,10 @@ mod tests {
             !state_ref.on_rebuild_fired,
             "on_rebuild must not fire on mount"
         );
+        assert!(
+            !state_ref.render_observed_on_rebuild_fired,
+            "on mount, render() must observe on_rebuild_fired as false (on_rebuild did not fire)"
+        );
         assert_eq!(state_ref.render_count, 1, "render fires once on mount");
 
         // State-driven rebuild
@@ -1451,6 +1459,10 @@ mod tests {
         assert!(
             state_ref.on_rebuild_fired,
             "on_rebuild must fire on state-driven rebuild"
+        );
+        assert!(
+            state_ref.render_observed_on_rebuild_fired,
+            "render() must observe on_rebuild's side-effect — on_rebuild must fire BEFORE render()"
         );
         assert_eq!(state_ref.render_count, 2, "render fires once per rebuild");
     }
