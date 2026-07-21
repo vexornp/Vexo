@@ -300,7 +300,7 @@ impl ThreeTreePipeline {
         //
         // Widgets that need to dismiss focus while rendering (notably
         // `NavigationStackView` when a pop transition starts) call
-        // `RenderContext::clear_focus()`, which only has `&BuildOwner` and so
+        // `LifecycleContext::clear_focus()`, which only has `&BuildOwner` and so
         // stashes the request there. Now that the mutable borrow of
         // `focus_manager` held by `Reconciler::perform_rebuilds` has been
         // released, we can drain the request and clear primary focus for real.

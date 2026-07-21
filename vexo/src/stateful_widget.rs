@@ -318,7 +318,7 @@ impl<'a> LifecycleContext<'a> {
     /// `on_rebuild`, `on_unmount`). The request is stashed on the
     /// [`BuildOwner`] and applied by the pipeline once `perform_rebuilds()`
     /// returns — mirrors the deferred-unfocus semantics previously on
-    /// `RenderContext::clear_focus()`.
+    /// `LifecycleContext::clear_focus()`.
     ///
     /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
     /// is itself a no-op in that case).
