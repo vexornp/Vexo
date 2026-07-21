@@ -6,7 +6,7 @@ use crate::layout::{
     AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
 };
 use crate::render::RenderCommand;
-use crate::widgets::{DecoratedBox, Transform, WithLayout};
+use crate::widgets::{ClipRRect, DecoratedBox, Transform, WithLayout};
 use crate::{children, Grid, MultiChild, Style, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
@@ -889,5 +889,83 @@ fn test_decorated_box_width_propagates_to_child() {
         300.0,
         "DecoratedBox (true pass-through) must let parent's width propagate to child. Got {}",
         inner_bounds.width()
+    );
+}
+
+/// Test ClipRRect in the pipeline.
+///
+/// Verifies that a `ClipRRect` wrapping a colored `DecoratedBox`:
+/// 1. Emits `PushClipRRect { radius: 8.0, .. }` at paint time.
+/// 2. Emits `PopClipRRect` after the child's commands.
+/// 3. Has the child's `Rect` (background fill) command between push and pop.
+///
+/// Mirrors `test_translate_transform_in_pipeline` (line 230) but for the
+/// rounded-rect clip path. The painter emits `PushClipRRect`/`PopClipRRect`
+/// when a render object reports `clip_corner_radius() = Some(r > 0.0)`
+/// (see `vexo/src/render_objects/clip_rrect.rs:120` and
+/// `vexo/src/painter.rs:228`).
+#[test]
+fn test_clip_rrect_in_pipeline() {
+    // Build widget tree: ClipRRect(DecoratedBox(WithLayout(Text)))
+    // The DecoratedBox provides a colored background (→ Rect command) and
+    // the WithLayout+Text gives the subtree a non-zero intrinsic size so
+    // ClipRRectRenderObject's `computed_bounds` is non-empty after layout.
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Clipped"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::RED),
+    );
+
+    let widget = ClipRRect::new(8.0, child);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(widget));
+
+    // Layout
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    // Paint
+    let commands = pipeline.paint();
+
+    // Find PushClipRRect and PopClipRRect in the command stream.
+    let push_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushClipRRect { .. }));
+    let pop_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopClipRRect));
+    assert!(push_idx.is_some(), "Should have PushClipRRect command");
+    assert!(pop_idx.is_some(), "Should have PopClipRRect command");
+
+    let push_idx = push_idx.unwrap();
+    let pop_idx = pop_idx.unwrap();
+    assert!(
+        push_idx < pop_idx,
+        "PushClipRRect should come before PopClipRRect"
+    );
+
+    // Verify the radius is exactly 8.0.
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(push_idx) {
+        assert!(
+            (radius - 8.0).abs() < 1e-6,
+            "PushClipRRect radius should be 8.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", push_idx);
+    }
+
+    // Verify a child Rect command (the DecoratedBox background fill) appears
+    // strictly between the push and the pop.
+    let has_rect_between = commands[push_idx + 1..pop_idx]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_between,
+        "Should have a Rect command between PushClipRRect and PopClipRRect"
     );
 }
