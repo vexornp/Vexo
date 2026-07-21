@@ -2,8 +2,8 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    AlignItems, AlignSelf, Color, Column, DecoratedBox, Flex, Layout, Positioned, Row, ScrollView,
-    Stack, Text, Widget, WithLayout,
+    children, AlignItems, AlignSelf, Color, DecoratedBox, Layout, MultiChild, Positioned,
+    ScrollView, Stack, Style, Text, Widget, WithLayout,
 };
 use vexo_uikit::NavigationController;
 
@@ -14,7 +14,7 @@ pub(crate) fn build_conversation_list_screen(
     conversations: Vec<Conversation>,
     nav: NavigationController<ChatsRoute>,
 ) -> Box<dyn Widget> {
-    let mut list = Flex::column();
+    let mut list = MultiChild::empty(Layout::column());
     for conv in &conversations {
         let nav_for_row = nav.clone();
         let id = conv.id.clone();
@@ -39,13 +39,16 @@ fn build_conversation_row(
         .with_font_size(13.0)
         .with_color(Color::rgb(0.5, 0.5, 0.5));
 
-    let info_col = Column::new().gap(2.0).push(name_text).push(preview_text);
+    let info_col = MultiChild::new(
+        children![name_text, preview_text],
+        Layout::column().gap(2.0).flex_grow(1.0),
+    );
 
     let time_text = Text::new(format_timestamp(conv.last_timestamp).as_str())
         .with_font_size(12.0)
         .with_color(Color::rgb(0.6, 0.6, 0.6));
 
-    let right_col = Column::new().push(time_text);
+    let right_col = MultiChild::new(children![time_text], Layout::column());
 
     let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
         Some(
@@ -59,39 +62,39 @@ fn build_conversation_row(
     };
 
     let avatar_with_badge = Stack::new()
-        .width(40.0)
-        .height(40.0)
+        .with_layout(Layout::stack().width(40.0).height(40.0))
         .push(avatar)
         .push(badge)
         .boxed();
 
     WithLayout::new(
-        Row::new()
-            .gap(12.0)
-            .push(avatar_with_badge)
-            .push(info_col.flex_grow(1.0))
-            .push(right_col)
-            .boxed(),
+        MultiChild::new(
+            children![avatar_with_badge, info_col, right_col],
+            Layout::row().gap(12.0),
+        ),
         Layout::default().padding(12.0),
     )
     .on_tap(on_press)
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {
-    DecoratedBox::new(WithLayout::new(
-        Text::new(count.to_string())
-            .with_font_size(11.0)
-            .with_color(Color::WHITE),
-        Layout::default()
-            .width(20.0)
-            .height(20.0)
-            .justify(JustifyContent::Center)
-            .align(AlignItems::Center)
-            .align_self(AlignSelf::Start)
-            .flex_shrink(0.0),
-    ))
-    .background(Color::rgb(1.0, 0.0, 0.0))
-    .corner_radius(10.0)
+    DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new(count.to_string())
+                .with_font_size(11.0)
+                .with_color(Color::WHITE),
+            Layout::default()
+                .width(20.0)
+                .height(20.0)
+                .justify(JustifyContent::Center)
+                .align(AlignItems::Center)
+                .align_self(AlignSelf::Start)
+                .flex_shrink(0.0),
+        ),
+        Style::default()
+            .background(Color::rgb(1.0, 0.0, 0.0))
+            .corner_radius(10.0),
+    )
     .boxed()
 }
 

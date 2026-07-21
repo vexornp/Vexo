@@ -924,13 +924,17 @@ impl Element for SafeAreaClaimElement {
 /// # Example
 ///
 /// ```ignore
-/// use vexo::{SafeAreaClaim, Flex};
+/// use vexo::{Layout, MultiChild, SafeAreaClaim, children};
 ///
 /// // Tab bar owns the bottom edge (home indicator). Page content should
 /// // not re-apply the bottom safe-area padding.
-/// Flex::column()
-///     .push(SafeAreaClaim::bottom(page_content).flex_fill())
-///     .push(tab_bar)
+/// MultiChild::new(
+///     children![
+///         WithLayout::new(SafeAreaClaim::bottom(page_content), Layout::flex_fill()),
+///         tab_bar,
+///     ],
+///     Layout::column(),
+/// )
 /// ```
 pub struct SafeAreaClaim {
     key: Option<WidgetKey>,
@@ -1408,7 +1412,7 @@ mod tests {
         // the gap between the input bar and the tab bar.
         use crate::animation::AnimationTicker;
         use crate::core::SafeAreaSource;
-        use crate::{Flex, ThreeTreePipeline};
+        use crate::ThreeTreePipeline;
 
         // Tree: SafeAreaClaim::bottom(SafeArea(Text))
         //       — the claim zeroes bottom for the SafeArea.
@@ -1482,7 +1486,7 @@ mod tests {
         // see all-zero effective insets → no padding.
         use crate::animation::AnimationTicker;
         use crate::core::SafeAreaSource;
-        use crate::{Flex, ThreeTreePipeline};
+        use crate::ThreeTreePipeline;
 
         let tree = SafeArea::new(SafeArea::new(Text::new("Hi")));
 

@@ -6,9 +6,6 @@ use super::super::RenderObject;
 use super::super::UpdateResult;
 use super::{Element, Widget};
 use crate::core::Color;
-use crate::layout::Layout;
-use crate::modifier_methods;
-use crate::style::Style;
 
 /// Text widget - displays a string.
 pub struct Text {
@@ -21,8 +18,6 @@ pub struct Text {
     /// [`crate::Application::register_fonts`]); when `None`, the framework
     /// default is used.
     font_family: Option<String>,
-    style: Style,
-    layout: Layout,
 }
 
 impl Text {
@@ -34,8 +29,6 @@ impl Text {
             font_size: 24.0,
             color: Color::BLACK,
             font_family: None,
-            style: Style::default(),
-            layout: Layout::default(),
         }
     }
 
@@ -92,8 +85,6 @@ impl Text {
     pub fn font_family(&self) -> Option<&str> {
         self.font_family.as_deref()
     }
-
-    modifier_methods!();
 }
 
 impl Clone for Text {
@@ -104,8 +95,6 @@ impl Clone for Text {
             font_size: self.font_size,
             color: self.color,
             font_family: self.font_family.clone(),
-            style: self.style.clone(),
-            layout: self.layout.clone(),
         }
     }
 }
@@ -126,9 +115,7 @@ impl Widget for Text {
             TextRenderObject::new(&self.content)
                 .with_font_size(self.font_size)
                 .with_color(self.color)
-                .with_font_family(self.font_family.clone())
-                .with_style(self.style.clone())
-                .with_layout(self.layout.clone()),
+                .with_font_family(self.font_family.clone()),
         )
     }
 
@@ -152,12 +139,6 @@ impl Widget for Text {
                 result |= UpdateResult::PAINT;
             }
             if text_ro.set_font_family(self.font_family.clone()) {
-                result |= UpdateResult::LAYOUT;
-            }
-            if text_ro.set_style(self.style.clone()) {
-                result |= UpdateResult::PAINT;
-            }
-            if text_ro.set_layout(self.layout.clone()) {
                 result |= UpdateResult::LAYOUT;
             }
             result
@@ -205,38 +186,6 @@ mod tests {
     }
 
     #[test]
-    fn test_text_modifier_background_returns_self() {
-        let w = Text::new("Hello").background(crate::core::Color::RED);
-        assert_eq!(w.style.background, Some(crate::core::Color::RED));
-        assert_eq!(w.content(), "Hello");
-    }
-
-    #[test]
-    fn test_text_modifier_padding_returns_self() {
-        let w = Text::new("Hello").padding(8.0);
-        assert!(w.layout.padding.is_some());
-        assert_eq!(w.content(), "Hello");
-    }
-
-    #[test]
-    fn test_text_modifier_chain_preserves_all() {
-        let w = Text::new("Hello")
-            .background(crate::core::Color::RED)
-            .padding(8.0)
-            .margin(4.0)
-            .border(crate::core::Color::BLACK, 2.0)
-            .corner_radius(8.0)
-            .clip();
-        assert_eq!(w.style.background, Some(crate::core::Color::RED));
-        assert!(w.style.border.is_some());
-        assert!(w.style.corner_radius.is_some());
-        assert!(w.style.clip);
-        assert!(w.layout.padding.is_some());
-        assert!(w.layout.margin.is_some());
-        assert_eq!(w.content(), "Hello");
-    }
-
-    #[test]
     fn test_text_widget_with_font_size() {
         let widget = Text::new("Hello").with_font_size(32.0);
         assert_eq!(widget.font_size(), 32.0);
@@ -262,15 +211,6 @@ mod tests {
     }
 
     #[test]
-    fn test_text_widget_modifier_preserves_color() {
-        let w = Text::new("Hello")
-            .with_color(crate::core::Color::RED)
-            .padding(8.0)
-            .background(crate::core::Color::BLUE);
-        assert_eq!(w.color(), crate::core::Color::RED);
-    }
-
-    #[test]
     fn test_text_widget_update_render_object_color_change() {
         let widget = Text::new("Hello").with_color(crate::core::Color::RED);
         let mut ro = TextRenderObject::new("Hello"); // default BLACK
@@ -293,12 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_text_modifier_preserves_font_size() {
-        let w = Text::new("Hello").with_font_size(32.0).padding(8.0);
-        assert_eq!(w.font_size(), 32.0);
-    }
-
-    #[test]
     fn test_text_widget_with_font_family() {
         let w = Text::new("\u{e001}").with_font_family("iconfont");
         assert_eq!(w.font_family(), Some("iconfont"));
@@ -314,15 +248,6 @@ mod tests {
         let cloned = w.clone();
         assert_eq!(cloned.font_family(), Some("iconfont"));
         assert_eq!(cloned.font_size(), 24.0);
-    }
-
-    #[test]
-    fn test_text_widget_font_family_survives_modifier() {
-        let w = Text::new("\u{e001}")
-            .with_font_family("iconfont")
-            .padding(8.0)
-            .background(crate::core::Color::RED);
-        assert_eq!(w.font_family(), Some("iconfont"));
     }
 
     #[test]

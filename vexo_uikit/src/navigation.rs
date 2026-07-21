@@ -16,7 +16,8 @@
 //! completes, the pending op is cleared and the view returns to its
 //! steady-state `IndexedStack` rendering.
 //!
-//! For a two-column sidebar+detail layout, compose manually with `Flex::row`
+//! For a two-column sidebar+detail layout, compose manually with `MultiChild`
+//! and `Layout::row()`
 //! and a `Signal<Option<T>>` for the selection — see `shared_app` for a
 //! worked example. A framework-level `NavigationSplitView` was intentionally
 //! removed: it baked in assumptions about the detail content's nav bar that
@@ -42,9 +43,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::{
-    AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
-    DecoratedBox, Flex, FractionalTranslation, IndexedStack, Layout, LifecycleContext, Opacity,
-    Positioned, RenderContext, SafeArea, Stack, Text, Theme, Widget, WithLayout,
+    children, AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
+    DecoratedBox, FractionalTranslation, IndexedStack, Layout, LifecycleContext, MultiChild,
+    Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text, Theme, Widget, WithLayout,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -735,11 +736,13 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // The composition is `DecoratedBox(WithLayout(content_stack))` with
         // `width_percent(1.0).height_percent(1.0)` so it fills the SafeArea
         // exactly — otherwise the content overflows past the tab bar.
-        let clipped: Box<dyn Widget> = DecoratedBox::new(WithLayout::new(
-            content_stack,
-            Layout::default().width_percent(1.0).height_percent(1.0),
-        ))
-        .clip()
+        let clipped: Box<dyn Widget> = DecoratedBox::with_style(
+            WithLayout::new(
+                content_stack,
+                Layout::default().width_percent(1.0).height_percent(1.0),
+            ),
+            Style::default().clip(),
+        )
         .boxed();
 
         // The nav bar handles the top safe-area inset itself (background
@@ -752,11 +755,14 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // Without this, a page taller than the available space (e.g. 8
         // contacts inside a TabBarView on a short window) pushes the tab bar
         // off screen. The page's own ScrollView handles the overflow.
-        Flex::column()
-            .flex_fill()
-            .push(nav_bar)
-            .push(content)
-            .boxed()
+        MultiChild::new(
+            children![nav_bar, content],
+            Layout::column()
+                .flex_grow(1.0)
+                .flex_basis(0.0)
+                .min_height(0.0),
+        )
+        .boxed()
     }
 }
 
@@ -806,11 +812,13 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         // Padded on the left by the safe-area inset + header padding so it
         // clears the notch and has breathing room.
         let h_pad = tokens::navigation::MOBILE_HEADER_PADDING;
-        let mut leading = Flex::row()
-            .align(AlignItems::Center)
-            .flex_grow(1.0)
-            .flex_shrink(0.0)
-            .padding_each(safe.left + h_pad, 0.0, 0.0, 0.0);
+        let mut leading = MultiChild::empty(
+            Layout::row()
+                .align(AlignItems::Center)
+                .flex_grow(1.0)
+                .flex_shrink(0.0)
+                .padding_each(safe.left + h_pad, 0.0, 0.0, 0.0),
+        );
         if can_pop {
             let controller = self.controller.clone();
             let back_label = format!(
@@ -830,41 +838,48 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         // Trailing segment: empty, grows to fill (balances the leading segment
         // so the title centers in the remaining space). Padded on the right
         // by the safe-area inset + header padding.
-        let trailing = Flex::row().flex_grow(1.0).flex_shrink(0.0).padding_each(
-            0.0,
-            safe.right + h_pad,
-            0.0,
-            0.0,
-        );
+        let trailing =
+            MultiChild::empty(Layout::row().flex_grow(1.0).flex_shrink(0.0).padding_each(
+                0.0,
+                safe.right + h_pad,
+                0.0,
+                0.0,
+            ));
 
         // Outer bar: background edge-to-edge, height includes top inset.
-        let bar_row = Flex::row()
-            .align(AlignItems::Center)
-            .padding_each(0.0, 0.0, safe.top, 0.0)
-            .background(nav.mobile_header_bg)
-            .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
-            .flex_shrink(0.0)
-            .push(leading)
-            .push(title_text)
-            .push(trailing);
+        let bar_row = DecoratedBox::with_style(
+            MultiChild::new(
+                children![leading, title_text, trailing],
+                Layout::row()
+                    .align(AlignItems::Center)
+                    .padding_each(0.0, 0.0, safe.top, 0.0)
+                    .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.mobile_header_bg),
+        );
 
         // SwiftUI-style hairline along the bar's bottom edge. 1 logical pixel
         // (Taffy floors sub-pixel heights to 0, so a true 1-physical-px
         // `1/scale` height would vanish on Retina). 1 logical px renders as 1
         // physical px at 1× and 2 at 2× — matching macOS `Divider`.
-        let hairline = Flex::row()
-            .background(nav.divider)
-            .height(tokens::navigation::HAIRLINE_THICKNESS)
-            .flex_shrink(0.0);
+        let hairline = DecoratedBox::with_style(
+            MultiChild::empty(
+                Layout::row()
+                    .height(tokens::navigation::HAIRLINE_THICKNESS)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.divider),
+        );
 
         // Wrap bar + hairline in a fixed-height column so the outer
         // NavigationStackView column keeps a single nav-bar child; the
         // hairline sits flush against the bar's bottom edge, full width.
-        Flex::column()
-            .flex_shrink(0.0)
-            .push(bar_row)
-            .push(hairline)
-            .boxed()
+        MultiChild::new(
+            children![bar_row, hairline],
+            Layout::column().flex_shrink(0.0),
+        )
+        .boxed()
     }
 }
 

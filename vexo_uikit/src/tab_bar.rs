@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
-    Component, ComponentState, Flex, GestureDetector, IndexedStack, Layout, LifecycleContext,
-    RenderContext, SafeArea, SafeAreaClaim, Theme, Widget, WithLayout,
+    children, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack, Layout,
+    LifecycleContext, MultiChild, RenderContext, SafeArea, SafeAreaClaim, Style, Theme, Widget,
+    WithLayout,
 };
 
 use crate::theme::tokens;
@@ -162,9 +163,7 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         // Build the tab bar row.
-        let mut bar = Flex::row()
-            .layout(Layout::default().width_percent(1.0))
-            .height(49.0);
+        let mut bar = MultiChild::empty(Layout::default().width_percent(1.0).height(49.0));
         for tab in &self.tabs {
             let is_selected = *tab == self.controller.current();
             let ctrl = self.controller.clone();
@@ -202,31 +201,33 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // would vanish on Retina. Sits above the `SafeArea`-wrapped bar so it
         // spans the full width edge-to-edge. See `HAIRLINE_THICKNESS`.
         let nav = tokens::navigation::colors(&Theme::of(ctx));
-        let hairline = Flex::row()
-            .background(nav.divider)
-            .height(tokens::navigation::HAIRLINE_THICKNESS)
-            .flex_shrink(0.0);
-        let bar = Flex::column().flex_shrink(0.0).push(hairline).push(bar);
+        let hairline = DecoratedBox::with_style(
+            MultiChild::empty(
+                Layout::row()
+                    .height(tokens::navigation::HAIRLINE_THICKNESS)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(nav.divider),
+        );
+        let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
-        Flex::column()
-            .layout(
-                Layout::default()
-                    .flex_direction(FlexDirection::Column)
-                    .width_percent(1.0)
-                    .height_percent(1.0),
-            )
-            // The tab bar (a sibling below) owns the bottom safe-area edge
-            // (home indicator) — its SafeArea insets the bar's content.
-            // Wrap the page stack in SafeAreaClaim::bottom so the page's
-            // own SafeArea sees bottom=0 and doesn't re-apply the home-
-            // indicator padding, which would create a gap between the
-            // page content and the tab bar.
-            .push(WithLayout::new(
-                SafeAreaClaim::bottom(stack),
-                Layout::flex_fill(),
-            ))
-            .push(bar)
-            .boxed()
+        MultiChild::new(
+            children![
+                // The tab bar (a sibling below) owns the bottom safe-area edge
+                // (home indicator) — its SafeArea insets the bar's content.
+                // Wrap the page stack in SafeAreaClaim::bottom so the page's
+                // own SafeArea sees bottom=0 and doesn't re-apply the home-
+                // indicator padding, which would create a gap between the
+                // page content and the tab bar.
+                WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
+                bar,
+            ],
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .width_percent(1.0)
+                .height_percent(1.0),
+        )
+        .boxed()
     }
 }
 

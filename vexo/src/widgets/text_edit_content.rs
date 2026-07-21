@@ -10,10 +10,7 @@ use std::rc::Rc;
 use crate::editor::Editor;
 use crate::elements::LeafRenderObjectElement;
 use crate::key::WidgetKey;
-use crate::layout::Layout;
-use crate::modifier_methods;
 use crate::render_objects::TextEditRenderObject;
-use crate::style::Style;
 use crate::{Element, RenderObject, UpdateResult, Widget};
 
 /// Leaf widget that creates a TextEditRenderObject.
@@ -29,8 +26,6 @@ pub struct TextEditContent {
     editor: Rc<RefCell<Editor>>,
     is_focused: bool,
     cursor_blink_visible: bool,
-    style: Style,
-    layout: Layout,
 }
 
 impl TextEditContent {
@@ -43,8 +38,6 @@ impl TextEditContent {
             editor,
             is_focused: false,
             cursor_blink_visible: false,
-            style: Style::default(),
-            layout: Layout::default(),
         }
     }
 
@@ -91,8 +84,6 @@ impl TextEditContent {
     pub fn cursor_blink_visible(&self) -> bool {
         self.cursor_blink_visible
     }
-
-    modifier_methods!();
 }
 
 impl Clone for TextEditContent {
@@ -104,8 +95,6 @@ impl Clone for TextEditContent {
             editor: self.editor.clone(), // Rc shallow clone
             is_focused: self.is_focused,
             cursor_blink_visible: self.cursor_blink_visible,
-            style: self.style.clone(),
-            layout: self.layout.clone(),
         }
     }
 }
@@ -123,9 +112,7 @@ impl Widget for TextEditContent {
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
         let mut ro = TextEditRenderObject::new(&self.content, self.editor.clone())
-            .with_font_size(self.font_size)
-            .with_style(self.style.clone())
-            .with_layout(self.layout.clone());
+            .with_font_size(self.font_size);
         ro.set_focused(self.is_focused);
         ro.set_cursor_blink_visible(self.cursor_blink_visible);
         Box::new(ro)
@@ -153,12 +140,6 @@ impl Widget for TextEditContent {
             }
             if ro.set_cursor_blink_visible(self.cursor_blink_visible) {
                 result |= UpdateResult::PAINT;
-            }
-            if ro.set_style(self.style.clone()) {
-                result |= UpdateResult::PAINT;
-            }
-            if ro.set_layout(self.layout.clone()) {
-                result |= UpdateResult::LAYOUT;
             }
 
             result
@@ -309,36 +290,5 @@ mod tests {
         // Blink change is paint-only
         assert!(result.contains(UpdateResult::PAINT));
         assert!(!result.contains(UpdateResult::LAYOUT));
-    }
-
-    #[test]
-    fn test_text_edit_content_modifier_background_returns_self() {
-        let editor = create_test_editor();
-        let w = TextEditContent::new("Hello", editor).background(crate::core::Color::RED);
-        assert_eq!(w.style.background, Some(crate::core::Color::RED));
-        assert_eq!(w.content(), "Hello");
-    }
-
-    #[test]
-    fn test_text_edit_content_modifier_padding_returns_self() {
-        let editor = create_test_editor();
-        let w = TextEditContent::new("Hello", editor).padding(8.0);
-        assert!(w.layout.padding.is_some());
-        assert_eq!(w.content(), "Hello");
-    }
-
-    #[test]
-    fn test_text_edit_content_modifier_chain_preserves_all() {
-        let editor = create_test_editor();
-        let w = TextEditContent::new("Hello", editor)
-            .background(crate::core::Color::RED)
-            .padding(8.0)
-            .border(crate::core::Color::BLACK, 2.0)
-            .corner_radius(4.0);
-        assert_eq!(w.style.background, Some(crate::core::Color::RED));
-        assert!(w.style.border.is_some());
-        assert!(w.style.corner_radius.is_some());
-        assert!(w.layout.padding.is_some());
-        assert_eq!(w.content(), "Hello");
     }
 }

@@ -16,8 +16,8 @@
 //! read back from layout.
 
 use vexo::{
-    BoxShadow, Color, DecoratedBox, FlexDirection, FractionalTranslation, Layout, Opacity, Widget,
-    WithLayout,
+    BoxShadow, Color, DecoratedBox, FlexDirection, FractionalTranslation, Layout, Opacity, Style,
+    Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -84,16 +84,18 @@ pub fn default_mobile_transition(ctx: &TransitionCtx, child: Box<dyn Widget>) ->
         (TransitionDir::PopToRoot, true) => (-0.3 * (1.0 - t), 0.85 + 0.15 * t),
         (TransitionDir::PopToRoot, false) => (t, 1.0),
     };
-    let shadowed = DecoratedBox::new(WithLayout::new(
-        child,
-        Layout::default()
-            .flex_direction(FlexDirection::Column)
-            .width_percent(1.0)
-            .height_percent(1.0),
-    ))
-    .shadow(
-        BoxShadow::new(Color::BLACK.with_alpha(tokens::navigation::PAGE_SHADOW_ALPHA))
-            .blur(tokens::navigation::PAGE_SHADOW_BLUR),
+    let shadowed = DecoratedBox::with_style(
+        WithLayout::new(
+            child,
+            Layout::default()
+                .flex_direction(FlexDirection::Column)
+                .width_percent(1.0)
+                .height_percent(1.0),
+        ),
+        Style::default().shadow(
+            BoxShadow::new(Color::BLACK.with_alpha(tokens::navigation::PAGE_SHADOW_ALPHA))
+                .blur(tokens::navigation::PAGE_SHADOW_BLUR),
+        ),
     );
     Opacity::new(FractionalTranslation::new(shadowed, fx, 0.0), alpha).boxed()
 }

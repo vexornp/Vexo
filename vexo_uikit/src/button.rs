@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use vexo::{
     AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection, Layout,
-    RenderContext, Signal, Text, Theme, Widget, WithLayout,
+    RenderContext, Signal, Style, Text, Theme, Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -252,8 +252,7 @@ impl Component for Button {
         // All decoration on the DecoratedBox. The WithLayout inside sets
         // padding + flex_shrink(0.0) so the container sizes to its content
         // (text intrinsic width + padding).
-        // Note: layout_builder_methods!()'s padding_each takes (left, right, top, bottom),
-        // unlike modifier_methods!()'s (top, right, bottom, left) on Text.
+        // Note: Layout::padding_each takes (left, right, top, bottom) argument order.
         let inner = WithLayout::new(
             text,
             Layout::default()
@@ -261,17 +260,17 @@ impl Component for Button {
                 .padding_each(pl, pr, pt, pb)
                 .flex_shrink(0.0),
         );
-        let mut container = DecoratedBox::new(inner)
-            .background(bg)
-            .corner_radius(corner_radius);
+        let mut style = Style::default().background(bg).corner_radius(corner_radius);
 
         if border_width > 0.0 {
-            container = container.border(border_color, border_width);
+            style = style.border(border_color, border_width);
         }
 
         if !self.shadows.is_empty() {
-            container = container.shadows(self.shadows.clone());
+            style = style.shadows(self.shadows.clone());
         }
+
+        let container = DecoratedBox::with_style(inner, style);
 
         WithLayout::new(
             container

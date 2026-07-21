@@ -196,7 +196,9 @@ fn stack_view_state_default_compiles() {
 }
 
 use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
-use vexo::{BuildOwner, DirtyTracking, ElementKey, Flex, RenderContext, RenderObjectRegistry};
+use vexo::{
+    BuildOwner, DirtyTracking, ElementKey, MultiChild, RenderContext, RenderObjectRegistry,
+};
 
 fn make_element_key() -> ElementKey {
     let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -292,18 +294,18 @@ fn stack_render_root_does_not_panic() {
 }
 
 #[test]
-fn stack_root_top_level_is_flex_column_with_two_children() {
+fn stack_root_top_level_is_multi_child_column_with_two_children() {
     let controller: NavigationController<&'static str> = NavigationController::new();
     let view = NavigationStackView::new(controller, Text::new("Root page")).root_title("Home");
     let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
     let tree = render_stack(view, &mut state);
 
-    let flex = tree
+    let multi = tree
         .as_any()
-        .downcast_ref::<Flex>()
-        .expect("top-level widget should be a Flex");
+        .downcast_ref::<MultiChild>()
+        .expect("top-level widget should be a MultiChild");
     assert_eq!(
-        flex.children().len(),
+        multi.children().len(),
         2,
         "root layout must have NavBar + root = 2 children"
     );
@@ -345,11 +347,11 @@ fn stack_navbar_title_is_empty_when_root_title_unset() {
     let tree = render_stack(view, &mut state);
 
     // Should not panic and should still have 2 children (NavBar with empty title + root).
-    let flex = tree
+    let multi = tree
         .as_any()
-        .downcast_ref::<Flex>()
-        .expect("top-level should be Flex");
-    assert_eq!(flex.children().len(), 2);
+        .downcast_ref::<MultiChild>()
+        .expect("top-level should be MultiChild");
+    assert_eq!(multi.children().len(), 2);
 }
 
 #[test]

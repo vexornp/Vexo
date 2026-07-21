@@ -570,6 +570,19 @@ impl Layout {
     }
 
     // ========================================================================
+    // Display Builders
+    // ========================================================================
+
+    /// Set the display mode (block, flex, grid, none).
+    ///
+    /// Default is `Display::Block`. Set to `Display::Flex` for flexbox layout,
+    /// `Display::Grid` for CSS Grid layout.
+    pub fn display(mut self, value: Display) -> Self {
+        self.display = Some(value);
+        self
+    }
+
+    // ========================================================================
     // Sizing Builders
     // ========================================================================
 
@@ -631,6 +644,46 @@ impl Layout {
     /// Create a layout that fills available space.
     pub fn fill() -> Self {
         Self::default().flex_grow(1.0)
+    }
+
+    /// Create a column flex layout: `flex_direction: Column` + `align_items: Stretch`.
+    ///
+    /// This is the Vexo equivalent of CSS `display: flex; flex-direction: column`.
+    /// Children stretch to fill the cross-axis (width) by default.
+    pub fn column() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+    }
+
+    /// Create a row flex layout: `flex_direction: Row` + `align_items: Stretch`.
+    ///
+    /// This is the Vexo equivalent of CSS `display: flex; flex-direction: row`.
+    pub fn row() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Row)
+            .align(AlignItems::Stretch)
+    }
+
+    /// Create a Stack layout: column + stretch + fills parent + `min_height: 0`.
+    ///
+    /// `min_height(0.0)` allows the stack to shrink below its content's
+    /// min-content when the parent is shorter, matching CSS block layout
+    /// semantics where `min-height: auto` is `0`.
+    pub fn stack() -> Self {
+        Self::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0)
+            .height_percent(1.0)
+            .min_height(0.0)
+    }
+
+    /// Create a Grid layout: `display: Grid`.
+    ///
+    /// Use `.columns(...)` / `.rows(...)` to set the grid template.
+    pub fn grid() -> Self {
+        Self::default().display(Display::Grid)
     }
 
     /// CSS `flex: 1 1 0` + `min-height: 0` — fill remaining space without
@@ -1403,5 +1456,51 @@ mod tests {
         assert!(layout.flex_shrink.is_none());
         assert!(layout.align_self.is_none());
         assert!(layout.position.is_none());
+    }
+
+    #[test]
+    fn test_layout_display_setter() {
+        let layout = Layout::default().display(Display::Grid);
+        assert_eq!(layout.display, Some(Display::Grid));
+
+        let layout = Layout::default().display(Display::Flex);
+        assert_eq!(layout.display, Some(Display::Flex));
+    }
+
+    #[test]
+    fn test_layout_column_constructor() {
+        let layout = Layout::column();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        // Other fields stay at default
+        assert!(layout.gap.is_none());
+        assert!(layout.padding.is_none());
+    }
+
+    #[test]
+    fn test_layout_row_constructor() {
+        let layout = Layout::row();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Row));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        assert!(layout.gap.is_none());
+    }
+
+    #[test]
+    fn test_layout_stack_constructor() {
+        let layout = Layout::stack();
+        assert_eq!(layout.flex_direction, Some(FlexDirection::Column));
+        assert_eq!(layout.align_items, Some(AlignItems::Stretch));
+        assert_eq!(layout.width, Some(Dimension::Percent(1.0)));
+        assert_eq!(layout.height, Some(Dimension::Percent(1.0)));
+        assert_eq!(layout.min_height, Some(Dimension::Length(0.0)));
+    }
+
+    #[test]
+    fn test_layout_grid_constructor() {
+        let layout = Layout::grid();
+        assert_eq!(layout.display, Some(Display::Grid));
+        // Other fields stay at default
+        assert!(layout.gap.is_none());
+        assert!(layout.grid_template_columns.is_none());
     }
 }

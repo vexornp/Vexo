@@ -396,7 +396,7 @@ pub struct Bounds<T> {
 
 impl<T> Bounds<T> {
     /// Create bounds from edge coordinates (left, top, right, bottom).
-    pub fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
+    pub const fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
         Self {
             left,
             top,
@@ -467,6 +467,11 @@ impl<T> Bounds<T> {
 }
 
 impl Bounds<Logical> {
+    /// A zero-area bounds at the origin. Used as a sentinel for "fully
+    /// clipped" — the GPU backend's `w == 0 || h == 0` check skips ops
+    /// with this as their scissor rect.
+    pub const ZERO: Self = Bounds::new(0.0, 0.0, 0.0, 0.0);
+
     /// Convert logical bounds to physical pixels.
     pub fn to_physical(&self, scale: Scale) -> Bounds<Physical> {
         let f = scale.factor();

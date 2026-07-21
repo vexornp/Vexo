@@ -9,7 +9,7 @@
 //! decoration there.
 //!
 //! To combine decoration with layout (padding, sizing, flex), compose:
-//! `DecoratedBox::new(WithLayout::new(child, layout)).background(...)`.
+//! `DecoratedBox::with_style(WithLayout::new(child, layout), Style::default().background(RED))`.
 //! The `WithLayout` owns the Taffy node; `DecoratedBox` adopts its bounds.
 //!
 //! # Border semantics
@@ -21,13 +21,12 @@
 
 use std::any::Any;
 
-use crate::core::Color;
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
 use crate::key::WidgetKey;
 use crate::render_objects::DecoratedBoxRenderObject;
-use crate::style::{BoxShadow, Style};
+use crate::style::Style;
 use crate::{
     Element, ElementContext, ElementKey, EventContext, RenderObject, RenderObjectKey, UpdateResult,
     Widget,
@@ -256,20 +255,23 @@ impl Element for DecoratedBoxElement {
 /// decoration there.
 ///
 /// To combine decoration with layout, compose:
-/// `DecoratedBox::new(WithLayout::new(child, layout)).background(...)`.
+/// `DecoratedBox::with_style(WithLayout::new(child, layout), Style::default().background(RED))`.
 ///
 /// # Example
 ///
 /// ```ignore
-/// DecoratedBox::new(Text::new("Hello"))
-///     .background(Color::RED)
-///     .border(Color::BLACK, 2.0)
-///     .corner_radius(8.0)
+/// DecoratedBox::with_style(
+///     Text::new("Hello"),
+///     Style::default()
+///         .background(Color::RED)
+///         .border(Color::BLACK, 2.0)
+///         .corner_radius(8.0),
+/// )
 /// ```
 ///
 /// # Border semantics
 ///
-/// `DecoratedBox::border(color, width)` does NOT add padding — the border
+/// `Style::border(color, width)` does NOT add padding — the border
 /// paints over the child's edge pixels (Flutter semantics). If you want the
 /// child inset from the border, compose with [`WithLayout`](crate::WithLayout)
 /// padding.
@@ -293,49 +295,17 @@ impl DecoratedBox {
         }
     }
 
-    /// Replace the entire style.
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    /// Set the background color.
-    pub fn background(mut self, color: Color) -> Self {
-        self.style = self.style.background(color);
-        self
-    }
-
-    /// Set the border. **Does NOT add padding** (Flutter semantics).
+    /// Create a new `DecoratedBox` with a child and a pre-built `Style`.
     ///
-    /// The border paints over the child's edge pixels. To inset the child
-    /// from the border, compose with `WithLayout::padding`.
-    pub fn border(mut self, color: Color, width: f32) -> Self {
-        self.style = self.style.border(color, width);
-        self
-    }
-
-    /// Set the corner radius.
-    pub fn corner_radius(mut self, radius: f32) -> Self {
-        self.style = self.style.corner_radius(radius);
-        self
-    }
-
-    /// Clip children to this widget's bounds.
-    pub fn clip(mut self) -> Self {
-        self.style = self.style.clip();
-        self
-    }
-
-    /// Add a single shadow.
-    pub fn shadow(mut self, shadow: BoxShadow) -> Self {
-        self.style = self.style.shadow(shadow);
-        self
-    }
-
-    /// Replace all shadows.
-    pub fn shadows(mut self, shadows: Vec<BoxShadow>) -> Self {
-        self.style = self.style.shadows(shadows);
-        self
+    /// This is the primary constructor for decoration. Build the `Style`
+    /// fluently:
+    /// `DecoratedBox::with_style(child, Style::default().background(RED).border(BLACK, 1.0))`.
+    pub fn with_style(child: impl Widget + 'static, style: Style) -> Self {
+        Self {
+            key: None,
+            child: Box::new(child),
+            style,
+        }
     }
 
     /// Set the key.
@@ -413,6 +383,8 @@ impl Widget for DecoratedBox {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Color;
+    use crate::style::BoxShadow;
     use crate::{GlobalKey, Key, Text};
 
     #[test]
@@ -437,11 +409,14 @@ mod tests {
 
     #[test]
     fn test_decorated_box_style_builder_chain() {
-        let widget = DecoratedBox::new(Text::new("Hello"))
-            .background(Color::RED)
-            .border(Color::BLACK, 2.0)
-            .corner_radius(8.0)
-            .clip();
+        let widget = DecoratedBox::with_style(
+            Text::new("Hello"),
+            Style::default()
+                .background(Color::RED)
+                .border(Color::BLACK, 2.0)
+                .corner_radius(8.0)
+                .clip(),
+        );
         assert_eq!(widget.style_ref().background, Some(Color::RED));
         assert_eq!(widget.style_ref().border.as_ref().unwrap().width, 2.0);
         assert_eq!(
@@ -453,50 +428,53 @@ mod tests {
 
     #[test]
     fn test_decorated_box_shadow_builder() {
-        let widget =
-            DecoratedBox::new(Text::new("Hi")).shadow(BoxShadow::new(Color::BLACK).blur(8.0));
+        let widget = DecoratedBox::with_style(
+            Text::new("Hi"),
+            Style::default().shadow(BoxShadow::new(Color::BLACK).blur(8.0)),
+        );
         assert_eq!(widget.style_ref().shadows.len(), 1);
         assert_eq!(widget.style_ref().shadows[0].blur_radius, 8.0);
     }
 
     #[test]
     fn test_decorated_box_shadows_builder() {
-        let widget = DecoratedBox::new(Text::new("Hi")).shadows(vec![
-            BoxShadow::new(Color::BLACK),
-            BoxShadow::new(Color::RED),
-        ]);
+        let widget = DecoratedBox::with_style(
+            Text::new("Hi"),
+            Style::default().shadows(vec![
+                BoxShadow::new(Color::BLACK),
+                BoxShadow::new(Color::RED),
+            ]),
+        );
         assert_eq!(widget.style_ref().shadows.len(), 2);
     }
 
     #[test]
     fn test_decorated_box_shadow_preserves_background() {
-        let widget = DecoratedBox::new(Text::new("Hi"))
-            .background(Color::WHITE)
-            .shadow(BoxShadow::new(Color::BLACK));
+        let widget = DecoratedBox::with_style(
+            Text::new("Hi"),
+            Style::default()
+                .background(Color::WHITE)
+                .shadow(BoxShadow::new(Color::BLACK)),
+        );
         assert_eq!(widget.style_ref().background, Some(Color::WHITE));
         assert_eq!(widget.style_ref().shadows.len(), 1);
     }
 
     #[test]
-    fn test_decorated_box_style_replaces_everything() {
-        let widget = DecoratedBox::new(Text::new("Hello"))
-            .background(Color::RED)
-            .style(Style::new().border(Color::BLACK, 1.0));
-        // .style() replaces the entire Style, so background is lost
+    fn test_decorated_box_with_style_sets_style() {
+        let widget =
+            DecoratedBox::with_style(Text::new("Hello"), Style::new().border(Color::BLACK, 1.0));
         assert_eq!(widget.style_ref().background, None);
         assert!(widget.style_ref().border.is_some());
     }
 
     #[test]
     fn test_decorated_box_border_does_not_add_padding() {
-        // Regression guard: DecoratedBox has no Layout field at all, so it
-        // cannot add padding. Verifying the field doesn't exist is implicit
-        // in the type signature; this test verifies the border is set
-        // without any layout side effect by checking the style only.
-        let widget = DecoratedBox::new(Text::new("Hello")).border(Color::BLACK, 2.0);
+        let widget = DecoratedBox::with_style(
+            Text::new("Hello"),
+            Style::default().border(Color::BLACK, 2.0),
+        );
         assert_eq!(widget.style_ref().border.as_ref().unwrap().width, 2.0);
-        // No layout field to check — compilation itself proves there's no
-        // padding side effect.
     }
 
     #[test]
@@ -511,7 +489,8 @@ mod tests {
 
     #[test]
     fn test_decorated_box_render_object_creation() {
-        let widget = DecoratedBox::new(Text::new("Hello")).background(Color::RED);
+        let widget =
+            DecoratedBox::with_style(Text::new("Hello"), Style::default().background(Color::RED));
         let ro = widget.create_render_object();
         assert!(ro
             .as_any()
@@ -521,15 +500,15 @@ mod tests {
 
     #[test]
     fn test_decorated_box_update_render_object_returns_paint_only() {
-        let widget_red = DecoratedBox::new(Text::new("Hi")).background(Color::RED);
+        let widget_red =
+            DecoratedBox::with_style(Text::new("Hi"), Style::default().background(Color::RED));
         let mut ro = widget_red.create_render_object();
 
-        // Same style → NONE
         let result = widget_red.update_render_object(ro.as_mut());
         assert_eq!(result, UpdateResult::NONE);
 
-        // Different style → PAINT only (never LAYOUT)
-        let widget_blue = DecoratedBox::new(Text::new("Hi")).background(Color::BLUE);
+        let widget_blue =
+            DecoratedBox::with_style(Text::new("Hi"), Style::default().background(Color::BLUE));
         let result = widget_blue.update_render_object(ro.as_mut());
         assert!(result.contains(UpdateResult::PAINT));
         assert!(
@@ -540,9 +519,9 @@ mod tests {
 
     #[test]
     fn test_decorated_box_can_update_same_type() {
-        let w1 = DecoratedBox::new(Text::new("Hi")).background(Color::RED);
-        let w2 = DecoratedBox::new(Text::new("Hi")).background(Color::BLUE);
-        // Element stores the widget and checks type_id equality.
+        let w1 = DecoratedBox::with_style(Text::new("Hi"), Style::default().background(Color::RED));
+        let w2 =
+            DecoratedBox::with_style(Text::new("Hi"), Style::default().background(Color::BLUE));
         let mut elem = DecoratedBoxElement::new();
         elem.set_widget(&w1);
         assert!(
@@ -560,9 +539,9 @@ mod tests {
 
     #[test]
     fn test_decorated_box_clone_preserves_fields() {
-        let widget = DecoratedBox::new(Text::new("Hi"))
-            .background(Color::RED)
-            .with_key("cloned");
+        let widget =
+            DecoratedBox::with_style(Text::new("Hi"), Style::default().background(Color::RED))
+                .with_key("cloned");
         let cloned = widget.clone();
         assert_eq!(cloned.key(), widget.key());
         assert_eq!(cloned.style_ref(), widget.style_ref());

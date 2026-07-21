@@ -365,7 +365,10 @@ impl Element for TransformElement {
 /// ```ignore
 /// // Rotate a card 15 degrees
 /// Transform::rotate(
-///     DecoratedBox::new(Text::new("Rotated!")).background(Color::RED),
+///     DecoratedBox::with_style(
+///         Text::new("Rotated!"),
+///         Style::default().background(Color::RED),
+///     ),
 ///     15.0 * std::f32::consts::PI / 180.0,
 /// )
 ///

@@ -37,7 +37,7 @@ fn column_layout() -> Layout {
         .width_percent(1.0)
 }
 
-/// Build a tree: Flex::column → Opacity → (child RO provided).
+/// Build a tree: MultiChild(column) → Opacity → (child RO provided).
 /// Returns (root_key, opacity_key, child_key).
 fn build_opacity_tree(
     registry: &mut RenderObjectRegistry,
@@ -91,7 +91,7 @@ fn test_passthrough_opacity_child_receives_grandparent_width() {
         .expect("child should have computed bounds");
 
     // Without Opacity in the way, the child (width unset, stretch) would fill
-    // the Flex's width (300). With pass-through Opacity, the child should STILL
+    // the parent MultiChild's width (300). With pass-through Opacity, the child should STILL
     // receive 300 — the grandparent links the grandchild directly.
     assert_eq!(
         child_bounds.width(),
@@ -403,8 +403,8 @@ fn test_nav_transition_text_does_not_wrap() {
     let mut dirty = DirtyTracking::new();
 
     // Tree (outgoing page only, for simplicity):
-    //   Flex::column (root, fills 375 width)
-    //   ├── nav_bar (Flex::row, width 140, flex_shrink 0)
+    //   MultiChild(column) (root, fills 375 width)
+    //   ├── nav_bar (MultiChild(row), width 140, flex_shrink 0)
     //   └── Stack
     //       └── Positioned(L=R=T=B=0)
     //           └── Opacity(0.5)            ← pass-through
@@ -572,7 +572,7 @@ fn build_indexed_stack_tree(
         Box::new(OffstageRenderObject::new(offstage1_flag)),
         offstage1_elem,
     );
-    let stack_key = registry.create(Box::new(IndexedStackRenderObject::new(index)), stack_elem);
+    let stack_key = registry.create(Box::new(IndexedStackRenderObject::new(index, Layout::stack())), stack_elem);
 
     registry.set_child(offstage0_key, child0_key);
     registry.set_child(offstage1_key, child1_key);
@@ -803,7 +803,7 @@ fn test_indexed_stack_visible_child_receives_grandparent_width() {
     let child_key = registry.create(child_ro, child_elem);
     let offstage_ro = Box::new(OffstageRenderObject::new(false));
     let offstage_key = registry.create(offstage_ro, offstage_elem);
-    let stack_ro = Box::new(IndexedStackRenderObject::new(0));
+    let stack_ro = Box::new(IndexedStackRenderObject::new(0, Layout::stack()));
     let stack_key = registry.create(stack_ro, stack_elem);
     let parent_ro = Box::new(ContainerRenderObject::new(column_layout()));
     let parent_key = registry.create(parent_ro, parent_elem);

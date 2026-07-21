@@ -11,7 +11,7 @@ When analyzing tasks, especially architecture or complex logic, adhere to these 
 3. **Invert the Problem:** Identify what we want to avoid, then work backward to define the correct solution.
 4. **Prefer Simplicity:** If a simpler, more efficient approach exists, state it before implementing.
 5. **Ask "Why?":** Use the "5 Whys" approach to get to the root cause of issues, not just surface-level symptoms.
-6. **Isolate Before Theorizing:** When a bug only appears in a complex widget tree, strip the tree to the minimum repro first (e.g., a single widget in a bare Column). This narrows the search space dramatically before forming hypotheses. "Works alone, breaks in a tree" immediately points at the surrounding flex chain, not the widget itself.
+6. **Isolate Before Theorizing:** When a bug only appears in a complex widget tree, strip the tree to the minimum repro first (e.g., a single widget in a bare `MultiChild`). This narrows the search space dramatically before forming hypotheses. "Works alone, breaks in a tree" immediately points at the surrounding flex chain, not the widget itself.
 
 ## Core Design Philosophy: Everything Is a Widget
 
@@ -78,8 +78,8 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 ┌─────────────────────────────────────────────────────────────────┐
 │                    WIDGET LAYER (Domain)                        │
 │  Widget trait (build() → Element)                              │
-│  Widget primitives: Text, TextEditContent, Column, Row         │
-│  Widget combinators: DecoratedContainer, GestureDetector        │
+│  Widget primitives: Text, TextEditContent, Image               │
+│  Widget combinators: WithLayout, MultiChild, DecoratedBox, GestureDetector │
 │  Stateful widgets: Component, Signal                                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -87,7 +87,7 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 ┌─────────────────────────────────────────────────────────────────┐
 │                    ELEMENT LAYER                                │
 │  Element trait, ElementRegistry                                │
-│  LeafElement, ContainerElement, DecoratedContainerElement      │
+│  LeafElement, ContainerElement, DecoratedBoxElement             │
 │  StatefulElement, GestureDetectorElement                       │
 │  update_child() reconciles children during rebuild             │
 └─────────────────────────────────────────────────────────────────┘
@@ -97,7 +97,7 @@ Vexo uses Flutter's three-tree architecture for efficient UI updates:
 │                    RENDER OBJECT LAYER                          │
 │  RenderObject trait, RenderObjectRegistry                      │
 │  TextRenderObject, TextEditRenderObject                        │
-│  ContainerRenderObject, DecoratedContainerRenderObject         │
+│  ContainerRenderObject, DecoratedBoxRenderObject               │
 │  CursorBlinkState for text cursor animation                    │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -136,11 +136,12 @@ vexo/src/
 │   └── color.rs                # Color
 ├── widgets/                    # Widget implementations
 │   ├── mod.rs                  # Widget trait definition
-│   ├── container.rs            # Column, Row
+│   ├── container.rs            # ChildPush trait (used by MultiChild and children! macro)
+│   ├── multi_child.rs          # MultiChild (column/row/stack/grid container)
 │   ├── text.rs                 # Text
 │   ├── text_edit.rs            # TextEdit, TextEditingController
 │   ├── text_edit_content.rs    # TextEditContent
-│   ├── decorated_container.rs  # DecoratedContainer
+│   ├── decorated_box.rs        # DecoratedBox (decoration carrier)
 │   └── gesture_detector.rs     # GestureDetector
 ├── elements/                   # Element implementations
 │   ├── mod.rs
@@ -328,7 +329,10 @@ Vexo's public API maps to web framework concepts:
 | `on_update()` | React `useEffect([deps])` / Vue `onUpdated()` |
 | `on_unmount()` | React cleanup / Vue `onUnmounted()` |
 | `on_tick()` | `requestAnimationFrame` |
-| `Column::new()` / `Row::new()` | `<div flex-direction: column/row>` |
+| `MultiChild::new(children, Layout::column())` / `Layout::row()` | `<div flex-direction: column/row>` |
+| `WithLayout::new(child, Layout::default().padding(..))` | `padding` / `margin` / sizing inline styles |
+| `DecoratedBox::with_style(child, Style::default().background(..))` | `background` / `border` / `box-shadow` / `border-radius` inline styles |
+| `Stack::new()` / `Grid::new()` | `position: relative` container / CSS Grid |
 | `children![]` macro | JSX children |
 | `.on_press()` / `.on_release()` | `onClick` / `onMouseUp` |
 | `InheritedWidget` trait | React Context Provider / Vue `provide()` |
@@ -374,6 +378,6 @@ This method handles all four cases:
 |--------------|----------|------------------|
 | `LeafElement` | None | No children to manage |
 | `ContainerElement` | Multiple | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
-| `DecoratedContainerElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
+| `DecoratedBoxElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
 | `StatefulElement` | Single (from `render()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
 | `GestureDetectorElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |

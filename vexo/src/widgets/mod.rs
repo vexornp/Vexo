@@ -3,6 +3,7 @@
 //! Widgets are immutable configuration objects that describe "what should exist"
 //! in the UI. They are cheap to create, rebuilt each frame, and contain no state.
 
+mod clip_rrect;
 mod container;
 mod decorated_box;
 mod fractional_translation;
@@ -11,6 +12,7 @@ mod grid;
 mod image;
 mod indexed_stack;
 mod mouse_region;
+mod multi_child;
 mod offstage;
 mod opacity;
 mod positioned;
@@ -35,9 +37,10 @@ use super::UpdateResult;
 
 // Public API - leaf and container widgets
 pub use super::{GlobalKey, Key};
-pub use container::{ChildPush, Column, Flex, Row};
+pub use container::ChildPush;
 pub use grid::Grid;
 pub use image::Image;
+pub use multi_child::MultiChild;
 pub use safe_area::{SafeArea, SafeAreaClaim};
 pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
@@ -48,6 +51,7 @@ pub use theme::{Theme, ThemeData};
 // Crate-internal modifier widgets (not part of public API)
 use crate::core::Color;
 use crate::input::MouseCursor;
+pub use clip_rrect::ClipRRect;
 pub use decorated_box::DecoratedBox;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
@@ -307,7 +311,8 @@ mod tests {
     use crate::element::Element;
     use crate::input::SystemCursorKind;
     use crate::key::{Key, WidgetKey};
-    use crate::layout::TaffyLayoutEngine;
+    use crate::layout::{Layout, TaffyLayoutEngine};
+    use crate::style::Style;
     use crate::{LayoutContext, RenderObject};
     use std::sync::Arc;
 
@@ -494,11 +499,13 @@ mod tests {
 
     #[test]
     fn test_widget_trait_on_press_chain() {
-        let widget = DecoratedBox::new(Text::new("Click").padding(8.0))
-            .background(Color::RED)
-            .boxed()
-            .on_press(|| {});
-        // Text with style/layout set, then wrapped in GestureDetector
+        let widget = DecoratedBox::with_style(
+            WithLayout::new(Text::new("Click"), Layout::default().padding(8.0)),
+            Style::default().background(Color::RED),
+        )
+        .boxed()
+        .on_press(|| {});
+        // Text wrapped in WithLayout + DecoratedBox, then wrapped in GestureDetector
         assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
     }
 

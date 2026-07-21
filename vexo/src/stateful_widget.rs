@@ -425,9 +425,11 @@ impl<'a> RenderContext<'a> {
 ///     type State = CounterState;
 ///
 ///     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-///         Column::new()
-///             .push(Text::new(format!("{}: {}", self.label, state.count.get())))
-///             .boxed()
+///         MultiChild::new(
+///             children![Text::new(format!("{}: {}", self.label, state.count.get()))],
+///             Layout::column(),
+///         )
+///         .boxed()
 ///     }
 /// }
 /// ```

@@ -443,6 +443,20 @@ pub trait RenderObject {
         None
     }
 
+    /// Get the corner radius for this render object's clip, if any.
+    ///
+    /// When present (and > 0.0), the painter emits `PushClipRRect`/
+    /// `PopClipRRect` around this object's children instead of the
+    /// plain `PushClip`/`PopClip`. The radius is applied as an SDF
+    /// mask in the fragment shader on top of the rectangular scissor
+    /// clip from `clip_bounds()`.
+    ///
+    /// Return `None` (the default) for plain rectangular clipping.
+    /// Return `Some(r)` only when `r > 0.0`.
+    fn clip_corner_radius(&self) -> Option<f32> {
+        None
+    }
+
     /// Get the scroll offset for this render object's children, if any.
     ///
     /// When present, the painter emits `PushOffset`/`PopOffset` around
@@ -985,6 +999,38 @@ mod tests {
         }
         let ro = TestRO;
         assert!(ro.opacity().is_none());
+    }
+
+    #[test]
+    fn test_render_object_clip_corner_radius_default_none() {
+        struct TestRO;
+        impl RenderObject for TestRO {
+            fn layout(
+                &mut self,
+                _ctx: &mut LayoutContext,
+                _child_nodes: &[LayoutNodeKey],
+            ) -> LayoutResult {
+                unimplemented!()
+            }
+            fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+            fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+                vec![]
+            }
+            fn hit_test(&self, _position: Point<Logical>, _ctx: &HitTestContext) -> bool {
+                true
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        let ro = TestRO;
+        assert!(
+            ro.clip_corner_radius().is_none(),
+            "clip_corner_radius() must default to None"
+        );
     }
 
     #[test]

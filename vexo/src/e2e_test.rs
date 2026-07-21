@@ -6,8 +6,8 @@ use crate::layout::{
     AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
 };
 use crate::render::RenderCommand;
-use crate::widgets::{DecoratedBox, Transform, WithLayout};
-use crate::{Flex, Grid, Text, ThreeTreePipeline, Widget};
+use crate::widgets::{ClipRRect, DecoratedBox, Transform, WithLayout};
+use crate::{children, Grid, MultiChild, Style, Text, ThreeTreePipeline, Widget};
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -28,9 +28,10 @@ fn create_test_font_system() -> glyphon::FontSystem {
 #[test]
 fn test_retain_pipeline_e2e() {
     // === Step 1: Create widget tree ===
-    let widget: Flex = Flex::column()
-        .push(Text::new("Hello"))
-        .push(Text::new("World"));
+    let widget = MultiChild::new(
+        children![Text::new("Hello"), Text::new("World")],
+        Layout::column(),
+    );
 
     // === Step 2: Create pipeline and reconcile ===
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -134,13 +135,13 @@ fn test_decorated_composition_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree: DecoratedBox(WithLayout(Text))
-    let container = DecoratedBox::new(WithLayout::new(Text::new("Hello"), Layout::default()))
-        .style(
-            crate::Style::new()
-                .background(Color::RED)
-                .border(Color::BLACK, 2.0)
-                .corner_radius(8.0),
-        );
+    let container = DecoratedBox::with_style(
+        WithLayout::new(Text::new("Hello"), Layout::default()),
+        crate::Style::new()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0),
+    );
 
     // Create pipeline and reconcile
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -232,11 +233,13 @@ fn test_translate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Shifted"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Shifted"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
 
     let widget = Transform::translate(child, 50.0, 30.0);
 
@@ -314,11 +317,13 @@ fn test_rotate_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Rotated"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rotated"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
 
     let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
     let widget = Transform::rotate(child, angle);
@@ -388,11 +393,13 @@ fn test_scale_transform_in_pipeline() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Scaled"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::GREEN);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Scaled"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::GREEN),
+    );
 
     let widget = Transform::scale(child, 2.0, 3.0);
 
@@ -465,9 +472,9 @@ fn test_clip_bounds_expanded_for_rotated_content() {
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
     let ops = frame_builder.ops();
-    let quad_op = ops
-        .iter()
-        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let quad_op = ops.iter().find(|(op, clip, _)| {
+        matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some()
+    });
     let clip_bounds = quad_op
         .expect("Should have a quad op with clip bounds")
         .1
@@ -511,9 +518,9 @@ fn test_clip_bounds_unchanged_for_translate_only() {
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
     let ops = frame_builder.ops();
-    let quad_op = ops
-        .iter()
-        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let quad_op = ops.iter().find(|(op, clip, _)| {
+        matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some()
+    });
     let clip_bounds = quad_op
         .expect("Should have a quad op with clip bounds")
         .1
@@ -537,12 +544,13 @@ fn test_rotate_transform_with_rounded_rect() {
     use crate::frame_builder::FrameBuilder;
     use crate::render::process_commands;
 
-    let child = DecoratedBox::new(WithLayout::new(
-        Text::new("Rounded"),
-        crate::layout::Layout::default().padding(8.0),
-    ))
-    .background(Color::BLUE)
-    .corner_radius(12.0);
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rounded"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE).corner_radius(12.0),
+    );
 
     let widget = Transform::rotate(child, 0.3);
 
@@ -567,21 +575,18 @@ fn test_rotate_transform_with_rounded_rect() {
     );
 }
 
-/// Test Flex::column() with CSS-like layout properties (padding, gap, justify, align).
+/// Test MultiChild(column) with CSS-like layout properties (padding, gap, justify, align).
 #[test]
 fn test_column_with_layout() {
-    let widget = Flex::column()
-        .push(Text::new("First"))
-        .push(Text::new("Second"))
-        .push(Text::new("Third"))
-        .layout(
-            Layout::default()
-                .flex_direction(crate::layout::FlexDirection::Column)
-                .padding(12.0)
-                .gap(8.0)
-                .justify(JustifyContent::Center)
-                .align(AlignItems::Center),
-        );
+    let widget = MultiChild::new(
+        children![Text::new("First"), Text::new("Second"), Text::new("Third"),],
+        Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Column)
+            .padding(12.0)
+            .gap(8.0)
+            .justify(JustifyContent::Center)
+            .align(AlignItems::Center),
+    );
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
@@ -604,27 +609,19 @@ fn test_column_with_layout() {
     let _ = commands;
 }
 
-/// Test Flex::row() with gap on container and flex_grow/width on children via .with_layout().
+/// Test MultiChild(row) with gap on container and flex_grow/width on children via .with_layout().
 #[test]
 fn test_with_layout_on_children() {
-    let widget = Flex::row()
-        .push(WithLayout::new(
-            Text::new("Left"),
-            Layout::default().flex_grow(1.0),
-        ))
-        .push(WithLayout::new(
-            Text::new("Center"),
-            Layout::default().width(100.0),
-        ))
-        .push(WithLayout::new(
-            Text::new("Right"),
-            Layout::default().flex_grow(2.0),
-        ))
-        .layout(
-            Layout::default()
-                .flex_direction(crate::layout::FlexDirection::Row)
-                .gap(10.0),
-        );
+    let widget = MultiChild::new(
+        children![
+            WithLayout::new(Text::new("Left"), Layout::default().flex_grow(1.0)),
+            WithLayout::new(Text::new("Center"), Layout::default().width(100.0)),
+            WithLayout::new(Text::new("Right"), Layout::default().flex_grow(2.0)),
+        ],
+        Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Row)
+            .gap(10.0),
+    );
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(Box::new(widget));
@@ -674,7 +671,7 @@ fn test_grid_widget() {
                 .grid_column(GridPlacement::start(2))
                 .grid_row(GridPlacement::start(2)),
         ))
-        .layout(
+        .with_layout(
             Layout::default()
                 .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(1.0)])
                 .rows(vec![TrackSizing::Auto, TrackSizing::Auto])
@@ -714,10 +711,13 @@ fn test_decorated_box_in_pipeline() {
     use crate::render::RenderCommand;
 
     // Create a widget tree: DecoratedBox wrapping a Text.
-    let widget = DecoratedBox::new(Text::new("Hello"))
-        .background(Color::RED)
-        .border(Color::BLACK, 2.0)
-        .corner_radius(8.0);
+    let widget = DecoratedBox::with_style(
+        Text::new("Hello"),
+        Style::default()
+            .background(Color::RED)
+            .border(Color::BLACK, 2.0)
+            .corner_radius(8.0),
+    );
 
     // Create pipeline and reconcile.
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -804,7 +804,7 @@ fn test_decorated_box_in_pipeline() {
 
 /// Test that DecoratedBox passes width constraints through to its child.
 ///
-/// Regression guard for the latent WidgetExt sizing bug: when a widget
+/// Regression guard for the latent pass-through sizing bug: when a widget
 /// is wrapped in a decoration proxy, the parent's definite width must
 /// propagate to the child (so e.g. text wraps at that width). The
 /// `DecoratedBox` proxy shares the child's Taffy node, so the parent
@@ -815,7 +815,7 @@ fn test_decorated_box_in_pipeline() {
 /// in `vexo/src/passthrough_integration.rs:63` but going through the
 /// full pipeline (widget → element → render object).
 ///
-/// Note: we use `width_percent(1.0)` on the parent Flex + window size
+/// Note: we use `width_percent(1.0)` on the parent MultiChild + window size
 /// 300×200 instead of `.width(300.0)`, because `Layouter::layout()`
 /// calls `engine.set_root_size()` which overrides the root's size to
 /// 100%×100% (see `vexo/src/layout/taffy_engine.rs:175-188`).
@@ -829,18 +829,18 @@ fn test_decorated_box_width_propagates_to_child() {
     // The Container is the "child" whose width we read back. If DecoratedBox
     // were NOT a true pass-through, the Container would size to its intrinsic
     // width (0) instead of stretching to the parent's width.
-    let child = crate::Flex::column()
-        .layout(Layout::default().height(40.0))
-        .boxed();
-    let widget = crate::Flex::column()
-        .layout(
-            Layout::default()
-                .flex_direction(FlexDirection::Column)
-                .align(AlignItems::Stretch)
-                .width_percent(1.0),
-        )
-        .push(DecoratedBox::new(child).background(Color::RED))
-        .boxed();
+    let child = MultiChild::empty(Layout::default().height(40.0)).boxed();
+    let widget = MultiChild::new(
+        children![DecoratedBox::with_style(
+            child,
+            Style::default().background(Color::RED)
+        )],
+        Layout::default()
+            .flex_direction(FlexDirection::Column)
+            .align(AlignItems::Stretch)
+            .width_percent(1.0),
+    )
+    .boxed();
 
     let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
     pipeline.reconcile(widget);
@@ -849,7 +849,7 @@ fn test_decorated_box_width_propagates_to_child() {
     let mut font_system = create_test_font_system();
     pipeline.layout(Size::new(300.0, 200.0), &mut engine, &mut font_system);
 
-    // Render tree: Flex(column, width=300) → DecoratedBox → Flex(column, height=40)
+    // Render tree: MultiChild(column, width=300) → DecoratedBox → MultiChild(column, height=40)
     let root_ro = pipeline
         .render_objects()
         .root()
@@ -870,24 +870,274 @@ fn test_decorated_box_width_propagates_to_child() {
         "DecoratedBox render object must be pass-through"
     );
 
-    // DecoratedBox's child is the inner Flex RO.
+    // DecoratedBox's child is the inner MultiChild RO.
     let inner_flex_ro = decorated_box_obj.children()[0];
     let inner_flex_obj = pipeline
         .render_objects()
         .get(inner_flex_ro)
-        .expect("inner Flex render object should exist");
+        .expect("inner MultiChild render object should exist");
     let inner_bounds = inner_flex_obj
         .computed_bounds()
-        .expect("inner Flex should have computed bounds after layout");
+        .expect("inner MultiChild should have computed bounds after layout");
 
-    // The inner Flex has no explicit width, but the parent Column has
+    // The inner MultiChild has no explicit width, but the parent Column has
     // align: Stretch and width_percent=1.0 (resolves to 300px at window
     // width 300). With a true pass-through proxy in between, the stretch
-    // propagates to the inner Flex and it fills the 300px width.
+    // propagates to the inner MultiChild and it fills the 300px width.
     assert_eq!(
         inner_bounds.width(),
         300.0,
         "DecoratedBox (true pass-through) must let parent's width propagate to child. Got {}",
         inner_bounds.width()
+    );
+}
+
+/// Test ClipRRect in the pipeline.
+///
+/// Verifies that a `ClipRRect` wrapping a colored `DecoratedBox`:
+/// 1. Emits `PushClipRRect { radius: 8.0, .. }` at paint time.
+/// 2. Emits `PopClipRRect` after the child's commands.
+/// 3. Has the child's `Rect` (background fill) command between push and pop.
+///
+/// Mirrors `test_translate_transform_in_pipeline` (line 230) but for the
+/// rounded-rect clip path. The painter emits `PushClipRRect`/`PopClipRRect`
+/// when a render object reports `clip_corner_radius() = Some(r > 0.0)`
+/// (see `vexo/src/render_objects/clip_rrect.rs:120` and
+/// `vexo/src/painter.rs:228`).
+#[test]
+fn test_clip_rrect_in_pipeline() {
+    // Build widget tree: ClipRRect(DecoratedBox(WithLayout(Text)))
+    // The DecoratedBox provides a colored background (→ Rect command) and
+    // the WithLayout+Text gives the subtree a non-zero intrinsic size so
+    // ClipRRectRenderObject's `computed_bounds` is non-empty after layout.
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Clipped"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::RED),
+    );
+
+    let widget = ClipRRect::new(8.0, child);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(widget));
+
+    // Layout
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    // Paint
+    let commands = pipeline.paint();
+
+    // Find PushClipRRect and PopClipRRect in the command stream.
+    let push_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushClipRRect { .. }));
+    let pop_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopClipRRect));
+    assert!(push_idx.is_some(), "Should have PushClipRRect command");
+    assert!(pop_idx.is_some(), "Should have PopClipRRect command");
+
+    let push_idx = push_idx.unwrap();
+    let pop_idx = pop_idx.unwrap();
+    assert!(
+        push_idx < pop_idx,
+        "PushClipRRect should come before PopClipRRect"
+    );
+
+    // Verify the radius is exactly 8.0.
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(push_idx) {
+        assert!(
+            (radius - 8.0).abs() < 1e-6,
+            "PushClipRRect radius should be 8.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", push_idx);
+    }
+
+    // Verify a child Rect command (the DecoratedBox background fill) appears
+    // strictly between the push and the pop.
+    let has_rect_between = commands[push_idx + 1..pop_idx]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_between,
+        "Should have a Rect command between PushClipRRect and PopClipRRect"
+    );
+}
+
+/// Nested ClipRRect widgets should produce correctly ordered push/pop pairs.
+///
+/// Verifies the command stream for `ClipRRect(ClipRRect(DecoratedBox))`:
+/// 1. Two `PushClipRRect` commands (outer then inner).
+/// 2. A `Rect` (the DecoratedBox background) inside the inner clip.
+/// 3. Two `PopClipRRect` commands (inner then outer — stack order).
+///
+/// This guards against regressions in the painter's recursion that could
+/// emit unbalanced or misordered clip commands, which would corrupt the
+/// GPU's rclip_stack.
+#[test]
+fn test_clip_rrect_nested_in_pipeline() {
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Nested"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
+    let inner = ClipRRect::new(12.0, child);
+    let outer = ClipRRect::new(8.0, inner);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(outer));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    // Collect indices of all PushClipRRect and PopClipRRect commands.
+    let pushes: Vec<usize> = commands
+        .iter()
+        .enumerate()
+        .filter_map(|(i, cmd)| matches!(cmd, RenderCommand::PushClipRRect { .. }).then_some(i))
+        .collect();
+    let pops: Vec<usize> = commands
+        .iter()
+        .enumerate()
+        .filter_map(|(i, cmd)| matches!(cmd, RenderCommand::PopClipRRect).then_some(i))
+        .collect();
+
+    assert_eq!(
+        pushes.len(),
+        2,
+        "Nested ClipRRect should produce 2 PushClipRRect commands, got {}",
+        pushes.len()
+    );
+    assert_eq!(
+        pops.len(),
+        2,
+        "Nested ClipRRect should produce 2 PopClipRRect commands, got {}",
+        pops.len()
+    );
+
+    // Stack order: outer push < inner push < inner pop < outer pop.
+    assert!(
+        pushes[0] < pushes[1],
+        "Outer PushClipRRect should come before inner"
+    );
+    assert!(
+        pushes[1] < pops[0],
+        "Inner PushClipRRect should come before inner PopClipRRect"
+    );
+    assert!(
+        pops[0] < pops[1],
+        "Inner PopClipRRect should come before outer PopClipRRect"
+    );
+
+    // Verify radius values: outer=8.0 (first push), inner=12.0 (second push).
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(pushes[0]) {
+        assert!(
+            (radius - 8.0).abs() < 1e-6,
+            "Outer radius should be 8.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", pushes[0]);
+    }
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(pushes[1]) {
+        assert!(
+            (radius - 12.0).abs() < 1e-6,
+            "Inner radius should be 12.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", pushes[1]);
+    }
+
+    // Verify a child Rect (DecoratedBox background) appears strictly between
+    // the inner push and the inner pop.
+    let has_rect_inside_inner = commands[pushes[1] + 1..pops[0]]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_inside_inner,
+        "Should have a Rect command between inner PushClipRRect and inner PopClipRRect"
+    );
+}
+
+/// `ClipRRect::new(0.0, ...)` should degenerate to the rectangular `PushClip`
+/// path, NOT emit `PushClipRRect`.
+///
+/// This is the degeneration contract from the design spec: a radius of 0
+/// means "rectangular clip" and goes through the existing `PushClip`/`PopClip`
+/// path, bypassing the rclip SDF entirely. `ClipRRectRenderObject::clip_corner_radius()`
+/// returns `None` when radius == 0 (see `vexo/src/render_objects/clip_rrect.rs:120`),
+/// and the painter emits `PushClip` when `use_rclip` is false
+/// (see `vexo/src/painter.rs:228`).
+#[test]
+fn test_clip_rrect_radius_zero_degenerates_to_push_clip() {
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rect clip"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::GREEN),
+    );
+    let widget = ClipRRect::new(0.0, child);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(widget));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    // Should have PushClip and PopClip (rectangular path).
+    let push_clip_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushClip { .. }));
+    let pop_clip_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopClip));
+    assert!(
+        push_clip_idx.is_some(),
+        "radius=0 should emit PushClip (rectangular path)"
+    );
+    assert!(
+        pop_clip_idx.is_some(),
+        "radius=0 should emit PopClip (rectangular path)"
+    );
+
+    // Should NOT have PushClipRRect or PopClipRRect.
+    let has_rclip_push = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PushClipRRect { .. }));
+    let has_rclip_pop = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PopClipRRect));
+    assert!(
+        !has_rclip_push,
+        "radius=0 should NOT emit PushClipRRect (would engage rclip SDF unnecessarily)"
+    );
+    assert!(!has_rclip_pop, "radius=0 should NOT emit PopClipRRect");
+
+    // Verify a child Rect appears between PushClip and PopClip.
+    let push_idx = push_clip_idx.unwrap();
+    let pop_idx = pop_clip_idx.unwrap();
+    assert!(push_idx < pop_idx, "PushClip should come before PopClip");
+    let has_rect_between = commands[push_idx + 1..pop_idx]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_between,
+        "Should have a Rect command between PushClip and PopClip"
     );
 }

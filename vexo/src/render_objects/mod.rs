@@ -9,6 +9,7 @@
 //! - [`TextRenderObject`]: Renders text content
 //! - [`ContainerRenderObject`]: Container for child render objects (Flex)
 
+mod clip_rrect;
 mod container;
 mod decorated_box;
 mod image;
@@ -20,6 +21,7 @@ mod scroll_view;
 mod text;
 mod text_edit;
 
+pub use clip_rrect::ClipRRectRenderObject;
 pub use container::ContainerRenderObject;
 pub use decorated_box::DecoratedBoxRenderObject;
 pub use image::ImageRenderObject;

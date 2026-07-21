@@ -63,6 +63,54 @@ struct GlobalUniforms {
     pub _padding: f32,
 }
 
+/// Per-op rounded-rect clip data, uploaded to the GPU as a uniform.
+///
+/// Layout matches the WGSL `RClipUniform` struct in shader.wgsl and
+/// image_shader.wgsl. Sized for `MAX_RCLIP_DEPTH` entries. Each op gets
+/// its own slot in the uniform buffer at a dynamic offset.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct RClipUniform {
+    /// Number of active rclip entries (0..=8). Padded to vec4 alignment.
+    count: [f32; 4],
+    /// Bounds for each entry: (left, top, right, bottom) in logical pixels.
+    bounds: [[f32; 4]; 8],
+    /// Radii for each entry, packed two-per-vec4 for alignment.
+    radii: [[f32; 4]; 2],
+}
+
+impl RClipUniform {
+    /// All zeros — count=0 means "no rclip active" (shader fast path).
+    const ZERO: Self = Self {
+        count: [0.0; 4],
+        bounds: [[0.0; 4]; 8],
+        radii: [[0.0; 4]; 2],
+    };
+
+    fn from_entries(entries: &[(crate::frame_builder::Bounds, f32)]) -> Self {
+        let mut u = Self::ZERO;
+        let n = entries.len().min(8);
+        u.count[0] = n as f32;
+        for i in 0..n {
+            let (b, r) = &entries[i];
+            u.bounds[i] = [b.left, b.top, b.right, b.bottom];
+            // Pack radii: indices 0-3 in radii[0], 4-7 in radii[1].
+            u.radii[i / 4][i % 4] = *r;
+        }
+        u
+    }
+}
+
+/// Dynamic offset alignment for the rclip uniform buffer.
+/// wgpu requires uniform buffer offsets to be aligned to
+/// `min_uniform_buffer_offset_alignment` (typically 256 bytes).
+const RCLIP_UNIFORM_ALIGN: wgpu::BufferAddress = 256;
+
+/// Number of slots in the rclip uniform buffer. Slot 0 is the ZERO slot
+/// (no rclip); slots 1..INITIAL_RCLIP_CAPACITY hold per-op rclip data.
+/// Ops beyond this capacity fall back to the ZERO slot with a warning.
+const INITIAL_RCLIP_CAPACITY: usize = 1_000;
+
 /// WGPU-based render backend.
 ///
 /// Encapsulates all GPU resources and rendering operations.
@@ -106,6 +154,13 @@ pub struct WgpuBackend {
     // Current frame's op locations + clips, populated by upload_geometry.
     current_op_locations: Vec<crate::frame_builder::OpLocation>,
     current_op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>>,
+    // Per-op rounded-rect clip data
+    rclip_uniform_buffer: wgpu::Buffer,
+    rclip_bind_group_layout: wgpu::BindGroupLayout,
+    rclip_bind_group: wgpu::BindGroup,
+    /// Per-op dynamic offsets into rclip_uniform_buffer. Index aligns
+    /// with current_op_locations. Offset 0 is always the ZERO slot.
+    current_op_rclip_offsets: Vec<u32>,
 
     // Shared scale factor source
     scale_source: ScaleSource,
@@ -198,10 +253,27 @@ impl WgpuBackend {
                 }],
             });
 
+        let rclip_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("RClip Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: Some(
+                            (std::mem::size_of::<RClipUniform>() as u64).try_into().unwrap(),
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[Some(&global_bind_group_layout)],
+                bind_group_layouts: &[Some(&global_bind_group_layout), Some(&rclip_bind_group_layout)],
                 immediate_size: 0,
             });
 
@@ -293,6 +365,26 @@ impl WgpuBackend {
             }],
         });
 
+        let rclip_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("RClip Uniform Buffer"),
+            size: RCLIP_UNIFORM_ALIGN * INITIAL_RCLIP_CAPACITY as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let rclip_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("RClip Bind Group"),
+            layout: &rclip_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &rclip_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(std::mem::size_of::<RClipUniform>() as u64),
+                }),
+            }],
+        });
+
         // Create image pipeline
         let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Image Shader"),
@@ -370,7 +462,7 @@ impl WgpuBackend {
         let image_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Image Pipeline Layout"),
-                bind_group_layouts: &[Some(&global_bind_group_layout), Some(&image_atlas_bind_group_layout)],
+                bind_group_layouts: &[Some(&global_bind_group_layout), Some(&image_atlas_bind_group_layout), Some(&rclip_bind_group_layout)],
                 immediate_size: 0,
             });
 
@@ -503,6 +595,10 @@ impl WgpuBackend {
             current_config: Some(RenderConfig::new(physical_size)),
             current_op_locations: Vec::new(),
             current_op_clips: Vec::new(),
+            rclip_uniform_buffer,
+            rclip_bind_group_layout,
+            rclip_bind_group,
+            current_op_rclip_offsets: Vec::new(),
             scale_source,
             clear_color: Color::WHITE.to_wgpu_color(),
         })
@@ -695,7 +791,7 @@ impl WgpuBackend {
         let op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>> = frame_builder
             .ops()
             .iter()
-            .map(|(_, clip)| *clip)
+            .map(|(_, clip, _)| *clip)
             .collect();
 
         let mut quad_instances: Vec<QuadInstance> = Vec::new();
@@ -705,7 +801,7 @@ impl WgpuBackend {
             self.image_allocator.atlas_height() as f32,
         ];
 
-        for (op, _) in frame_builder.ops() {
+        for (op, _, _) in frame_builder.ops() {
             match op {
                 crate::frame_builder::DrawOp::Quad(q) => {
                     quad_instances.push(*q);
@@ -720,7 +816,6 @@ impl WgpuBackend {
                         req.size,
                         region,
                         atlas_size,
-                        req.corner_radius,
                         AffineTransform::from_array(req.transform),
                         req.opacity,
                     );
@@ -748,6 +843,59 @@ impl WgpuBackend {
 
         self.current_op_locations = op_locations;
         self.current_op_clips = op_clips;
+
+        // Compute per-op rclip offsets. Each op gets a slot in the
+        // rclip uniform buffer. Ops with no rclip point to offset 0
+        // (the ZERO slot). Ops with rclip data point to their slot.
+        // Slots are bounded by INITIAL_RCLIP_CAPACITY; ops beyond that
+        // fall back to the ZERO slot (no rclip) with a warning, matching
+        // the warn-and-drop pattern in FrameBuilder::push_rclip.
+        let mut rclip_offsets: Vec<u32> = Vec::with_capacity(frame_builder.ops().len());
+        let mut next_slot: u32 = 1; // slot 0 is ZERO
+        let mut overflow_warned = false;
+        for (_, _, rclip_snapshot) in frame_builder.ops() {
+            if rclip_snapshot.is_empty() {
+                rclip_offsets.push(0);
+            } else if (next_slot as usize) >= INITIAL_RCLIP_CAPACITY {
+                if !overflow_warned {
+                    log::warn!(
+                        "[ClipRRect] rclip uniform buffer capacity {} exceeded, \
+                         excess ops fall back to no rclip",
+                        INITIAL_RCLIP_CAPACITY
+                    );
+                    overflow_warned = true;
+                }
+                rclip_offsets.push(0);
+            } else {
+                rclip_offsets.push(next_slot * RCLIP_UNIFORM_ALIGN as u32);
+                next_slot += 1;
+            }
+        }
+
+        // Write the ZERO slot.
+        self.queue.write_buffer(
+            &self.rclip_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&RClipUniform::ZERO),
+        );
+
+        // Write each non-zero op's rclip data. The slot counter is
+        // already bounded by INITIAL_RCLIP_CAPACITY via the offset loop
+        // above, so this loop only writes slots that were allocated.
+        let mut slot: u32 = 1;
+        for (_, _, rclip_snapshot) in frame_builder.ops() {
+            if !rclip_snapshot.is_empty() && (slot as usize) < INITIAL_RCLIP_CAPACITY {
+                let uniform = RClipUniform::from_entries(rclip_snapshot);
+                self.queue.write_buffer(
+                    &self.rclip_uniform_buffer,
+                    (slot as wgpu::BufferAddress) * RCLIP_UNIFORM_ALIGN,
+                    bytemuck::bytes_of(&uniform),
+                );
+                slot += 1;
+            }
+        }
+
+        self.current_op_rclip_offsets = rclip_offsets;
     }
 
     /// Execute the render pass, iterating `current_op_locations` in paint order.
@@ -826,8 +974,18 @@ impl WgpuBackend {
             // we still need to set the scissor once.
             let mut prev_kind: Option<OpKind> = None;
             let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
+            // Last rclip dynamic offset set on each slot this pass.
+            // `None` = slot has not been set yet. Bind group bindings persist
+            // across pipeline switches within a render pass, so we only need
+            // to re-set when the offset for the target slot changes.
+            // Index 0 = Quad slot (group 1), Index 1 = Image slot (group 2).
+            let mut prev_rclip_offset_per_slot: [Option<u32>; 2] = [None, None];
 
-            for (loc, clip) in self.current_op_locations.iter().zip(self.current_op_clips.iter()) {
+            for (i, (loc, clip)) in self.current_op_locations
+                .iter()
+                .zip(self.current_op_clips.iter())
+                .enumerate()
+            {
                 // 1. Scissor: only set when clip changes.
                 //    Compare Option<Bounds> by value via the Option<Option> sentinel.
                 let clip_value = *clip;
@@ -877,7 +1035,31 @@ impl WgpuBackend {
                     prev_kind = Some(kind);
                 }
 
-                // 3. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
+                // 3. RClip bind group: per-op dynamic offset.
+                //    Quad pipeline: group 1. Image pipeline: group 2
+                //    (group 1 is the image atlas).
+                //    Skip when the target slot already has this offset —
+                //    bind group bindings persist across pipeline switches
+                //    within a render pass.
+                let rclip_slot_idx = match kind {
+                    OpKind::Quad => 0,
+                    OpKind::Image => 1,
+                };
+                let rclip_offset = self.current_op_rclip_offsets[i];
+                if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
+                    let rclip_group = match kind {
+                        OpKind::Quad => 1,
+                        OpKind::Image => 2,
+                    };
+                    render_pass.set_bind_group(
+                        rclip_group,
+                        &self.rclip_bind_group,
+                        &[rclip_offset],
+                    );
+                    prev_rclip_offset_per_slot[rclip_slot_idx] = Some(rclip_offset);
+                }
+
+                // 4. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
                 match kind {
                     OpKind::Quad => {
                         render_pass.set_index_buffer(
