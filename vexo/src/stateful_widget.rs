@@ -382,45 +382,9 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    /// Request a rebuild of this element.
-    ///
-    /// The element will be rebuilt during the next frame.
-    pub fn request_rebuild(&mut self) {
-        self.build_owner.mark_needs_build(self.element_id);
-    }
-
-    /// Mark the element's render object as needing layout.
-    pub fn mark_needs_layout(&mut self, render_object_id: super::id::RenderObjectKey) {
-        self.dirty.mark_needs_layout(render_object_id);
-    }
-
-    /// Mark the element's render object as needing paint.
-    pub fn mark_needs_paint(&mut self, render_object_id: super::id::RenderObjectKey) {
-        self.dirty.mark_needs_paint(render_object_id);
-    }
-
     /// Check if this element is currently focused.
     pub fn is_focused(&self) -> bool {
         self.build_owner.focused_element() == Some(self.element_id)
-    }
-
-    /// Request that primary focus be cleared after the current rebuild pass.
-    ///
-    /// Safe to call from within [`Component::render()`] (which only has
-    /// `&mut RenderContext`, no access to `FocusManager`). The request is
-    /// stashed on the [`BuildOwner`] and applied by the pipeline once
-    /// `perform_rebuilds()` returns.
-    ///
-    /// Primary use case: a navigation container that observes a pending pop
-    /// calls this so focus (and, on mobile, the software keyboard) is
-    /// dismissed the instant the pop transition *starts* — concurrent with
-    /// the animation — rather than lingering until the outgoing page unmounts
-    /// at the end of the transition.
-    ///
-    /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
-    /// is itself a no-op in that case).
-    pub fn clear_focus(&self) {
-        self.build_owner.request_unfocus();
     }
 
     /// Current device safe-area insets in logical pixels.
@@ -1515,37 +1479,6 @@ mod tests {
             "on_rebuild must fire on state-driven rebuild"
         );
         assert_eq!(state_ref.render_count, 2, "render fires once per rebuild");
-    }
-
-    #[test]
-    fn test_render_context_request_rebuild() {
-        let (
-            element_id,
-            _state,
-            mut dirty,
-            mut render_objects,
-            _,
-            build_owner,
-            _dirty_sender,
-            _child_ops,
-            _focus_manager,
-            inherited_registry,
-            _inherited_maps,
-        ) = create_test_context();
-        let empty_map = InheritedMap::empty();
-
-        let mut ctx = RenderContext::new(
-            element_id,
-            &mut dirty,
-            &mut render_objects,
-            &build_owner,
-            &empty_map,
-            &inherited_registry,
-        );
-
-        ctx.request_rebuild();
-
-        assert!(build_owner.is_dirty(element_id));
     }
 
     #[test]
