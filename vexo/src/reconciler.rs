@@ -188,7 +188,8 @@ impl Reconciler {
         inherited_maps: &mut SecondaryMap<ElementKey, Arc<InheritedMap>>,
         root_widget: Box<dyn Widget>,
     ) {
-        // First, perform any pending state-driven rebuilds (from setState)
+        // First, perform any pending state-driven rebuilds (from
+        // `Signal::set` / dirty-callback invocations)
         Self::perform_rebuilds(
             element_registry,
             render_objects,

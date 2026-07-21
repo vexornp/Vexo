@@ -91,8 +91,9 @@ pub trait ComponentState: 'static {
     /// and unwiring controller callbacks.
     fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {}
 
-    /// Called once before each state-driven rebuild (setState / Signal::set),
-    /// NOT before parent-widget updates (that's `on_update`).
+    /// Called once before each state-driven rebuild (triggered by `Signal::set`
+    /// or the dirty callback), NOT before parent-widget updates (that's
+    /// `on_update`).
     ///
     /// Use for side-effects that must happen at the start of a rebuild pass:
     /// clearing focus when a navigation transition begins, dismissing a
@@ -192,9 +193,10 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 
 /// Context provided to `ComponentState` lifecycle methods.
 ///
-/// Maps to React's effect context or Vue's lifecycle hook context.
-/// The key method is `setState()`, which mutates state and marks the
-/// element dirty for rebuild.
+/// Maps to React's effect context or Vue's lifecycle hook context. State
+/// mutations trigger rebuilds through `Signal` (auto-wired by
+/// `#[derive(ComponentState)]`) or by calling the `dirty_callback()`
+/// exposed here — both end up at `BuildOwner::mark_needs_build()`.
 ///
 /// Unlike Flutter's `State.widget` getter, Vexo provides widget access
 /// through `LifecycleContext::widget()` since Rust's trait objects cannot
@@ -203,9 +205,6 @@ impl<T: Default + 'static> std::ops::DerefMut for SimpleState<T> {
 /// let text_edit = ctx.widget().downcast_ref::<TextEdit>().unwrap();
 /// ```
 pub struct LifecycleContext<'a> {
-    /// The element ID of the owning StatefulElement.
-    element_id: ElementKey,
-
     /// Build owner for dirty marking.
     ///
     /// Uses a shared reference because `mark_needs_build()` takes `&self`
@@ -227,53 +226,17 @@ pub struct LifecycleContext<'a> {
 impl<'a> LifecycleContext<'a> {
     /// Create a new LifecycleContext. Only called by StatefulElement.
     fn new(
-        element_id: ElementKey,
         build_owner: &'a BuildOwner,
         widget: &'a dyn Any,
         dirty_callback: Arc<dyn Fn() + Send + Sync>,
         animation_ticker: Arc<AnimationTicker>,
     ) -> Self {
         Self {
-            element_id,
             build_owner,
             widget,
             dirty_callback,
             animation_ticker,
         }
-    }
-
-    /// Flutter-style setState: apply mutation, then mark dirty.
-    ///
-    /// The closure should contain all state mutations. After the closure
-    /// runs, the element is marked dirty and will rebuild on the next frame.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// ctx.setState(state, |s| {
-    ///     s.count += 1;
-    /// });
-    /// ```
-    #[allow(non_snake_case)]
-    pub fn setState<S, F>(&mut self, state: &mut S, callback: F)
-    where
-        F: FnOnce(&mut S),
-    {
-        callback(state); // Apply mutation immediately
-        self.build_owner.mark_needs_build(self.element_id);
-    }
-
-    /// Mark this element as needing rebuild without mutating state.
-    ///
-    /// Useful when an external event requires a rebuild but no state
-    /// mutation is needed (e.g., a reactive signal changed).
-    pub fn request_rebuild(&self) {
-        self.build_owner.mark_needs_build(self.element_id);
-    }
-
-    /// Get the element ID of the owning StatefulElement.
-    pub fn element_id(&self) -> ElementKey {
-        self.element_id
     }
 
     /// Get the current widget configuration as a type-erased reference.
@@ -590,7 +553,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         // Call ComponentState::on_mount() lifecycle hook with widget access.
         // State can wire controller callbacks via ctx.widget() and ctx.dirty_callback().
         let mut lifecycle_ctx = LifecycleContext::new(
-            element_id,
             context.build_owner,
             &self.widget as &dyn Any,
             dirty_callback,
@@ -656,7 +618,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
             });
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let mut lifecycle_ctx = LifecycleContext::new(
-                element_id,
                 context.build_owner,
                 &self.widget as &dyn Any,
                 dirty_callback,
@@ -701,7 +662,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                     let _ = tx.send(id);
                 });
                 let mut lifecycle_ctx = LifecycleContext::new(
-                    id,
                     context.build_owner,
                     &self.widget as &dyn Any,
                     dirty_callback,
@@ -753,8 +713,8 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
         // Rebuild using the CURRENT widget + updated state.
-        // This is called by perform_rebuilds() when setState() or
-        // Signal::set() marked this element dirty.
+        // This is called by perform_rebuilds() when a `Signal::set` or
+        // dirty-callback invocation marked this element dirty.
 
         let element_id = self.id.unwrap_or(context.element_id);
 
@@ -767,7 +727,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
             });
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let mut lifecycle_ctx = LifecycleContext::new(
-                element_id,
                 context.build_owner,
                 &self.widget as &dyn Any,
                 dirty_callback,
@@ -1502,7 +1461,6 @@ mod tests {
     #[test]
     fn test_lifecycle_context_clear_focus_requests_unfocus() {
         let build_owner = BuildOwner::new();
-        let element_id = make_element_key();
         let widget = TestCounter {
             label: "X".to_string(),
         };
@@ -1514,7 +1472,6 @@ mod tests {
 
         // Construct a LifecycleContext and call clear_focus.
         let ctx = LifecycleContext::new(
-            element_id,
             &build_owner,
             &widget as &dyn Any,
             dirty_callback,

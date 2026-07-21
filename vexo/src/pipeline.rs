@@ -317,7 +317,8 @@ impl ThreeTreePipeline {
     /// Mark an element as needing rebuild.
     ///
     /// This is the entry point for Flutter-style targeted rebuilds.
-    /// Elements call this when their state changes (e.g., setState equivalent).
+    /// Elements call this when their state changes (via `Signal::set` or the
+    /// dirty callback).
     pub fn mark_needs_build(&mut self, element_id: ElementKey) {
         self.build_owner.mark_needs_build(element_id);
     }
