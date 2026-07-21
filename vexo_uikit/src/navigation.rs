@@ -484,6 +484,36 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
             // advance the controller.
         }
     }
+
+    fn on_rebuild(&mut self, ctx: &mut LifecycleContext) {
+        // Was: ctx.clear_focus() inside render() when a pending op was
+        // observed. Now: same check, same call, but in the lifecycle hook —
+        // render() stays pure.
+        //
+        // A navigation transition is starting (push or pop). Clear primary
+        // focus now, on the same frame the animation begins, rather than
+        // letting it linger on the outgoing page.
+        //
+        // Why this matters: on iOS, a TextEdit holding focus keeps the
+        // software keyboard up. Without this call, tapping Back on a
+        // focused chat screen would leave the keyboard stuck on screen
+        // for the entire pop animation (and beyond), because the outgoing
+        // page stays mounted as the transition overlay and retains focus
+        // until it unmounts at the end — and even then nothing re-synced
+        // the keyboard.
+        //
+        // `clear_focus()` is deferred (stashed on BuildOwner, applied after
+        // this rebuild pass), and `FocusManager::unfocus()` is a no-op when
+        // nothing is focused, so this is harmless for pushes from an
+        // unfocused list.
+        if self.transition.is_none() {
+            if let Some(nav) = ctx.widget().downcast_ref::<NavigationStackView<Dest>>() {
+                if nav.controller.pending().is_some() {
+                    ctx.clear_focus();
+                }
+            }
+        }
+    }
 }
 
 impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> {
@@ -497,24 +527,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         //    fall through to steady-state rendering (a hard swap).
         if state.transition.is_none() {
             if let Some(pending) = self.controller.pending() {
-                // A navigation transition is starting (push or pop). Clear
-                // primary focus now, on the same frame the animation begins,
-                // rather than letting it linger on the outgoing page.
-                //
-                // Why this matters: on iOS, a TextEdit holding focus keeps the
-                // software keyboard up. Without this call, tapping Back on a
-                // focused chat screen would leave the keyboard stuck on screen
-                // for the entire pop animation (and beyond), because the
-                // outgoing page stays mounted as the transition overlay and
-                // retains focus until it unmounts at the end — and even then
-                // nothing re-synced the keyboard.
-                //
-                // `clear_focus()` is deferred (stashed on BuildOwner, applied
-                // after this rebuild pass), and `FocusManager::unfocus()` is a
-                // no-op when nothing is focused, so this is harmless for
-                // pushes from an unfocused list.
-                ctx.clear_focus();
-
                 if let (Some(ticker), Some(cb)) =
                     (state.ticker.as_ref(), state.dirty_callback.as_ref())
                 {
