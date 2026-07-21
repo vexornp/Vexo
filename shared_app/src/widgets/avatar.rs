@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use vexo::{ClipRRect, Image, Layout, Style, Widget, WithLayout};
+use vexo::{ClipRRect, Image, Layout, Widget, WithLayout};
 
 pub(crate) fn avatar(bytes: &Rc<[u8]>, diameter: f32) -> Box<dyn Widget> {
     ClipRRect::new(
