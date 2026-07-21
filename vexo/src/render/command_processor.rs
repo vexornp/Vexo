@@ -190,10 +190,12 @@ pub fn process_commands(
                 } else {
                     current_transform.transform_bounds(&adjusted_bounds)
                 };
+                frame_builder.push_clip(effective_bounds);
                 frame_builder.push_rclip(effective_bounds, *radius);
             }
             RenderCommand::PopClipRRect => {
                 frame_builder.pop_rclip();
+                frame_builder.pop_clip();
             }
             RenderCommand::PushCornerRadius { radius } => {
                 frame_builder.push_corner_radius(*radius);
