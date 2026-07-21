@@ -69,7 +69,7 @@ pub struct BuildOwner {
     /// that only have `&BuildOwner`.
     focused_element: RefCell<Option<ElementKey>>,
 
-    /// Deferred unfocus request, set by `RenderContext::clear_focus()` during
+    /// Deferred unfocus request, set by `LifecycleContext::clear_focus()` during
     /// a rebuild (e.g. when `NavigationStackView` observes a pending pop).
     ///
     /// `RenderContext` cannot reach `FocusManager` directly (it only holds a
@@ -232,7 +232,7 @@ impl BuildOwner {
     /// Request that the pipeline clear primary focus after the current
     /// rebuild pass.
     ///
-    /// Called from `RenderContext::clear_focus()` by widgets that need to
+    /// Called from `LifecycleContext::clear_focus()` by widgets that need to
     /// dismiss focus while rebuilding (e.g. `NavigationStackView` when a
     /// pop transition starts). The request is deferred because `RenderContext`
     /// only has `&BuildOwner` and cannot touch `FocusManager` directly; the
@@ -255,6 +255,13 @@ impl BuildOwner {
         let v = *self.pending_unfocus.borrow();
         *self.pending_unfocus.borrow_mut() = false;
         v
+    }
+
+    /// Test-only accessor: returns `true` if `request_unfocus()` has been
+    /// called since the last `take_unfocus_requested()`. Used by tests to
+    /// assert that a deferred unfocus was scheduled.
+    pub fn has_unfocus_request(&self) -> bool {
+        *self.pending_unfocus.borrow()
     }
 
     /// Get a clone of the shared safe-area source.
@@ -313,7 +320,7 @@ mod tests {
     #[test]
     fn test_deferred_unfocus_idempotent() {
         // Multiple requests within one rebuild cycle collapse to a single
-        // unfocus — mirrors how `RenderContext::clear_focus()` may be called
+        // unfocus — mirrors how `LifecycleContext::clear_focus()` may be called
         // by several widgets during the same rebuild pass.
         let bo = BuildOwner::new();
         bo.request_unfocus();

@@ -4,7 +4,6 @@ use std::any::Any;
 use std::sync::Arc;
 
 use super::build_owner::BuildOwner;
-use super::dirty::DirtyTracking;
 use super::element::Element;
 use super::element_context::ElementContext;
 use super::elements::RenderObjectElement;
@@ -14,7 +13,7 @@ use super::id::RenderObjectKey;
 use super::inherited_registry::{InheritedMap, InheritedRegistry};
 use super::key::WidgetKey;
 use super::render_object::{
-    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
+    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject,
 };
 use super::widgets::Widget;
 use super::EventContext;
@@ -91,6 +90,21 @@ pub trait ComponentState: 'static {
     /// Use this for cleanup like canceling timers, releasing resources,
     /// and unwiring controller callbacks.
     fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {}
+
+    /// Called once before each state-driven rebuild (setState / Signal::set),
+    /// NOT before parent-widget updates (that's `on_update`).
+    ///
+    /// Use for side-effects that must happen at the start of a rebuild pass:
+    /// clearing focus when a navigation transition begins, dismissing a
+    /// pending modal, etc. `render()` itself must stay pure.
+    ///
+    /// Fires only from `StatefulElement::rebuild_from_state`. The first
+    /// render of an element goes through `mount()` and does NOT fire
+    /// `on_rebuild`. Parent-widget changes go through `update()` →
+    /// `on_update()`, also NOT `on_rebuild`.
+    ///
+    /// Default: no-op.
+    fn on_rebuild(&mut self, _ctx: &mut LifecycleContext) {}
 
     /// Wire up dirty callbacks for any `Signal` fields.
     ///
@@ -297,6 +311,19 @@ impl<'a> LifecycleContext<'a> {
     pub fn animation_ticker(&self) -> &Arc<AnimationTicker> {
         &self.animation_ticker
     }
+
+    /// Request that primary focus be cleared after the current rebuild pass.
+    ///
+    /// Safe to call from any lifecycle hook (`on_mount`, `on_update`,
+    /// `on_rebuild`, `on_unmount`). The request is stashed on the
+    /// [`BuildOwner`] and applied by the pipeline once `perform_rebuilds()`
+    /// returns — deferred so it cannot run mid-rebuild.
+    ///
+    /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
+    /// is itself a no-op in that case).
+    pub fn clear_focus(&self) {
+        self.build_owner.request_unfocus();
+    }
 }
 
 // ============================================================================
@@ -308,67 +335,44 @@ impl<'a> LifecycleContext<'a> {
 /// Maps to React's render function context or Vue's setup context.
 pub struct RenderContext<'a> {
     /// The element ID for this stateful element.
-    pub element_id: ElementKey,
-
-    /// Dirty tracking for marking layout/paint dirty.
-    pub dirty: &'a mut DirtyTracking,
-
-    /// Render object registry.
-    pub render_objects: &'a mut RenderObjectRegistry,
+    element_id: ElementKey,
 
     /// Build owner for scheduling rebuilds.
     /// Uses shared reference because mark_needs_build() takes &self
     /// via interior mutability (RefCell).
-    pub build_owner: &'a BuildOwner,
+    build_owner: &'a BuildOwner,
 
     /// Nearest-ancestor cache for inherited values (read-only here).
-    pub inherited_map: &'a InheritedMap,
+    inherited_map: &'a InheritedMap,
 
     /// Pipeline-owned registry; `depend_on_inherited_widget` uses interior
     /// mutability to register the caller as a dependent.
-    pub inherited_registry: &'a InheritedRegistry,
+    inherited_registry: &'a InheritedRegistry,
 }
 
 impl<'a> RenderContext<'a> {
-    /// Request a rebuild of this element.
+    /// Construct a `RenderContext` for use in `Component::render()`.
     ///
-    /// The element will be rebuilt during the next frame.
-    pub fn request_rebuild(&mut self) {
-        self.build_owner.mark_needs_build(self.element_id);
-    }
-
-    /// Mark the element's render object as needing layout.
-    pub fn mark_needs_layout(&mut self, render_object_id: super::id::RenderObjectKey) {
-        self.dirty.mark_needs_layout(render_object_id);
-    }
-
-    /// Mark the element's render object as needing paint.
-    pub fn mark_needs_paint(&mut self, render_object_id: super::id::RenderObjectKey) {
-        self.dirty.mark_needs_paint(render_object_id);
+    /// Consolidates all current fields into a single constructor; subsequent
+    /// refactors will narrow this signature as fields are removed from the
+    /// public surface.
+    pub fn new(
+        element_id: ElementKey,
+        build_owner: &'a BuildOwner,
+        inherited_map: &'a InheritedMap,
+        inherited_registry: &'a InheritedRegistry,
+    ) -> Self {
+        Self {
+            element_id,
+            build_owner,
+            inherited_map,
+            inherited_registry,
+        }
     }
 
     /// Check if this element is currently focused.
     pub fn is_focused(&self) -> bool {
         self.build_owner.focused_element() == Some(self.element_id)
-    }
-
-    /// Request that primary focus be cleared after the current rebuild pass.
-    ///
-    /// Safe to call from within [`Component::render()`] (which only has
-    /// `&mut RenderContext`, no access to `FocusManager`). The request is
-    /// stashed on the [`BuildOwner`] and applied by the pipeline once
-    /// `perform_rebuilds()` returns.
-    ///
-    /// Primary use case: a navigation container that observes a pending pop
-    /// calls this so focus (and, on mobile, the software keyboard) is
-    /// dismissed the instant the pop transition *starts* — concurrent with
-    /// the animation — rather than lingering until the outgoing page unmounts
-    /// at the end of the transition.
-    ///
-    /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
-    /// is itself a no-op in that case).
-    pub fn clear_focus(&self) {
-        self.build_owner.request_unfocus();
     }
 
     /// Current device safe-area insets in logical pixels.
@@ -507,20 +511,12 @@ impl<W: Component + Clone> StatefulElement<W> {
         &self,
         element_id: ElementKey,
         state: &mut W::State,
-        dirty: &mut DirtyTracking,
-        render_objects: &mut RenderObjectRegistry,
         build_owner: &BuildOwner,
         inherited_map: &InheritedMap,
         inherited_registry: &InheritedRegistry,
     ) -> Box<dyn Widget> {
-        let mut render_ctx = RenderContext {
-            element_id,
-            dirty,
-            render_objects,
-            build_owner,
-            inherited_map,
-            inherited_registry,
-        };
+        let mut render_ctx =
+            RenderContext::new(element_id, build_owner, inherited_map, inherited_registry);
         self.widget.render(state, &mut render_ctx)
     }
 }
@@ -624,8 +620,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
             self.build_child_widget(
                 element_id,
                 state_ref,
-                context.dirty,
-                context.render_objects,
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
@@ -677,8 +671,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
             self.build_child_widget(
                 element_id,
                 state_ref,
-                context.dirty,
-                context.render_objects,
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
@@ -766,14 +758,30 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         let element_id = self.id.unwrap_or(context.element_id);
 
+        // Fire on_rebuild before building the child widget. This is the
+        // only place state-driven side-effects run.
+        {
+            let tx = context.dirty_sender.clone();
+            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                let _ = tx.send(element_id);
+            });
+            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
+            let mut lifecycle_ctx = LifecycleContext::new(
+                element_id,
+                context.build_owner,
+                &self.widget as &dyn Any,
+                dirty_callback,
+                context.animation_ticker.clone(),
+            );
+            state_ref.on_rebuild(&mut lifecycle_ctx);
+        }
+
         // Build the child widget tree using RenderContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
                 element_id,
                 state_ref,
-                context.dirty,
-                context.render_objects,
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
@@ -1329,35 +1337,134 @@ mod tests {
         assert!(element.can_update(widget_ref));
     }
 
+    #[derive(Clone)]
+    struct RebuildCounter {
+        label: String,
+    }
+
+    #[derive(Default)]
+    struct RebuildCounterState {
+        on_rebuild_fired: bool,
+        render_observed_on_rebuild_fired: bool,
+        render_count: u32,
+    }
+
+    impl ComponentState for RebuildCounterState {
+        fn on_rebuild(&mut self, _ctx: &mut LifecycleContext) {
+            self.on_rebuild_fired = true;
+        }
+    }
+
+    impl Component for RebuildCounter {
+        type State = RebuildCounterState;
+
+        fn render(
+            &self,
+            state: &mut RebuildCounterState,
+            _ctx: &mut RenderContext,
+        ) -> Box<dyn Widget> {
+            // Snapshot whether on_rebuild has fired by the time render() runs.
+            // If on_rebuild fires AFTER render(), this snapshot stays false.
+            state.render_observed_on_rebuild_fired = state.on_rebuild_fired;
+            state.render_count += 1;
+            Box::new(Text::new(format!(
+                "{}: render={}",
+                self.label, state.render_count
+            )))
+        }
+    }
+
     #[test]
-    fn test_render_context_request_rebuild() {
+    fn test_on_rebuild_fires_before_render() {
+        // Verify on_rebuild fires on state-driven rebuild (rebuild_from_state),
+        // and fires BEFORE render() so side-effects land before the new tree is built.
+        let widget = RebuildCounter {
+            label: "R".to_string(),
+        };
+        let mut element = StatefulElement::new(widget);
+
         let (
             element_id,
-            _state,
+            mut state,
             mut dirty,
             mut render_objects,
-            _,
+            _element_registry,
             build_owner,
-            _dirty_sender,
-            _child_ops,
-            _focus_manager,
+            dirty_sender,
+            mut child_ops,
+            mut focus_manager,
             inherited_registry,
-            _inherited_maps,
+            mut inherited_maps,
         ) = create_test_context();
         let empty_map = InheritedMap::empty();
 
-        let mut ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+        // Mount
+        {
+            let mut ctx = ElementContext::new(
+                element_id,
+                None,
+                Vec::new(),
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &build_owner,
+                &dirty_sender,
+                &mut child_ops,
+                &mut focus_manager,
+                None,
+                Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
+            );
+            Element::mount(&mut element, &mut ctx);
+        }
 
-        ctx.request_rebuild();
+        // Mount calls render() once but NOT on_rebuild (mount is not a state-driven rebuild).
+        let state_ref = state.get::<RebuildCounterState>(element_id).unwrap();
+        assert!(
+            !state_ref.on_rebuild_fired,
+            "on_rebuild must not fire on mount"
+        );
+        assert!(
+            !state_ref.render_observed_on_rebuild_fired,
+            "on mount, render() must observe on_rebuild_fired as false (on_rebuild did not fire)"
+        );
+        assert_eq!(state_ref.render_count, 1, "render fires once on mount");
 
-        assert!(build_owner.is_dirty(element_id));
+        // State-driven rebuild
+        {
+            let mut ctx = ElementContext::new(
+                element_id,
+                None,
+                Vec::new(),
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &build_owner,
+                &dirty_sender,
+                &mut child_ops,
+                &mut focus_manager,
+                None,
+                Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
+            );
+            Element::rebuild_from_state(&mut element, &mut ctx);
+        }
+
+        // After rebuild: on_rebuild fired, render fired again.
+        let state_ref = state.get::<RebuildCounterState>(element_id).unwrap();
+        assert!(
+            state_ref.on_rebuild_fired,
+            "on_rebuild must fire on state-driven rebuild"
+        );
+        assert!(
+            state_ref.render_observed_on_rebuild_fired,
+            "render() must observe on_rebuild's side-effect — on_rebuild must fire BEFORE render()"
+        );
+        assert_eq!(state_ref.render_count, 2, "render fires once per rebuild");
     }
 
     #[test]
@@ -1365,8 +1472,8 @@ mod tests {
         let (
             element_id,
             _state,
-            mut dirty,
-            mut render_objects,
+            _,
+            _,
             _,
             build_owner,
             _dirty_sender,
@@ -1378,39 +1485,45 @@ mod tests {
         let empty_map = InheritedMap::empty();
 
         // Not focused initially
-        let ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
         assert!(!ctx.is_focused());
 
         // Set this element as focused
         build_owner.set_focused_element(Some(element_id));
-        let ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
         assert!(ctx.is_focused());
 
         // Clear focus
         build_owner.set_focused_element(None);
-        let ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
         assert!(!ctx.is_focused());
+    }
+
+    #[test]
+    fn test_lifecycle_context_clear_focus_requests_unfocus() {
+        let build_owner = BuildOwner::new();
+        let element_id = make_element_key();
+        let widget = TestCounter {
+            label: "X".to_string(),
+        };
+        let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let animation_ticker = Arc::new(AnimationTicker::new());
+
+        // No unfocus request pending initially.
+        assert!(!build_owner.has_unfocus_request());
+
+        // Construct a LifecycleContext and call clear_focus.
+        let ctx = LifecycleContext::new(
+            element_id,
+            &build_owner,
+            &widget as &dyn Any,
+            dirty_callback,
+            animation_ticker,
+        );
+        ctx.clear_focus();
+
+        // BuildOwner should now have a pending unfocus request.
+        assert!(build_owner.has_unfocus_request());
     }
 
     #[test]
@@ -1423,19 +1536,10 @@ mod tests {
         // Build an InheritedMap that points u32 -> provider_key.
         let map = InheritedMap::empty().with_insert(std::any::TypeId::of::<u32>(), provider_key);
 
-        let mut dirty = DirtyTracking::new();
-        let mut render_objects = RenderObjectRegistry::new();
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, Some(42));
@@ -1446,19 +1550,10 @@ mod tests {
         let reg = InheritedRegistry::new();
         let map = InheritedMap::empty();
 
-        let mut dirty = DirtyTracking::new();
-        let mut render_objects = RenderObjectRegistry::new();
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, None);
@@ -1472,19 +1567,10 @@ mod tests {
 
         let map = InheritedMap::empty().with_insert(std::any::TypeId::of::<u32>(), provider_key);
 
-        let mut dirty = DirtyTracking::new();
-        let mut render_objects = RenderObjectRegistry::new();
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
-            element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
 
         let _ = ctx.depend_on_inherited_widget::<u32>();
 

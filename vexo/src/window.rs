@@ -478,7 +478,7 @@ impl<A: Application + 'static> WindowState<A> {
         // Focus can change during `perform_rebuilds()` in two ways that the
         // event-phase keyboard sync (in `process_input_event`) cannot see:
         //
-        //   1. A deferred unfocus requested via `RenderContext::clear_focus()`
+        //   1. A deferred unfocus requested via `LifecycleContext::clear_focus()`
         //      — e.g. `NavigationStackView` clearing focus when a pop
         //      transition starts. Applied inside `perform_rebuilds()` above.
         //   2. The focused element unmounting during reconciliation (the

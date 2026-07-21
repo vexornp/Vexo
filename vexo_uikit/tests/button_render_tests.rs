@@ -1,6 +1,6 @@
 use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
 use vexo::layout::AlignSelf;
-use vexo::{BuildOwner, DirtyTracking, ElementKey, RenderContext, RenderObjectRegistry, ThemeData};
+use vexo::{BuildOwner, ElementKey, RenderContext, ThemeData};
 use vexo::{DecoratedBox, Opacity, Text, Widget, WithLayout};
 use vexo_uikit::theme::tokens;
 use vexo_uikit::{Button, ButtonState, ButtonVariant, Component, Platform};
@@ -12,35 +12,22 @@ fn make_element_key() -> ElementKey {
 
 fn create_render_context<'a>(
     element_id: ElementKey,
-    dirty: &'a mut DirtyTracking,
-    render_objects: &'a mut RenderObjectRegistry,
     build_owner: &'a BuildOwner,
     inherited_map: &'a InheritedMap,
     inherited_registry: &'a InheritedRegistry,
 ) -> RenderContext<'a> {
-    RenderContext {
-        element_id,
-        dirty,
-        render_objects,
-        build_owner,
-        inherited_map,
-        inherited_registry,
-    }
+    RenderContext::new(element_id, build_owner, inherited_map, inherited_registry)
 }
 
 /// Render a Button and return the widget tree, with a throwaway RenderContext.
 fn render_button(button: Button) -> Box<dyn Widget> {
     let mut state = ButtonState::default();
     let element_id = make_element_key();
-    let mut dirty = DirtyTracking::new();
-    let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
     let inherited_map = InheritedMap::empty();
     let inherited_registry = InheritedRegistry::new();
     let mut ctx = create_render_context(
         element_id,
-        &mut dirty,
-        &mut render_objects,
         &build_owner,
         &inherited_map,
         &inherited_registry,
@@ -85,15 +72,11 @@ fn button_hover_state_render_does_not_panic() {
     // Render without hover
     let mut state = ButtonState::default();
     let element_id = make_element_key();
-    let mut dirty = DirtyTracking::new();
-    let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
     let inherited_map = InheritedMap::empty();
     let inherited_registry = InheritedRegistry::new();
     let mut ctx = create_render_context(
         element_id,
-        &mut dirty,
-        &mut render_objects,
         &build_owner,
         &inherited_map,
         &inherited_registry,
@@ -106,8 +89,6 @@ fn button_hover_state_render_does_not_panic() {
     // Render with hover
     let mut ctx2 = create_render_context(
         element_id,
-        &mut dirty,
-        &mut render_objects,
         &build_owner,
         &inherited_map,
         &inherited_registry,
@@ -310,15 +291,11 @@ fn button_ghost_hover_uses_hover_text_color() {
     let mut state = ButtonState::default();
     state.is_hovered.set(true);
     let element_id = make_element_key();
-    let mut dirty = DirtyTracking::new();
-    let mut render_objects = RenderObjectRegistry::new();
     let build_owner = BuildOwner::new();
     let inherited_map = InheritedMap::empty();
     let inherited_registry = InheritedRegistry::new();
     let mut ctx = create_render_context(
         element_id,
-        &mut dirty,
-        &mut render_objects,
         &build_owner,
         &inherited_map,
         &inherited_registry,
