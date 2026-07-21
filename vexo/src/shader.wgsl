@@ -86,6 +86,17 @@ fn sdf_rounded_rect(p: vec2<f32>, b: vec4<f32>, r: f32) -> f32 {
 /// `p` is the fragment position in physical pixels.
 /// rclip.bounds and rclip.radii are in logical pixels — multiplied by
 /// scale_factor here to match the physical-pixel SDF space.
+///
+/// Transform caveat: `rclip.bounds` is the transformed AABB of the
+/// clip rect (computed in `command_processor.rs`), not the actual
+/// transformed rounded rect. Under rotation the SDF is correct
+/// (a rotated rect's AABB is still axis-aligned). Under non-uniform
+/// scale the visual clip would be an ellipse, but the SDF still
+/// treats it as a circle/rounded-rect in pixel space — the clip
+/// region is the AABB, not the transformed shape. The design spec
+/// (`docs/superpowers/specs/2026-07-21-clip-rrect-widget-design.md`,
+/// "Transform-aware rclip") explicitly defers tighter handling to a
+/// follow-up. This matches `PushClip`'s existing behavior.
 fn rclip_alpha(p: vec2<f32>) -> f32 {
     let n = i32(rclip.count.x);
     if (n == 0) {
