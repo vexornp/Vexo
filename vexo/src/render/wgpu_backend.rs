@@ -377,7 +377,11 @@ impl WgpuBackend {
             layout: &rclip_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: rclip_uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &rclip_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(std::mem::size_of::<RClipUniform>() as u64),
+                }),
             }],
         });
 
