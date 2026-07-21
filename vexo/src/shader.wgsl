@@ -106,6 +106,12 @@ fn rclip_alpha(p: vec2<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let ndc = in.clip_position.xy / in.clip_position.w;
+    let abs_pixel_pos = vec2<f32>(
+        (ndc.x + 1.0) * 0.5 * globals.screen_size.x,
+        (1.0 - ndc.y) * 0.5 * globals.screen_size.y,
+    );
+
     // === SHADOW PATH (when shadow_color.a > 0) ===
     if (in.shadow_color.a > 0.0) {
         let blur_px = in.shadow_blur;
@@ -123,7 +129,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let sigma = max(blur_px * 0.5, 0.5);
         let d = max(shadow_sdf, 0.0);
         let falloff = exp(-d * d / (2.0 * sigma * sigma));
-        return vec4<f32>(in.shadow_color.rgb, falloff * in.shadow_color.a * rclip_alpha(in.uv * in.size));
+        return vec4<f32>(in.shadow_color.rgb, falloff * in.shadow_color.a * rclip_alpha(abs_pixel_pos));
     }
 
     // === EXISTING FILL/BORDER PATH (unchanged) ===
@@ -131,7 +137,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if (radius < 0.5) {
         if (in.border_width <= 0.0) {
-            return vec4<f32>(in.color.rgb, in.color.a * rclip_alpha(in.uv * in.size));
+            return vec4<f32>(in.color.rgb, in.color.a * rclip_alpha(abs_pixel_pos));
         }
 
         let centered_uv = in.uv - 0.5;
@@ -142,7 +148,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let is_border_y = smoothstep(0.5 - uv_border_step.y - 0.002, 0.5 - uv_border_step.y, edge_dist.y);
         let is_border = max(is_border_x, is_border_y);
         let result = mix(in.color, in.border_color, is_border);
-        return vec4<f32>(result.rgb, result.a * rclip_alpha(in.uv * in.size));
+        return vec4<f32>(result.rgb, result.a * rclip_alpha(abs_pixel_pos));
     }
 
     let pixel_pos = in.uv * in.size;
@@ -164,5 +170,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let in_border = 1.0 - smoothstep(-1.0, 1.0, sdf);
     let border_weight = in_border * (1.0 - border_alpha);
     let final_color = mix(in.color, in.border_color, border_weight);
-    return vec4<f32>(final_color.rgb, final_color.a * fill_alpha * rclip_alpha(in.uv * in.size));
+    return vec4<f32>(final_color.rgb, final_color.a * fill_alpha * rclip_alpha(abs_pixel_pos));
 }

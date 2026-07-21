@@ -100,8 +100,14 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let ndc = in.clip_position.xy / in.clip_position.w;
+    let abs_pixel_pos = vec2<f32>(
+        (ndc.x + 1.0) * 0.5 * globals.screen_size.x,
+        (1.0 - ndc.y) * 0.5 * globals.screen_size.y,
+    );
+
     let atlas_uv = in.uv_origin + in.uv * in.uv_size;
     let tex_color = textureSample(image_atlas, image_sampler, atlas_uv);
 
-    return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity * rclip_alpha(in.uv * in.size));
+    return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity * rclip_alpha(abs_pixel_pos));
 }
