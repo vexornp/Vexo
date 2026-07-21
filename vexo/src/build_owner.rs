@@ -257,6 +257,13 @@ impl BuildOwner {
         v
     }
 
+    /// Test-only accessor: returns `true` if `request_unfocus()` has been
+    /// called since the last `take_unfocus_request()`. Used by tests to
+    /// assert that a deferred unfocus was scheduled.
+    pub fn has_unfocus_request(&self) -> bool {
+        *self.pending_unfocus.borrow()
+    }
+
     /// Get a clone of the shared safe-area source.
     ///
     /// Returns a cheaply-clonable handle ([`SafeAreaSource`] is `Arc`-based)

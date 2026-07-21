@@ -312,6 +312,20 @@ impl<'a> LifecycleContext<'a> {
     pub fn animation_ticker(&self) -> &Arc<AnimationTicker> {
         &self.animation_ticker
     }
+
+    /// Request that primary focus be cleared after the current rebuild pass.
+    ///
+    /// Safe to call from any lifecycle hook (`on_mount`, `on_update`,
+    /// `on_rebuild`, `on_unmount`). The request is stashed on the
+    /// [`BuildOwner`] and applied by the pipeline once `perform_rebuilds()`
+    /// returns — mirrors the deferred-unfocus semantics previously on
+    /// `RenderContext::clear_focus()`.
+    ///
+    /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
+    /// is itself a no-op in that case).
+    pub fn clear_focus(&self) {
+        self.build_owner.request_unfocus();
+    }
 }
 
 // ============================================================================
@@ -1562,6 +1576,33 @@ mod tests {
             inherited_registry: &inherited_registry,
         };
         assert!(!ctx.is_focused());
+    }
+
+    #[test]
+    fn test_lifecycle_context_clear_focus_requests_unfocus() {
+        let build_owner = BuildOwner::new();
+        let element_id = make_element_key();
+        let widget = TestCounter {
+            label: "X".to_string(),
+        };
+        let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let animation_ticker = Arc::new(AnimationTicker::new());
+
+        // No unfocus request pending initially.
+        assert!(!build_owner.has_unfocus_request());
+
+        // Construct a LifecycleContext and call clear_focus.
+        let ctx = LifecycleContext::new(
+            element_id,
+            &build_owner,
+            &widget as &dyn Any,
+            dirty_callback,
+            animation_ticker,
+        );
+        ctx.clear_focus();
+
+        // BuildOwner should now have a pending unfocus request.
+        assert!(build_owner.has_unfocus_request());
     }
 
     #[test]
