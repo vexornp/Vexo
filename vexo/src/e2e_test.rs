@@ -969,3 +969,175 @@ fn test_clip_rrect_in_pipeline() {
         "Should have a Rect command between PushClipRRect and PopClipRRect"
     );
 }
+
+/// Nested ClipRRect widgets should produce correctly ordered push/pop pairs.
+///
+/// Verifies the command stream for `ClipRRect(ClipRRect(DecoratedBox))`:
+/// 1. Two `PushClipRRect` commands (outer then inner).
+/// 2. A `Rect` (the DecoratedBox background) inside the inner clip.
+/// 3. Two `PopClipRRect` commands (inner then outer — stack order).
+///
+/// This guards against regressions in the painter's recursion that could
+/// emit unbalanced or misordered clip commands, which would corrupt the
+/// GPU's rclip_stack.
+#[test]
+fn test_clip_rrect_nested_in_pipeline() {
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Nested"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::BLUE),
+    );
+    let inner = ClipRRect::new(12.0, child);
+    let outer = ClipRRect::new(8.0, inner);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(outer));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    // Collect indices of all PushClipRRect and PopClipRRect commands.
+    let pushes: Vec<usize> = commands
+        .iter()
+        .enumerate()
+        .filter_map(|(i, cmd)| matches!(cmd, RenderCommand::PushClipRRect { .. }).then_some(i))
+        .collect();
+    let pops: Vec<usize> = commands
+        .iter()
+        .enumerate()
+        .filter_map(|(i, cmd)| matches!(cmd, RenderCommand::PopClipRRect).then_some(i))
+        .collect();
+
+    assert_eq!(
+        pushes.len(),
+        2,
+        "Nested ClipRRect should produce 2 PushClipRRect commands, got {}",
+        pushes.len()
+    );
+    assert_eq!(
+        pops.len(),
+        2,
+        "Nested ClipRRect should produce 2 PopClipRRect commands, got {}",
+        pops.len()
+    );
+
+    // Stack order: outer push < inner push < inner pop < outer pop.
+    assert!(
+        pushes[0] < pushes[1],
+        "Outer PushClipRRect should come before inner"
+    );
+    assert!(
+        pushes[1] < pops[0],
+        "Inner PushClipRRect should come before inner PopClipRRect"
+    );
+    assert!(
+        pops[0] < pops[1],
+        "Inner PopClipRRect should come before outer PopClipRRect"
+    );
+
+    // Verify radius values: outer=8.0 (first push), inner=12.0 (second push).
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(pushes[0]) {
+        assert!(
+            (radius - 8.0).abs() < 1e-6,
+            "Outer radius should be 8.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", pushes[0]);
+    }
+    if let Some(RenderCommand::PushClipRRect { radius, .. }) = commands.get(pushes[1]) {
+        assert!(
+            (radius - 12.0).abs() < 1e-6,
+            "Inner radius should be 12.0, got {}",
+            radius
+        );
+    } else {
+        panic!("expected PushClipRRect at index {}", pushes[1]);
+    }
+
+    // Verify a child Rect (DecoratedBox background) appears strictly between
+    // the inner push and the inner pop.
+    let has_rect_inside_inner = commands[pushes[1] + 1..pops[0]]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_inside_inner,
+        "Should have a Rect command between inner PushClipRRect and inner PopClipRRect"
+    );
+}
+
+/// `ClipRRect::new(0.0, ...)` should degenerate to the rectangular `PushClip`
+/// path, NOT emit `PushClipRRect`.
+///
+/// This is the degeneration contract from the design spec: a radius of 0
+/// means "rectangular clip" and goes through the existing `PushClip`/`PopClip`
+/// path, bypassing the rclip SDF entirely. `ClipRRectRenderObject::clip_corner_radius()`
+/// returns `None` when radius == 0 (see `vexo/src/render_objects/clip_rrect.rs:120`),
+/// and the painter emits `PushClip` when `use_rclip` is false
+/// (see `vexo/src/painter.rs:228`).
+#[test]
+fn test_clip_rrect_radius_zero_degenerates_to_push_clip() {
+    let child = DecoratedBox::with_style(
+        WithLayout::new(
+            Text::new("Rect clip"),
+            crate::layout::Layout::default().padding(8.0),
+        ),
+        Style::default().background(Color::GREEN),
+    );
+    let widget = ClipRRect::new(0.0, child);
+
+    let mut pipeline: ThreeTreePipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    pipeline.reconcile(Box::new(widget));
+
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+    pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+    let commands = pipeline.paint();
+
+    // Should have PushClip and PopClip (rectangular path).
+    let push_clip_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PushClip { .. }));
+    let pop_clip_idx = commands
+        .iter()
+        .position(|cmd| matches!(cmd, RenderCommand::PopClip));
+    assert!(
+        push_clip_idx.is_some(),
+        "radius=0 should emit PushClip (rectangular path)"
+    );
+    assert!(
+        pop_clip_idx.is_some(),
+        "radius=0 should emit PopClip (rectangular path)"
+    );
+
+    // Should NOT have PushClipRRect or PopClipRRect.
+    let has_rclip_push = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PushClipRRect { .. }));
+    let has_rclip_pop = commands
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::PopClipRRect));
+    assert!(
+        !has_rclip_push,
+        "radius=0 should NOT emit PushClipRRect (would engage rclip SDF unnecessarily)"
+    );
+    assert!(!has_rclip_pop, "radius=0 should NOT emit PopClipRRect");
+
+    // Verify a child Rect appears between PushClip and PopClip.
+    let push_idx = push_clip_idx.unwrap();
+    let pop_idx = pop_clip_idx.unwrap();
+    assert!(push_idx < pop_idx, "PushClip should come before PopClip");
+    let has_rect_between = commands[push_idx + 1..pop_idx]
+        .iter()
+        .any(|cmd| matches!(cmd, RenderCommand::Rect { .. }));
+    assert!(
+        has_rect_between,
+        "Should have a Rect command between PushClip and PopClip"
+    );
+}
