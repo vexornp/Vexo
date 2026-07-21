@@ -92,6 +92,21 @@ pub trait ComponentState: 'static {
     /// and unwiring controller callbacks.
     fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {}
 
+    /// Called once before each state-driven rebuild (setState / Signal::set),
+    /// NOT before parent-widget updates (that's `on_update`).
+    ///
+    /// Use for side-effects that must happen at the start of a rebuild pass:
+    /// clearing focus when a navigation transition begins, dismissing a
+    /// pending modal, etc. `render()` itself must stay pure.
+    ///
+    /// Fires only from `StatefulElement::rebuild_from_state`. The first
+    /// render of an element goes through `mount()` and does NOT fire
+    /// `on_rebuild`. Parent-widget changes go through `update()` →
+    /// `on_update()`, also NOT `on_rebuild`.
+    ///
+    /// Default: no-op.
+    fn on_rebuild(&mut self, _ctx: &mut LifecycleContext) {}
+
     /// Wire up dirty callbacks for any `Signal` fields.
     ///
     /// Override this if your state contains `Signal` fields.
@@ -766,6 +781,24 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         let element_id = self.id.unwrap_or(context.element_id);
 
+        // Fire on_rebuild before building the child widget. This is the
+        // only place state-driven side-effects run.
+        {
+            let tx = context.dirty_sender.clone();
+            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                let _ = tx.send(element_id);
+            });
+            let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
+            let mut lifecycle_ctx = LifecycleContext::new(
+                element_id,
+                context.build_owner,
+                &self.widget as &dyn Any,
+                dirty_callback,
+                context.animation_ticker.clone(),
+            );
+            state_ref.on_rebuild(&mut lifecycle_ctx);
+        }
+
         // Build the child widget tree using RenderContext
         let child_widget = {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
@@ -1327,6 +1360,124 @@ mod tests {
         let widget_ref: &dyn Any = &new_widget;
 
         assert!(element.can_update(widget_ref));
+    }
+
+    #[derive(Clone)]
+    struct RebuildCounter {
+        label: String,
+    }
+
+    #[derive(Default)]
+    struct RebuildCounterState {
+        on_rebuild_fired: bool,
+        render_count: u32,
+    }
+
+    impl ComponentState for RebuildCounterState {
+        fn on_rebuild(&mut self, _ctx: &mut LifecycleContext) {
+            self.on_rebuild_fired = true;
+        }
+    }
+
+    impl Component for RebuildCounter {
+        type State = RebuildCounterState;
+
+        fn render(
+            &self,
+            state: &mut RebuildCounterState,
+            _ctx: &mut RenderContext,
+        ) -> Box<dyn Widget> {
+            state.render_count += 1;
+            Box::new(Text::new(format!(
+                "{}: render={}",
+                self.label, state.render_count
+            )))
+        }
+    }
+
+    #[test]
+    fn test_on_rebuild_fires_before_render() {
+        // Verify on_rebuild fires on state-driven rebuild (rebuild_from_state),
+        // and fires BEFORE render() so side-effects land before the new tree is built.
+        let widget = RebuildCounter {
+            label: "R".to_string(),
+        };
+        let mut element = StatefulElement::new(widget);
+
+        let (
+            element_id,
+            mut state,
+            mut dirty,
+            mut render_objects,
+            _element_registry,
+            build_owner,
+            dirty_sender,
+            mut child_ops,
+            mut focus_manager,
+            inherited_registry,
+            mut inherited_maps,
+        ) = create_test_context();
+        let empty_map = InheritedMap::empty();
+
+        // Mount
+        {
+            let mut ctx = ElementContext::new(
+                element_id,
+                None,
+                Vec::new(),
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &build_owner,
+                &dirty_sender,
+                &mut child_ops,
+                &mut focus_manager,
+                None,
+                Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
+            );
+            Element::mount(&mut element, &mut ctx);
+        }
+
+        // Mount calls render() once but NOT on_rebuild (mount is not a state-driven rebuild).
+        let state_ref = state.get::<RebuildCounterState>(element_id).unwrap();
+        assert!(
+            !state_ref.on_rebuild_fired,
+            "on_rebuild must not fire on mount"
+        );
+        assert_eq!(state_ref.render_count, 1, "render fires once on mount");
+
+        // State-driven rebuild
+        {
+            let mut ctx = ElementContext::new(
+                element_id,
+                None,
+                Vec::new(),
+                &mut state,
+                &mut dirty,
+                &mut render_objects,
+                &build_owner,
+                &dirty_sender,
+                &mut child_ops,
+                &mut focus_manager,
+                None,
+                Arc::new(AnimationTicker::new()),
+                &empty_map,
+                &inherited_registry,
+                &mut inherited_maps,
+            );
+            Element::rebuild_from_state(&mut element, &mut ctx);
+        }
+
+        // After rebuild: on_rebuild fired, render fired again.
+        let state_ref = state.get::<RebuildCounterState>(element_id).unwrap();
+        assert!(
+            state_ref.on_rebuild_fired,
+            "on_rebuild must fire on state-driven rebuild"
+        );
+        assert_eq!(state_ref.render_count, 2, "render fires once per rebuild");
     }
 
     #[test]
