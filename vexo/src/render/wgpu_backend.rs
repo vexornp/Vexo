@@ -972,7 +972,11 @@ impl WgpuBackend {
             let mut prev_kind: Option<OpKind> = None;
             let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
 
-            for (loc, clip) in self.current_op_locations.iter().zip(self.current_op_clips.iter()) {
+            for (i, (loc, clip)) in self.current_op_locations
+                .iter()
+                .zip(self.current_op_clips.iter())
+                .enumerate()
+            {
                 // 1. Scissor: only set when clip changes.
                 //    Compare Option<Bounds> by value via the Option<Option> sentinel.
                 let clip_value = *clip;
@@ -1022,7 +1026,20 @@ impl WgpuBackend {
                     prev_kind = Some(kind);
                 }
 
-                // 3. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
+                // 3. RClip bind group: per-op dynamic offset.
+                //    Quad pipeline: group 1. Image pipeline: group 2
+                //    (group 1 is the image atlas).
+                let rclip_group = match kind {
+                    OpKind::Quad => 1,
+                    OpKind::Image => 2,
+                };
+                render_pass.set_bind_group(
+                    rclip_group,
+                    &self.rclip_bind_group,
+                    &[self.current_op_rclip_offsets[i]],
+                );
+
+                // 4. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
                 match kind {
                     OpKind::Quad => {
                         render_pass.set_index_buffer(
