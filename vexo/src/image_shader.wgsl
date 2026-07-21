@@ -18,6 +18,52 @@ struct GlobalUniforms {
 @group(1) @binding(0) var image_atlas: texture_2d<f32>;
 @group(1) @binding(1) var image_sampler: sampler;
 
+struct RClipUniform {
+    count: vec4<f32>,              // .x = number of active entries (0..8)
+    bounds: array<vec4<f32>, 8>,   // (left, top, right, bottom) per entry
+    radii: array<vec4<f32>, 2>,    // 8 radii packed 4-per-vec4
+};
+
+@group(2) @binding(0) var<uniform> rclip: RClipUniform;
+
+/// SDF distance to a rounded rectangle.
+/// `p` is the fragment position in physical pixels.
+/// `b` is the rect bounds (left, top, right, bottom) in physical pixels.
+/// `r` is the corner radius in physical pixels.
+/// Returns <= 0 inside, > 0 outside, |value| < 1 = 1px AA band.
+fn sdf_rounded_rect(p: vec2<f32>, b: vec4<f32>, r: f32) -> f32 {
+    let center = (b.xy + b.zw) * 0.5;
+    let half_size = (b.zw - b.xy) * 0.5;
+    let radius = min(r, min(half_size.x, half_size.y));
+    let q = abs(p - center) - (half_size - radius);
+    let outside = length(max(q, vec2<f32>(0.0)));
+    let inside = min(max(q.x, q.y), 0.0);
+    return outside + inside - radius;
+}
+
+/// Alpha multiplier for the active rclip stack. Returns 1.0 if no
+/// rclip is active; otherwise the product of per-entry SDF masks.
+/// `p` is the fragment position in physical pixels.
+/// rclip.bounds and rclip.radii are in logical pixels — multiplied by
+/// scale_factor here to match the physical-pixel SDF space.
+fn rclip_alpha(p: vec2<f32>) -> f32 {
+    let n = i32(rclip.count.x);
+    if (n == 0) {
+        return 1.0;
+    }
+    let sf = globals.scale_factor;
+    var mask = 1.0;
+    for (var i = 0; i < n; i = i + 1) {
+        let b = rclip.bounds[i] * sf;
+        let r = rclip.radii[i / 4][i % 4] * sf;
+        let dist = sdf_rounded_rect(p, b, r);
+        // Outside: dist > 0 → alpha 0. AA band: -1 < dist <= 0 (1px).
+        let entry_alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
+        mask = mask * entry_alpha;
+    }
+    return mask;
+}
+
 @vertex
 fn vs_main(
     @location(0) model_pos: vec2<f32>,
@@ -62,7 +108,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(image_atlas, image_sampler, atlas_uv);
 
     if (radius < 0.5) {
-        return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity);
+        return vec4<f32>(tex_color.rgb, tex_color.a * in.opacity * rclip_alpha(in.uv * in.size));
     }
 
     let pixel_pos = in.uv * in.size;
@@ -77,5 +123,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha * in.opacity);
+    return vec4<f32>(tex_color.rgb, tex_color.a * fill_alpha * in.opacity * rclip_alpha(in.uv * in.size));
 }
