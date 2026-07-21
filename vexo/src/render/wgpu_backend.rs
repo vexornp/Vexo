@@ -1016,6 +1016,10 @@ impl WgpuBackend {
 
                 // 2. Pipeline: only switch when op kind changes.
                 let kind = loc.kind();
+                let rclip_slot_idx = match kind {
+                    OpKind::Quad => 0,
+                    OpKind::Image => 1,
+                };
                 if Some(kind) != prev_kind {
                     match kind {
                         OpKind::Quad => {
@@ -1032,19 +1036,17 @@ impl WgpuBackend {
                             render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
                         }
                     }
+                    // Bind group index 1 is shared: rclip for Quad, image_atlas
+                    // for Image. After a pipeline switch the slot may hold the
+                    // other pipeline's bind group, so force rclip to be re-bound.
+                    prev_rclip_offset_per_slot[rclip_slot_idx] = None;
                     prev_kind = Some(kind);
                 }
 
                 // 3. RClip bind group: per-op dynamic offset.
                 //    Quad pipeline: group 1. Image pipeline: group 2
                 //    (group 1 is the image atlas).
-                //    Skip when the target slot already has this offset —
-                //    bind group bindings persist across pipeline switches
-                //    within a render pass.
-                let rclip_slot_idx = match kind {
-                    OpKind::Quad => 0,
-                    OpKind::Image => 1,
-                };
+                //    Skip when the target slot already has this offset.
                 let rclip_offset = self.current_op_rclip_offsets[i];
                 if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
                     let rclip_group = match kind {
