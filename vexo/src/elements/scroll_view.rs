@@ -247,11 +247,7 @@ impl Element for ScrollViewElement {
     }
     fn can_update(&self, widget: &dyn Any) -> bool {
         widget
-            .downcast_ref::<Box<dyn Widget>>()
-            .and_then(|w| {
-                w.as_any()
-                    .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
-            })
+            .downcast_ref::<crate::widgets::scroll_view::ScrollView>()
             .is_some()
     }
 
