@@ -317,8 +317,7 @@ impl<'a> LifecycleContext<'a> {
     /// Safe to call from any lifecycle hook (`on_mount`, `on_update`,
     /// `on_rebuild`, `on_unmount`). The request is stashed on the
     /// [`BuildOwner`] and applied by the pipeline once `perform_rebuilds()`
-    /// returns — mirrors the deferred-unfocus semantics previously on
-    /// `LifecycleContext::clear_focus()`.
+    /// returns — deferred so it cannot run mid-rebuild.
     ///
     /// No-op when nothing is focused (the subsequent `FocusManager::unfocus()`
     /// is itself a no-op in that case).
