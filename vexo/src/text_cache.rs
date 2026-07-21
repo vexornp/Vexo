@@ -148,6 +148,7 @@ mod tests {
             font_family: family.map(|s| s.to_string()),
             max_width: None,
             clip_bounds: None,
+            rclip_snapshot: Vec::new(),
         }
     }
 

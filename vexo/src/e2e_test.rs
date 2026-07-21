@@ -472,9 +472,9 @@ fn test_clip_bounds_expanded_for_rotated_content() {
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
     let ops = frame_builder.ops();
-    let quad_op = ops
-        .iter()
-        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let quad_op = ops.iter().find(|(op, clip, _)| {
+        matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some()
+    });
     let clip_bounds = quad_op
         .expect("Should have a quad op with clip bounds")
         .1
@@ -518,9 +518,9 @@ fn test_clip_bounds_unchanged_for_translate_only() {
     process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
 
     let ops = frame_builder.ops();
-    let quad_op = ops
-        .iter()
-        .find(|(op, clip)| matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some());
+    let quad_op = ops.iter().find(|(op, clip, _)| {
+        matches!(op, crate::frame_builder::DrawOp::Quad(_)) && clip.is_some()
+    });
     let clip_bounds = quad_op
         .expect("Should have a quad op with clip bounds")
         .1

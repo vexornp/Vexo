@@ -695,7 +695,7 @@ impl WgpuBackend {
         let op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>> = frame_builder
             .ops()
             .iter()
-            .map(|(_, clip)| *clip)
+            .map(|(_, clip, _)| *clip)
             .collect();
 
         let mut quad_instances: Vec<QuadInstance> = Vec::new();
@@ -705,7 +705,7 @@ impl WgpuBackend {
             self.image_allocator.atlas_height() as f32,
         ];
 
-        for (op, _) in frame_builder.ops() {
+        for (op, _, _) in frame_builder.ops() {
             match op {
                 crate::frame_builder::DrawOp::Quad(q) => {
                     quad_instances.push(*q);

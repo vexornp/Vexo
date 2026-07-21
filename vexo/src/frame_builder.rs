@@ -45,6 +45,11 @@ pub struct TextRequest {
     /// Effective clip bounds when this text was added (logical coordinates).
     /// `None` means no clipping (full viewport).
     pub clip_bounds: Option<Bounds>,
+    /// Effective rounded-rect clip stack when this text was added.
+    /// Empty slice means no rounded clip active. Applied as SDF masks
+    /// in the text fragment shader (future; currently snapshotted but
+    /// not yet enforced for text — matches existing text clip behavior).
+    pub rclip_snapshot: Vec<RClipEntry>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,18 +64,26 @@ pub struct ImageRequest {
 
 pub type Bounds = crate::core::Bounds<Logical>;
 
+/// Maximum nesting depth for rounded-rect clips. Pushes beyond this
+/// are logged and dropped. The shader uniform array is sized to this.
+pub const MAX_RCLIP_DEPTH: usize = 8;
+
+/// A single rounded-rect clip entry: (bounds, radius).
+pub type RClipEntry = (Bounds, f32);
+
 pub struct FrameBuilder {
     /// Flat ordered draw list. Each entry is the op plus its effective clip
     /// bounds at add-time. This is the single source of truth for geometry
     /// draw order — quads and images interleave in the order the Painter
     /// emitted them.
-    ops: Vec<(DrawOp, Option<Bounds>)>,
+    ops: Vec<(DrawOp, Option<Bounds>, Vec<RClipEntry>)>,
 
     /// Text requests in paint order. Each carries its own `clip_bounds`.
     text_requests: Vec<TextRequest>,
 
     corner_radius_stack: Vec<f32>,
     clip_stack: Vec<Bounds>,
+    rclip_stack: Vec<RClipEntry>,
     transform_stack: Vec<AffineTransform>,
     current_transform: AffineTransform,
 }
@@ -88,6 +101,7 @@ impl FrameBuilder {
             text_requests: Vec::new(),
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
+            rclip_stack: Vec::new(),
             transform_stack: Vec::new(),
             current_transform: AffineTransform::identity(),
         }
@@ -98,6 +112,7 @@ impl FrameBuilder {
         self.text_requests.clear();
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
+        self.rclip_stack.clear();
         self.transform_stack.clear();
         self.current_transform = AffineTransform::identity();
     }
@@ -105,12 +120,14 @@ impl FrameBuilder {
     pub fn quad_count(&self) -> usize {
         self.ops
             .iter()
-            .filter(|(op, _)| matches!(op, DrawOp::Quad(_)))
+            .filter(|(op, _, _)| matches!(op, DrawOp::Quad(_)))
             .count()
     }
 
     pub fn has_quads(&self) -> bool {
-        self.ops.iter().any(|(op, _)| matches!(op, DrawOp::Quad(_)))
+        self.ops
+            .iter()
+            .any(|(op, _, _)| matches!(op, DrawOp::Quad(_)))
     }
 
     pub fn text_count(&self) -> usize {
@@ -121,7 +138,7 @@ impl FrameBuilder {
     pub fn quad_instances(&self) -> Vec<QuadInstance> {
         self.ops
             .iter()
-            .filter_map(|(op, _)| match op {
+            .filter_map(|(op, _, _)| match op {
                 DrawOp::Quad(q) => Some(*q),
                 _ => None,
             })
@@ -191,6 +208,41 @@ impl FrameBuilder {
         Some(result)
     }
 
+    /// Push a rounded-rect clip onto the rclip stack.
+    /// All subsequent DrawOps snapshot this stack until `pop_rclip`.
+    /// Silently drops the push (with a warning log) if `MAX_RCLIP_DEPTH`
+    /// is exceeded — the shader uniform array cannot hold more.
+    pub fn push_rclip(&mut self, bounds: Bounds, radius: f32) {
+        if self.rclip_stack.len() >= MAX_RCLIP_DEPTH {
+            log::warn!(
+                "[ClipRRect] max depth {} exceeded, dropping rclip push",
+                MAX_RCLIP_DEPTH
+            );
+            return;
+        }
+        self.rclip_stack.push((bounds, radius));
+    }
+
+    /// Pop the most recent rounded-rect clip from the stack.
+    pub fn pop_rclip(&mut self) {
+        self.rclip_stack.pop();
+    }
+
+    /// Get the current active rclip stack as a slice.
+    /// Empty slice means no rounded-rect clip is active.
+    pub fn current_rclip(&self) -> &[RClipEntry] {
+        &self.rclip_stack
+    }
+
+    /// Snapshot the current rclip stack for attaching to a DrawOp.
+    fn snapshot_rclip(&self) -> Vec<RClipEntry> {
+        if self.rclip_stack.is_empty() {
+            Vec::new()
+        } else {
+            self.rclip_stack.clone()
+        }
+    }
+
     /// Push a transform onto the context stack.
     pub fn push_transform(&mut self, transform: AffineTransform) {
         self.transform_stack.push(self.current_transform);
@@ -243,7 +295,8 @@ impl FrameBuilder {
         };
 
         let clip = self.current_clip();
-        self.ops.push((DrawOp::Quad(instance), clip));
+        self.ops
+            .push((DrawOp::Quad(instance), clip, self.snapshot_rclip()));
     }
 
     pub fn add_shadow_rect(
@@ -281,7 +334,8 @@ impl FrameBuilder {
         };
 
         let clip = self.current_clip();
-        self.ops.push((DrawOp::Quad(instance), clip));
+        self.ops
+            .push((DrawOp::Quad(instance), clip, self.snapshot_rclip()));
     }
 
     pub fn add_text(
@@ -302,23 +356,25 @@ impl FrameBuilder {
             font_family,
             max_width,
             clip_bounds: self.current_clip(),
+            rclip_snapshot: self.snapshot_rclip(),
         });
     }
 
     pub fn add_image(&mut self, request: ImageRequest) {
         let clip = self.current_clip();
-        self.ops.push((DrawOp::Image(request), clip));
+        self.ops
+            .push((DrawOp::Image(request), clip, self.snapshot_rclip()));
     }
 
     pub fn image_count(&self) -> usize {
         self.ops
             .iter()
-            .filter(|(op, _)| matches!(op, DrawOp::Image(_)))
+            .filter(|(op, _, _)| matches!(op, DrawOp::Image(_)))
             .count()
     }
 
     /// All geometry ops in paint order, each with its clip bounds.
-    pub fn ops(&self) -> &[(DrawOp, Option<Bounds>)] {
+    pub fn ops(&self) -> &[(DrawOp, Option<Bounds>, Vec<RClipEntry>)] {
         &self.ops
     }
 
@@ -326,7 +382,7 @@ impl FrameBuilder {
     pub fn image_requests(&self) -> Vec<ImageRequest> {
         self.ops
             .iter()
-            .filter_map(|(op, _)| match op {
+            .filter_map(|(op, _, _)| match op {
                 DrawOp::Image(r) => Some(r.clone()),
                 _ => None,
             })
@@ -340,7 +396,7 @@ impl FrameBuilder {
         let mut image_idx = 0u32;
         self.ops
             .iter()
-            .map(|(op, _)| match op {
+            .map(|(op, _, _)| match op {
                 DrawOp::Quad(_) => {
                     let i = quad_idx;
                     quad_idx += 1;
@@ -694,5 +750,81 @@ mod tests {
         assert_eq!(quads.len(), 1);
         assert_eq!(quads[0].transform, transform.to_array());
         assert_eq!(quads[0].shadow_blur, 4.0);
+    }
+
+    #[test]
+    fn test_rclip_stack_push_pop() {
+        let mut fb = FrameBuilder::new();
+        assert!(fb.current_rclip().is_empty());
+
+        let b1 = Bounds::new(0.0, 0.0, 100.0, 100.0);
+        fb.push_rclip(b1, 8.0);
+        assert_eq!(fb.current_rclip().len(), 1);
+        assert_eq!(fb.current_rclip()[0], (b1, 8.0));
+
+        fb.pop_rclip();
+        assert!(fb.current_rclip().is_empty());
+    }
+
+    #[test]
+    fn test_rclip_stack_depth_cap() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 10.0, 10.0);
+        for _ in 0..MAX_RCLIP_DEPTH {
+            fb.push_rclip(b, 4.0);
+        }
+        assert_eq!(fb.current_rclip().len(), MAX_RCLIP_DEPTH);
+
+        // Pushing beyond the cap should log and drop, not panic.
+        fb.push_rclip(b, 4.0);
+        assert_eq!(
+            fb.current_rclip().len(),
+            MAX_RCLIP_DEPTH,
+            "depth cap must silently drop excess pushes"
+        );
+
+        // Pop returns to MAX-1.
+        fb.pop_rclip();
+        assert_eq!(fb.current_rclip().len(), MAX_RCLIP_DEPTH - 1);
+    }
+
+    #[test]
+    fn test_rclip_snapshot_on_add_rect() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 50.0, 50.0);
+
+        // Op before rclip: empty snapshot.
+        fb.add_rect(b, Color::RED, None, 0.0);
+        assert!(fb.ops()[0].2.is_empty());
+
+        // Op inside rclip: snapshot has one entry.
+        fb.push_rclip(b, 8.0);
+        fb.add_rect(b, Color::RED, None, 0.0);
+        assert_eq!(fb.ops()[1].2.len(), 1);
+        fb.pop_rclip();
+
+        // Op after rclip: empty snapshot again.
+        fb.add_rect(b, Color::RED, None, 0.0);
+        assert!(fb.ops()[2].2.is_empty());
+    }
+
+    #[test]
+    fn test_rclip_snapshot_on_add_image() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 50.0, 50.0);
+
+        fb.push_rclip(b, 12.0);
+        fb.add_image(ImageRequest {
+            position: [0.0, 0.0],
+            size: [50.0, 50.0],
+            image_key: 1,
+            corner_radius: 0.0,
+            transform: AffineTransform::identity().to_array(),
+            opacity: 1.0,
+        });
+        fb.pop_rclip();
+
+        assert_eq!(fb.ops()[0].2.len(), 1);
+        assert_eq!(fb.ops()[0].2[0], (b, 12.0));
     }
 }
