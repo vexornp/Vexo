@@ -213,14 +213,14 @@ fn create_render_context<'a>(
     inherited_map: &'a InheritedMap,
     inherited_registry: &'a InheritedRegistry,
 ) -> RenderContext<'a> {
-    RenderContext {
+    RenderContext::new(
         element_id,
         dirty,
         render_objects,
         build_owner,
         inherited_map,
         inherited_registry,
-    }
+    )
 }
 
 fn render_stack<Dest: std::hash::Hash + Eq + Clone + 'static>(

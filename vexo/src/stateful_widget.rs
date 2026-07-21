@@ -359,6 +359,29 @@ pub struct RenderContext<'a> {
 }
 
 impl<'a> RenderContext<'a> {
+    /// Construct a `RenderContext` for use in `Component::render()`.
+    ///
+    /// Consolidates all current fields into a single constructor; subsequent
+    /// refactors will narrow this signature as fields are removed from the
+    /// public surface.
+    pub fn new(
+        element_id: ElementKey,
+        dirty: &'a mut DirtyTracking,
+        render_objects: &'a mut RenderObjectRegistry,
+        build_owner: &'a BuildOwner,
+        inherited_map: &'a InheritedMap,
+        inherited_registry: &'a InheritedRegistry,
+    ) -> Self {
+        Self {
+            element_id,
+            dirty,
+            render_objects,
+            build_owner,
+            inherited_map,
+            inherited_registry,
+        }
+    }
+
     /// Request a rebuild of this element.
     ///
     /// The element will be rebuilt during the next frame.
@@ -542,14 +565,14 @@ impl<W: Component + Clone> StatefulElement<W> {
         inherited_map: &InheritedMap,
         inherited_registry: &InheritedRegistry,
     ) -> Box<dyn Widget> {
-        let mut render_ctx = RenderContext {
+        let mut render_ctx = RenderContext::new(
             element_id,
             dirty,
             render_objects,
             build_owner,
             inherited_map,
             inherited_registry,
-        };
+        );
         self.widget.render(state, &mut render_ctx)
     }
 }
@@ -1511,14 +1534,14 @@ mod tests {
         ) = create_test_context();
         let empty_map = InheritedMap::empty();
 
-        let mut ctx = RenderContext {
+        let mut ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+        );
 
         ctx.request_rebuild();
 
@@ -1543,38 +1566,38 @@ mod tests {
         let empty_map = InheritedMap::empty();
 
         // Not focused initially
-        let ctx = RenderContext {
+        let ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+        );
         assert!(!ctx.is_focused());
 
         // Set this element as focused
         build_owner.set_focused_element(Some(element_id));
-        let ctx = RenderContext {
+        let ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+        );
         assert!(ctx.is_focused());
 
         // Clear focus
         build_owner.set_focused_element(None);
-        let ctx = RenderContext {
+        let ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &empty_map,
-            inherited_registry: &inherited_registry,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+        );
         assert!(!ctx.is_focused());
     }
 
@@ -1620,14 +1643,14 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
+        let mut ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &map,
+            &reg,
+        );
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, Some(42));
@@ -1643,14 +1666,14 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
+        let mut ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &map,
+            &reg,
+        );
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, None);
@@ -1669,14 +1692,14 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext {
+        let mut ctx = RenderContext::new(
             element_id,
-            dirty: &mut dirty,
-            render_objects: &mut render_objects,
-            build_owner: &build_owner,
-            inherited_map: &map,
-            inherited_registry: &reg,
-        };
+            &mut dirty,
+            &mut render_objects,
+            &build_owner,
+            &map,
+            &reg,
+        );
 
         let _ = ctx.depend_on_inherited_widget::<u32>();
 
