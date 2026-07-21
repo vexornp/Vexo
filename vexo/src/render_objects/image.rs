@@ -1,7 +1,7 @@
 use crate::core::{Absolute, Bounds, Logical, Point, Position};
 use crate::image_atlas::ImageKey;
 use crate::image_data::ImageData;
-use crate::layout::{Dimension, Layout, LayoutNodeKey};
+use crate::layout::{Layout, LayoutNodeKey};
 use crate::render::RenderCommand;
 use crate::{HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject};
 
@@ -64,16 +64,16 @@ impl ImageRenderObject {
 
 impl RenderObject for ImageRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, _child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let mut effective_layout = Layout::default();
-
-        if effective_layout.width.is_none() {
-            effective_layout.width = Some(Dimension::Length(self.image_data.width as f32));
-        }
-        if effective_layout.height.is_none() {
-            effective_layout.height = Some(Dimension::Length(self.image_data.height as f32));
-        }
-
-        let effective_layout = effective_layout.flex_shrink(0.0);
+        // Image fills its parent container rather than rendering at intrinsic
+        // dimensions. This matches the "Everything is a widget" philosophy:
+        // sizing is the parent's responsibility (via WithLayout), and the
+        // Image stretches to fill the space it's given.
+        //
+        // `flex_grow(1.0)` fills the parent's main-axis; the parent's
+        // `align_items: Stretch` (WithLayout's default) fills the cross-axis.
+        // A standalone Image with no sized parent renders at 0×0 — wrap it
+        // in a `WithLayout` with explicit dimensions to display it.
+        let effective_layout = Layout::default().flex_grow(1.0).flex_shrink(1.0);
 
         match self.layout_node {
             Some(existing) => {
