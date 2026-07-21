@@ -85,6 +85,21 @@ pub enum RenderCommand {
     /// Pop the most recent clipping region from the stack.
     PopClip,
 
+    /// Push a rounded-rect clipping region onto the stack.
+    /// All subsequent commands are clipped to this rounded rectangle.
+    /// The radius is applied as an SDF mask in the fragment shader;
+    /// the rectangular bounds are also applied as a scissor rect for
+    /// fast coarse culling.
+    PushClipRRect {
+        /// The clipping bounds in logical coordinates.
+        bounds: Bounds<Logical>,
+        /// The corner radius for the rounded-rect clip.
+        radius: f32,
+    },
+
+    /// Pop the most recent rounded-rect clipping region from the stack.
+    PopClipRRect,
+
     /// Push a transform offset onto the stack.
     /// All subsequent commands are offset by this amount.
     PushOffset {
@@ -422,6 +437,32 @@ mod tests {
         match cmd {
             RenderCommand::PopOpacity => {}
             _ => panic!("Expected PopOpacity"),
+        }
+    }
+
+    #[test]
+    fn test_push_clip_rrect_command() {
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let cmd = RenderCommand::PushClipRRect {
+            bounds,
+            radius: 8.0,
+        };
+        match cmd {
+            RenderCommand::PushClipRRect { bounds: b, radius } => {
+                assert_eq!(b.left, 10.0);
+                assert_eq!(b.width(), 100.0);
+                assert_eq!(radius, 8.0);
+            }
+            _ => panic!("Expected PushClipRRect"),
+        }
+    }
+
+    #[test]
+    fn test_pop_clip_rrect_command() {
+        let cmd = RenderCommand::PopClipRRect;
+        match cmd {
+            RenderCommand::PopClipRRect => {}
+            _ => panic!("Expected PopClipRRect"),
         }
     }
 }

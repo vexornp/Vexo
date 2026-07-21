@@ -183,6 +183,23 @@ pub fn process_commands(
             RenderCommand::PopClip => {
                 frame_builder.pop_clip();
             }
+            RenderCommand::PushClipRRect { bounds, radius: _ } => {
+                let adjusted_bounds = Bounds::new(
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
+                );
+                let effective_bounds = if current_transform.is_identity() {
+                    adjusted_bounds
+                } else {
+                    current_transform.transform_bounds(&adjusted_bounds)
+                };
+                frame_builder.push_clip(effective_bounds);
+            }
+            RenderCommand::PopClipRRect => {
+                frame_builder.pop_clip();
+            }
             RenderCommand::PushCornerRadius { radius } => {
                 frame_builder.push_corner_radius(*radius);
             }
