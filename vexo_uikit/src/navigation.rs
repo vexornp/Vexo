@@ -44,8 +44,9 @@ use std::time::{Duration, Instant};
 
 use vexo::{
     children, AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
-    DecoratedBox, FractionalTranslation, IndexedStack, Layout, LifecycleContext, MultiChild,
-    Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text, Theme, Widget, WithLayout,
+    DecoratedBox, FractionalTranslation, IndexedStack, JustifyContent, Layout, LifecycleContext,
+    MultiChild, Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text, Theme, Widget,
+    WithLayout,
 };
 
 use crate::button::{Button, ButtonVariant};
@@ -791,24 +792,32 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
 
     /// Build the NavBar chrome: title text + optional back button.
     ///
-    /// The title is centered in the *remaining* space between the leading
-    /// back button and the trailing edge (matching Flutter `AppBar`'s
-    /// semantic, not full-bar center). The row is split into three segments
-    /// — [leading | title | trailing] — where both side segments
-    /// `flex_grow(1.0)` so they split the free space equally; the back
-    /// button lives in the leading segment (left-aligned, `flex_shrink 0`
-    /// to keep its intrinsic width), and the trailing segment is empty.
-    /// The title (default `flex_shrink 1.0`) shrinks to the available
-    /// width and wraps when the text is longer than the gap.
+    /// The title is centered in the *full* bar width (iOS `UINavigationBar`
+    /// behavior), regardless of whether a back button is present. This is
+    /// achieved with a `Stack` of two layers:
+    ///
+    /// - **Title layer (in-flow, bottom of stack)**: a full-width row with
+    ///   `JustifyContent::Center` + `AlignItems::Center`, so the title's
+    ///   center is always the bar's center.
+    /// - **Back-button layer (`Positioned` overlay, on top, only when
+    ///   `can_pop`)**: the back button at its intrinsic width, anchored to
+    ///   the leading edge (left = safe-area inset + header padding) and
+    ///   vertically centered. Because it is absolutely positioned, it does
+    ///   not participate in the title row's flex layout, so the title stays
+    ///   centered in the full bar.
+    ///
+    /// Tradeoff: a very long title may overlap the back button. This matches
+    /// iOS `UINavigationBar` default behavior; callers wanting gap-aware
+    /// centering should truncate/ellipsize the title upstream.
     ///
     /// # Safe-area handling (matches Flutter `AppBar`)
     ///
     /// The bar's background extends edge-to-edge (no outer horizontal
     /// padding), and the bar height is increased by the top safe-area inset
     /// so the background covers the status bar. The left/right safe-area
-    /// insets are applied as padding to the leading/trailing segments so the
-    /// back button and title don't tuck under the notch. The title therefore
-    /// centers within the full bar width minus the left/right insets.
+    /// insets are applied as the back button's leading offset (and an
+    /// equivalent right padding keeps the title row symmetric) so the back
+    /// button doesn't tuck under the notch.
     fn build_nav_bar(
         &self,
         title: &str,
@@ -820,17 +829,42 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
             .with_font_size(tokens::navigation::MOBILE_TITLE_FONT_SIZE)
             .with_color(nav.mobile_title);
 
-        // Leading segment: back button (if any), left-aligned, grows to fill.
-        // Padded on the left by the safe-area inset + header padding so it
-        // clears the notch and has breathing room.
         let h_pad = tokens::navigation::MOBILE_HEADER_PADDING;
-        let mut leading = MultiChild::empty(
+
+        // Title layer: centered in the full bar width. Padded left/right by
+        // the safe-area inset + header padding so a long title doesn't tuck
+        // under the notch (or the back button) at the trailing edge — but
+        // the row itself still centers within the padded box, so for titles
+        // that fit, centering equals full-bar center (the symmetric padding
+        // cancels out).
+        let title_row = MultiChild::new(
+            children![title_text],
             Layout::row()
                 .align(AlignItems::Center)
-                .flex_grow(1.0)
-                .flex_shrink(0.0)
-                .padding_each(safe.left + h_pad, 0.0, 0.0, 0.0),
+                .justify(JustifyContent::Center)
+                .padding_each(safe.left + h_pad, safe.right + h_pad, 0.0, 0.0)
+                .width_percent(1.0)
+                .height_percent(1.0),
         );
+
+        let mut content_stack = Stack::new().push(title_row);
+
+        // Back-button overlay: absolutely positioned at the leading edge,
+        // vertically centered, intrinsic width. Does not affect the title
+        // row's layout.
+        //
+        // The button is laid out in a *Column* with `JustifyContent::Center`
+        // (main-axis centering) rather than a Row with `AlignItems::Center`
+        // (cross-axis) because `Button` hard-codes `align_self(Start)` on its
+        // outer wrapper (`button.rs`), which would override `AlignItems::Center`
+        // and top-align the button. `justify_content` is a separate axis and
+        // cannot be overridden by `align_self`, so this centers reliably.
+        //
+        // The column has a definite height equal to the bar's content area
+        // (`MOBILE_HEADER_HEIGHT` — the outer `WithLayout`'s content box below
+        // the `safe.top` padding), so `JustifyContent::Center` always has a
+        // definite space to center within, independent of whether percentage
+        // heights resolve inside the absolute `Positioned` container.
         if can_pop {
             let controller = self.controller.clone();
             let back_label = format!(
@@ -844,26 +878,29 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
                     controller.pop();
                 })
                 .boxed();
-            leading = leading.push(back_button);
+            let back_layer = MultiChild::new(
+                children![back_button],
+                Layout::column()
+                    .justify(JustifyContent::Center)
+                    .height(tokens::navigation::MOBILE_HEADER_HEIGHT),
+            );
+            content_stack = content_stack.push(
+                Positioned::new(back_layer)
+                    .top(0.0)
+                    .left(safe.left + h_pad)
+                    .bottom(0.0),
+            );
         }
 
-        // Trailing segment: empty, grows to fill (balances the leading segment
-        // so the title centers in the remaining space). Padded on the right
-        // by the safe-area inset + header padding.
-        let trailing =
-            MultiChild::empty(Layout::row().flex_grow(1.0).flex_shrink(0.0).padding_each(
-                0.0,
-                safe.right + h_pad,
-                0.0,
-                0.0,
-            ));
-
         // Outer bar: background edge-to-edge, height includes top inset.
+        // The Stack fills the WithLayout's content box (width 100%, height
+        // = MOBILE_HEADER_HEIGHT + safe.top), and the top safe-area inset
+        // is applied as padding so content sits below the status bar while
+        // the background extends under it.
         let bar_row = DecoratedBox::with_style(
-            MultiChild::new(
-                children![leading, title_text, trailing],
-                Layout::row()
-                    .align(AlignItems::Center)
+            WithLayout::new(
+                content_stack,
+                Layout::default()
                     .padding_each(0.0, 0.0, safe.top, 0.0)
                     .height(tokens::navigation::MOBILE_HEADER_HEIGHT + safe.top)
                     .flex_shrink(0.0),
