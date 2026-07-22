@@ -49,11 +49,11 @@ use vexo::{
     WithLayout,
 };
 
-use crate::button::{Button, ButtonVariant};
 use crate::platform::Platform;
 use crate::theme::tokens;
 use crate::theme::tokens::navigation::NavColors;
 use crate::transitions::{default_transition, TransitionCtx, TransitionDir};
+use vexo_fontawesome::{Icon, Icons};
 
 // ============================================================================
 // PENDING TRANSITION OP
@@ -853,33 +853,40 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationStackView<Dest> {
         // vertically centered, intrinsic width. Does not affect the title
         // row's layout.
         //
-        // The button is laid out in a *Column* with `JustifyContent::Center`
-        // (main-axis centering) rather than a Row with `AlignItems::Center`
-        // (cross-axis) because `Button` hard-codes `align_self(Start)` on its
-        // outer wrapper (`button.rs`), which would override `AlignItems::Center`
-        // and top-align the button. `justify_content` is a separate axis and
-        // cannot be overridden by `align_self`, so this centers reliably.
+        // The back button is composed manually (Icon + Text in a row) rather
+        // than using the `Button` widget because `Button` only accepts a
+        // `String` label and renders it with the default font family, so a
+        // FontAwesome icon codepoint would not shape correctly. The manual
+        // composition uses `Icon` (which sets the FontAwesome font family) for
+        // the chevron and `Text` for the "Back" label, both colored with
+        // `nav.back_color`.
         //
-        // The column has a definite height equal to the bar's content area
-        // (`MOBILE_HEADER_HEIGHT` — the outer `WithLayout`'s content box below
-        // the `safe.top` padding), so `JustifyContent::Center` always has a
-        // definite space to center within, independent of whether percentage
-        // heights resolve inside the absolute `Positioned` container.
+        // The composition is wrapped in a *Column* with
+        // `JustifyContent::Center` (main-axis centering) and a definite
+        // height equal to the bar's content area (`MOBILE_HEADER_HEIGHT`),
+        // so the button is vertically centered within the bar regardless of
+        // how Taffy resolves percentage heights inside the absolute
+        // `Positioned` container.
         if can_pop {
             let controller = self.controller.clone();
-            let back_label = format!(
-                "{} {}",
-                tokens::navigation::BACK_CHEVRON,
-                tokens::navigation::BACK_LABEL
+            let back_color = nav.back_color;
+            let back_icon = Icon::new(Icons::ChevronLeft)
+                .with_size(tokens::navigation::BACK_ICON_SIZE)
+                .with_color(back_color);
+            let back_label_text = Text::new(tokens::navigation::BACK_LABEL)
+                .with_font_size(tokens::navigation::BACK_FONT_SIZE)
+                .with_color(back_color);
+            let back_row = MultiChild::new(
+                children![back_icon, back_label_text],
+                Layout::row()
+                    .align(AlignItems::Center)
+                    .gap(tokens::navigation::BACK_ICON_LABEL_GAP)
+                    .flex_shrink(0.0),
             );
-            let back_button = Button::new(back_label)
-                .variant(ButtonVariant::Ghost)
-                .on_tap(move || {
-                    controller.pop();
-                })
-                .boxed();
             let back_layer = MultiChild::new(
-                children![back_button],
+                children![back_row.on_tap(move || {
+                    controller.pop();
+                })],
                 Layout::column()
                     .justify(JustifyContent::Center)
                     .height(tokens::navigation::MOBILE_HEADER_HEIGHT),

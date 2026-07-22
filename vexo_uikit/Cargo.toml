@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 vexo = { path = "../vexo" }
+vexo_fontawesome = { path = "../vexo_fontawesome" }
 
 [dev-dependencies]
 slotmap = { workspace = true }

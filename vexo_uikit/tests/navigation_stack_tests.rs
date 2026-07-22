@@ -247,23 +247,25 @@ fn all_text(w: &dyn Widget) -> Vec<String> {
     out
 }
 
-/// Recursively check whether the tree contains any `Button` widget.
+/// Check whether the tree contains any `Text` widget whose content equals
+/// `needle`.
 ///
-/// Used to detect the NavBar back button: `Button` stores its label as a
-/// private `String` (only converted to `Text` inside its own `render()`), so
-/// the back button's label is NOT visible to `collect_text`. Walking for
-/// `Button` widgets instead is the reliable detector.
-fn contains_button(w: &dyn Widget) -> bool {
-    if w.as_any().downcast_ref::<vexo_uikit::Button>().is_some() {
-        return true;
+/// Used to detect the NavBar back button: the back button is now a custom
+/// composition (`Icon` + `Text("Back")`) rather than a `Button` widget, so
+/// the label is visible to `collect_text` as a plain `Text` node.
+fn contains_text(w: &dyn Widget, needle: &str) -> bool {
+    if let Some(t) = w.as_any().downcast_ref::<Text>() {
+        if t.content() == needle {
+            return true;
+        }
     }
     if let Some(child) = w.child() {
-        if contains_button(child) {
+        if contains_text(child, needle) {
             return true;
         }
     }
     for child in w.children() {
-        if contains_button(child.as_ref()) {
+        if contains_text(child.as_ref(), needle) {
             return true;
         }
     }
@@ -304,7 +306,7 @@ fn stack_root_has_no_back_button() {
     let tree = render_stack(view, &mut state);
 
     assert!(
-        !contains_button(tree.as_ref()),
+        !contains_text(tree.as_ref(), "Back"),
         "root must NOT render a back button (NavBar should have title only)"
     );
 }
@@ -362,8 +364,8 @@ fn stack_pushed_page_has_back_button() {
     let tree = render_stack(view, &mut state);
 
     assert!(
-        contains_button(tree.as_ref()),
-        "pushed page NavBar must render a back Button (got no Button in tree)"
+        contains_text(tree.as_ref(), "Back"),
+        "pushed page NavBar must render a back button (expected \"Back\" text in tree)"
     );
 }
 

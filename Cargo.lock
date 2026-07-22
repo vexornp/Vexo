@@ -2871,6 +2871,7 @@ version = "0.1.0"
 dependencies = [
  "slotmap",
  "vexo",
+ "vexo_fontawesome",
 ]
 
 [[package]]

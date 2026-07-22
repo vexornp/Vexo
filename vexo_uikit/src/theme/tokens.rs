@@ -126,6 +126,12 @@ pub mod navigation {
     pub const BACK_CHEVRON: &str = "\u{2039}"; // ‹
     pub const BACK_LABEL: &str = "Back";
     pub const BACK_FONT_SIZE: f32 = 17.0;
+    /// Font size (logical px) for the FontAwesome back-chevron icon.
+    /// Slightly larger than `BACK_FONT_SIZE` because chevron glyphs have
+    /// significant empty space within their em box.
+    pub const BACK_ICON_SIZE: f32 = 22.0;
+    /// Horizontal gap between the back-chevron icon and the "Back" label.
+    pub const BACK_ICON_LABEL_GAP: f32 = 6.0;
 
     pub const MOBILE_TITLE_FONT_SIZE: f32 = 17.0;
 
