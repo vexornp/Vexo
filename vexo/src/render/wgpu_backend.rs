@@ -206,6 +206,7 @@ impl WgpuBackend {
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
             })
             .await?;
 
@@ -231,6 +232,7 @@ impl WgpuBackend {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: physical_size.width_u32(),
             height: physical_size.height_u32(),
             present_mode: surface_caps.present_modes[0],
@@ -318,8 +320,8 @@ impl WgpuBackend {
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[
-                    Vertex::desc(),
-                    QuadInstance::desc(),
+                    Some(Vertex::desc()),
+                    Some(QuadInstance::desc()),
                 ],
             },
             fragment: Some(wgpu::FragmentState {
@@ -507,8 +509,8 @@ impl WgpuBackend {
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[
-                    ImageVertex::desc(),
-                    ImageInstance::desc(),
+                    Some(ImageVertex::desc()),
+                    Some(ImageInstance::desc()),
                 ],
             },
             fragment: Some(wgpu::FragmentState {
@@ -1134,7 +1136,7 @@ impl WgpuBackend {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        self.queue.present(output);
         self.atlas.trim();
 
         Ok(())

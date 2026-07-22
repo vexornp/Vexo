@@ -416,13 +416,7 @@ mod tests {
         let metrics = glyphon::Metrics::new(16.0, 20.0);
         let mut raw_editor = glyphon::Editor::new(glyphon::Buffer::new_empty(metrics));
         raw_editor.with_buffer_mut(|buffer| {
-            buffer.set_text(
-                &mut font_system,
-                "Hello",
-                &Attrs::new(),
-                Shaping::Advanced,
-                None,
-            );
+            buffer.set_text("Hello", &Attrs::new(), Shaping::Advanced, None);
         });
         raw_editor.with_buffer_mut(|buffer| {
             buffer.shape_until_scroll(&mut font_system, true);

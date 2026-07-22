@@ -39,7 +39,7 @@ impl Editor {
     fn apply_width_and_shape(&mut self, font_system: &mut FontSystem) {
         if let Some(width) = self.layout_width {
             self.raw.with_buffer_mut(|buffer| {
-                buffer.set_size(font_system, Some(width), None);
+                buffer.set_size(Some(width), None);
             });
             self.raw
                 .with_buffer_mut(|buffer| buffer.shape_until_scroll(font_system, true));
@@ -67,7 +67,7 @@ impl Editor {
         shaping: glyphon::Shaping,
     ) {
         self.raw.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, text, attrs, shaping, None);
+            buffer.set_text(text, attrs, shaping, None);
         });
         self.apply_width_and_shape(font_system);
     }

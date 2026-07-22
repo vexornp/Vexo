@@ -74,14 +74,14 @@ impl<'a> TextMeasurer<'a> {
         let mut buffer = Buffer::new(self.font_system, metrics);
 
         // Set size constraints for wrapping
-        buffer.set_size(self.font_system, available_width, available_height);
+        buffer.set_size(available_width, available_height);
 
         // Set and shape the text
         let mut attrs = Attrs::new();
         if let Some(fam) = font_family {
             attrs = attrs.family(Family::Name(fam));
         }
-        buffer.set_text(self.font_system, content, &attrs, Shaping::Advanced, None);
+        buffer.set_text(content, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(self.font_system, true);
 
         // Calculate dimensions from layout runs

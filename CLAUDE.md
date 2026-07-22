@@ -242,9 +242,9 @@ vexo/src/
 ## Workspace Dependency Management
 
 Central dependency versions defined in root `Cargo.toml` workspace section; all crates reference via `{ workspace = true }`. Critical versions:
-- wgpu 27.0.1 (GPU backend)
-- taffy 0.9.1 (layout engine)
-- glyphon (git branch: main for text rendering)
+- wgpu 30.0.0 (GPU backend)
+- taffy 0.11 (layout engine)
+- glyphon (fork: vexorsis/glyphon, branch `depth-per-textarea`, pinned by rev; text rendering)
 - uniffi 0.30.0 (FFI bindings for iOS)
 
 ### Input Events

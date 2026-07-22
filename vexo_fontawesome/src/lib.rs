@@ -151,7 +151,7 @@ mod tests {
             let cp = icon.codepoint();
             let mut buf = Buffer::new(&mut fs, Metrics::new(22.0, 22.0 * 1.2));
             let attrs = glyphon::Attrs::new().family(Family::Name(FONT_FAMILY));
-            buf.set_text(&mut fs, cp, &attrs, Shaping::Advanced, None);
+            buf.set_text(cp, &attrs, Shaping::Advanced, None);
             buf.shape_until_scroll(&mut fs, true);
 
             let mut winners: Vec<&str> = Vec::new();

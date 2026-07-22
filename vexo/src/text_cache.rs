@@ -88,7 +88,7 @@ impl TextCache {
         // rounding discrepancies between Taffy's layout width and glyphon's
         // measured natural width.
         if let Some(max_width) = request.max_width {
-            buffer.set_size(font_system, Some(max_width + 0.5), None);
+            buffer.set_size(Some(max_width + 0.5), None);
         }
 
         let color_rgba_u8: cosmic_text::Color = request.color.into();
@@ -97,13 +97,7 @@ impl TextCache {
         if let Some(fam) = &request.font_family {
             attrs = attrs.family(Family::Name(fam));
         }
-        buffer.set_text(
-            font_system,
-            &request.content,
-            &attrs,
-            Shaping::Advanced,
-            None,
-        );
+        buffer.set_text(&request.content, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(font_system, true);
 
         // Cache the buffer

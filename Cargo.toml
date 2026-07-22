@@ -33,7 +33,7 @@ members = [
 
 [workspace.dependencies]
 # Graphics & Windowing
-wgpu = "29.0.3"
+wgpu = "30.0.0"
 winit = "0.31.0-beta.2"
 
 # Layout Engine
@@ -48,7 +48,7 @@ env_logger = "0.10"
 bitflags = "2.10.0"
 
 # Text Rendering
-glyphon = { git = "https://github.com/vexorsis/glyphon", branch = "depth-per-textarea" }
+glyphon = { git = "https://github.com/vexorsis/glyphon", rev = "30844e7c924bb51b6d89f5031e3d407bc8deeba1" }
 
 # Foreign Function Interface (for mobile exports)
 uniffi = {version = "0.30.0", features = ["cli"] }
