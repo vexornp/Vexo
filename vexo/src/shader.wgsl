@@ -40,6 +40,7 @@ fn vs_main(
     @location(9) inst_transform_ef: vec2<f32>,
     @location(10) inst_shadow_color: vec4<f32>,
     @location(11) inst_shadow_blur: f32,
+    @location(12) inst_z: f32,
 ) -> VertexOutput {
     let local_pos = model_pos * inst_size;
     let half_size = inst_size * 0.5;
@@ -53,7 +54,7 @@ fn vs_main(
     let ny = 1.0 - (pixel_pos.y / globals.screen_size.y) * 2.0;
 
     var out: VertexOutput;
-    out.clip_position = vec4<f32>(nx, ny, 0.0, 1.0);
+    out.clip_position = vec4<f32>(nx, ny, inst_z, 1.0);
     out.uv = model_pos;
     out.color = inst_color;
     out.border_color = inst_border_color;

@@ -156,6 +156,7 @@ pub fn process_commands(
                     image_key: *image_key,
                     transform: current_transform.to_array(),
                     opacity: current_opacity,
+                    z: 0.0,
                 });
             }
             RenderCommand::PushClip { bounds } => {

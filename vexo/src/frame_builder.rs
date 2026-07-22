@@ -50,6 +50,9 @@ pub struct TextRequest {
     /// in the text fragment shader (future; currently snapshotted but
     /// not yet enforced for text — matches existing text clip behavior).
     pub rclip_snapshot: Vec<RClipEntry>,
+    /// Depth value for GPU depth testing. Smaller = closer to camera (on top).
+    /// Assigned by FrameBuilder in paint order.
+    pub z: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +62,9 @@ pub struct ImageRequest {
     pub image_key: ImageKey,
     pub transform: [f32; 6],
     pub opacity: f32,
+    /// Depth value for GPU depth testing. Smaller = closer to camera (on top).
+    /// Assigned by FrameBuilder in paint order.
+    pub z: f32,
 }
 
 pub type Bounds = crate::core::Bounds<Logical>;
@@ -80,6 +86,11 @@ pub struct FrameBuilder {
     /// Text requests in paint order. Each carries its own `clip_bounds`.
     text_requests: Vec<TextRequest>,
 
+    /// Monotonic counter for z-depth assignment. Incremented on every
+    /// add_rect/add_shadow_rect/add_text/add_image call. Earlier paints
+    /// get larger z (farther); later paints get smaller z (on top).
+    paint_index: u32,
+
     corner_radius_stack: Vec<f32>,
     clip_stack: Vec<Bounds>,
     rclip_stack: Vec<RClipEntry>,
@@ -98,6 +109,7 @@ impl FrameBuilder {
         Self {
             ops: Vec::new(),
             text_requests: Vec::new(),
+            paint_index: 0,
             corner_radius_stack: Vec::new(),
             clip_stack: Vec::new(),
             rclip_stack: Vec::new(),
@@ -109,6 +121,7 @@ impl FrameBuilder {
     pub fn clear(&mut self) {
         self.ops.clear();
         self.text_requests.clear();
+        self.paint_index = 0;
         self.corner_radius_stack.clear();
         self.clip_stack.clear();
         self.rclip_stack.clear();
@@ -260,6 +273,16 @@ impl FrameBuilder {
         self.current_transform
     }
 
+    /// Compute a depth value from the current paint index and advance it.
+    /// Earlier paints get larger z (farther from camera); later paints get
+    /// smaller z (closer, drawn on top). Range: (0.0, 1.0].
+    /// At 65536+ paints, z saturates near 0.0 (graceful degradation).
+    fn next_z(&mut self) -> f32 {
+        let z = 1.0 - self.paint_index as f32 / 65536.0;
+        self.paint_index = self.paint_index.wrapping_add(1);
+        z
+    }
+
     pub fn add_rect(
         &mut self,
         bounds: Bounds,
@@ -279,6 +302,7 @@ impl FrameBuilder {
             self.current_corner_radius()
         };
 
+        let z = self.next_z();
         let instance = QuadInstance {
             position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
@@ -290,7 +314,8 @@ impl FrameBuilder {
             _padding: [0.0; 4],
             shadow_color: [0.0; 4],
             shadow_blur: 0.0,
-            _padding2: [0.0; 3],
+            z,
+            _padding2: [0.0; 2],
         };
 
         let clip = self.current_clip();
@@ -318,6 +343,7 @@ impl FrameBuilder {
             self.current_corner_radius()
         };
 
+        let z = self.next_z();
         let instance = QuadInstance {
             position: [bounds.left, bounds.top],
             size: [bounds.width(), bounds.height()],
@@ -329,7 +355,8 @@ impl FrameBuilder {
             _padding: [0.0; 4],
             shadow_color,
             shadow_blur,
-            _padding2: [0.0; 3],
+            z,
+            _padding2: [0.0; 2],
         };
 
         let clip = self.current_clip();
@@ -347,6 +374,7 @@ impl FrameBuilder {
         max_width: Option<f32>,
     ) {
         let color: Color = color.into();
+        let z = self.next_z();
         self.text_requests.push(TextRequest {
             content: content.into(),
             position,
@@ -356,10 +384,12 @@ impl FrameBuilder {
             max_width,
             clip_bounds: self.current_clip(),
             rclip_snapshot: self.snapshot_rclip(),
+            z,
         });
     }
 
-    pub fn add_image(&mut self, request: ImageRequest) {
+    pub fn add_image(&mut self, mut request: ImageRequest) {
+        request.z = self.next_z();
         let clip = self.current_clip();
         self.ops
             .push((DrawOp::Image(request), clip, self.snapshot_rclip()));
@@ -425,6 +455,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
 
         assert_eq!(fb.image_count(), 1);
@@ -438,6 +469,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 0.5,
+            z: 0.0,
         };
         assert_eq!(req.opacity, 0.5);
     }
@@ -451,6 +483,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
 
         fb.push_clip(Bounds::new(0.0, 0.0, 100.0, 100.0));
@@ -460,6 +493,7 @@ mod tests {
             image_key: 2,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.pop_clip();
 
@@ -482,6 +516,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.add_rect(
             Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
@@ -514,6 +549,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.pop_clip();
         fb.add_rect(
@@ -598,6 +634,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.add_rect(
             Bounds::from_xywh(0.0, 0.0, 2.0, 2.0),
@@ -621,6 +658,7 @@ mod tests {
             image_key: 10,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.add_rect(Bounds::from_xywh(0.0, 0.0, 1.0, 1.0), Color::RED, None, 0.0);
         fb.add_image(ImageRequest {
@@ -629,6 +667,7 @@ mod tests {
             image_key: 20,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
 
         let imgs = fb.image_requests();
@@ -648,6 +687,7 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.add_rect(Bounds::from_xywh(0.0, 0.0, 1.0, 1.0), Color::RED, None, 0.0);
         fb.add_rect(Bounds::from_xywh(0.0, 0.0, 1.0, 1.0), Color::RED, None, 0.0);
@@ -657,6 +697,7 @@ mod tests {
             image_key: 2,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
 
         let locs = fb.compute_op_locations();
@@ -808,10 +849,131 @@ mod tests {
             image_key: 1,
             transform: AffineTransform::identity().to_array(),
             opacity: 1.0,
+            z: 0.0,
         });
         fb.pop_rclip();
 
         assert_eq!(fb.ops()[0].2.len(), 1);
         assert_eq!(fb.ops()[0].2[0], (b, 12.0));
+    }
+
+    #[test]
+    fn test_paint_index_assigns_decreasing_z() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 10.0, 10.0);
+
+        fb.add_rect(b, Color::RED, None, 0.0);
+        fb.add_text(
+            "hello",
+            Point::<Logical>::new(0.0, 0.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+        fb.add_rect(b, Color::BLUE, None, 0.0);
+
+        let rect0_z = match &fb.ops()[0].0 {
+            DrawOp::Quad(q) => q.z,
+            _ => unreachable!(),
+        };
+        let text_z = fb.text_requests()[0].z;
+        let rect1_z = match &fb.ops()[1].0 {
+            DrawOp::Quad(q) => q.z,
+            _ => unreachable!(),
+        };
+
+        // z must strictly decrease in paint order (earlier = farther, later = closer).
+        assert!(
+            rect0_z > text_z,
+            "first rect z {} should be > text z {}",
+            rect0_z,
+            text_z
+        );
+        assert!(
+            text_z > rect1_z,
+            "text z {} should be > second rect z {}",
+            text_z,
+            rect1_z
+        );
+    }
+
+    #[test]
+    fn test_z_values_in_valid_range() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 10.0, 10.0);
+
+        fb.add_rect(b, Color::RED, None, 0.0);
+
+        let z = match &fb.ops()[0].0 {
+            DrawOp::Quad(q) => q.z,
+            _ => unreachable!(),
+        };
+
+        // First paint should have z close to 1.0 (farthest), within (0, 1].
+        assert!(z > 0.0 && z <= 1.0, "z {} should be in (0, 1]", z);
+        assert!(
+            (z - 1.0).abs() < 0.001,
+            "first paint z {} should be ~1.0",
+            z
+        );
+    }
+
+    #[test]
+    fn test_clear_resets_paint_index() {
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 10.0, 10.0);
+
+        fb.add_rect(b, Color::RED, None, 0.0);
+        fb.add_rect(b, Color::RED, None, 0.0);
+        fb.clear();
+
+        // After clear, first paint should again get z ~1.0.
+        fb.add_rect(b, Color::RED, None, 0.0);
+        let z = match &fb.ops()[0].0 {
+            DrawOp::Quad(q) => q.z,
+            _ => unreachable!(),
+        };
+        assert!(
+            (z - 1.0).abs() < 0.001,
+            "z after clear {} should be ~1.0",
+            z
+        );
+    }
+
+    #[test]
+    fn test_text_occluded_by_later_geometry_z() {
+        // Simulates the push-animation bug case:
+        // outgoing-page text (paint index 0) vs incoming-page geometry (paint index 1).
+        // Text z must be LARGER than geometry z so the GPU depth test
+        // (LessEqual) rejects the text pixels behind the geometry.
+        let mut fb = FrameBuilder::new();
+        let b = Bounds::new(0.0, 0.0, 100.0, 100.0);
+
+        // Outgoing page: text painted first (larger z = farther).
+        fb.add_text(
+            "outgoing",
+            Point::<Logical>::new(0.0, 0.0),
+            16.0,
+            Color::BLACK,
+            None,
+            None,
+        );
+
+        // Incoming page: solid background painted second (smaller z = closer).
+        fb.add_rect(b, Color::WHITE, None, 0.0);
+
+        let text_z = fb.text_requests()[0].z;
+        let geom_z = match &fb.ops()[0].0 {
+            DrawOp::Quad(q) => q.z,
+            _ => unreachable!(),
+        };
+
+        assert!(
+            text_z > geom_z,
+            "outgoing text z {} must be > incoming geometry z {} for depth occlusion",
+            text_z,
+            geom_z
+        );
     }
 }

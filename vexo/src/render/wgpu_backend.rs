@@ -106,6 +106,9 @@ impl RClipUniform {
 /// `min_uniform_buffer_offset_alignment` (typically 256 bytes).
 const RCLIP_UNIFORM_ALIGN: wgpu::BufferAddress = 256;
 
+/// Depth buffer format used for GPU depth testing (paint-order occlusion).
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
 /// Number of slots in the rclip uniform buffer. Slot 0 is the ZERO slot
 /// (no rclip); slots 1..INITIAL_RCLIP_CAPACITY hold per-op rclip data.
 /// Ops beyond this capacity fall back to the ZERO slot with a warning.
@@ -150,6 +153,10 @@ pub struct WgpuBackend {
 
     // Current configuration
     current_config: Option<RenderConfig>,
+
+    // Depth buffer for paint-order occlusion (text vs geometry).
+    depth_texture: wgpu::Texture,
+    depth_texture_view: wgpu::TextureView,
 
     // Current frame's op locations + clips, populated by upload_geometry.
     current_op_locations: Vec<crate::frame_builder::OpLocation>,
@@ -232,6 +239,32 @@ impl WgpuBackend {
             desired_maximum_frame_latency: 2,
         };
 
+        // Create depth texture for paint-order occlusion.
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Shared depth-stencil state for all pipelines (quad, image, text).
+        let depth_stencil_state = wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        };
+
         // Create shader and pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -308,7 +341,7 @@ impl WgpuBackend {
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(depth_stencil_state.clone()),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -497,7 +530,7 @@ impl WgpuBackend {
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(depth_stencil_state.clone()),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -548,7 +581,7 @@ impl WgpuBackend {
             &mut atlas,
             &device,
             wgpu::MultisampleState::default(),
-            None,
+            Some(depth_stencil_state),
         );
 
         // Configure surface if we have valid dimensions
@@ -593,6 +626,8 @@ impl WgpuBackend {
             image_atlas_texture,
             image_allocator,
             current_config: Some(RenderConfig::new(physical_size)),
+            depth_texture,
+            depth_texture_view,
             current_op_locations: Vec::new(),
             current_op_clips: Vec::new(),
             rclip_uniform_buffer,
@@ -818,6 +853,7 @@ impl WgpuBackend {
                         atlas_size,
                         AffineTransform::from_array(req.transform),
                         req.opacity,
+                        req.z,
                     );
                     image_instances.push(instance);
                 }
@@ -961,7 +997,14 @@ impl WgpuBackend {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
@@ -1141,6 +1184,23 @@ impl RenderBackend for WgpuBackend {
             self.surface.configure(&self.device, &self.config);
             self.is_configured = true;
             self.current_config = Some(config.clone());
+
+            // Recreate depth texture to match new surface size.
+            self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Depth Texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.depth_texture_view = self.depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
             let scale_factor = self.scale_source.get().factor();
             let uniform = GlobalUniforms {

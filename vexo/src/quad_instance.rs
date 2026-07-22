@@ -19,7 +19,10 @@ pub struct QuadInstance {
     pub _padding: [f32; 4],
     pub shadow_color: [f32; 4],
     pub shadow_blur: f32,
-    pub _padding2: [f32; 3],
+    /// Depth value for GPU depth testing. Smaller = closer to camera (on top).
+    /// Assigned by FrameBuilder in paint order.
+    pub z: f32,
+    pub _padding2: [f32; 2],
 }
 
 impl QuadInstance {
@@ -31,6 +34,7 @@ impl QuadInstance {
         border_color: crate::Color,
         border_width: f32,
         corner_radius: f32,
+        z: f32,
     ) -> Self {
         Self {
             position: pos.to_array(),
@@ -43,7 +47,8 @@ impl QuadInstance {
             _padding: [0.0; 4],
             shadow_color: [0.0; 4],
             shadow_blur: 0.0,
-            _padding2: [0.0; 3],
+            z,
+            _padding2: [0.0; 2],
         }
     }
 
@@ -56,6 +61,7 @@ impl QuadInstance {
         border_width: f32,
         corner_radius: f32,
         transform: AffineTransform,
+        z: f32,
     ) -> Self {
         Self {
             position: pos.to_array(),
@@ -68,7 +74,8 @@ impl QuadInstance {
             _padding: [0.0; 4],
             shadow_color: [0.0; 4],
             shadow_blur: 0.0,
-            _padding2: [0.0; 3],
+            z,
+            _padding2: [0.0; 2],
         }
     }
 
@@ -133,6 +140,11 @@ impl QuadInstance {
                     shader_location: 11,
                     format: wgpu::VertexFormat::Float32,
                 }, // shadow_blur
+                wgpu::VertexAttribute {
+                    offset: 116,
+                    shader_location: 12,
+                    format: wgpu::VertexFormat::Float32,
+                }, // z (depth)
             ],
         }
     }
@@ -150,6 +162,7 @@ mod tests {
             Size::new(10.0, 10.0),
             Color::RED,
             Color::BLACK,
+            0.0,
             0.0,
             0.0,
         );
@@ -172,6 +185,7 @@ mod tests {
             0.0,
             0.0,
             AffineTransform::identity(),
+            0.0,
         );
         assert_eq!(q.shadow_color, [0.0, 0.0, 0.0, 0.0]);
         assert_eq!(q.shadow_blur, 0.0);

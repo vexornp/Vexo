@@ -29,6 +29,8 @@ struct TextAreaData {
     /// Physical bounds for glyphon conversion
     bounds: Bounds<Physical>,
     default_color: Color,
+    /// Depth value for GPU depth testing (paint-order occlusion).
+    depth: f32,
 }
 
 impl PreparedText {
@@ -48,6 +50,7 @@ impl PreparedText {
                 bounds: data.bounds.to_glyphon_bounds(),
                 default_color: data.default_color.into(),
                 custom_glyphs: &[],
+                depth: data.depth,
             })
             .collect()
     }
@@ -68,6 +71,7 @@ impl TextProcessor {
         scale_source: &ScaleSource,
         bounds: Bounds<Physical>,
         color: Color,
+        depth: f32,
     ) -> (Buffer, TextAreaData) {
         let scale = scale_source.get();
         let data = TextAreaData {
@@ -76,6 +80,7 @@ impl TextProcessor {
             scale: scale.factor(),
             bounds,
             default_color: color,
+            depth,
         };
 
         (buffer, data)
@@ -121,8 +126,14 @@ impl TextProcessor {
                 )
             };
 
-            let (buf, data) =
-                Self::create_text_area(buffer, physical_pos, scale_source, bounds, req.color);
+            let (buf, data) = Self::create_text_area(
+                buffer,
+                physical_pos,
+                scale_source,
+                bounds,
+                req.color,
+                req.z,
+            );
             buffers.push(buf);
             text_area_data.push(data);
         }

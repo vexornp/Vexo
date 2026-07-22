@@ -10,7 +10,9 @@ pub struct ImageInstance {
     pub uv_size: [f32; 2],
     pub opacity: f32,
     pub transform: [f32; 6],
-    pub _padding: [f32; 1],
+    /// Depth value for GPU depth testing. Smaller = closer to camera (on top).
+    /// Assigned by FrameBuilder in paint order.
+    pub z: f32,
 }
 
 impl ImageInstance {
@@ -21,6 +23,7 @@ impl ImageInstance {
         atlas_size: [f32; 2],
         transform: AffineTransform,
         opacity: f32,
+        z: f32,
     ) -> Self {
         Self {
             position: pos,
@@ -35,7 +38,7 @@ impl ImageInstance {
             ],
             opacity,
             transform: transform.to_array(),
-            _padding: [0.0],
+            z,
         }
     }
 
@@ -84,6 +87,11 @@ impl ImageInstance {
                     offset: 52,
                     shader_location: 8,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 60,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }

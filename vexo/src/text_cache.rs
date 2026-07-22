@@ -149,6 +149,7 @@ mod tests {
             max_width: None,
             clip_bounds: None,
             rclip_snapshot: Vec::new(),
+            z: 0.0,
         }
     }
 
