@@ -23,6 +23,29 @@ use crate::widgets::Widget;
 
 const LINE_HEIGHT: f32 = 40.0;
 
+/// Apply iOS-style rubber-band resistance to a scroll offset.
+///
+/// When `raw_new` is within `[0, max]`, it passes through unchanged.
+/// When past an edge, the over-edge portion is scaled by decreasing
+/// resistance: `resistance = 1 - overscroll / (overscroll + viewport)`.
+/// Content asymptotically approaches one viewport past the edge but
+/// can never exceed it.
+fn apply_rubber_band(raw_new: f32, viewport: f32, max: f32) -> f32 {
+    let (base, excess) = if raw_new < 0.0 {
+        (0.0, raw_new)
+    } else if raw_new > max {
+        (max, raw_new - max)
+    } else {
+        (raw_new, 0.0)
+    };
+
+    let overscroll = excess.abs();
+    let resistance = 1.0 - overscroll / (overscroll + viewport.max(1.0));
+    let resisted_excess = excess.signum() * overscroll * resistance;
+
+    base + resisted_excess
+}
+
 /// Wire a `ScrollController`'s dirty callback to the pipeline's mpsc channel.
 ///
 /// Matches the `StatefulElement` dirty-callback pattern
@@ -536,6 +559,89 @@ mod tests {
 
     fn test_clipboard() -> std::sync::Arc<dyn crate::platform::Clipboard> {
         std::sync::Arc::new(crate::platform::stub_clipboard::StubClipboard)
+    }
+
+    #[test]
+    fn test_rubber_band_no_resistance_in_bounds() {
+        assert_eq!(apply_rubber_band(50.0, 400.0, 1000.0), 50.0);
+    }
+
+    #[test]
+    fn test_rubber_band_no_resistance_at_exact_edge() {
+        assert_eq!(apply_rubber_band(0.0, 400.0, 1000.0), 0.0);
+        assert_eq!(apply_rubber_band(1000.0, 400.0, 1000.0), 1000.0);
+    }
+
+    #[test]
+    fn test_rubber_band_shrinks_past_top() {
+        let result = apply_rubber_band(-100.0, 400.0, 1000.0);
+        assert!(
+            result < 0.0,
+            "should be past top (negative); got {}",
+            result
+        );
+        assert!(
+            result > -100.0,
+            "should be resisted (less negative than raw); got {}",
+            result
+        );
+        assert!(
+            result > -400.0,
+            "should not exceed viewport past edge; got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_rubber_band_shrinks_past_bottom() {
+        let result = apply_rubber_band(1100.0, 400.0, 1000.0);
+        assert!(result > 1000.0, "should be past bottom; got {}", result);
+        assert!(
+            result < 1100.0,
+            "should be resisted (less than raw); got {}",
+            result
+        );
+        assert!(
+            result < 1400.0,
+            "should not exceed viewport past edge; got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_rubber_band_asymptotic_at_viewport() {
+        let result = apply_rubber_band(-10000.0, 400.0, 1000.0);
+        assert!(
+            result > -400.0,
+            "content can never be dragged more than ~viewport past edge; got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_rubber_band_symmetric_top_bottom() {
+        let top_result = apply_rubber_band(-100.0, 400.0, 1000.0);
+        let bottom_result = apply_rubber_band(1100.0, 400.0, 1000.0);
+        let top_excess = top_result.abs();
+        let bottom_excess = (bottom_result - 1000.0).abs();
+        assert!(
+            (top_excess - bottom_excess).abs() < 0.01,
+            "top and bottom excess should be symmetric; got top={} bottom={}",
+            top_excess,
+            bottom_excess
+        );
+    }
+
+    #[test]
+    fn test_rubber_band_zero_viewport_guarded() {
+        // Should not panic on div-by-zero.
+        let result = apply_rubber_band(-100.0, 0.0, 1000.0);
+        assert!(result < 0.0, "should still be past top; got {}", result);
+        assert!(
+            result >= -100.0,
+            "should not move more than raw; got {}",
+            result
+        );
     }
 
     /// Standard test harness for momentum tests: 200-row scroll view, 400×600
