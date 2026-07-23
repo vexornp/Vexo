@@ -319,6 +319,7 @@ impl Element for ScrollViewElement {
             } => {
                 self.momentum.stop();
                 self.spring.stop();
+                self.refresh_sizes(context);
                 let delta = match key {
                     Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
                     Key::Named(NamedKey::ArrowDown) => Some(LINE_HEIGHT),
@@ -329,7 +330,6 @@ impl Element for ScrollViewElement {
                     _ => None,
                 };
                 if let Some(d) = delta {
-                    self.refresh_sizes(context);
                     let new_offset = (self.scroll_offset + d).clamp(0.0, self.max_scroll());
                     self.apply_scroll_offset(new_offset, context);
                     return Some(Box::new(()));
@@ -2456,6 +2456,239 @@ mod tests {
             "slow drag (below V_MIN_FLING) should not engage momentum; got {} before release, {} after pump",
             offset_at_release,
             ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_press_during_bounce_stops_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Drag past top to create overscroll.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+
+        // Release → spring starts.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+        pump(&ticker, &mut pipeline);
+        assert!(
+            ticker.has_active(),
+            "spring should be active after release in overscroll"
+        );
+
+        // Press mid-bounce → should stop the spring.
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press2,
+        );
+        assert!(
+            !ticker.has_active(),
+            "press during bounce should stop spring"
+        );
+    }
+
+    #[test]
+    fn test_wheel_during_bounce_stops_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Drag past top + release → spring starts.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+        pump(&ticker, &mut pipeline);
+        assert!(ticker.has_active(), "spring should be active");
+
+        // Wheel mid-bounce → should stop the spring.
+        let wheel = InputEvent::Scroll {
+            position: Point::new(200.0, 300.0),
+            delta: Point::new(0.0, -100.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &wheel,
+        );
+        assert!(
+            !ticker.has_active(),
+            "wheel during bounce should stop spring"
+        );
+    }
+
+    #[test]
+    fn test_jump_to_during_bounce_stops_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Drag past top + release → spring starts.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+        pump(&ticker, &mut pipeline);
+        assert!(ticker.has_active(), "spring should be active");
+
+        // jump_to mid-bounce → should stop the spring.
+        ctrl.jump_to(0.0);
+        pump(&ticker, &mut pipeline);
+        assert!(
+            !ticker.has_active(),
+            "jump_to during bounce should stop spring"
+        );
+    }
+
+    #[test]
+    fn test_unmount_stops_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Drag past top + release → spring starts.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+        pump(&ticker, &mut pipeline);
+        assert!(ticker.has_active(), "spring should be active");
+
+        // Drop the pipeline → element dropped → SpringSimulation::Drop → stop() → unregister ticker.
+        drop(pipeline);
+        assert!(
+            !ticker.has_active(),
+            "unmount should stop spring and unregister ticker handle"
         );
     }
 }

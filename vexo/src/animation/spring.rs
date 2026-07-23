@@ -423,8 +423,9 @@ mod tests {
         assert!((sim.rest() - 10.0).abs() < 1e-3, "rest should be 10.0");
         // velocity right after start should be ~v0 (before any advance).
         assert!(
-            sim.velocity().abs() > 0.0,
-            "velocity should be non-zero right after start"
+            (sim.velocity() - 300.0).abs() < 1.0,
+            "velocity right after start should be ~v0 (300); got {}",
+            sim.velocity()
         );
     }
 }
