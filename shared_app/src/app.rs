@@ -108,7 +108,6 @@ impl Application for ImState {
                 let contacts_nav_for_tab = contacts_nav.clone();
                 let profile_for_tab = profile.clone();
                 let me_nav_for_tab = me_nav.clone();
-                let is_dark_for_shell = is_dark_signal.clone();
 
                 let shell = DesktopShell {
                     controller: tab_controller,
@@ -127,7 +126,7 @@ impl Application for ImState {
                         ImTab::Me => build_me_tab(
                             &profile_for_tab,
                             me_nav_for_tab.clone(),
-                            is_dark_for_shell.clone(),
+                            is_dark_signal.clone(),
                         ),
                     }),
                     sidebar_builder: std::sync::Arc::new(move |tab, is_selected, _nav_colors| {
