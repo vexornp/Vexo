@@ -8,8 +8,9 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, Color, Component, DecoratedBox, GestureDetector, Layout, MultiChild,
-    RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget, WithLayout,
+    children, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, Layout,
+    MultiChild, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget,
+    WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
@@ -299,12 +300,15 @@ fn build_swatch_preview(mode_theme: ThemeData) -> Box<dyn Widget> {
     );
 
     let swatch_stack = DecoratedBox::with_style(
-        MultiChild::new(
-            children![header_band, content_band, bottom_band],
-            Layout::column()
-                .width(PREVIEW_WIDTH)
-                .height(PREVIEW_HEIGHT)
-                .flex_shrink(0.0),
+        ClipRRect::new(
+            PREVIEW_RADIUS,
+            MultiChild::new(
+                children![header_band, content_band, bottom_band],
+                Layout::column()
+                    .width(PREVIEW_WIDTH)
+                    .height(PREVIEW_HEIGHT)
+                    .flex_shrink(0.0),
+            ),
         ),
         Style::default()
             .border(border_color, PREVIEW_BORDER_WIDTH)
