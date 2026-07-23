@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{
-    children, Component, DecoratedBox, Layout, MultiChild, RenderContext, ScrollController,
-    SimpleState, Style, Text, Theme, Widget, WithLayout,
+    children, AlignItems, Component, DecoratedBox, JustifyContent, Layout, MultiChild,
+    RenderContext, ScrollController, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
@@ -150,7 +150,9 @@ fn build_empty_placeholder(nav_colors: &NavColors) -> Box<dyn Widget> {
             Text::new("Select a conversation")
                 .with_font_size(PLACEHOLDER_FONT_SIZE)
                 .with_color(nav_colors.placeholder_text),
-            Layout::flex_fill(),
+            Layout::flex_fill()
+                .align(AlignItems::Center)
+                .justify(JustifyContent::Center),
         ),
         Style::default().background(nav_colors.detail_bg),
     )
