@@ -4,7 +4,7 @@ use std::any::Any;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::animation::{AnimationTicker, MomentumSimulation};
+use crate::animation::{AnimationTicker, MomentumSimulation, SpringSimulation};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
@@ -78,6 +78,10 @@ pub struct ScrollViewElement {
     /// Exponential-decay fling simulation. Drives inertial scroll after the
     /// pointer lifts. Stepped in `rebuild_from_state` while `is_active()`.
     momentum: MomentumSimulation,
+    /// Critically-damped spring for bounce-back. Mutually exclusive with
+    /// `momentum` — starting one stops the other. Stepped in
+    /// `rebuild_from_state` while `is_active()`.
+    spring: SpringSimulation,
     /// Stashed copy of the pipeline's animation ticker. `EventContext` does
     /// not expose it, so we capture it in `mount` (which has ElementContext)
     /// for use in the Up arm when starting momentum.
@@ -104,6 +108,7 @@ impl ScrollViewElement {
             last_drag_y: 0.0,
             velocity_tracker: VelocityTracker::new(),
             momentum: MomentumSimulation::new(),
+            spring: SpringSimulation::new(),
             animation_ticker: None,
             last_move_time: None,
         }
@@ -256,6 +261,7 @@ impl Element for ScrollViewElement {
         // this, the ticker would keep firing the dirty callback for a
         // dead element_id.
         self.momentum.stop();
+        self.spring.stop();
         if let Some(ctrl) = self.controller.as_ref() {
             ctrl.clear_dirty_callback();
         }
@@ -291,12 +297,15 @@ impl Element for ScrollViewElement {
             } => {
                 if context.bounds().contains(position) {
                     self.momentum.stop();
+                    self.spring.stop();
                     context.request_focus(context.element_id());
                     return Some(Box::new(()));
                 }
             }
 
             InputEvent::Scroll { delta, .. } => {
+                self.momentum.stop();
+                self.spring.stop();
                 self.refresh_sizes(context);
                 let new_offset = (self.scroll_offset - delta.y).clamp(0.0, self.max_scroll());
                 self.apply_scroll_offset(new_offset, context);
@@ -308,6 +317,8 @@ impl Element for ScrollViewElement {
                 state: ButtonState::Pressed,
                 ..
             } => {
+                self.momentum.stop();
+                self.spring.stop();
                 let delta = match key {
                     Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
                     Key::Named(NamedKey::ArrowDown) => Some(LINE_HEIGHT),
@@ -481,6 +492,10 @@ impl Element for ScrollViewElement {
     }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
+        debug_assert!(
+            !(self.momentum.is_active() && self.spring.is_active()),
+            "momentum and spring must not be active simultaneously"
+        );
         // Deferred-apply: consume any pending target offset from the controller
         // (set by jump_to_bottom / jump_to). The controller's dirty callback
         // sent this element's ID through the pipeline's mpsc channel, which
@@ -496,6 +511,7 @@ impl Element for ScrollViewElement {
             // Programmatic jump (jump_to / jump_to_bottom) cancels any
             // in-flight fling — the user's intent overrides inertia.
             self.momentum.stop();
+            self.spring.stop();
             if let Some(ro_key) = self.render_object {
                 if let Some(svro) = context
                     .render_objects
@@ -553,6 +569,49 @@ impl Element for ScrollViewElement {
                 }
                 None => {
                     self.momentum.stop();
+                }
+            }
+        }
+
+        if self.spring.is_active() {
+            let now = Instant::now();
+            match self.spring.advance(now) {
+                Some(physics_offset) => {
+                    if let Some(ro_key) = self.render_object {
+                        if let Some(svro) = context
+                            .render_objects
+                            .get(ro_key)
+                            .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                        {
+                            self.viewport_height = svro.viewport_size().height;
+                            self.content_height = svro.content_size().height;
+                            svro.set_scroll_offset(physics_offset);
+                        }
+                    }
+                    self.scroll_offset = physics_offset;
+                    if let Some(ctrl) = self.controller.as_ref() {
+                        ctrl.set_current_offset(physics_offset);
+                    }
+                }
+                None => {
+                    // Settled — snap exactly to rest and stop.
+                    let rest = self.spring.rest();
+                    self.spring.stop();
+                    if let Some(ro_key) = self.render_object {
+                        if let Some(svro) = context
+                            .render_objects
+                            .get(ro_key)
+                            .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                        {
+                            self.viewport_height = svro.viewport_size().height;
+                            self.content_height = svro.content_size().height;
+                            svro.set_scroll_offset(rest);
+                        }
+                    }
+                    self.scroll_offset = rest;
+                    if let Some(ctrl) = self.controller.as_ref() {
+                        ctrl.set_current_offset(rest);
+                    }
                 }
             }
         }
