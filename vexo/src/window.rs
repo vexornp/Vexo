@@ -12,7 +12,7 @@ use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, SafeAreaSourc
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::platform::{self, Clipboard};
-use crate::render::{RenderBackend, WgpuBackend};
+use crate::render::{RenderBackend, RenderError, WgpuBackend};
 use crate::text_pipeline::TextPipeline;
 use crate::ThreeTreePipeline;
 use crate::Application;
@@ -63,6 +63,14 @@ pub struct WindowState<A: Application + 'static> {
     /// Whether a frame needs rendering. Set by state changes, resize,
     /// cursor blink toggle, etc. Cleared after rendering.
     needs_redraw: bool,
+
+    /// Whether the window is currently occluded (fully hidden behind
+    /// other windows or minimized). When true, rendering is skipped to
+    /// avoid wasting CPU/GPU on a surface that wgpu reports as
+    /// `Occluded`. The OS delivers `WindowEvent::Occluded(false)` when
+    /// the window becomes visible again, at which point we request a
+    /// frame to refresh.
+    is_occluded: bool,
 
     /// Current mouse cursor icon. Updated on PointerMoved events.
     current_cursor: SystemCursorKind,
@@ -122,6 +130,7 @@ impl<A: Application + 'static> WindowState<A> {
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline,
             needs_redraw: true,
+            is_occluded: false,
             current_cursor: SystemCursorKind::Arrow,
             last_pointer_position: Point::new(0.0, 0.0),
             animation_ticker,
@@ -139,7 +148,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.scale_source.set(scale_factor);
     }
 
-    pub fn render(&mut self) -> Result<(), String> {
+    pub fn render(&mut self) -> Result<(), RenderError> {
         // Use retain mode rendering
         self.render_retain()
     }
@@ -164,15 +173,31 @@ impl<A: Application + 'static> WindowState<A> {
             WindowEvent::RedrawRequested => {
                 if let Err(err) = self.render() {
                     eprintln!("Error drawing window: {err}");
-                    // On transient surface errors (Occluded at startup,
-                    // Timeout, Outdated), request another frame to retry.
-                    // The first RedrawRequested often fires while the window
-                    // is still occluded — without this retry, the window
-                    // stays dark gray until the next external event triggers
-                    // a redraw.
-                    if err.starts_with("Surface transient") {
-                        self.request_frame();
+                    match err {
+                        // Surface is hidden — do NOT retry immediately.
+                        // Mark ourselves occluded and wait for the OS to
+                        // deliver WindowEvent::Occluded(false) when the
+                        // window becomes visible again. Retrying here
+                        // spins an infinite render→fail→request_redraw
+                        // loop, wasting CPU and flooding the log.
+                        RenderError::SurfaceOccluded => {
+                            self.is_occluded = true;
+                        }
+                        // Timeout / Outdated — retry next frame.
+                        RenderError::SurfaceTransient(_) => {
+                            self.request_frame();
+                        }
+                        _ => {}
                     }
+                }
+            }
+            WindowEvent::Occluded(occluded) => {
+                self.is_occluded = *occluded;
+                // When the window becomes visible again, request a fresh
+                // frame — the surface needs to be re-acquired and any state
+                // changes that happened while occluded must be rendered.
+                if !*occluded {
+                    self.request_frame();
                 }
             }
             WindowEvent::CloseRequested => {
@@ -235,9 +260,16 @@ impl<A: Application + 'static> WindowState<A> {
             // Window focus changes — cancel any in-flight gesture when the
             // window loses focus so the arena doesn't leak (a press without a
             // matching release, e.g. Alt-Tab mid-press).
+            //
+            // On focus gain, request a frame as a defensive fallback: on
+            // some platforms the `Occluded` event may not fire when the
+            // window becomes visible (e.g. clicking the dock icon), and
+            // without this the UI could appear stuck after being inactive.
             WindowEvent::Focused(focused) => {
                 if !focused {
                     self.three_tree_pipeline.cancel_current_gesture();
+                } else {
+                    self.request_frame();
                 }
             }
 
@@ -415,9 +447,20 @@ impl<A: Application + 'static> WindowState<A> {
     /// 5. Paint dirty render objects
     /// 6. Process RenderCommands through frame builder
     /// 7. Submit to GPU
-    pub fn render_retain(&mut self) -> Result<(), String> {
+    pub fn render_retain(&mut self) -> Result<(), RenderError> {
         // 1. Backend check
         if !self.backend.is_ready() {
+            return Ok(());
+        }
+
+        // 1.5. Skip all rendering work while the window is occluded.
+        //      wgpu would return `Occluded` from get_current_texture()
+        //      anyway, but only after we've done all the rebuild/layout/
+        //      paint/command-generation work — wasting CPU and flooding
+        //      the log. We keep `needs_redraw` set so that when the
+        //      window becomes visible again (WindowEvent::Occluded(false)
+        //      or Focused(true)), the next render actually runs.
+        if self.is_occluded {
             return Ok(());
         }
 
@@ -591,8 +634,7 @@ impl<A: Application + 'static> WindowState<A> {
                 &self.frame_builder,
                 prepared_text,
                 &mut self.font_system,
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
 
         // 14. If a TextEdit is focused, keep the event loop alive so
         //     about_to_wait fires and can check cursor blink timing.

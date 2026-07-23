@@ -82,8 +82,12 @@ pub enum RenderError {
     SurfaceNotConfigured,
     /// Failed to acquire the next texture.
     AcquireFailed(String),
-    /// The surface is occluded, timed out, or outdated — transient
-    /// conditions where the caller should retry the next frame.
+    /// The surface is occluded (hidden behind other windows or minimized).
+    /// The caller should NOT retry immediately — wait for the OS to deliver
+    /// `WindowEvent::Occluded(false)` when the window becomes visible again.
+    SurfaceOccluded,
+    /// The surface timed out or is outdated — transient conditions where
+    /// the caller should retry the next frame.
     SurfaceTransient(String),
     /// Failed to prepare text rendering.
     TextPrepareFailed(String),
@@ -96,6 +100,9 @@ impl std::fmt::Display for RenderError {
         match self {
             RenderError::SurfaceNotConfigured => write!(f, "Surface not configured"),
             RenderError::AcquireFailed(msg) => write!(f, "Failed to acquire texture: {}", msg),
+            RenderError::SurfaceOccluded => {
+                write!(f, "Surface occluded (wait for visibility)")
+            }
             RenderError::SurfaceTransient(msg) => {
                 write!(f, "Surface transient (retry next frame): {}", msg)
             }

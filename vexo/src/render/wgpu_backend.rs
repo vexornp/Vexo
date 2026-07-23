@@ -960,9 +960,11 @@ impl WgpuBackend {
                 frame
             }
             wgpu::CurrentSurfaceTexture::Occluded => {
-                // Window not fully on screen yet (common at startup).
-                // Caller should retry next frame.
-                return Err(RenderError::SurfaceTransient("Occluded".to_string()));
+                // Window not fully on screen (hidden behind other windows
+                // or minimized). The caller should NOT retry immediately —
+                // doing so spins an infinite render→fail→request_redraw
+                // loop. Wait for WindowEvent::Occluded(false) instead.
+                return Err(RenderError::SurfaceOccluded);
             }
             wgpu::CurrentSurfaceTexture::Timeout => {
                 return Err(RenderError::SurfaceTransient("Timeout".to_string()));
