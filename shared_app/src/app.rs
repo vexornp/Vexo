@@ -143,7 +143,6 @@ impl Application for ImState {
                         };
                         Icon::new(icon).with_size(22.0).with_color(color).boxed()
                     }),
-                    is_dark: is_dark_signal.clone(),
                 };
 
                 shell.boxed()
