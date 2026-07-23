@@ -358,6 +358,17 @@ impl Element for ScrollViewElement {
 
         match event {
             ArenaEvent::Move { position } => {
+                // Sync viewport/content sizes from the render object BEFORE
+                // the rubber-band calc below. Without this, the first Move
+                // after mount reads stale viewport_height=0, which makes
+                // apply_rubber_band's denominator collapse to 1.0 (the
+                // `viewport.max(1.0)` guard) and over-compress overscroll to
+                // ~1px — small enough to fall inside SpringSimulation's
+                // X_SETTLE threshold so a release-in-overscroll spring would
+                // settle on its first advance. (apply_scroll_offset also
+                // calls refresh_sizes, but that runs AFTER the rubber-band
+                // computation that needs the correct viewport.)
+                self.refresh_sizes(ctx);
                 // Sample the pointer position into the velocity tracker FIRST,
                 // so the timestamp reflects when the pointer was here, not
                 // after the delta math below. The tracker keeps a 100ms window
@@ -394,49 +405,80 @@ impl Element for ScrollViewElement {
                 self.last_drag_y = drag.down_position().y;
             }
             ArenaEvent::Up { .. } => {
-                // Skip momentum if the last move was stale (pause-then-lift).
-                // VelocityTracker retains 2 samples even across a pause, so
-                // velocity() would return the pre-pause velocity. Guard
-                // against that here.
-                // Must match VelocityTracker::WINDOW (100ms). The tracker's len > 2
-                // eviction guard retains stale samples across a pause; this check
-                // ensures we don't read pre-pause velocity after a pause-then-lift.
-                let is_stale = self
-                    .last_move_time
-                    .map(|t| Instant::now().duration_since(t) > Duration::from_millis(100))
-                    .unwrap_or(true);
-                if is_stale {
-                    return;
-                }
                 // Sign-flip: the tracker returns pointer-space dy/dt (y-down).
-                // The existing Move handler does `delta = last_drag_y -
-                // position.y` (negates pointer delta) before applying to
-                // scroll_offset, so an upward finger motion (dy/dt < 0)
-                // produces positive offset delta. To scroll the same direction
-                // after release, negate the tracker velocity so positive v0 =
-                // offset increases = scrolls toward bottom.
+                // The Move handler does `delta = last_drag_y - position.y`
+                // (negates pointer delta), so negate tracker velocity so
+                // positive v0 = offset increases = scrolls toward bottom.
                 let v = -self.velocity_tracker.velocity();
-                const V_MIN_FLING: f32 = 50.0;
-                if v.abs() < V_MIN_FLING {
-                    return;
+                let max = self.max_scroll();
+
+                if self.scroll_offset < 0.0 {
+                    // Released past top → bounce back to 0. Always start the
+                    // spring, even with zero velocity — a critically-damped
+                    // spring still pulls content back to the edge.
+                    let now = Instant::now();
+                    let Some(element_id) = self.id else {
+                        return;
+                    };
+                    let Some(tx) = ctx.dirty_sender().cloned() else {
+                        return;
+                    };
+                    let Some(ticker) = self.animation_ticker.clone() else {
+                        return;
+                    };
+                    self.momentum.stop();
+                    self.spring
+                        .start(self.scroll_offset, v, 0.0, now, tx, element_id, ticker);
+                } else if self.scroll_offset > max {
+                    // Released past bottom → bounce back to max.
+                    let now = Instant::now();
+                    let Some(element_id) = self.id else {
+                        return;
+                    };
+                    let Some(tx) = ctx.dirty_sender().cloned() else {
+                        return;
+                    };
+                    let Some(ticker) = self.animation_ticker.clone() else {
+                        return;
+                    };
+                    self.momentum.stop();
+                    self.spring
+                        .start(self.scroll_offset, v, max, now, tx, element_id, ticker);
+                } else {
+                    // Released in-bounds — existing fling behavior, gated by
+                    // staleness + minimum velocity. The staleness guard lives
+                    // HERE (not at the top of the Up arm) because releasing
+                    // in overscroll should always start the spring, even if
+                    // the last move was stale.
+                    let is_stale = self
+                        .last_move_time
+                        .map(|t| Instant::now().duration_since(t) > Duration::from_millis(100))
+                        .unwrap_or(true);
+                    if is_stale {
+                        return;
+                    }
+                    const V_MIN_FLING: f32 = 50.0;
+                    if v.abs() < V_MIN_FLING {
+                        return;
+                    }
+                    let Some(element_id) = self.id else {
+                        return;
+                    };
+                    let Some(tx) = ctx.dirty_sender().cloned() else {
+                        return;
+                    };
+                    let Some(ticker) = self.animation_ticker.clone() else {
+                        return;
+                    };
+                    self.momentum.start(
+                        self.scroll_offset,
+                        v,
+                        Instant::now(),
+                        tx,
+                        element_id,
+                        ticker,
+                    );
                 }
-                let Some(element_id) = self.id else {
-                    return;
-                };
-                let Some(tx) = ctx.dirty_sender().cloned() else {
-                    return;
-                };
-                let Some(ticker) = self.animation_ticker.clone() else {
-                    return;
-                };
-                self.momentum.start(
-                    self.scroll_offset,
-                    v,
-                    Instant::now(),
-                    tx,
-                    element_id,
-                    ticker,
-                );
             }
             ArenaEvent::Cancel => {
                 // Drag cancelled. No cleanup needed.
@@ -830,6 +872,176 @@ mod tests {
             offset > -600.0,
             "should not exceed ~viewport past edge (rubber-band); got {}",
             offset
+        );
+    }
+
+    #[test]
+    fn test_release_past_top_starts_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Press + drag down past top (overscroll).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+        assert!(ctrl.current_offset() < 0.0, "should be in overscroll");
+
+        // Release.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+
+        // Spring should be active (ticker has registrations).
+        pump(&ticker, &mut pipeline);
+        assert!(
+            ticker.has_active(),
+            "spring should be active after releasing in overscroll"
+        );
+    }
+
+    #[test]
+    fn test_release_in_bounds_starts_momentum_not_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Press + fast drag up (in-bounds, builds velocity).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 400.0),
+            &press,
+        );
+        for &y in &[350.0, 250.0, 150.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            dispatch(&mut pipeline, &mut font_system, Point::new(200.0, y), &mv);
+        }
+        assert!(ctrl.current_offset() > 0.0, "should have scrolled");
+
+        // Release in-bounds.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 150.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 150.0),
+            &release,
+        );
+
+        // Momentum should be active (not spring — this is the existing fling path).
+        pump(&ticker, &mut pipeline);
+        assert!(
+            ticker.has_active(),
+            "momentum should be active after in-bounds release with velocity"
+        );
+    }
+
+    #[test]
+    fn test_spring_settles_to_top_edge() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Press + drag down past top.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &move_evt,
+        );
+
+        // Release.
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &release,
+        );
+
+        // Pump until spring settles (ticker goes quiet). Each pump advances
+        // the spring by `frame_dt` worth of physics (measured via Instant::now()
+        // inside SpringSimulation::advance). Without real wall-clock time
+        // between pumps, 2000 pumps cover only ~5ms of physics — far short of
+        // the ~400ms a critically-damped spring needs to settle from -150px.
+        // The 2ms sleep lets each pump's advance see ~2ms of elapsed time, so
+        // the spring settles after ~200 pumps (~0.4s).
+        for _ in 0..2000 {
+            pump(&ticker, &mut pipeline);
+            if !ticker.has_active() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!ticker.has_active(), "spring should have settled");
+        assert_eq!(
+            ctrl.current_offset(),
+            0.0,
+            "spring should settle exactly at top edge (0.0); got {}",
+            ctrl.current_offset()
         );
     }
 
