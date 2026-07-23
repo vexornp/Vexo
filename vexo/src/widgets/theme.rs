@@ -28,6 +28,8 @@ pub struct ThemeData {
     pub on_surface_variant: Color,
     pub error: Color,
     pub on_error: Color,
+    /// Backdrop for grouped (iOS-style) lists. Cards sit on top of this.
+    pub grouped_background: Color,
 }
 
 impl ThemeData {
@@ -45,6 +47,7 @@ impl ThemeData {
             on_surface_variant: Color::from_hex(0x999999FF),
             error: Color::from_hex(0xB3261EFF),
             on_error: Color::WHITE,
+            grouped_background: Color::from_hex(0xF2F2F7FF),
         }
     }
 
@@ -53,15 +56,16 @@ impl ThemeData {
         Self {
             primary: Color::from_hex(0x6775FFFF),
             on_primary: Color::WHITE,
-            background: Color::from_hex(0x1C1B1FFF),
+            background: Color::from_hex(0x000000FF),
             on_background: Color::WHITE,
-            surface: Color::from_hex(0x2B2930FF),
+            surface: Color::from_hex(0x1C1C1EFF),
             on_surface: Color::WHITE,
-            surface_variant: Color::from_hex(0x38353CFF),
+            surface_variant: Color::from_hex(0x2C2C2EFF),
             outline: Color::from_hex(0x49454FFF),
             on_surface_variant: Color::from_hex(0x9E9CA6FF),
             error: Color::from_hex(0xF2B8B5FF),
             on_error: Color::BLACK,
+            grouped_background: Color::from_hex(0x000000FF),
         }
     }
 }
