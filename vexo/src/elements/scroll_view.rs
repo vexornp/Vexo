@@ -113,10 +113,6 @@ impl ScrollViewElement {
         (self.content_height - self.viewport_height).max(0.0)
     }
 
-    fn clamp_offset(&self, offset: f32) -> f32 {
-        offset.clamp(0.0, self.max_scroll())
-    }
-
     fn apply_scroll_offset(&mut self, new_offset: f32, ctx: &EventContext) -> bool {
         if let Some(rr) = ctx.render_objects() {
             if let Some(ro_key) = self.render_object {
@@ -129,21 +125,20 @@ impl ScrollViewElement {
             }
         }
 
-        let clamped = self.clamp_offset(new_offset);
-        if (clamped - self.scroll_offset).abs() < f32::EPSILON {
+        if (new_offset - self.scroll_offset).abs() < f32::EPSILON {
             return false;
         }
-        self.scroll_offset = clamped;
+        self.scroll_offset = new_offset;
 
         if let Some(ctrl) = self.controller.as_ref() {
-            ctrl.set_current_offset(clamped);
+            ctrl.set_current_offset(new_offset);
         }
 
         if let Some(rr) = ctx.render_objects() {
             if let Some(ro_key) = self.render_object {
                 if let Some(ro) = rr.get(ro_key) {
                     if let Some(svro) = ro.as_any().downcast_ref::<ScrollViewRenderObject>() {
-                        svro.set_scroll_offset(clamped);
+                        svro.set_scroll_offset(new_offset);
                     }
                 }
             }
@@ -355,7 +350,9 @@ impl Element for ScrollViewElement {
                 // `last_position` would be stale.
                 let delta = self.last_drag_y - position.y;
                 self.last_drag_y = position.y;
-                let new_offset = self.scroll_offset + delta;
+                let raw_new = self.scroll_offset + delta;
+                let new_offset =
+                    apply_rubber_band(raw_new, self.viewport_height, self.max_scroll());
                 self.apply_scroll_offset(new_offset, ctx);
             }
             ArenaEvent::Down { .. } => {
@@ -515,7 +512,7 @@ impl Element for ScrollViewElement {
             let now = Instant::now();
             match self.momentum.advance(now) {
                 Some(physics_offset) => {
-                    let clamped = self.clamp_offset(physics_offset);
+                    let clamped = physics_offset.clamp(0.0, self.max_scroll());
                     let hit_edge = (clamped - physics_offset).abs() > f32::EPSILON;
                     if hit_edge {
                         self.momentum.stop();
@@ -644,6 +641,126 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_drag_past_top_goes_negative() {
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        // Press at (200, 300) inside the viewport.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Drag DOWN 200px (past slop, past top edge). Finger moves down →
+        // scroll toward top → offset goes negative (overscroll).
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &move_evt,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert!(
+            ctrl.current_offset() < 0.0,
+            "drag past top should produce negative offset (overscroll); got {}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_drag_past_top_resists() {
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        // Drag DOWN 2000px (way past top). Without resistance, offset would
+        // be -2000. With rubber-band, it should be much less (asymptote at
+        // ~viewport=600).
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 2300.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 2300.0),
+            &move_evt,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let offset = ctrl.current_offset();
+        assert!(offset < 0.0, "should be past top; got {}", offset);
+        assert!(
+            offset > -600.0,
+            "should not exceed ~viewport past edge (rubber-band); got {}",
+            offset
+        );
+    }
+
     /// Standard test harness for momentum tests: 200-row scroll view, 400×600
     /// viewport, wired to a fresh ticker + pipeline. Returns the controller,
     /// ticker, pipeline, and font system — callers drive events through the
@@ -723,29 +840,6 @@ mod tests {
             }
         }
         panic!("no ScrollViewRenderObject found in registry");
-    }
-
-    #[test]
-    fn test_clamp_offset_at_zero() {
-        let elem = ScrollViewElement::new();
-        assert_eq!(elem.clamp_offset(-10.0), 0.0);
-    }
-
-    #[test]
-    fn test_clamp_offset_at_max() {
-        let mut elem = ScrollViewElement::new();
-        elem.content_height = 500.0;
-        elem.viewport_height = 100.0;
-        assert_eq!(elem.clamp_offset(450.0), 400.0);
-    }
-
-    #[test]
-    fn test_no_scroll_when_content_fits() {
-        let mut elem = ScrollViewElement::new();
-        elem.content_height = 300.0;
-        elem.viewport_height = 500.0;
-        assert_eq!(elem.max_scroll(), 0.0);
-        assert_eq!(elem.clamp_offset(100.0), 0.0);
     }
 
     #[test]
@@ -996,7 +1090,16 @@ mod tests {
             &ScaleSource::default(),
             &test_clipboard(),
         );
-        assert_eq!(ctrl.current_offset(), 0.0, "clamped at top");
+        // With bounce enabled, dragging past top produces overscroll (negative
+        // offset) rather than clamping at 0. The rubber-band resistance keeps
+        // it bounded (~viewport past edge).
+        let offset = ctrl.current_offset();
+        assert!(offset <= 0.0, "should be at or past top; got {}", offset);
+        assert!(
+            offset > -600.0,
+            "should not exceed ~viewport past edge; got {}",
+            offset
+        );
     }
 
     #[test]

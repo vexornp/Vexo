@@ -108,11 +108,6 @@ impl RenderObject for ScrollViewRenderObject {
                 );
             }
         }
-
-        let max = self.max_scroll();
-        if self.scroll_offset.get() > max {
-            self.scroll_offset.set(max);
-        }
     }
 
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
