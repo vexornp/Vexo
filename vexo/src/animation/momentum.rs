@@ -20,6 +20,7 @@ const MAX_DURATION: f32 = 10.0;
 pub struct MomentumSimulation {
     offset0: f32,
     v0: f32,
+    current_velocity: f32,
     start_time: Option<std::time::Instant>,
     active: bool,
     ticker: Option<Arc<AnimationTicker>>,
@@ -31,6 +32,7 @@ impl MomentumSimulation {
         Self {
             offset0: 0.0,
             v0: 0.0,
+            current_velocity: 0.0,
             start_time: None,
             active: false,
             ticker: None,
@@ -50,6 +52,7 @@ impl MomentumSimulation {
         self.stop(); // drop any prior registration
         self.offset0 = offset0;
         self.v0 = v0;
+        self.current_velocity = v0;
         self.start_time = Some(now);
         self.active = true;
         self.ticker = Some(ticker.clone());
@@ -82,6 +85,7 @@ impl MomentumSimulation {
             return None;
         }
         let v = self.v0 * (-dt / TAU).exp();
+        self.current_velocity = v;
         if v.abs() < V_STOP {
             self.terminate();
             return None;
@@ -100,6 +104,10 @@ impl MomentumSimulation {
 
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    pub fn velocity(&self) -> f32 {
+        self.current_velocity
     }
 
     fn terminate(&mut self) {
@@ -288,6 +296,28 @@ mod tests {
         assert!(
             rx.try_recv().is_ok(),
             "ticker.tick() should fire the registered callback"
+        );
+    }
+
+    #[test]
+    fn velocity_accessor_returns_current_velocity() {
+        let (mut sim, now, _rx, _ticker) = start_sim(1000.0);
+        // Before advance, velocity should be v0 (start sets offset0=0, v0=1000).
+        let v_before = sim.velocity();
+        assert!(
+            (v_before - 1000.0).abs() < 1.0,
+            "velocity before advance should be ~v0 (1000); got {}",
+            v_before
+        );
+        // After advancing, velocity decays.
+        let later = now + Duration::from_millis(100);
+        let _ = sim.advance(later);
+        let v_after = sim.velocity();
+        assert!(
+            v_after < v_before,
+            "velocity should decay after advancing; got {} -> {}",
+            v_before,
+            v_after
         );
     }
 }
