@@ -6,8 +6,12 @@ use crate::layout::{
     AlignItems, GridPlacement, JustifyContent, Layout, TaffyLayoutEngine, TrackSizing,
 };
 use crate::render::RenderCommand;
+use crate::render_objects::DecoratedBoxRenderObject;
 use crate::widgets::{ClipRRect, DecoratedBox, Transform, WithLayout};
-use crate::{children, Grid, MultiChild, Style, Text, ThreeTreePipeline, Widget};
+use crate::{
+    children, Grid, MultiChild, RenderObjectKey, RenderObjectRegistry, Style, Text,
+    ThreeTreePipeline, Widget,
+};
 use std::sync::Arc;
 
 fn create_test_font_system() -> glyphon::FontSystem {
@@ -1139,5 +1143,90 @@ fn test_clip_rrect_radius_zero_degenerates_to_push_clip() {
     assert!(
         has_rect_between,
         "Should have a Rect command between PushClip and PopClip"
+    );
+}
+
+/// Recursively search the render object tree for a `DecoratedBoxRenderObject`
+/// and return its key.
+fn find_decorated_box_ro(
+    ro_reg: &RenderObjectRegistry,
+    id: RenderObjectKey,
+) -> Option<RenderObjectKey> {
+    let ro = ro_reg.get(id)?;
+    if ro
+        .as_any()
+        .downcast_ref::<DecoratedBoxRenderObject>()
+        .is_some()
+    {
+        return Some(id);
+    }
+    for child in ro.children() {
+        if let Some(found) = find_decorated_box_ro(ro_reg, *child) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// When a child element's type changes beneath a pass-through render object
+/// (e.g. `DecoratedBox`), `replace_element` must mark not just the pass-through
+/// RO but also its nearest non-pass-through ancestor for layout. Without this,
+/// the new child's Taffy node is never linked into the layout tree, and the
+/// child renders with no bounds (invisible).
+///
+/// This test builds `MultiChild → DecoratedBox → Text`, then swaps the child
+/// to `WithLayout(MultiChild::empty, 100×100)`. The DecoratedBox (pass-through)
+/// should end up with `computed_bounds` matching the new child's 100×100 size.
+#[test]
+fn test_replace_child_under_pass_through_ro_relinks_layout() {
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+
+    let initial = MultiChild::new(
+        children![DecoratedBox::with_style(
+            Text::new("hello"),
+            Style::default().background(Color::RED),
+        )],
+        Layout::column().width_percent(1.0).height_percent(1.0),
+    )
+    .boxed();
+
+    pipeline.update(initial);
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    let updated = MultiChild::new(
+        children![DecoratedBox::with_style(
+            WithLayout::new(
+                MultiChild::empty(Layout::default()),
+                Layout::default().width(100.0).height(100.0),
+            ),
+            Style::default().background(Color::RED),
+        )],
+        Layout::column().width_percent(1.0).height_percent(1.0),
+    )
+    .boxed();
+
+    pipeline.update(updated);
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    let ro_reg = pipeline.render_objects();
+    let root = ro_reg.root().expect("root RO");
+    let db_ro = find_decorated_box_ro(ro_reg, root).expect("DecoratedBox RO exists");
+
+    let bounds = ro_reg
+        .get(db_ro)
+        .and_then(|ro| ro.computed_bounds())
+        .expect("DecoratedBox should have computed bounds after child replacement");
+
+    assert!(
+        (bounds.width() - 100.0).abs() < 2.0,
+        "DecoratedBox width should be ~100 (new child fixed width), got {}",
+        bounds.width()
+    );
+    assert!(
+        (bounds.height() - 100.0).abs() < 2.0,
+        "DecoratedBox height should be ~100 (new child fixed height), got {}",
+        bounds.height()
     );
 }

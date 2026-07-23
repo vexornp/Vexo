@@ -958,11 +958,35 @@ impl Reconciler {
 
         // Mark the parent's render object for layout so the new child's
         // Taffy node gets linked into the layout tree.
-        if let Some(parent_ro) = element_registry
-            .get(parent)
+        //
+        // Pass-through render objects (DecoratedBox, Offstage, etc.) don't
+        // own a Taffy node — they return the child's node directly, so the
+        // grandparent is the one that links the grandchild's node into its
+        // Taffy children list. When a child is replaced beneath a pass-through
+        // RO, the RO needs `layout()` to refresh its `child_layout_node`, AND
+        // the nearest non-pass-through ancestor needs `layout()` to re-link
+        // its Taffy children with the new node. Walk up through the chain,
+        // marking each RO plus the first non-pass-through ancestor.
+        let mut current = parent;
+        while let Some(ro) = element_registry
+            .get(current)
             .and_then(|el| el.render_object())
         {
-            dirty.mark_needs_layout(parent_ro);
+            dirty.mark_needs_layout(ro);
+
+            let is_pass_through = render_objects
+                .get(ro)
+                .map(|obj| obj.is_pass_through())
+                .unwrap_or(false);
+
+            if !is_pass_through {
+                break;
+            }
+
+            match element_registry.parent(current) {
+                Some(grandparent) => current = grandparent,
+                None => break,
+            }
         }
     }
 
