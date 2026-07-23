@@ -74,8 +74,9 @@ pub struct ImState {
     pub(crate) contacts_nav: NavigationController<()>,
     pub(crate) me_nav: NavigationController<()>,
     pub(crate) selected_conv: Signal<Option<ConvId>>,
-    /// Dark/light mode. Toggled by `ThemeToggle`. Root `view()` reads this to
-    /// pick `ThemeData::dark()`/`light()` and wraps the tree in `Theme::new`.
+    /// Dark/light mode. Selected from the Me page's `AppearancePicker`. Root
+    /// `view()` reads this to pick `ThemeData::dark()`/`light()` and wraps
+    /// the tree in `Theme::new`.
     pub(crate) is_dark: Signal<bool>,
 }
 
