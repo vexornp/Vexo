@@ -13,7 +13,7 @@ use vexo_uikit::theme::tokens::navigation::{
 };
 
 use crate::chats::chat_screen::ChatScreen;
-use crate::chats::conversation_list::build_conversation_list_desktop;
+use crate::chats::conversation_list::build_conversation_list;
 use crate::data::{ConvId, Conversation, Message, MessageAuthor};
 use crate::widgets::titled_container::titled_container;
 
@@ -48,7 +48,7 @@ impl Component for DesktopChatsPage {
 
         // --- Column 2: conversation list with title header + right hairline ---
         let selected_conv_for_select = self.selected_conv.clone();
-        let list = build_conversation_list_desktop(
+        let list = build_conversation_list(
             self.conversations.clone(),
             selected.clone(),
             &nav_colors,

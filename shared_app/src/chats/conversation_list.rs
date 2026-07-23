@@ -1,4 +1,8 @@
-//! Conversation list screen — the root of the Chats tab.
+//! Conversation list — unified component used by both PC and Mobile.
+//!
+//! Both platforms render the same theme-token-aware rows. Mobile passes
+//! `selected = None` (no row highlight); desktop passes the live selection
+//! so the active conversation is highlighted.
 
 use vexo::layout::JustifyContent;
 use vexo::{
@@ -6,85 +10,14 @@ use vexo::{
     ScrollView, Stack, Style, Text, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::NavColors;
-use vexo_uikit::NavigationController;
 
-use crate::data::{ChatsRoute, ConvId, Conversation};
+use crate::data::{ConvId, Conversation};
 use crate::widgets::avatar::avatar;
 
-pub(crate) fn build_conversation_list_screen(
-    conversations: Vec<Conversation>,
-    nav: NavigationController<ChatsRoute>,
-) -> Box<dyn Widget> {
-    let mut list = MultiChild::empty(Layout::column());
-    for conv in &conversations {
-        let nav_for_row = nav.clone();
-        let id = conv.id.clone();
-        let row = build_conversation_row(conv, move || {
-            nav_for_row.push(ChatsRoute::Chat(id.clone()));
-        });
-        list = list.push(row);
-    }
-    WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
-}
-
-fn build_conversation_row(
-    conv: &Conversation,
-    on_press: impl FnMut() + 'static,
-) -> Box<dyn Widget> {
-    let avatar = avatar(&conv.avatar_bytes, 40.0);
-
-    let name_text = Text::new(conv.name.as_str())
-        .with_font_size(16.0)
-        .with_color(Color::BLACK);
-    let preview_text = Text::new(conv.last_preview.as_str())
-        .with_font_size(13.0)
-        .with_color(Color::rgb(0.5, 0.5, 0.5));
-
-    let info_col = MultiChild::new(
-        children![name_text, preview_text],
-        Layout::column().gap(2.0).flex_grow(1.0),
-    );
-
-    let time_text = Text::new(format_timestamp(conv.last_timestamp).as_str())
-        .with_font_size(12.0)
-        .with_color(Color::rgb(0.6, 0.6, 0.6));
-
-    let right_col = MultiChild::new(children![time_text], Layout::column());
-
-    let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
-        Some(
-            Positioned::new(unread_badge(conv.unread_count))
-                .top(-4.0)
-                .right(-4.0)
-                .boxed(),
-        )
-    } else {
-        None
-    };
-
-    let avatar_with_badge = Stack::new()
-        .with_layout(Layout::stack().width(40.0).height(40.0))
-        .push(avatar)
-        .push(badge)
-        .boxed();
-
-    WithLayout::new(
-        MultiChild::new(
-            children![avatar_with_badge, info_col, right_col],
-            Layout::row().gap(12.0),
-        ),
-        Layout::default().padding(12.0),
-    )
-    .on_tap(on_press)
-}
-
-// ============================================================================
-// DESKTOP VARIANT
-// ============================================================================
-
-/// Desktop conversation list: uses theme tokens for colors and highlights the
-/// selected conversation row. `on_select` is called when a row is tapped.
-pub(crate) fn build_conversation_list_desktop(
+/// Build the conversation list. `on_select` is invoked with the tapped
+/// conversation's id. Pass `selected = None` on platforms that don't
+/// highlight a row (mobile).
+pub(crate) fn build_conversation_list(
     conversations: Vec<Conversation>,
     selected: Option<ConvId>,
     nav_colors: &NavColors,
@@ -95,7 +28,7 @@ pub(crate) fn build_conversation_list_desktop(
         let is_selected = selected == Some(conv.id.clone());
         let on_select = on_select.clone();
         let id = conv.id.clone();
-        let row = build_conversation_row_desktop(conv, is_selected, nav_colors, move || {
+        let row = build_conversation_row(conv, is_selected, nav_colors, move || {
             on_select(id.clone());
         });
         list = list.push(row);
@@ -103,7 +36,7 @@ pub(crate) fn build_conversation_list_desktop(
     WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
 }
 
-fn build_conversation_row_desktop(
+fn build_conversation_row(
     conv: &Conversation,
     is_selected: bool,
     nav_colors: &NavColors,
@@ -211,13 +144,14 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
-    use vexo::ThreeTreePipeline;
+    use vexo::{ThemeData, ThreeTreePipeline};
+    use vexo_uikit::theme::tokens::navigation;
 
     #[test]
     fn test_conversation_list_renders_in_pipeline() {
         let state = crate::data::seed();
-        let view =
-            build_conversation_list_screen(state.conversations.clone(), state.chats_nav.clone());
+        let nav_colors = navigation::colors(&ThemeData::light());
+        let view = build_conversation_list(state.conversations.clone(), None, &nav_colors, |_| {});
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
         assert!(
