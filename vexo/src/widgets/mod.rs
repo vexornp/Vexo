@@ -46,7 +46,7 @@ pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
-pub use theme::{Theme, ThemeData};
+pub use theme::{Brightness, Theme, ThemeData};
 
 // Crate-internal modifier widgets (not part of public API)
 use crate::core::Color;

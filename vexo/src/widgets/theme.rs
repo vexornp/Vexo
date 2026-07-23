@@ -11,6 +11,17 @@ use crate::key::WidgetKey;
 use crate::stateful_widget::RenderContext;
 use crate::widgets::Widget;
 
+/// Whether a `ThemeData` is light or dark.
+///
+/// Mirrors Flutter's `Brightness` on `ThemeData`: lets tokens resolve
+/// mode-specific values (e.g. pure-black chrome bars in dark) without the
+/// app having to thread a separate `is_dark` signal alongside the theme.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Brightness {
+    Light,
+    Dark,
+}
+
 /// Immutable theme data exposed to descendants by `Theme`.
 ///
 /// Core Material-ish color roles only. Additive: new fields don't break
@@ -30,6 +41,8 @@ pub struct ThemeData {
     pub on_error: Color,
     /// Backdrop for grouped (iOS-style) lists. Cards sit on top of this.
     pub grouped_background: Color,
+    /// Overall brightness of this theme. Set by `light()` / `dark()`.
+    pub brightness: Brightness,
 }
 
 impl ThemeData {
@@ -48,6 +61,7 @@ impl ThemeData {
             error: Color::from_hex(0xB3261EFF),
             on_error: Color::WHITE,
             grouped_background: Color::from_hex(0xF2F2F7FF),
+            brightness: Brightness::Light,
         }
     }
 
@@ -66,7 +80,14 @@ impl ThemeData {
             error: Color::from_hex(0xF2B8B5FF),
             on_error: Color::BLACK,
             grouped_background: Color::from_hex(0x000000FF),
+            brightness: Brightness::Dark,
         }
+    }
+
+    /// `true` when this theme is the dark preset (or any theme constructed
+    /// with `brightness: Brightness::Dark`).
+    pub fn is_dark(&self) -> bool {
+        matches!(self.brightness, Brightness::Dark)
     }
 }
 
@@ -177,6 +198,13 @@ mod tests {
         // brand blue as light(), so accent stays consistent across modes.
         assert_eq!(ThemeData::dark().primary, ThemeData::light().primary);
         assert_eq!(ThemeData::dark().primary, Color::from_hex(0x6775FFFF));
+    }
+
+    #[test]
+    fn theme_data_brightness_and_is_dark() {
+        assert!(!ThemeData::light().is_dark());
+        assert!(ThemeData::dark().is_dark());
+        assert_ne!(ThemeData::light().brightness, ThemeData::dark().brightness);
     }
 
     #[test]

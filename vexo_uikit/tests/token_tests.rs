@@ -29,4 +29,11 @@ fn resolvers_differ_between_light_and_dark() {
     let dn = navigation::colors(&ThemeData::dark());
     assert_ne!(ln.sidebar_bg, dn.sidebar_bg);
     assert_ne!(ln.mobile_header_bg, dn.mobile_header_bg);
+
+    // Dark-mode chrome bars match the winit window status bar dark-mode
+    // color (#24282B); light-mode bars are `surface`.
+    assert_eq!(dn.sidebar_bg, Color::from_hex(0x24282BFF));
+    assert_eq!(dn.mobile_header_bg, Color::from_hex(0x24282BFF));
+    assert_eq!(ln.sidebar_bg, ThemeData::light().surface);
+    assert_eq!(ln.mobile_header_bg, ThemeData::light().surface);
 }

@@ -82,6 +82,31 @@ fn sdf_rounded_rect(p: vec2<f32>, b: vec4<f32>, r: f32) -> f32 {
     return outside + inside - radius;
 }
 
+/// Convert a single sRGB-encoded channel to linear.
+/// Colors from `Color::from_hex` are sRGB-encoded (standard hex literal
+/// convention). The swapchain is sRGB (`Bgra8UnormSrgb`), which encodes
+/// shader output (linear) to sRGB on store. So the shader must linearize
+/// sRGB input colors before returning, otherwise the swapchain
+/// double-encodes them (e.g. `#24282B` renders as `#696E72`). Alpha is
+/// always linear and must NOT be converted.
+fn srgb_to_linear_channel(c: f32) -> f32 {
+    if (c <= 0.04045) {
+        return c / 12.92;
+    }
+    return pow((c + 0.055) / 1.055, 2.4);
+}
+
+/// Convert an sRGB-encoded RGB color to linear. Alpha is passed through
+/// unchanged (alpha is always linear).
+fn srgb_to_linear(c: vec4<f32>) -> vec4<f32> {
+    return vec4<f32>(
+        srgb_to_linear_channel(c.r),
+        srgb_to_linear_channel(c.g),
+        srgb_to_linear_channel(c.b),
+        c.a,
+    );
+}
+
 /// Alpha multiplier for the active rclip stack. Returns 1.0 if no
 /// rclip is active; otherwise the product of per-entry SDF masks.
 /// `p` is the fragment position in physical pixels.
@@ -140,7 +165,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let sigma = max(blur_px * 0.5, 0.5);
         let d = max(shadow_sdf, 0.0);
         let falloff = exp(-d * d / (2.0 * sigma * sigma));
-        return vec4<f32>(in.shadow_color.rgb, falloff * in.shadow_color.a * rclip_alpha(abs_pixel_pos));
+        return srgb_to_linear(vec4<f32>(in.shadow_color.rgb, falloff * in.shadow_color.a * rclip_alpha(abs_pixel_pos)));
     }
 
     // === EXISTING FILL/BORDER PATH (unchanged) ===
@@ -148,7 +173,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if (radius < 0.5) {
         if (in.border_width <= 0.0) {
-            return vec4<f32>(in.color.rgb, in.color.a * rclip_alpha(abs_pixel_pos));
+            return srgb_to_linear(vec4<f32>(in.color.rgb, in.color.a * rclip_alpha(abs_pixel_pos)));
         }
 
         let centered_uv = in.uv - 0.5;
@@ -159,7 +184,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let is_border_y = smoothstep(0.5 - uv_border_step.y - 0.002, 0.5 - uv_border_step.y, edge_dist.y);
         let is_border = max(is_border_x, is_border_y);
         let result = mix(in.color, in.border_color, is_border);
-        return vec4<f32>(result.rgb, result.a * rclip_alpha(abs_pixel_pos));
+        return srgb_to_linear(vec4<f32>(result.rgb, result.a * rclip_alpha(abs_pixel_pos)));
     }
 
     let pixel_pos = in.uv * in.size;
@@ -181,5 +206,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let in_border = 1.0 - smoothstep(-1.0, 1.0, sdf);
     let border_weight = in_border * (1.0 - border_alpha);
     let final_color = mix(in.color, in.border_color, border_weight);
-    return vec4<f32>(final_color.rgb, final_color.a * fill_alpha * rclip_alpha(abs_pixel_pos));
+    return srgb_to_linear(vec4<f32>(final_color.rgb, final_color.a * fill_alpha * rclip_alpha(abs_pixel_pos)));
 }

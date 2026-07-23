@@ -81,9 +81,19 @@ pub mod navigation {
 
     /// Resolve navigation colors from a `ThemeData`.
     pub fn colors(t: &ThemeData) -> NavColors {
+        // Chrome bars (mobile tab bar, mobile nav bar, desktop sidebar, and
+        // desktop panel headers via `titled_container`) use a dark gray in
+        // dark mode matching the winit window status bar color (#24282B).
+        // Light mode keeps `surface` (white). Other surfaces (rows, cards,
+        // page background) stay on `surface`/`background` so only the bars flip.
+        let bar_bg = if t.is_dark() {
+            Color::from_hex(0x24282BFF)
+        } else {
+            t.surface
+        };
         NavColors {
-            sidebar_bg: t.surface,
-            header_bg: t.surface_variant,
+            sidebar_bg: bar_bg,
+            header_bg: bar_bg,
             header_text: t.on_surface,
             row_bg: Color::TRANSPARENT,
             row_text: t.on_surface,
@@ -92,7 +102,7 @@ pub mod navigation {
             detail_bg: t.background,
             divider: t.outline,
             placeholder_text: t.on_surface_variant,
-            mobile_header_bg: t.surface,
+            mobile_header_bg: bar_bg,
             mobile_title: t.on_surface,
             back_color: t.primary,
         }
@@ -232,7 +242,7 @@ mod tests {
         let t = ThemeData::light();
         let n = nav_colors(&t);
         assert_eq!(n.sidebar_bg, t.surface);
-        assert_eq!(n.header_bg, t.surface_variant);
+        assert_eq!(n.header_bg, t.surface);
         assert_eq!(n.header_text, t.on_surface);
         assert_eq!(n.row_bg, Color::TRANSPARENT);
         assert_eq!(n.row_text, t.on_surface);
@@ -250,7 +260,11 @@ mod tests {
     fn nav_colors_dark_maps_roles() {
         let t = ThemeData::dark();
         let n = nav_colors(&t);
-        assert_eq!(n.sidebar_bg, t.surface);
+        // Chrome bars (sidebar / mobile header / desktop panel header) match
+        // the winit window status bar dark-mode color (#24282B), not pure black.
+        assert_eq!(n.sidebar_bg, Color::from_hex(0x24282BFF));
+        assert_eq!(n.mobile_header_bg, Color::from_hex(0x24282BFF));
+        assert_eq!(n.header_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.selected_bg, t.primary);
         assert_eq!(n.divider, t.outline);
     }
