@@ -581,12 +581,28 @@ impl Element for ScrollViewElement {
             let now = Instant::now();
             match self.momentum.advance(now) {
                 Some(physics_offset) => {
-                    // Inlined from the removed clamp_offset method; Task 7
-                    // replaces this with spring handoff on edge hit.
+                    // Clamp to scroll bounds; on edge hit, hand off remaining
+                    // velocity to a spring (inlined from the removed clamp_offset method).
                     let clamped = physics_offset.clamp(0.0, self.max_scroll());
                     let hit_edge = (clamped - physics_offset).abs() > f32::EPSILON;
                     if hit_edge {
+                        // Fling hit an edge — hand off remaining velocity to
+                        // a spring for one bounded overshoot + settle.
+                        let v = self.momentum.velocity();
+                        let rest = if physics_offset < 0.0 {
+                            0.0
+                        } else {
+                            self.max_scroll()
+                        };
                         self.momentum.stop();
+                        if let (Some(element_id), Some(ticker)) =
+                            (self.id, self.animation_ticker.clone())
+                        {
+                            let now = Instant::now();
+                            let tx = context.dirty_sender.clone();
+                            self.spring
+                                .start(clamped, v, rest, now, tx, element_id, ticker);
+                        }
                     }
                     if let Some(ro_key) = self.render_object {
                         if let Some(svro) = context
@@ -1041,6 +1057,81 @@ mod tests {
             ctrl.current_offset(),
             0.0,
             "spring should settle exactly at top edge (0.0); got {}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_fling_into_bottom_edge_starts_spring() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+        let max_scroll = max_scroll_of(&pipeline);
+
+        // Pre-scroll near the bottom so the fling hits the edge quickly.
+        let target = (max_scroll - 500.0).max(0.0);
+        ctrl.jump_to(target);
+        for _ in 0..5 {
+            pump(&ticker, &mut pipeline);
+        }
+
+        // Fling upward (toward bottom edge).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 400.0),
+            &press,
+        );
+        for &y in &[300.0, 200.0, 100.0] {
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, y),
+            };
+            dispatch(&mut pipeline, &mut font_system, Point::new(200.0, y), &mv);
+        }
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 100.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 100.0),
+            &release,
+        );
+
+        // Pump enough for the fling to hit the edge and hand off to spring.
+        for _ in 0..10 {
+            pump(&ticker, &mut pipeline);
+        }
+        // After hitting the edge, momentum stops and spring starts.
+        // The spring is active (ticker.has_active() is true).
+        assert!(
+            ticker.has_active(),
+            "spring should be active after fling hits bottom edge"
+        );
+
+        // Pump until spring settles.
+        for _ in 0..2000 {
+            pump(&ticker, &mut pipeline);
+            if !ticker.has_active() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!ticker.has_active(), "spring should have settled");
+        assert_eq!(
+            ctrl.current_offset(),
+            max_scroll,
+            "spring should settle exactly at bottom edge; got {}",
             ctrl.current_offset()
         );
     }
@@ -2059,17 +2150,28 @@ mod tests {
             &release,
         );
 
-        // Pump long enough for the fling to hit the edge and clamp.
-        for _ in 0..120 {
+        // Pump for the fling to hit the edge and the spring to settle.
+        // The fling hands off to a spring on edge-hit; the spring overshoots
+        // once then settles back to the edge. Pump until the ticker goes quiet.
+        // The 2ms sleep lets each pump's spring advance see real wall-clock
+        // time (SpringSimulation uses Instant::now() for frame_dt) — without
+        // it, instantaneous pumps cover only ~ms of physics and the spring
+        // can't settle. Same pattern as test_spring_settles_to_top_edge.
+        for _ in 0..5000 {
             pump(&ticker, &mut pipeline);
+            if !ticker.has_active() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
 
-        // Exact assertion: the fling should have clamped at max_scroll.
+        // After spring settle, offset snaps exactly to max_scroll (the rest).
         assert_eq!(
             ctrl.current_offset(),
             max_scroll,
-            "fling should clamp exactly at max_scroll ({})",
-            max_scroll
+            "fling should settle at max_scroll ({}) after bounce; got {}",
+            max_scroll,
+            ctrl.current_offset()
         );
     }
 
@@ -2129,16 +2231,23 @@ mod tests {
             &release,
         );
 
-        // Pump long enough for the fling to hit the top edge and clamp.
-        for _ in 0..120 {
+        // Pump for the fling to hit the top edge and the spring to settle.
+        // 2ms sleep per pump gives the spring real wall-clock time to settle
+        // (same pattern as test_spring_settles_to_top_edge).
+        for _ in 0..5000 {
             pump(&ticker, &mut pipeline);
+            if !ticker.has_active() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
 
-        // Exact assertion: the fling should have clamped at 0.0 (top edge).
+        // After spring settle, offset snaps exactly to 0.0 (the rest).
         assert_eq!(
             ctrl.current_offset(),
             0.0,
-            "downward fling should clamp exactly at top edge (0.0)"
+            "downward fling should settle at top edge (0.0) after bounce; got {}",
+            ctrl.current_offset()
         );
     }
 
