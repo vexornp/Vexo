@@ -315,38 +315,32 @@ fn build_swatch_preview(mode_theme: ThemeData) -> Box<dyn Widget> {
 }
 
 fn build_checkbox(selected: bool, ambient: &ThemeData) -> Box<dyn Widget> {
-    if selected {
-        DecoratedBox::with_style(
-            WithLayout::new(
-                Icon::new(Icons::Check)
-                    .with_size(14.0)
-                    .with_color(Color::WHITE),
-                Layout::default()
-                    .width(CHECKBOX_SIZE)
-                    .height(CHECKBOX_SIZE)
-                    .justify(JustifyContent::Center)
-                    .align(AlignItems::Center)
-                    .flex_shrink(0.0),
-            ),
-            Style::default()
-                .background(ambient.primary)
-                .corner_radius(CHECKBOX_RADIUS),
-        )
-        .boxed()
+    let icon_color = if selected {
+        Color::WHITE
     } else {
-        DecoratedBox::with_style(
-            MultiChild::empty(
-                Layout::row()
-                    .width(CHECKBOX_SIZE)
-                    .height(CHECKBOX_SIZE)
-                    .flex_shrink(0.0),
-            ),
-            Style::default()
-                .border(ambient.outline, PREVIEW_BORDER_WIDTH)
-                .corner_radius(CHECKBOX_RADIUS),
-        )
-        .boxed()
+        Color::TRANSPARENT
+    };
+    let mut style = Style::default().corner_radius(CHECKBOX_RADIUS);
+    if selected {
+        style = style.background(ambient.primary);
+    } else {
+        style = style.border(ambient.outline, PREVIEW_BORDER_WIDTH);
     }
+    DecoratedBox::with_style(
+        WithLayout::new(
+            Icon::new(Icons::Check)
+                .with_size(14.0)
+                .with_color(icon_color),
+            Layout::default()
+                .width(CHECKBOX_SIZE)
+                .height(CHECKBOX_SIZE)
+                .justify(JustifyContent::Center)
+                .align(AlignItems::Center)
+                .flex_shrink(0.0),
+        ),
+        style,
+    )
+    .boxed()
 }
 
 fn build_picker_cell(
