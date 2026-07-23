@@ -278,7 +278,8 @@ fn build_swatch_preview(mode_theme: ThemeData) -> Box<dyn Widget> {
                     accent_rect,
                     Layout::default()
                         .padding_each(ACCENT_RECT_LEFT_INSET, 0.0, 0.0, 0.0)
-                        .flex_grow(1.0),
+                        .flex_grow(1.0)
+                        .justify(JustifyContent::Center),
                 ),
                 content_divider,
             ],
@@ -375,7 +376,7 @@ fn build_picker_cell(
     );
 
     GestureDetector::new(content)
-        .on_press(move || {
+        .on_tap(move || {
             is_dark.set(set_value);
         })
         .with_layout(
