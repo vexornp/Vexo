@@ -109,12 +109,12 @@ impl Component for ProfileScreen {
             &theme,
         ));
 
-        // Section "Appearance": the Dark Mode toggle row.
+        // Section "Appearance": iOS-style light/dark picker.
         content = content.push(spacer(SECTION_GAP));
         content = content.push(section_header("Appearance", &theme));
         content = content.push(spacer(HEADER_TO_CARD_GAP));
         content = content.push(build_card(
-            vec![build_toggle_row(self.is_dark.clone(), &theme)],
+            vec![AppearancePicker::new(self.is_dark.clone()).boxed()],
             &theme,
         ));
 
@@ -450,28 +450,6 @@ fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widge
         MultiChild::new(
             children![avatar_widget, text_col],
             Layout::row().gap(12.0).align(AlignItems::Center),
-        ),
-        Layout::default().padding_each(ROW_PAD_H, ROW_PAD_H, ROW_PAD_V, ROW_PAD_V),
-    )
-    .boxed()
-}
-
-/// The Dark Mode toggle row: icon tile + label on the left, `ThemeToggle`
-/// on the right. No chevron (the toggle is the trailing control).
-fn build_toggle_row(is_dark: vexo::Signal<bool>, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let dark = is_dark.get();
-    let icon = if dark { Icons::Sun } else { Icons::Moon };
-    let tile = icon_tile(icon, theme.primary);
-    let label = WithLayout::new(
-        Text::new("Dark Mode")
-            .with_font_size(16.0)
-            .with_color(theme.on_background),
-        Layout::default().flex_grow(1.0),
-    );
-    WithLayout::new(
-        MultiChild::new(
-            children![tile, label],
-            Layout::row().gap(TILE_LABEL_GAP).align(AlignItems::Center),
         ),
         Layout::default().padding_each(ROW_PAD_H, ROW_PAD_H, ROW_PAD_V, ROW_PAD_V),
     )
