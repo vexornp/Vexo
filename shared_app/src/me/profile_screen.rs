@@ -366,19 +366,14 @@ fn build_picker_cell(
         Layout::column()
             .gap(CELL_GAP)
             .align(AlignItems::Center)
-            .padding_each(CELL_PAD, CELL_PAD, CELL_PAD, CELL_PAD),
+            .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD),
     );
 
     GestureDetector::new(content)
         .on_tap(move || {
             is_dark.set(set_value);
         })
-        .with_layout(
-            Layout::default()
-                .flex_grow(1.0)
-                .flex_shrink(1.0)
-                .flex_basis(0.0),
-        )
+        .with_layout(Layout::default().flex_shrink(0.0))
         .boxed()
 }
 
@@ -421,7 +416,10 @@ impl Component for AppearancePicker {
 
         MultiChild::new(
             children![light_cell, dark_cell],
-            Layout::row().gap(CELL_GAP).align(AlignItems::Stretch),
+            Layout::row()
+                .justify(JustifyContent::SpaceEvenly)
+                .align(AlignItems::Center)
+                .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD),
         )
         .boxed()
     }
