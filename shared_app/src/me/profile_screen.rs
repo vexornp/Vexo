@@ -12,6 +12,7 @@ use vexo::{
     ScrollView, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
+use vexo_uikit::theme::tokens::navigation;
 
 use crate::data::Profile;
 use crate::widgets::avatar::avatar;
@@ -44,8 +45,6 @@ const DIVIDER_THICKNESS: f32 = 1.0;
 const DIVIDER_LEFT_INSET: f32 = ROW_PAD_H + TILE_SIZE + TILE_LABEL_GAP;
 /// Divider right inset — stops before the trailing accessory column.
 const DIVIDER_RIGHT_INSET: f32 = ROW_PAD_H;
-/// Divider alpha (iOS separators are translucent).
-const DIVIDER_ALPHA: f32 = 0.35;
 
 pub(crate) fn build_profile_screen(
     profile: &Profile,
@@ -174,11 +173,16 @@ fn build_card(rows: Vec<Box<dyn Widget>>, theme: &vexo::ThemeData) -> Box<dyn Wi
 
 /// A 1pt hairline divider, left-inset to align with the row text label and
 /// right-inset before the trailing accessory column.
+///
+/// Uses `NavColors.divider` (the opaque, pre-composited separator color) so
+/// the in-card row separators are pixel-identical to the nav chrome hairlines
+/// (sidebar edge, conversation-list edge) in both light and dark mode.
 fn divider(theme: &vexo::ThemeData) -> Box<dyn Widget> {
+    let nav_colors = navigation::colors(theme);
     WithLayout::new(
         DecoratedBox::with_style(
             MultiChild::empty(Layout::row().height(DIVIDER_THICKNESS).flex_shrink(0.0)),
-            Style::default().background(theme.outline.with_alpha(DIVIDER_ALPHA)),
+            Style::default().background(nav_colors.divider),
         ),
         Layout::default()
             .padding_each(DIVIDER_LEFT_INSET, DIVIDER_RIGHT_INSET, 0.0, 0.0)

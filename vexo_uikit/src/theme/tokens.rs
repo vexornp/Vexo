@@ -100,7 +100,17 @@ pub mod navigation {
             selected_bg: t.primary,
             selected_text: t.on_primary,
             detail_bg: t.background,
-            divider: t.outline,
+            // Hairline separator color. Opaque (pre-composited) so it renders
+            // identically regardless of the backdrop behind it — the Me page
+            // divider sits on a `surface` card, the nav hairlines sit on the
+            // chrome `bar_bg`; a translucent color would composite differently
+            // against each and look inconsistent (especially in dark mode).
+            // The value is `outline @ DIVIDER_ALPHA` composited over `surface`,
+            // i.e. exactly what the Me page's in-card separator previously
+            // rendered as, so light mode is visually unchanged and dark mode
+            // now matches the Me page. `t.outline` itself stays opaque for
+            // borders (buttons, chat input) that need full strength.
+            divider: Color::lerp(t.outline, t.surface, 1.0 - DIVIDER_ALPHA as f64),
             placeholder_text: t.on_surface_variant,
             mobile_header_bg: bar_bg,
             mobile_title: t.on_surface,
@@ -133,6 +143,12 @@ pub mod navigation {
     /// logical px is the smallest height that survives layout; it renders as
     /// 1 physical px at 1× and 2 at 2×, matching macOS `Divider`.
     pub const HAIRLINE_THICKNESS: f32 = 1.0;
+
+    /// Alpha applied to `outline` for hairline separators. iOS separators are
+    /// translucent (~0.2–0.35); a fully opaque outline reads as a bold rule
+    /// rather than a subtle seam. Shared by nav chrome hairlines and the Me
+    /// page's in-card row dividers so the two stay identical.
+    pub const DIVIDER_ALPHA: f32 = 0.35;
 
     pub const BACK_CHEVRON: &str = "\u{2039}"; // ‹
     pub const BACK_LABEL: &str = "Back";
@@ -235,7 +251,7 @@ mod tests {
         };
     }
 
-    use super::navigation::{colors as nav_colors, NavColors};
+    use super::navigation::{colors as nav_colors, NavColors, DIVIDER_ALPHA};
 
     #[test]
     fn nav_colors_light_maps_roles() {
@@ -249,7 +265,10 @@ mod tests {
         assert_eq!(n.selected_bg, t.primary);
         assert_eq!(n.selected_text, t.on_primary);
         assert_eq!(n.detail_bg, t.background);
-        assert_eq!(n.divider, t.outline);
+        assert_eq!(
+            n.divider,
+            Color::lerp(t.outline, t.surface, 1.0 - DIVIDER_ALPHA as f64)
+        );
         assert_eq!(n.placeholder_text, t.on_surface_variant);
         assert_eq!(n.mobile_header_bg, t.surface);
         assert_eq!(n.mobile_title, t.on_surface);
@@ -266,7 +285,10 @@ mod tests {
         assert_eq!(n.mobile_header_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.header_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.selected_bg, t.primary);
-        assert_eq!(n.divider, t.outline);
+        assert_eq!(
+            n.divider,
+            Color::lerp(t.outline, t.surface, 1.0 - DIVIDER_ALPHA as f64)
+        );
     }
 
     #[test]
