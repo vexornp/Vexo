@@ -74,6 +74,12 @@ impl SpringSimulation {
         self.start_time = Some(now);
         self.last_step = Some(now);
         self.active = true;
+        log::debug!(
+            "[spring] start: offset0={}, v0={}, rest={}",
+            offset0,
+            v0,
+            rest
+        );
         self.ticker = Some(ticker.clone());
         let dirty_sender_for_cb = dirty_sender.clone();
         let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -126,6 +132,12 @@ impl SpringSimulation {
 
         // Settle check.
         if (self.offset - self.rest).abs() < X_SETTLE && self.velocity.abs() < V_SETTLE {
+            log::debug!(
+                "[spring] settled: offset={}, rest={}, velocity={}",
+                self.offset,
+                self.rest,
+                self.velocity
+            );
             self.terminate();
             return None;
         }

@@ -429,6 +429,11 @@ impl Element for ScrollViewElement {
                     self.momentum.stop();
                     self.spring
                         .start(self.scroll_offset, v, 0.0, now, tx, element_id, ticker);
+                    log::debug!(
+                        "[scroll] release past top → spring: offset={}, v={}",
+                        self.scroll_offset,
+                        v
+                    );
                 } else if self.scroll_offset > max {
                     // Released past bottom → bounce back to max.
                     let now = Instant::now();
@@ -444,6 +449,12 @@ impl Element for ScrollViewElement {
                     self.momentum.stop();
                     self.spring
                         .start(self.scroll_offset, v, max, now, tx, element_id, ticker);
+                    log::debug!(
+                        "[scroll] release past bottom → spring: offset={}, v={}, max={}",
+                        self.scroll_offset,
+                        v,
+                        max
+                    );
                 } else {
                     // Released in-bounds — existing fling behavior, gated by
                     // staleness + minimum velocity. The staleness guard lives
@@ -602,6 +613,12 @@ impl Element for ScrollViewElement {
                             let tx = context.dirty_sender.clone();
                             self.spring
                                 .start(clamped, v, rest, now, tx, element_id, ticker);
+                            log::debug!(
+                                "[scroll] fling hit edge → spring: clamped={}, v={}, rest={}",
+                                clamped,
+                                v,
+                                rest
+                            );
                         }
                     }
                     if let Some(ro_key) = self.render_object {
