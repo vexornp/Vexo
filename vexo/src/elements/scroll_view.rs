@@ -113,7 +113,11 @@ impl ScrollViewElement {
         (self.content_height - self.viewport_height).max(0.0)
     }
 
-    fn apply_scroll_offset(&mut self, new_offset: f32, ctx: &EventContext) -> bool {
+    /// Refresh `viewport_height` / `content_height` from the render object.
+    /// Must be called before `max_scroll()` is used for clamping in paths
+    /// that don't go through `apply_scroll_offset` first (e.g. the wheel
+    /// and keyboard arms clamp before applying).
+    fn refresh_sizes(&mut self, ctx: &EventContext) {
         if let Some(rr) = ctx.render_objects() {
             if let Some(ro_key) = self.render_object {
                 if let Some(ro) = rr.get(ro_key) {
@@ -124,6 +128,10 @@ impl ScrollViewElement {
                 }
             }
         }
+    }
+
+    fn apply_scroll_offset(&mut self, new_offset: f32, ctx: &EventContext) -> bool {
+        self.refresh_sizes(ctx);
 
         if (new_offset - self.scroll_offset).abs() < f32::EPSILON {
             return false;
@@ -289,7 +297,8 @@ impl Element for ScrollViewElement {
             }
 
             InputEvent::Scroll { delta, .. } => {
-                let new_offset = self.scroll_offset - delta.y;
+                self.refresh_sizes(context);
+                let new_offset = (self.scroll_offset - delta.y).clamp(0.0, self.max_scroll());
                 self.apply_scroll_offset(new_offset, context);
                 return Some(Box::new(()));
             }
@@ -309,7 +318,9 @@ impl Element for ScrollViewElement {
                     _ => None,
                 };
                 if let Some(d) = delta {
-                    self.apply_scroll_offset(self.scroll_offset + d, context);
+                    self.refresh_sizes(context);
+                    let new_offset = (self.scroll_offset + d).clamp(0.0, self.max_scroll());
+                    self.apply_scroll_offset(new_offset, context);
                     return Some(Box::new(()));
                 }
             }
@@ -512,6 +523,8 @@ impl Element for ScrollViewElement {
             let now = Instant::now();
             match self.momentum.advance(now) {
                 Some(physics_offset) => {
+                    // Inlined from the removed clamp_offset method; Task 7
+                    // replaces this with spring handoff on edge hit.
                     let clamped = physics_offset.clamp(0.0, self.max_scroll());
                     let hit_edge = (clamped - physics_offset).abs() > f32::EPSILON;
                     if hit_edge {
@@ -758,6 +771,102 @@ mod tests {
             offset > -600.0,
             "should not exceed ~viewport past edge (rubber-band); got {}",
             offset
+        );
+    }
+
+    #[test]
+    fn test_wheel_clamps_at_bottom_edge() {
+        use crate::core::ScaleSource;
+        use crate::core::{Point, Size};
+        use crate::input::{InputEvent, Modifiers};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Scroll to the very bottom via jump_to.
+        let max_scroll = max_scroll_of(&pipeline);
+        ctrl.jump_to(max_scroll);
+        for _ in 0..5 {
+            pipeline.drain_dirty_to_build_owner();
+            pipeline.perform_rebuilds();
+        }
+        assert_eq!(ctrl.current_offset(), max_scroll);
+
+        // Wheel down 1000px past the bottom edge.
+        let event = InputEvent::Scroll {
+            position: Point::new(200.0, 300.0),
+            delta: Point::new(0.0, -1000.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            ctrl.current_offset(),
+            max_scroll,
+            "wheel past bottom should clamp at max_scroll, not overscroll; got {}",
+            ctrl.current_offset()
+        );
+    }
+
+    #[test]
+    fn test_wheel_clamps_at_top_edge() {
+        use crate::core::ScaleSource;
+        use crate::core::{Point, Size};
+        use crate::input::{InputEvent, Modifiers};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Start at top (offset 0). Wheel UP 1000px (toward top, past edge).
+        // delta.y positive = scroll up (toward top) per codebase convention.
+        let event = InputEvent::Scroll {
+            position: Point::new(200.0, 300.0),
+            delta: Point::new(0.0, 1000.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &event,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            ctrl.current_offset(),
+            0.0,
+            "wheel past top should clamp at 0, not overscroll; got {}",
+            ctrl.current_offset()
         );
     }
 
@@ -1040,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_drag_clamps_at_top_with_arena() {
+    fn test_drag_overscrolls_at_top_with_arena() {
         use crate::animation::AnimationTicker;
         use crate::core::Point;
         use crate::core::ScaleSource;
