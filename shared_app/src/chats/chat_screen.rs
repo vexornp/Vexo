@@ -5,12 +5,12 @@ use std::rc::Rc;
 
 use vexo::{
     children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
-    Layout, LifecycleContext, MultiChild, RenderContext, ScrollController, ScrollView, Style, Text,
-    TextEdit, TextEditingController, Theme, Widget, WithLayout,
+    Key, Layout, LifecycleContext, MultiChild, RenderContext, ScrollController, ScrollView, Style,
+    Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
 };
-use vexo_uikit::{Button, ButtonVariant, NavigationController};
+use vexo_uikit::{Button, ButtonVariant};
 
-use crate::data::{ChatsRoute, ConvId, Message, MessageAuthor};
+use crate::data::{ConvId, Message, MessageAuthor};
 use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
@@ -18,7 +18,6 @@ pub(crate) struct ChatScreen {
     pub(crate) messages: Vec<Message>,
     pub(crate) avatar_bytes: Rc<[u8]>,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
-    pub(crate) nav: NavigationController<ChatsRoute>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
     pub(crate) scroll_controller: ScrollController,
 }
@@ -30,7 +29,6 @@ impl Clone for ChatScreen {
             messages: self.messages.clone(),
             avatar_bytes: Rc::clone(&self.avatar_bytes),
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
-            nav: self.nav.clone(),
             on_send: Rc::clone(&self.on_send),
             scroll_controller: self.scroll_controller.clone(),
         }
@@ -73,6 +71,10 @@ impl ComponentState for ChatScreenState {
 
 impl Component for ChatScreen {
     type State = ChatScreenState;
+
+    fn key(&self) -> Option<WidgetKey> {
+        Some(WidgetKey::Local(Key::new(self.conv_id.0.to_string())))
+    }
 
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
@@ -236,7 +238,6 @@ mod tests {
             messages,
             avatar_bytes,
             me_avatar_bytes: state.profile.avatar_bytes.clone(),
-            nav: state.chats_nav.clone(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
         }
@@ -267,7 +268,6 @@ mod tests {
             messages: vec![], // zero messages — minimal content
             avatar_bytes,
             me_avatar_bytes: state.profile.avatar_bytes.clone(),
-            nav: state.chats_nav.clone(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
         };

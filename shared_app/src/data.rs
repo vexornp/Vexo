@@ -73,6 +73,7 @@ pub struct ImState {
     pub(crate) chats_nav: NavigationController<ChatsRoute>,
     pub(crate) contacts_nav: NavigationController<()>,
     pub(crate) me_nav: NavigationController<()>,
+    pub(crate) selected_conv: Signal<Option<ConvId>>,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -440,6 +441,7 @@ pub(crate) fn seed() -> ImState {
         chats_nav: NavigationController::new(),
         contacts_nav: NavigationController::new(),
         me_nav: NavigationController::new(),
+        selected_conv: Signal::new(None),
     }
 }
 

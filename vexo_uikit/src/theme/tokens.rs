@@ -100,8 +100,9 @@ pub mod navigation {
 
     // Theme-independent constants (sizing, padding, strings, font sizes).
 
-    pub const SIDEBAR_WIDTH: f32 = 240.0;
+    pub const SIDEBAR_WIDTH: f32 = 64.0;
     pub const COLLAPSED_WIDTH: f32 = 44.0;
+    pub const CONVERSATION_LIST_WIDTH: f32 = 300.0;
 
     pub const HEADER_PADDING: f32 = 12.0;
     pub const HEADER_FONT_SIZE: f32 = 16.0;

@@ -5,9 +5,10 @@ use vexo::{
     children, AlignItems, AlignSelf, Color, DecoratedBox, Layout, MultiChild, Positioned,
     ScrollView, Stack, Style, Text, Widget, WithLayout,
 };
+use vexo_uikit::theme::tokens::navigation::NavColors;
 use vexo_uikit::NavigationController;
 
-use crate::data::{ChatsRoute, Conversation};
+use crate::data::{ChatsRoute, ConvId, Conversation};
 use crate::widgets::avatar::avatar;
 
 pub(crate) fn build_conversation_list_screen(
@@ -75,6 +76,106 @@ fn build_conversation_row(
         Layout::default().padding(12.0),
     )
     .on_tap(on_press)
+}
+
+// ============================================================================
+// DESKTOP VARIANT
+// ============================================================================
+
+/// Desktop conversation list: uses theme tokens for colors and highlights the
+/// selected conversation row. `on_select` is called when a row is tapped.
+pub(crate) fn build_conversation_list_desktop(
+    conversations: Vec<Conversation>,
+    selected: Option<ConvId>,
+    nav_colors: &NavColors,
+    on_select: impl Fn(ConvId) + Clone + 'static,
+) -> Box<dyn Widget> {
+    let mut list = MultiChild::empty(Layout::column());
+    for conv in &conversations {
+        let is_selected = selected == Some(conv.id.clone());
+        let on_select = on_select.clone();
+        let id = conv.id.clone();
+        let row = build_conversation_row_desktop(conv, is_selected, nav_colors, move || {
+            on_select(id.clone());
+        });
+        list = list.push(row);
+    }
+    WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
+}
+
+fn build_conversation_row_desktop(
+    conv: &Conversation,
+    is_selected: bool,
+    nav_colors: &NavColors,
+    on_press: impl FnMut() + 'static,
+) -> Box<dyn Widget> {
+    let avatar = avatar(&conv.avatar_bytes, 40.0);
+
+    let name_color = if is_selected {
+        nav_colors.selected_text
+    } else {
+        nav_colors.row_text
+    };
+    let preview_color = if is_selected {
+        nav_colors.selected_text
+    } else {
+        nav_colors.placeholder_text
+    };
+
+    let name_text = Text::new(conv.name.as_str())
+        .with_font_size(16.0)
+        .with_color(name_color);
+    let preview_text = Text::new(conv.last_preview.as_str())
+        .with_font_size(13.0)
+        .with_color(preview_color);
+
+    let info_col = MultiChild::new(
+        children![name_text, preview_text],
+        Layout::column().gap(2.0).flex_grow(1.0),
+    );
+
+    let time_text = Text::new(format_timestamp(conv.last_timestamp).as_str())
+        .with_font_size(12.0)
+        .with_color(name_color);
+
+    let right_col = MultiChild::new(children![time_text], Layout::column());
+
+    let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
+        Some(
+            Positioned::new(unread_badge(conv.unread_count))
+                .top(-4.0)
+                .right(-4.0)
+                .boxed(),
+        )
+    } else {
+        None
+    };
+
+    let avatar_with_badge = Stack::new()
+        .with_layout(Layout::stack().width(40.0).height(40.0))
+        .push(avatar)
+        .push(badge)
+        .boxed();
+
+    let row_bg = if is_selected {
+        Some(nav_colors.selected_bg)
+    } else {
+        None
+    };
+
+    let inner = WithLayout::new(
+        MultiChild::new(
+            children![avatar_with_badge, info_col, right_col],
+            Layout::row().gap(12.0),
+        ),
+        Layout::default().padding(12.0),
+    );
+
+    if let Some(bg) = row_bg {
+        DecoratedBox::with_style(inner.on_tap(on_press), Style::default().background(bg)).boxed()
+    } else {
+        inner.on_tap(on_press).boxed()
+    }
 }
 
 fn unread_badge(count: u32) -> Box<dyn Widget> {

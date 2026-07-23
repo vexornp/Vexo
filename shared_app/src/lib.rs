@@ -8,6 +8,9 @@ mod data;
 mod me;
 mod widgets;
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod desktop_shell;
+
 #[cfg(test)]
 mod integration_tests;
 

@@ -2,6 +2,8 @@
 
 pub(crate) mod chat_screen;
 pub(crate) mod conversation_list;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub(crate) mod desktop;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -22,7 +24,6 @@ pub(crate) fn build_chats_tab(
 
     let convs = conversations.clone();
     let msgs = messages.clone();
-    let nav_for_dest = nav.clone();
     let me_avatar_for_dest = me_avatar.clone();
 
     NavigationStackView::new(nav, chats_root)
@@ -39,7 +40,6 @@ pub(crate) fn build_chats_tab(
                     .find(|c| c.id == *id)
                     .map(|c| Rc::clone(&c.avatar_bytes))
                     .unwrap_or_else(|| Rc::from([0u8; 0]));
-                let nav_back = nav_for_dest.clone();
                 let msgs_for_send = msgs.clone();
                 let id_for_send = id.clone();
                 chat_screen::ChatScreen {
@@ -47,7 +47,6 @@ pub(crate) fn build_chats_tab(
                     messages: m,
                     avatar_bytes: avatar,
                     me_avatar_bytes: me_avatar_for_dest.clone(),
-                    nav: nav_back,
                     on_send: Rc::new(move |text: &str| {
                         let mut map = msgs_for_send.get_cloned();
                         if let Some(vec) = map.get_mut(&id_for_send) {
