@@ -163,6 +163,7 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         // Build the tab bar row.
+        let nav = tokens::navigation::colors(&Theme::of(ctx));
         let mut bar = MultiChild::empty(Layout::default().width_percent(1.0).height(49.0));
         for tab in &self.tabs {
             let is_selected = *tab == self.controller.current();
@@ -192,7 +193,14 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // its intrinsic height). Wrapping in `WithLayout` with `flex_grow(0.0)`
         // + `flex_shrink(0.0)` pins the bar to its content height so it doesn't
         // steal space from the page area above.
-        let bar = SafeArea::new(bar.boxed()).top(false).boxed();
+        //
+        // The `DecoratedBox` paints `mobile_header_bg` edge-to-edge so the bar
+        // (and the home-indicator inset below it) has a themed background
+        // instead of showing the window's clear color (white in dark mode).
+        let bar = DecoratedBox::with_style(
+            SafeArea::new(bar.boxed()).top(false).boxed(),
+            Style::default().background(nav.mobile_header_bg),
+        );
         let bar = WithLayout::new(bar, Layout::default().flex_grow(0.0).flex_shrink(0.0));
 
         // SwiftUI-style hairline along the tab bar's top edge (the seam
@@ -200,7 +208,6 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // sub-pixel heights to 0, so a true 1-physical-px `1/scale` height
         // would vanish on Retina. Sits above the `SafeArea`-wrapped bar so it
         // spans the full width edge-to-edge. See `HAIRLINE_THICKNESS`.
-        let nav = tokens::navigation::colors(&Theme::of(ctx));
         let hairline = DecoratedBox::with_style(
             MultiChild::empty(
                 Layout::row()

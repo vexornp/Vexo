@@ -15,11 +15,13 @@ use std::sync::Arc;
 
 use vexo::{
     children, AlignItems, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack,
-    JustifyContent, Layout, LifecycleContext, MultiChild, RenderContext, Style, Theme, Widget,
-    WithLayout,
+    JustifyContent, Layout, LifecycleContext, MultiChild, RenderContext, Signal, Style, Theme,
+    Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{self, NavColors, HAIRLINE_THICKNESS, SIDEBAR_WIDTH};
 use vexo_uikit::TabController;
+
+use crate::widgets::theme_toggle::ThemeToggle;
 
 // ============================================================================
 // TYPE ALIASES FOR BUILDERS
@@ -42,6 +44,8 @@ pub(crate) struct DesktopShell<D: Hash + Eq + Clone + 'static> {
     pub tabs: Vec<D>,
     pub page_builder: PageBuilder<D>,
     pub sidebar_builder: SidebarBuilder<D>,
+    /// Drives the theme toggle pinned to the sidebar bottom.
+    pub is_dark: Signal<bool>,
 }
 
 impl<D: Hash + Eq + Clone + 'static> Clone for DesktopShell<D> {
@@ -51,6 +55,7 @@ impl<D: Hash + Eq + Clone + 'static> Clone for DesktopShell<D> {
             tabs: self.tabs.clone(),
             page_builder: Arc::clone(&self.page_builder),
             sidebar_builder: Arc::clone(&self.sidebar_builder),
+            is_dark: self.is_dark.clone(),
         }
     }
 }
@@ -143,6 +148,23 @@ where
             .boxed();
         items = items.push(item);
     }
+
+    // Flex-grow spacer pushes the toggle to the sidebar bottom.
+    items = items.push(MultiChild::empty(Layout::default().flex_grow(1.0)));
+
+    // Theme toggle pinned to the bottom of the sidebar.
+    items = items.push(
+        WithLayout::new(
+            ThemeToggle::new(shell.is_dark.clone()),
+            Layout::default()
+                .width_percent(1.0)
+                .height(48.0)
+                .flex_shrink(0.0)
+                .align(AlignItems::Center)
+                .justify(JustifyContent::Center),
+        )
+        .boxed(),
+    );
 
     // Sidebar content on sidebar_bg, filling the width minus the hairline.
     let sidebar_content = DecoratedBox::with_style(

@@ -40,12 +40,18 @@ impl Component for MobileChatsPage {
     type State = SimpleState<()>;
 
     fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let nav_colors = navigation::colors(&Theme::of(ctx));
+        let theme = Theme::of(ctx);
+        let nav_colors = navigation::colors(&theme);
         let nav_for_select = self.nav.clone();
-        let chats_root =
-            build_conversation_list(self.conversations.clone(), None, &nav_colors, move |id| {
+        let chats_root = build_conversation_list(
+            self.conversations.clone(),
+            None,
+            &nav_colors,
+            &theme,
+            move |id| {
                 nav_for_select.push(ChatsRoute::Chat(id));
-            });
+            },
+        );
 
         let convs = self.conversations.clone();
         let msgs = self.messages.clone();

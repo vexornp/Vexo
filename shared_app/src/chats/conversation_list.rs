@@ -6,8 +6,8 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, AlignSelf, Color, DecoratedBox, Layout, MultiChild, Positioned,
-    ScrollView, Stack, Style, Text, Widget, WithLayout,
+    children, AlignItems, AlignSelf, DecoratedBox, Layout, MultiChild, Positioned, ScrollView,
+    Stack, Style, Text, ThemeData, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::NavColors;
 
@@ -21,6 +21,7 @@ pub(crate) fn build_conversation_list(
     conversations: Vec<Conversation>,
     selected: Option<ConvId>,
     nav_colors: &NavColors,
+    theme: &ThemeData,
     on_select: impl Fn(ConvId) + Clone + 'static,
 ) -> Box<dyn Widget> {
     let mut list = MultiChild::empty(Layout::column());
@@ -28,18 +29,26 @@ pub(crate) fn build_conversation_list(
         let is_selected = selected == Some(conv.id.clone());
         let on_select = on_select.clone();
         let id = conv.id.clone();
-        let row = build_conversation_row(conv, is_selected, nav_colors, move || {
+        let row = build_conversation_row(conv, is_selected, nav_colors, theme, move || {
             on_select(id.clone());
         });
         list = list.push(row);
     }
-    WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()).boxed()
+    // Paint a themed background behind the list so the pane isn't left
+    // showing the window's white clear in dark mode. Rows are transparent
+    // when unselected, so this background is what the user sees between rows.
+    DecoratedBox::with_style(
+        WithLayout::new(ScrollView::new(list.boxed()), Layout::flex_fill()),
+        Style::default().background(nav_colors.detail_bg),
+    )
+    .boxed()
 }
 
 fn build_conversation_row(
     conv: &Conversation,
     is_selected: bool,
     nav_colors: &NavColors,
+    theme: &ThemeData,
     on_press: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
     let avatar = avatar(&conv.avatar_bytes, 40.0);
@@ -75,7 +84,7 @@ fn build_conversation_row(
 
     let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
         Some(
-            Positioned::new(unread_badge(conv.unread_count))
+            Positioned::new(unread_badge(conv.unread_count, theme))
                 .top(-4.0)
                 .right(-4.0)
                 .boxed(),
@@ -111,12 +120,12 @@ fn build_conversation_row(
     }
 }
 
-fn unread_badge(count: u32) -> Box<dyn Widget> {
+fn unread_badge(count: u32, theme: &ThemeData) -> Box<dyn Widget> {
     DecoratedBox::with_style(
         WithLayout::new(
             Text::new(count.to_string())
                 .with_font_size(11.0)
-                .with_color(Color::WHITE),
+                .with_color(theme.on_error),
             Layout::default()
                 .width(20.0)
                 .height(20.0)
@@ -125,9 +134,7 @@ fn unread_badge(count: u32) -> Box<dyn Widget> {
                 .align_self(AlignSelf::Start)
                 .flex_shrink(0.0),
         ),
-        Style::default()
-            .background(Color::rgb(1.0, 0.0, 0.0))
-            .corner_radius(10.0),
+        Style::default().background(theme.error).corner_radius(10.0),
     )
     .boxed()
 }
@@ -150,8 +157,15 @@ mod tests {
     #[test]
     fn test_conversation_list_renders_in_pipeline() {
         let state = crate::data::seed();
-        let nav_colors = navigation::colors(&ThemeData::light());
-        let view = build_conversation_list(state.conversations.clone(), None, &nav_colors, |_| {});
+        let theme = ThemeData::light();
+        let nav_colors = navigation::colors(&theme);
+        let view = build_conversation_list(
+            state.conversations.clone(),
+            None,
+            &nav_colors,
+            &theme,
+            |_| {},
+        );
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);
         assert!(

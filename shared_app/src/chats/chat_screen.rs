@@ -85,6 +85,7 @@ impl Component for ChatScreen {
                 msg,
                 &self.avatar_bytes,
                 &self.me_avatar_bytes,
+                &theme,
             ));
         }
 
@@ -132,15 +133,17 @@ fn build_message_bubble(
     msg: &Message,
     them_avatar_bytes: &Rc<[u8]>,
     me_avatar_bytes: &Rc<[u8]>,
+    theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
+    let is_me = msg.author == MessageAuthor::Me;
     let bubble = DecoratedBox::with_style(
         WithLayout::new(
             Text::new(msg.text.as_str())
                 .with_font_size(15.0)
-                .with_color(if msg.author == MessageAuthor::Me {
-                    Color::WHITE
+                .with_color(if is_me {
+                    theme.on_primary
                 } else {
-                    Color::BLACK
+                    theme.on_surface
                 }),
             Layout::default()
                 .flex_direction(FlexDirection::Row)
@@ -151,16 +154,12 @@ fn build_message_bubble(
         ),
         Style::default()
             .corner_radius(12.0)
-            .background(if msg.author == MessageAuthor::Me {
-                Color::rgb(0.0, 0.5, 1.0)
-            } else {
-                Color::WHITE
-            })
-            .border(Color::rgb(0.85, 0.85, 0.85), 1.0),
+            .background(if is_me { theme.primary } else { theme.surface })
+            .border(theme.outline, 1.0),
     )
     .boxed();
 
-    if msg.author == MessageAuthor::Me {
+    if is_me {
         let me_avatar = avatar(me_avatar_bytes, 32.0);
         MultiChild::new(
             children![

@@ -74,6 +74,9 @@ pub struct ImState {
     pub(crate) contacts_nav: NavigationController<()>,
     pub(crate) me_nav: NavigationController<()>,
     pub(crate) selected_conv: Signal<Option<ConvId>>,
+    /// Dark/light mode. Toggled by `ThemeToggle`. Root `view()` reads this to
+    /// pick `ThemeData::dark()`/`light()` and wraps the tree in `Theme::new`.
+    pub(crate) is_dark: Signal<bool>,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -442,6 +445,7 @@ pub(crate) fn seed() -> ImState {
         contacts_nav: NavigationController::new(),
         me_nav: NavigationController::new(),
         selected_conv: Signal::new(None),
+        is_dark: Signal::new(false),
     }
 }
 

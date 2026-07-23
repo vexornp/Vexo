@@ -42,7 +42,8 @@ impl Component for DesktopChatsPage {
     type State = SimpleState<()>;
 
     fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let nav_colors = navigation::colors(&Theme::of(ctx));
+        let theme = Theme::of(ctx);
+        let nav_colors = navigation::colors(&theme);
         let selected = self.selected_conv.get_cloned();
         let messages_map = self.messages.get_cloned();
 
@@ -52,6 +53,7 @@ impl Component for DesktopChatsPage {
             self.conversations.clone(),
             selected.clone(),
             &nav_colors,
+            &theme,
             move |id| {
                 selected_conv_for_select.set_from(&Some(id));
             },

@@ -10,7 +10,41 @@ use crate::data::ImTab;
 use std::sync::Arc;
 use vexo::animation::AnimationTicker;
 use vexo::layout::TaffyLayoutEngine;
-use vexo::{Application, RenderObjectRegistry, ThreeTreePipeline};
+use vexo::{Application, RenderObjectKey, RenderObjectRegistry, ThreeTreePipeline};
+
+/// Descend from `root` through single-child pass-through render objects
+/// (root proxy, `Theme`/`InheritedWidget` proxies, `Component` proxies) until
+/// reaching the first node with ≥2 children — the `DesktopShell` row
+/// (`[sidebar, page_area]`).
+///
+/// Hardcoded child indices broke whenever a new pass-through wrapper was
+/// added at the root (e.g. wrapping the tree in `Theme::new`). Walking by
+/// child-count makes the tests robust to such wrappers.
+fn shell_row_of(ro_reg: &RenderObjectRegistry, root: RenderObjectKey) -> RenderObjectKey {
+    let mut cur = root;
+    loop {
+        let node = ro_reg.get(cur).expect("node exists");
+        let children = node.children();
+        if children.len() >= 2 {
+            return cur;
+        }
+        cur = children
+            .first()
+            .copied()
+            .expect("pass-through node has a child");
+    }
+}
+
+fn nth_child(
+    ro_reg: &RenderObjectRegistry,
+    parent: RenderObjectKey,
+    index: usize,
+) -> RenderObjectKey {
+    ro_reg
+        .get(parent)
+        .and_then(|ro| ro.children().get(index).copied())
+        .unwrap_or_else(|| panic!("child {index} of node exists"))
+}
 
 #[test]
 fn test_full_app_view_renders_desktop_shell() {
@@ -39,7 +73,7 @@ fn test_tab_switch_to_contacts_renders_contacts_page() {
 
 #[test]
 fn test_desktop_sidebar_is_narrow_and_fits_window() {
-    // The sidebar (column 1) should be 240px wide and fit within the window.
+    // The sidebar (column 1) should be 64px wide and fit within the window.
     let mut state = ImState::default();
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -55,17 +89,9 @@ fn test_desktop_sidebar_is_narrow_and_fits_window() {
     let ro_reg = pipeline.render_objects();
     let root = ro_reg.root().expect("root");
 
-    fn find_child(
-        ro_reg: &RenderObjectRegistry,
-        id: vexo::RenderObjectKey,
-        index: usize,
-    ) -> Option<vexo::RenderObjectKey> {
-        ro_reg.get(id)?.children().get(index).copied()
-    }
-
-    // root → DesktopShell row → first child (sidebar)
-    let shell_row = find_child(ro_reg, root, 0).expect("desktop shell row");
-    let sidebar = find_child(ro_reg, shell_row, 0).expect("sidebar");
+    // root → (Theme/Component proxies) → DesktopShell row → sidebar(0)
+    let shell_row = shell_row_of(ro_reg, root);
+    let sidebar = nth_child(ro_reg, shell_row, 0);
     let sidebar_bounds = ro_reg
         .get(sidebar)
         .and_then(|ro| ro.computed_bounds())
@@ -102,18 +128,10 @@ fn test_desktop_chats_tab_shows_three_column_layout() {
     let ro_reg = pipeline.render_objects();
     let root = ro_reg.root().expect("root");
 
-    fn find_child(
-        ro_reg: &RenderObjectRegistry,
-        id: vexo::RenderObjectKey,
-        index: usize,
-    ) -> Option<vexo::RenderObjectKey> {
-        ro_reg.get(id)?.children().get(index).copied()
-    }
-
-    // root → DesktopShell row → [sidebar(0), page_area(1)]
-    let shell_row = find_child(ro_reg, root, 0).expect("shell row");
-    let sidebar = find_child(ro_reg, shell_row, 0).expect("sidebar");
-    let page_area = find_child(ro_reg, shell_row, 1).expect("page area");
+    // root → (Theme/Component proxies) → DesktopShell row → [sidebar(0), page_area(1)]
+    let shell_row = shell_row_of(ro_reg, root);
+    let sidebar = nth_child(ro_reg, shell_row, 0);
+    let page_area = nth_child(ro_reg, shell_row, 1);
 
     let sidebar_bounds = ro_reg
         .get(sidebar)

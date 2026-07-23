@@ -1,6 +1,6 @@
 //! Application trait impl, Default impl, and UniFFI MobileApp export.
 
-use vexo::{children, AlignItems, Application, Color, Layout, MultiChild, Text, Widget};
+use vexo::{children, AlignItems, Application, Layout, MultiChild, Text, Theme, ThemeData, Widget};
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{Platform, TabBarView};
 
@@ -44,7 +44,19 @@ impl Application for ImState {
         let me_nav = state.me_nav.clone();
         let chats_nav = state.chats_nav.clone();
 
-        match Platform::current() {
+        let is_dark = state.is_dark.get();
+        let theme = if is_dark {
+            ThemeData::dark()
+        } else {
+            ThemeData::light()
+        };
+        let is_dark_signal = state.is_dark.clone();
+        // Copy out the colors the tab/sidebar builders need, so `theme` can
+        // be moved into `Theme::new` below without borrowing conflicts.
+        let tab_selected_color = theme.primary;
+        let tab_unselected_color = theme.on_surface_variant;
+
+        let inner: Box<dyn Widget> = match Platform::current() {
             Platform::Mobile => {
                 let tab_view = TabBarView::new(
                     tab_controller,
@@ -59,18 +71,18 @@ impl Application for ImState {
                         ImTab::Contacts => {
                             build_contacts_tab(contacts.clone(), contacts_nav.clone())
                         }
-                        ImTab::Me => build_me_tab(&profile, me_nav.clone()),
+                        ImTab::Me => build_me_tab(&profile, me_nav.clone(), is_dark_signal.clone()),
                     },
-                    |tab, is_selected| {
+                    move |tab, is_selected| {
                         let (icon, label) = match tab {
                             ImTab::Chats => (Icons::Comment, "Chats"),
                             ImTab::Contacts => (Icons::User, "Contacts"),
                             ImTab::Me => (Icons::Gear, "Me"),
                         };
                         let color = if is_selected {
-                            Color::rgb(0.0, 0.5, 1.0)
+                            tab_selected_color
                         } else {
-                            Color::rgb(0.5, 0.5, 0.5)
+                            tab_unselected_color
                         };
                         MultiChild::new(
                             children![
@@ -96,6 +108,7 @@ impl Application for ImState {
                 let contacts_nav_for_tab = contacts_nav.clone();
                 let profile_for_tab = profile.clone();
                 let me_nav_for_tab = me_nav.clone();
+                let is_dark_for_shell = is_dark_signal.clone();
 
                 let shell = DesktopShell {
                     controller: tab_controller,
@@ -111,7 +124,11 @@ impl Application for ImState {
                             contacts_for_tab.clone(),
                             contacts_nav_for_tab.clone(),
                         ),
-                        ImTab::Me => build_me_tab(&profile_for_tab, me_nav_for_tab.clone()),
+                        ImTab::Me => build_me_tab(
+                            &profile_for_tab,
+                            me_nav_for_tab.clone(),
+                            is_dark_for_shell.clone(),
+                        ),
                     }),
                     sidebar_builder: std::sync::Arc::new(move |tab, is_selected, _nav_colors| {
                         let icon = match tab {
@@ -120,12 +137,13 @@ impl Application for ImState {
                             ImTab::Me => Icons::Gear,
                         };
                         let color = if is_selected {
-                            Color::rgb(0.0, 0.5, 1.0)
+                            tab_selected_color
                         } else {
-                            Color::rgb(0.5, 0.5, 0.5)
+                            tab_unselected_color
                         };
                         Icon::new(icon).with_size(22.0).with_color(color).boxed()
                     }),
+                    is_dark: is_dark_signal.clone(),
                 };
 
                 shell.boxed()
@@ -134,7 +152,9 @@ impl Application for ImState {
             // On iOS/Android, the Desktop branch is cfg'd out — unreachable.
             #[cfg(any(target_os = "ios", target_os = "android"))]
             Platform::Desktop => unreachable!("Desktop platform on mobile target"),
-        }
+        };
+
+        Theme::new(theme, inner).boxed()
     }
 }
 
