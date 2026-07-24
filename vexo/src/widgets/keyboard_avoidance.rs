@@ -48,6 +48,10 @@ pub struct KeyboardAvoidanceState {
     ticker: Option<Arc<crate::animation::AnimationTicker>>,
     /// Dirty callback; wired on mount so fresh controllers get it.
     dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Whether `render()` has run at least once. The first render after
+    /// mount snaps to the current target (no tween); subsequent renders
+    /// detect target changes and start tweens.
+    mounted: bool,
 }
 
 impl Default for KeyboardAvoidanceState {
@@ -65,6 +69,7 @@ impl Default for KeyboardAvoidanceState {
             curve: Box::new(EaseInOutCurve),
             ticker: None,
             dirty_callback: None,
+            mounted: false,
         }
     }
 }
@@ -132,16 +137,11 @@ impl ComponentState for KeyboardAvoidanceState {
     fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         self.ticker = Some(ctx.animation_ticker().clone());
         self.dirty_callback = Some(ctx.dirty_callback());
-        // On mount, snap to the current target (no animation) — the keyboard
-        // is already in whatever state it's in; animating would be wrong.
-        if let Some(widget) = ctx.widget().downcast_ref::<KeyboardAvoidance>() {
-            // Read the source via the widget's stored clone.
-            let snap = widget.source.get();
-            self.animated_inset = snap.target_height;
-            self.from_inset = snap.target_height;
-            self.to_inset = snap.target_height;
-            self.last_seen = snap;
-        }
+        // The initial snap happens on the first render() call, which reads
+        // the source via RenderContext::keyboard_inset(). On mount the
+        // animated_inset stays at its default (0.0); if the keyboard is
+        // already up, the first render will snap to the current target via
+        // the `mounted` flag (see render()).
     }
 
     fn on_tick(&mut self, now: Instant) {
@@ -169,31 +169,22 @@ impl ComponentState for KeyboardAvoidanceState {
 /// avoidance, compose with [`SafeArea`](crate::widgets::SafeArea).
 pub struct KeyboardAvoidance {
     child: Box<dyn Widget>,
-    source: crate::core::KeyboardInsetSource,
     key: Option<WidgetKey>,
 }
 
 impl KeyboardAvoidance {
     /// Create a new `KeyboardAvoidance` wrapping `child`.
     ///
-    /// The `source` is read live each render. In production, obtain it from
-    /// the framework (the chat screen uses the default app-wide source via
-    /// `RenderContext::keyboard_inset()`). For tests, construct a
-    /// `KeyboardInsetSource::default()` and call `set_target(...)` directly.
+    /// The keyboard-inset source is read live each render via
+    /// [`RenderContext::keyboard_inset()`], which reflects the app-wide
+    /// source plumbed through `BuildOwner` / `WindowState` (all-zero on
+    /// desktop / Android). For tests, drive the source through the
+    /// pipeline's `set_keyboard_inset_source(...)`.
     pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             child: Box::new(child),
-            source: crate::core::KeyboardInsetSource::default(),
             key: None,
         }
-    }
-
-    /// Provide a specific `KeyboardInsetSource` (e.g. the app-wide one).
-    /// When the chat screen constructs this widget, it should pass the
-    /// source obtained from the framework's `WindowState`.
-    pub fn with_source(mut self, source: crate::core::KeyboardInsetSource) -> Self {
-        self.source = source;
-        self
     }
 
     /// Set the widget key.
@@ -207,7 +198,6 @@ impl Clone for KeyboardAvoidance {
     fn clone(&self) -> Self {
         Self {
             child: self.child.clone_boxed(),
-            source: self.source.clone(),
             key: self.key.clone(),
         }
     }
@@ -221,11 +211,22 @@ impl Component for KeyboardAvoidance {
     }
 
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        // 1. Read live source snapshot.
-        let snap = self.source.get();
+        // 1. Read live source snapshot from the app-wide source plumbed
+        //    through BuildOwner / RenderContext (matches how SafeArea reads
+        //    safe_area()).
+        let snap = ctx.keyboard_inset();
 
-        // 2. Detect target change. If changed, start/retarget the tween.
-        if snap != state.last_seen {
+        // 2. First render after mount: snap to the current target (no
+        //    tween). The keyboard is already in whatever state it's in;
+        //    animating from 0 would be wrong. Subsequent target changes
+        //    start a tween synchronized to the keyboard's own duration/curve.
+        if !state.mounted {
+            state.animated_inset = snap.target_height;
+            state.from_inset = snap.target_height;
+            state.to_inset = snap.target_height;
+            state.last_seen = snap;
+            state.mounted = true;
+        } else if snap != state.last_seen {
             state.start_tween_to(snap.target_height, snap);
         }
 
