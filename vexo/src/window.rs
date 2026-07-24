@@ -8,7 +8,10 @@ use winit::{
 };
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Logical, Physical, Point, ScaleSource, SafeAreaSource, Size};
+use crate::core::{
+    Absolute, KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource, Logical, Physical, Point,
+    ScaleSource, SafeAreaSource, Size,
+};
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
 use crate::platform::{self, Clipboard};
@@ -51,6 +54,20 @@ pub struct WindowState<A: Application + 'static> {
     /// via `RenderContext::safe_area()`. On desktop the underlying insets are
     /// always zero, so this is a no-op.
     safe_area_source: SafeAreaSource,
+
+    /// Shared keyboard-inset source (logical pixels). Updated by the iOS
+    /// keyboard shim on each `keyboardWillShow/Hide` notification; read by
+    /// `KeyboardAvoidance` widgets during render via
+    /// `RenderContext::keyboard_inset()`. On desktop this stays at 0 (no
+    /// shim is installed).
+    keyboard_inset_source: KeyboardInsetSource,
+
+    /// Previous keyboard-inset snapshot, used by the per-frame poll to
+    /// detect changes. Updated each frame in `render_retain()`.
+    keyboard_inset_snapshot_prev: KeyboardInsetSnapshot,
+
+    #[cfg(target_os = "ios")]
+    keyboard_observer: Option<crate::platform::keyboard_ios::KeyboardObserver>,
 
     _phantom: std::marker::PhantomData<A>,
 
@@ -113,10 +130,22 @@ impl<A: Application + 'static> WindowState<A> {
 
         let safe_area_source = SafeAreaSource::default();
 
+        let keyboard_inset_source = KeyboardInsetSource::default();
+
         let mut three_tree_pipeline = ThreeTreePipeline::new(animation_ticker.clone());
         // Share the same atomics so per-frame `safe_area_source.set()` calls
         // below are visible to RenderContext::safe_area() during render.
         three_tree_pipeline.set_safe_area_source(safe_area_source.clone());
+        three_tree_pipeline.set_keyboard_inset_source(keyboard_inset_source.clone());
+
+        #[cfg(target_os = "ios")]
+        let keyboard_observer = {
+            let scale = scale_source.get().factor_f64();
+            Some(crate::platform::keyboard_ios::KeyboardObserver::install(
+                keyboard_inset_source.clone(),
+                scale,
+            ))
+        };
 
         Ok(Self {
             backend,
@@ -126,6 +155,14 @@ impl<A: Application + 'static> WindowState<A> {
             font_system,
             scale_source,
             safe_area_source,
+            keyboard_inset_source,
+            keyboard_inset_snapshot_prev: KeyboardInsetSnapshot {
+                target_height: 0.0,
+                duration_secs: 0.0,
+                curve: KeyboardCurve::EaseInOut,
+            },
+            #[cfg(target_os = "ios")]
+            keyboard_observer,
             _phantom: std::marker::PhantomData,
             text_pipeline: TextPipeline::new(),
             three_tree_pipeline,
@@ -425,6 +462,15 @@ impl<A: Application + 'static> WindowState<A> {
         self.safe_area_source.clone()
     }
 
+    /// Get a clone of the keyboard-inset source.
+    ///
+    /// Cheap (`KeyboardInsetSource` is `Arc`-based); useful for subsystems
+    /// that want to observe insets outside the widget tree, or for tests
+    /// that need to drive the source directly.
+    pub fn keyboard_inset_source(&self) -> KeyboardInsetSource {
+        self.keyboard_inset_source.clone()
+    }
+
     /// Check if cursor blink has toggled. Returns true if visibility changed
     /// (caller should request a frame).
     pub fn check_cursor_blink(&mut self) -> bool {
@@ -509,6 +555,21 @@ impl<A: Application + 'static> WindowState<A> {
                 );
             }
             if self.safe_area_source.get() != prev {
+                self.three_tree_pipeline.mark_all_needs_layout();
+            }
+        }
+
+        // 4.5. Poll the keyboard-inset source for changes. The iOS shim
+        //      writes to it asynchronously from UIKit notifications; we
+        //      detect the change here and mark the tree dirty so
+        //      KeyboardAvoidance widgets re-render and start/retarget their
+        //      tweens. Mirrors the safe-area poll above. On desktop the
+        //      source never changes (no shim), so this is a no-op.
+        {
+            let prev = self.keyboard_inset_snapshot_prev;
+            let curr = self.keyboard_inset_source.get();
+            if curr != prev {
+                self.keyboard_inset_snapshot_prev = curr;
                 self.three_tree_pipeline.mark_all_needs_layout();
             }
         }
