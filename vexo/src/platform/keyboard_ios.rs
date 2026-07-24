@@ -24,6 +24,8 @@
 
 use core::ffi::c_void;
 use core::ptr::NonNull;
+use std::sync::Arc;
+use std::time::Instant;
 
 use objc2::rc::Retained;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
@@ -85,6 +87,21 @@ impl KeyboardObserver {
     /// height so an iPad stage-manager / slide-over keyboard frame (which can
     /// exceed the window's own height) doesn't push the avoidance padding
     /// beyond the window. Pass `f32::MAX` to disable the cap.
+    ///
+    /// `request_frame` is invoked on every keyboard notification, right after
+    /// the new target is written to `source`. This is essential: UIKit posts
+    /// `keyboardWillShow/Hide` as NotificationCenter notifications that fire
+    /// **outside** winit's event loop. Without an explicit frame request here,
+    /// `WindowState` wouldn't poll the source (and thus wouldn't start the
+    /// avoidance tween) until some unrelated driver wakes the render loop —
+    /// e.g. the next cursor-blink toggle (~500ms later), long after the OS
+    /// keyboard's ~250ms animation has finished. That makes the avoidance
+    /// tween's first sample see `elapsed >= duration` and snap to the target
+    /// instead of animating. Requesting a redraw here arms the CADisplayLink
+    /// so `render_retain()` runs within one vsync of the notification, and the
+    /// synced tween (seeded to the notification instant) tracks the keyboard
+    /// frame-for-frame.
+    ///
     /// Returns a handle whose `Drop` removes the observers.
     ///
     /// # v1 limitation
@@ -104,6 +121,7 @@ impl KeyboardObserver {
         source: KeyboardInsetSource,
         scale_factor: f64,
         window_logical_height: f32,
+        request_frame: Arc<dyn Fn() + Send + Sync>,
     ) -> Self {
         let center = NSNotificationCenter::defaultCenter();
 
@@ -111,6 +129,7 @@ impl KeyboardObserver {
 
         let show_name = NSString::from_str(KEYBOARD_WILL_SHOW);
         let source_for_show = source.clone();
+        let request_frame_for_show = request_frame.clone();
         let show_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             // SAFETY: UIKit hands us a valid `NSNotification *` for the
             // lifetime of the callback. We only read it on the main thread.
@@ -122,6 +141,9 @@ impl KeyboardObserver {
                 window_logical_height,
                 /*show=*/ true,
             );
+            // Wake the render loop NOW so the avoidance tween starts within
+            // one vsync of the keyboard beginning to slide (see fn doc).
+            request_frame_for_show();
         });
         // SAFETY: `addObserverForName:object:queue:usingBlock:` is marked
         // `#[unsafe(method)]` for thread-safety reasons; we only invoke it
@@ -140,6 +162,7 @@ impl KeyboardObserver {
 
         let hide_name = NSString::from_str(KEYBOARD_WILL_HIDE);
         let source_for_hide = source.clone();
+        let request_frame_for_hide = request_frame.clone();
         let hide_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             // SAFETY: same as above.
             let notif = unsafe { notif.as_ref() };
@@ -150,6 +173,8 @@ impl KeyboardObserver {
                 window_logical_height,
                 /*show=*/ false,
             );
+            // Wake the render loop for the dismiss tween too (same reason).
+            request_frame_for_hide();
         });
         // SAFETY: same as the show registration above.
         let hide_token = unsafe {
@@ -191,6 +216,15 @@ impl Drop for KeyboardObserver {
 ///   stage-manager / slide-over frames, which can exceed the window's own
 ///   height, from over-padding the avoidance widget).
 /// - `show == false`: target height = 0 (keyboard dismissing).
+///
+/// The instant the notification fires is captured here and forwarded to the
+/// source as `animation_start`. `KeyboardAvoidance` seeds its avoidance tween's
+/// `start_time` with this instant so the input view lifts in lockstep with the
+/// OS keyboard slide, instead of lagging it by a frame (the keyboard animation
+/// begins the moment this notification is posted; the avoidance tween only
+/// starts on the next render frame, so defaulting its `start_time` to
+/// `Instant::now()` would leave the input view ~one frame behind for the entire
+/// animation).
 fn handle_keyboard_notification(
     notif: &NSNotification,
     source: &KeyboardInsetSource,
@@ -198,6 +232,10 @@ fn handle_keyboard_notification(
     window_logical_height: f32,
     show: bool,
 ) {
+    // Capture the fire instant ASAP — before any userInfo parsing — so it's as
+    // close as possible to the OS keyboard animation's actual begin time.
+    let animation_start = Instant::now();
+
     let user_info: Option<Retained<NSDictionary>> = notif.userInfo();
     let user_info = match user_info {
         Some(ui) => ui,
@@ -273,5 +311,5 @@ fn handle_keyboard_notification(
         .unwrap_or(0); // EaseInOut is UIKit's default
     let curve = KeyboardCurve::from_uikit_raw(curve_raw);
 
-    source.set_target(target_height, duration_secs, curve);
+    source.set_target(target_height, duration_secs, curve, Some(animation_start));
 }

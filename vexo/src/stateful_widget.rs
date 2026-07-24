@@ -350,12 +350,15 @@ impl<'a> RenderContext<'a> {
         self.build_owner.safe_area_source().get()
     }
 
-    /// Current keyboard-inset snapshot (target height + duration + curve).
+    /// Current keyboard-inset snapshot (target height + duration + curve +
+    /// animation start instant).
     ///
     /// Reflects the live values written by the iOS keyboard shim
     /// (`keyboardWillShow/Hide` notifications); all-zero on desktop / when
     /// the keyboard is down. `KeyboardAvoidance` calls this during
-    /// [`Component::render()`] to start/retarget its inset tween.
+    /// [`Component::render()`] to start/retarget its inset tween, seeding the
+    /// tween's `start_time` with the snapshot's `animation_start` so the input
+    /// view lifts in lockstep with the OS keyboard slide.
     pub fn keyboard_inset(&self) -> crate::core::KeyboardInsetSnapshot {
         self.build_owner.keyboard_inset_source().get()
     }

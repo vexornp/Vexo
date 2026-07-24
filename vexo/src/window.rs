@@ -147,10 +147,22 @@ impl<A: Application + 'static> WindowState<A> {
             // `handle_keyboard_notification` is still correct; a future
             // improvement would thread the live height from `SurfaceResized`.
             let window_logical_height = f32::MAX;
+            // Frame-request callback handed to the keyboard shim. UIKit posts
+            // keyboard notifications outside winit's event loop, so the shim
+            // must wake the render loop itself — otherwise the avoidance tween
+            // wouldn't start until the next cursor-blink tick (~500ms), long
+            // after the OS keyboard animation finished (causing a snap). See
+            // KeyboardObserver::install doc. `Arc<dyn Window>` is `Send+Sync`
+            // (winit's `Window` trait requires it), so the closure is too.
+            let window_for_keyboard = window.clone();
+            let request_frame: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                window_for_keyboard.request_redraw();
+            });
             Some(crate::platform::keyboard_ios::KeyboardObserver::install(
                 keyboard_inset_source.clone(),
                 scale,
                 window_logical_height,
+                request_frame,
             ))
         };
 

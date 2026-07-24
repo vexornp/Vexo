@@ -34,10 +34,29 @@ impl AnimationController {
     }
 
     pub fn forward(&mut self) {
+        self.forward_with_start(Instant::now());
+    }
+
+    /// Begin a forward tween (0 → 1) whose `start_time` is `start` instead of
+    /// `Instant::now()`.
+    ///
+    /// Used to synchronize a Vexo tween with an animation that already began —
+    /// e.g. the iOS software keyboard, whose slide starts the moment
+    /// `keyboardWillShow` fires, a frame before the avoidance widget's first
+    /// render. Stamping `start_time` with the notification instant means the
+    /// tween's first sampled value already reflects the time elapsed since the
+    /// keyboard began, so the two move in lockstep instead of the avoidance
+    /// lagging the keyboard for the whole duration.
+    ///
+    /// `start` may be in the past (the usual case for sync) or now; it must
+    /// not be in the future. A future-dated `start` is handled gracefully —
+    /// `advance` will compute zero elapsed until time catches up — but
+    /// defeats the purpose of this method.
+    pub fn forward_with_start(&mut self, start: Instant) {
         self.unregister_from_ticker();
         self.value = 0.0;
         self.direction = AnimationDirection::Forward;
-        self.start_time = Some(Instant::now());
+        self.start_time = Some(start);
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
             self.tick_handle = Some(ticker.register(cb.clone()));
         }

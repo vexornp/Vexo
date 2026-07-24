@@ -35,7 +35,8 @@
 
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 // ============================================================================
 // MARKER TYPES: Logical vs Physical
@@ -755,6 +756,17 @@ pub struct KeyboardInsetSnapshot {
     pub duration_secs: f32,
     /// Keyboard animation curve.
     pub curve: KeyboardCurve,
+    /// The instant the OS keyboard animation began, captured in the iOS shim
+    /// at the moment `keyboardWillShow/Hide` fired.
+    ///
+    /// `KeyboardAvoidance` uses this to seed its avoidance tween's
+    /// `start_time` so the input view tracks the keyboard in lockstep instead
+    /// of lagging by a frame (which otherwise makes the keyboard appear to
+    /// cover the input before it lifts). `None` for the snap path
+    /// (`duration_secs == 0`), on non-iOS platforms (no shim ever writes), and
+    /// in tests that don't care about timing — the widget falls back to
+    /// `Instant::now()` in that case.
+    pub animation_start: Option<Instant>,
 }
 
 /// Shared handle to the keyboard's target inset (logical pixels),
@@ -780,6 +792,12 @@ struct KeyboardInsetInner {
     target_height: AtomicU32,
     duration_secs: AtomicU32,
     curve: AtomicU8,
+    /// Wall-clock instant the OS keyboard animation began. Stored in a
+    /// `Mutex` (not an atomic) because `Instant` has no atomic representation;
+    /// updates are rare (one per keyboard notification) and, on iOS, always
+    /// main-thread. Reads are also main-thread (the render loop), so contention
+    /// is nonexistent.
+    animation_start: Mutex<Option<Instant>>,
 }
 
 impl KeyboardInsetSource {
@@ -790,6 +808,7 @@ impl KeyboardInsetSource {
                 target_height: AtomicU32::new(0.0_f32.to_bits()),
                 duration_secs: AtomicU32::new(0.0_f32.to_bits()),
                 curve: AtomicU8::new(KeyboardCurve::EaseInOut as u8),
+                animation_start: Mutex::new(None),
             }),
         }
     }
@@ -800,13 +819,28 @@ impl KeyboardInsetSource {
             target_height: f32::from_bits(self.inner.target_height.load(Ordering::Relaxed)),
             duration_secs: f32::from_bits(self.inner.duration_secs.load(Ordering::Relaxed)),
             curve: KeyboardCurve::from_uikit_raw(self.inner.curve.load(Ordering::Relaxed)),
+            animation_start: *self.inner.animation_start.lock().unwrap(),
         }
     }
 
-    /// Update the target inset, animation duration, and curve.
+    /// Update the target inset, animation duration, curve, and the OS
+    /// animation's start instant.
+    ///
     /// Called only by the iOS keyboard shim on each notification.
-    /// Visible to all clone holders immediately.
-    pub fn set_target(&self, height: f32, duration_secs: f32, curve: KeyboardCurve) {
+    /// `animation_start` should be `Instant::now()` captured at the moment the
+    /// notification fired, so the [`KeyboardAvoidance`] widget can align its
+    /// tween's start time with the keyboard's own animation. Pass `None` for
+    /// the snap path (`duration_secs == 0`) or when there's no associated
+    /// animation (tests, non-iOS). Visible to all clone holders immediately.
+    ///
+    /// [`KeyboardAvoidance`]: crate::widgets::KeyboardAvoidance
+    pub fn set_target(
+        &self,
+        height: f32,
+        duration_secs: f32,
+        curve: KeyboardCurve,
+        animation_start: Option<Instant>,
+    ) {
         self.inner
             .target_height
             .store(height.to_bits(), Ordering::Relaxed);
@@ -814,6 +848,7 @@ impl KeyboardInsetSource {
             .duration_secs
             .store(duration_secs.to_bits(), Ordering::Relaxed);
         self.inner.curve.store(curve as u8, Ordering::Relaxed);
+        *self.inner.animation_start.lock().unwrap() = animation_start;
     }
 
     /// Convenience: read just the current target height.
@@ -1257,6 +1292,7 @@ mod safe_area_source_tests {
 #[cfg(test)]
 mod keyboard_inset_source_tests {
     use super::{KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource};
+    use std::time::Instant;
 
     #[test]
     fn default_is_all_zero() {
@@ -1265,35 +1301,40 @@ mod keyboard_inset_source_tests {
         assert_eq!(snap.target_height, 0.0);
         assert_eq!(snap.duration_secs, 0.0);
         assert_eq!(snap.curve, KeyboardCurve::EaseInOut);
+        assert_eq!(snap.animation_start, None);
     }
 
     #[test]
     fn set_target_then_get_returns_written_values() {
         let s = KeyboardInsetSource::default();
-        s.set_target(300.0, 0.25, KeyboardCurve::EaseIn);
+        let start = Instant::now();
+        s.set_target(300.0, 0.25, KeyboardCurve::EaseIn, Some(start));
         let snap = s.get();
         assert_eq!(snap.target_height, 300.0);
         assert_eq!(snap.duration_secs, 0.25);
         assert_eq!(snap.curve, KeyboardCurve::EaseIn);
+        assert_eq!(snap.animation_start, Some(start));
     }
 
     #[test]
     fn clones_share_storage() {
         let s = KeyboardInsetSource::default();
         let clone = s.clone();
-        s.set_target(250.0, 0.3, KeyboardCurve::Linear);
+        let start = Instant::now();
+        s.set_target(250.0, 0.3, KeyboardCurve::Linear, Some(start));
         let snap = clone.get();
         assert_eq!(snap.target_height, 250.0);
         assert_eq!(snap.duration_secs, 0.3);
         assert_eq!(snap.curve, KeyboardCurve::Linear);
+        assert_eq!(snap.animation_start, Some(start));
     }
 
     #[test]
     fn current_target_height_returns_latest() {
         let s = KeyboardInsetSource::default();
-        s.set_target(336.0, 0.25, KeyboardCurve::EaseInOut);
+        s.set_target(336.0, 0.25, KeyboardCurve::EaseInOut, None);
         assert_eq!(s.current_target_height(), 336.0);
-        s.set_target(0.0, 0.25, KeyboardCurve::EaseInOut);
+        s.set_target(0.0, 0.25, KeyboardCurve::EaseInOut, None);
         assert_eq!(s.current_target_height(), 0.0);
     }
 

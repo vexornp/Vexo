@@ -65,6 +65,7 @@ impl Default for KeyboardAvoidanceState {
                 target_height: 0.0,
                 duration_secs: 0.0,
                 curve: KeyboardCurve::EaseInOut,
+                animation_start: None,
             },
             curve: Box::new(EaseInOutCurve),
             ticker: None,
@@ -85,6 +86,18 @@ impl KeyboardAvoidanceState {
     /// - If `duration_secs == 0.0`, snap immediately (set `animated_inset = target`).
     /// - Otherwise, start a fresh `AnimationController` from 0..1; `from_inset`
     ///   is the current `animated_inset` so mid-tween retargets don't jump.
+    ///
+    /// When `target.animation_start` is `Some` (the iOS shim captures the
+    /// instant `keyboardWillShow/Hide` fired), the tween's `start_time` is
+    /// seeded to that instant and the controller is advanced immediately. This
+    /// synchronizes the avoidance tween with the OS keyboard's own animation:
+    /// the keyboard begins sliding the moment the notification is posted, but
+    /// this widget only renders on the next frame, so defaulting `start_time`
+    /// to `Instant::now()` would leave the input view ~one frame behind for
+    /// the whole animation. Seeding + advancing makes the first painted frame
+    /// already reflect the elapsed time, so the input tracks the keyboard in
+    /// lockstep. When `animation_start` is `None` (snap path, non-iOS, tests),
+    /// the controller falls back to `Instant::now()`.
     pub fn start_tween_to(&mut self, target_height: f32, target: KeyboardInsetSnapshot) {
         self.from_inset = self.animated_inset;
         self.to_inset = target_height;
@@ -115,9 +128,24 @@ impl KeyboardAvoidanceState {
         if let Some(cb) = &self.dirty_callback {
             controller.set_dirty_callback(cb.clone());
         }
-        controller.forward(); // value 0 → 1 over duration
+        let synced_start = target.animation_start;
+        match synced_start {
+            Some(start) => controller.forward_with_start(start),
+            None => controller.forward(), // value 0 → 1 over duration
+        }
         self.controller = controller;
         self.last_seen = target;
+
+        // Synced path only: advance immediately so the *first* rendered frame
+        // reflects the time already elapsed since the OS keyboard animation
+        // began. Without this, `animated_inset` would still be `from_inset`
+        // on this frame (the controller only updates it via `advance`, which
+        // next runs in `on_tick` next frame), lagging the keyboard by a frame.
+        // `advance` clamps to `to_inset` and stops the controller if the tween
+        // is already complete (e.g. the render ran after the keyboard finished).
+        if synced_start.is_some() {
+            self.advance(Instant::now());
+        }
     }
 
     /// Advance the tween. Called from `on_tick`.
@@ -329,6 +357,7 @@ mod tests {
                 target_height: 300.0,
                 duration_secs: 0.0,
                 curve: KeyboardCurve::EaseInOut,
+                animation_start: None,
             },
         );
         // Controller should have advanced to completion on the first advance()
@@ -350,6 +379,7 @@ mod tests {
                 target_height: 300.0,
                 duration_secs: 0.25,
                 curve: KeyboardCurve::Linear, // linear so halfway is exactly 150
+                animation_start: None,
             },
         );
         let start = state.controller.start_time().unwrap();
@@ -373,6 +403,7 @@ mod tests {
                 target_height: 300.0,
                 duration_secs: 0.25,
                 curve: KeyboardCurve::Linear,
+                animation_start: None,
             },
         );
         let start = state.controller.start_time().unwrap();
@@ -396,6 +427,7 @@ mod tests {
                 target_height: 300.0,
                 duration_secs: 0.1,
                 curve: KeyboardCurve::Linear,
+                animation_start: None,
             },
         );
         let start = state.controller.start_time().unwrap();
@@ -409,6 +441,7 @@ mod tests {
                 target_height: 0.0,
                 duration_secs: 0.1,
                 curve: KeyboardCurve::Linear,
+                animation_start: None,
             },
         );
         assert_eq!(
@@ -423,6 +456,85 @@ mod tests {
             "expected ~37.5 halfway down from 75, got {}",
             state.animated_inset
         );
+    }
+
+    #[test]
+    fn synced_animation_start_seeds_controller_and_advances_immediately() {
+        // Regression: when the iOS shim reports the instant the keyboard
+        // animation began (animation_start = Some(...)), the avoidance tween
+        // must seed its controller's start_time to THAT instant — not
+        // Instant::now() — and advance immediately so the first rendered
+        // frame reflects the time already elapsed. Otherwise the input view
+        // lags the keyboard by a frame for the whole animation: the keyboard
+        // appears to cover the input, then the input catches up underneath.
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::ZERO);
+
+        // Pretend the keyboard notification fired 50ms ago (a few frames back).
+        let notif_instant = Instant::now() - Duration::from_millis(50);
+
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.25,
+                curve: KeyboardCurve::Linear,
+                animation_start: Some(notif_instant),
+            },
+        );
+
+        // start_time must be the notification instant, not Instant::now().
+        // (Still Some => the tween hasn't completed, i.e. elapsed < duration.)
+        assert_eq!(state.controller.start_time(), Some(notif_instant));
+
+        // The immediate advance inside start_tween_to must have advanced
+        // animated_inset to reflect ~50ms of a 250ms linear tween = 20% = 60px.
+        // Allow slack for the time between capturing `notif_instant` and the
+        // internal Instant::now() in advance — so the lower bound is 60, and
+        // it must be well short of the 300 target (not completed).
+        assert!(
+            state.animated_inset >= 60.0 && state.animated_inset < 250.0,
+            "expected animated_inset to reflect ~50ms elapsed (~60px, partway), \
+             got {}; should already be partway — not 0 (no advance) and not 300 \
+             (completed)",
+            state.animated_inset
+        );
+        assert_eq!(state.from_inset, 0.0);
+        assert_eq!(state.to_inset, 300.0);
+    }
+
+    #[test]
+    fn synced_animation_start_already_complete_snaps_to_target() {
+        // Edge case: if the render ran after the keyboard animation already
+        // finished (elapsed >= duration), the immediate advance must clamp to
+        // the target and stop the controller — no overshoot, no perpetual
+        // ticking.
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::ZERO);
+
+        // Notification fired 500ms ago; duration is only 250ms — already done.
+        let notif_instant = Instant::now() - Duration::from_millis(500);
+
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.25,
+                curve: KeyboardCurve::Linear,
+                animation_start: Some(notif_instant),
+            },
+        );
+
+        assert!(
+            (state.animated_inset - 300.0).abs() < 0.5,
+            "expected snap to target (300) when elapsed > duration, got {}",
+            state.animated_inset
+        );
+        assert!(state.controller.start_time().is_none());
     }
 
     #[test]
@@ -476,7 +588,7 @@ mod tests {
         // Plumb the source BEFORE update() so the widget's first render
         // (which snaps to the current target) sees 300px.
         let source = KeyboardInsetSource::default();
-        source.set_target(300.0, 0.0, KeyboardCurve::EaseInOut);
+        source.set_target(300.0, 0.0, KeyboardCurve::EaseInOut, None);
         pipeline.set_keyboard_inset_source(source);
 
         // Wrap Text in a flex_fill WithLayout so the wrapper expands to fill
