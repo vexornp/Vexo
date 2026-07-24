@@ -23,6 +23,7 @@ use std::collections::HashSet;
 
 use super::global_key_registry::GlobalKeyRegistry;
 use super::id::ElementKey;
+use crate::core::KeyboardInsetSource;
 use crate::core::SafeAreaSource;
 
 /// Tracks dirty elements and drives targeted rebuilds.
@@ -90,6 +91,16 @@ pub struct BuildOwner {
     /// Defaults to all-zero (desktop / pre-init), which makes safe-area a no-op
     /// for tests and desktop builds.
     safe_area_source: SafeAreaSource,
+
+    /// Keyboard target inset source (logical pixels), shared with all
+    /// [`RenderContext`](crate::stateful_widget::RenderContext)s so
+    /// `KeyboardAvoidance` can read live values during `Component::render()`.
+    ///
+    /// Backed by atomics inside [`KeyboardInsetSource`], so updates from
+    /// the iOS keyboard shim are visible here without additional locking.
+    /// Defaults to all-zero (desktop / pre-init / keyboard down), making
+    /// keyboard avoidance a no-op for tests and desktop builds.
+    keyboard_inset_source: KeyboardInsetSource,
 }
 
 impl BuildOwner {
@@ -103,6 +114,7 @@ impl BuildOwner {
             focused_element: RefCell::new(None),
             pending_unfocus: RefCell::new(false),
             safe_area_source: SafeAreaSource::default(),
+            keyboard_inset_source: KeyboardInsetSource::default(),
         }
     }
 
@@ -282,6 +294,26 @@ impl BuildOwner {
     /// per-frame updates happen via [`SafeAreaSource::set()`] on either clone.
     pub fn set_safe_area_source(&mut self, source: SafeAreaSource) {
         self.safe_area_source = source;
+    }
+
+    /// Get a clone of the shared keyboard-inset source.
+    ///
+    /// Returns a cheaply-clonable handle ([`KeyboardInsetSource`] is `Arc`-based)
+    /// whose [`KeyboardInsetSource::get()`] always reads the latest target
+    /// written by the iOS keyboard shim. Used by
+    /// [`RenderContext::keyboard_inset()`](crate::stateful_widget::RenderContext::keyboard_inset)
+    /// so `KeyboardAvoidance` can resolve the target during render.
+    pub fn keyboard_inset_source(&self) -> KeyboardInsetSource {
+        self.keyboard_inset_source.clone()
+    }
+
+    /// Replace the keyboard-inset source.
+    ///
+    /// Called once at window init so the [`BuildOwner`] shares the same
+    /// atomics as [`WindowState`](crate::window::WindowState); subsequent
+    /// updates happen via [`KeyboardInsetSource::set_target()`] on either clone.
+    pub fn set_keyboard_inset_source(&mut self, source: KeyboardInsetSource) {
+        self.keyboard_inset_source = source;
     }
 }
 

@@ -350,6 +350,16 @@ impl<'a> RenderContext<'a> {
         self.build_owner.safe_area_source().get()
     }
 
+    /// Current keyboard-inset snapshot (target height + duration + curve).
+    ///
+    /// Reflects the live values written by the iOS keyboard shim
+    /// (`keyboardWillShow/Hide` notifications); all-zero on desktop / when
+    /// the keyboard is down. `KeyboardAvoidance` calls this during
+    /// [`Component::render()`] to start/retarget its inset tween.
+    pub fn keyboard_inset(&self) -> crate::core::KeyboardInsetSnapshot {
+        self.build_owner.keyboard_inset_source().get()
+    }
+
     /// Read the nearest inherited value of type `V`. Establishes a
     /// dependency: the caller rebuilds when the provider's value changes.
     ///

@@ -202,6 +202,17 @@ impl ThreeTreePipeline {
         self.build_owner.set_safe_area_source(source);
     }
 
+    /// Install the keyboard-inset source into the [`BuildOwner`].
+    ///
+    /// Called once at window init by
+    /// [`WindowState`](crate::window::WindowState) so the same atomics are
+    /// shared between the window (which writes the target on each iOS
+    /// keyboard notification) and the element tree (which reads them via
+    /// [`RenderContext::keyboard_inset()`](crate::stateful_widget::RenderContext::keyboard_inset)).
+    pub fn set_keyboard_inset_source(&mut self, source: crate::core::KeyboardInsetSource) {
+        self.build_owner.set_keyboard_inset_source(source);
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
