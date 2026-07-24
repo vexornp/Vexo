@@ -112,7 +112,12 @@ impl From<Color> for [f32; 4] {
 // Conversion from wgpu::Color (f64)
 impl From<wgpu::Color> for Color {
     fn from(color: wgpu::Color) -> Self {
-        Self::new(color.r as f32, color.g as f32, color.b as f32, color.a as f32)
+        Self::new(
+            color.r as f32,
+            color.g as f32,
+            color.b as f32,
+            color.a as f32,
+        )
     }
 }
 
