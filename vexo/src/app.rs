@@ -136,6 +136,19 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
             if state.animation_ticker().has_active() {
                 state.request_frame();
             }
+            // Break the keyboard-dismiss deadlock. When the user taps outside
+            // a focused TextEdit, set_ime_allowed(false) fires during render
+            // (inside RedrawRequested), but the keyboard-source poll already
+            // ran. request_redraw from inside RedrawRequested doesn't re-arm
+            // the display link on iOS, and both existing frame drivers are
+            // dead (cursor blink off — unfocused; ticker inactive — tween not
+            // started). Without this check the render loop stalls: the OS
+            // keyboard slides down while our input view freezes, then the
+            // tween starts late (after the keyboard is gone). See
+            // WindowState::keyboard_inset_changed() for the full analysis.
+            if state.keyboard_inset_changed() {
+                state.request_frame();
+            }
         }
     }
 

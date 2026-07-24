@@ -498,6 +498,46 @@ impl<A: Application + 'static> WindowState<A> {
         self.three_tree_pipeline.focused_element().is_some()
     }
 
+    /// Check if the keyboard-inset source has changed since the last
+    /// `render_retain()` poll.
+    ///
+    /// Read-only — does **not** update `keyboard_inset_snapshot_prev`; the
+    /// poll inside `render_retain()` owns that. This is for `about_to_wait`
+    /// to detect a change that landed **during** render (after the poll ran)
+    /// and break what would otherwise be a render-loop deadlock.
+    ///
+    /// ## The deadlock (dismiss only)
+    ///
+    /// When the user taps outside a focused TextEdit, focus clears during
+    /// `perform_rebuilds()`, and the focus-change block calls
+    /// `set_ime_allowed(false)`. UIKit fires `keyboardWillHide` — often
+    /// synchronously — updating the source to 0. But the source poll at the
+    /// top of `render_retain()` already ran, so this frame misses the change.
+    /// The `request_frame()` in the focus block is inside `RedrawRequested`,
+    /// which on iOS doesn't reliably re-arm the CADisplayLink.
+    ///
+    /// Then `about_to_wait` runs. Its two existing frame drivers are both
+    /// dead: `check_cursor_blink()` is false (TextEdit just unfocused), and
+    /// `animation_ticker().has_active()` is false (the avoidance tween hasn't
+    /// started — the poll missed the change). No frame is requested. The OS
+    /// keyboard keeps sliding down (GPU-driven, independent of our render
+    /// loop); our input view freezes. Eventually some stray event wakes the
+    /// loop, the poll detects the change, the tween starts — but the keyboard
+    /// is already gone, so the input view animates down after the keyboard
+    /// disappeared.
+    ///
+    /// For **show** this doesn't deadlock: cursor blink turns **on**
+    /// (TextEdit focused), so `check_cursor_blink()` keeps the loop alive
+    /// until the poll catches up and the tween starts.
+    ///
+    /// This method breaks the dismiss deadlock by giving `about_to_wait` a
+    /// third reason to request a frame: the keyboard source changed. The
+    /// next `render_retain()` poll then detects the change, starts the tween
+    /// (seeded to the notification instant), and the ticker takes over.
+    pub fn keyboard_inset_changed(&self) -> bool {
+        self.keyboard_inset_source.get() != self.keyboard_inset_snapshot_prev
+    }
+
     /// Render using the three-tree retain-mode pipeline.
     ///
     /// This method implements the full retain-mode rendering flow:
