@@ -1,0 +1,443 @@
+//! Keyboard avoidance widget — lifts its child above the iOS software keyboard.
+//!
+//! Reads [`KeyboardInsetSource`](crate::core::KeyboardInsetSource) live each
+//! render; when the target changes, the widget's state starts an
+//! [`AnimationController`] tween from the current animated inset to the new
+//! target, synchronized to the keyboard's own duration/curve. Effective
+//! bottom padding each frame is `max(safe_area.bottom, animated_inset)`:
+//!
+//! - Keyboard down → `safe_area.bottom` (clears home indicator).
+//! - Keyboard up → `animated_inset` (keyboard subsumes home indicator).
+//!
+//! On desktop / Android the source stays at 0 and this widget is a transparent
+//! pass-through. Top/left/right padding is always zero — notch/status-bar
+//! avoidance is [`SafeArea`](crate::widgets::SafeArea)'s job; the two compose.
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use crate::animation::{
+    AnimationController, Curve, EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve,
+};
+use crate::core::{KeyboardCurve, KeyboardInsetSnapshot};
+use crate::{
+    Component, ComponentState, LifecycleContext, RenderContext, Widget, WidgetKey, WithLayout,
+};
+
+// ============================================================================
+// KEYBOARD AVOIDANCE STATE
+// ============================================================================
+
+/// State for [`KeyboardAvoidance`]. Owns the inset tween.
+pub struct KeyboardAvoidanceState {
+    /// Current animated inset (logical px). Read by `render()` each frame.
+    animated_inset: f32,
+    /// Inset the current tween started from.
+    from_inset: f32,
+    /// Inset the current tween is animating toward.
+    to_inset: f32,
+    /// The animation controller (0..1 linear; curve applied in `advance`).
+    controller: AnimationController,
+    /// Last target snapshot observed from the source. Used to detect changes.
+    last_seen: KeyboardInsetSnapshot,
+    /// Boxed curve for the current tween. Replaced on each retarget.
+    curve: Box<dyn Curve>,
+    /// Ticker handle; set on mount so we can stop on unmount.
+    /// (AnimationController registers with the ticker itself; we hold the
+    /// ticker Arc so we can pass it to a fresh controller on retarget.)
+    ticker: Option<Arc<crate::animation::AnimationTicker>>,
+    /// Dirty callback; wired on mount so fresh controllers get it.
+    dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl Default for KeyboardAvoidanceState {
+    fn default() -> Self {
+        Self {
+            animated_inset: 0.0,
+            from_inset: 0.0,
+            to_inset: 0.0,
+            controller: AnimationController::new(Duration::ZERO),
+            last_seen: KeyboardInsetSnapshot {
+                target_height: 0.0,
+                duration_secs: 0.0,
+                curve: KeyboardCurve::EaseInOut,
+            },
+            curve: Box::new(EaseInOutCurve),
+            ticker: None,
+            dirty_callback: None,
+        }
+    }
+}
+
+impl KeyboardAvoidanceState {
+    /// Effective bottom padding: `max(safe_area.bottom, animated_inset)`.
+    pub fn effective_bottom_padding(&self, safe_area_bottom: f32) -> f32 {
+        self.animated_inset.max(safe_area_bottom)
+    }
+
+    /// Start (or retarget) a tween to `target.target_height`.
+    ///
+    /// - If `duration_secs == 0.0`, snap immediately (set `animated_inset = target`).
+    /// - Otherwise, start a fresh `AnimationController` from 0..1; `from_inset`
+    ///   is the current `animated_inset` so mid-tween retargets don't jump.
+    pub fn start_tween_to(&mut self, target_height: f32, target: KeyboardInsetSnapshot) {
+        self.from_inset = self.animated_inset;
+        self.to_inset = target_height;
+        self.curve = curve_for(target.curve);
+
+        if target.duration_secs <= 0.0 {
+            // Snap path: no animation, jump to target.
+            self.animated_inset = target_height;
+            self.controller = AnimationController::new(Duration::ZERO);
+            self.controller.stop();
+            self.last_seen = target;
+            return;
+        }
+
+        // Build a fresh controller with the new duration. Re-attach the
+        // ticker + dirty callback if we have them (set on mount).
+        let mut controller =
+            AnimationController::new(Duration::from_secs_f64(target.duration_secs as f64));
+        if let Some(ticker) = &self.ticker {
+            controller.set_ticker(ticker.clone());
+        }
+        if let Some(cb) = &self.dirty_callback {
+            controller.set_dirty_callback(cb.clone());
+        }
+        controller.forward(); // value 0 → 1 over duration
+        self.controller = controller;
+        self.last_seen = target;
+    }
+
+    /// Advance the tween. Called from `on_tick`.
+    pub fn advance(&mut self, now: Instant) {
+        self.controller.advance(now);
+        let t = self.controller.value();
+        let eased = self.curve.transform(t);
+        self.animated_inset = self.from_inset + (self.to_inset - self.from_inset) * eased as f32;
+    }
+}
+
+/// Map a `KeyboardCurve` to a Vexo `Curve` implementation.
+pub fn curve_for(curve: KeyboardCurve) -> Box<dyn Curve> {
+    match curve {
+        KeyboardCurve::EaseInOut => Box::new(EaseInOutCurve),
+        KeyboardCurve::EaseIn => Box::new(EaseInCurve),
+        KeyboardCurve::EaseOut => Box::new(EaseOutCurve),
+        KeyboardCurve::Linear => Box::new(LinearCurve),
+    }
+}
+
+impl ComponentState for KeyboardAvoidanceState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        self.ticker = Some(ctx.animation_ticker().clone());
+        self.dirty_callback = Some(ctx.dirty_callback());
+        // On mount, snap to the current target (no animation) — the keyboard
+        // is already in whatever state it's in; animating would be wrong.
+        if let Some(widget) = ctx.widget().downcast_ref::<KeyboardAvoidance>() {
+            // Read the source via the widget's stored clone.
+            let snap = widget.source.get();
+            self.animated_inset = snap.target_height;
+            self.from_inset = snap.target_height;
+            self.to_inset = snap.target_height;
+            self.last_seen = snap;
+        }
+    }
+
+    fn on_tick(&mut self, now: Instant) {
+        self.advance(now);
+    }
+
+    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
+        self.controller.stop();
+    }
+}
+
+// ============================================================================
+// KEYBOARD AVOIDANCE WIDGET
+// ============================================================================
+
+/// A widget that lifts its child above the iOS software keyboard.
+///
+/// Wraps `child` in a column whose bottom padding is
+/// `max(safe_area.bottom, animated_keyboard_inset)`. When the keyboard
+/// appears, the padding animates in sync with the OS keyboard slide (using
+/// the duration + curve reported by UIKit).
+///
+/// On desktop / Android the source stays at 0, so this is a transparent
+/// pass-through. Only the bottom edge is padded; for notch/status-bar
+/// avoidance, compose with [`SafeArea`](crate::widgets::SafeArea).
+pub struct KeyboardAvoidance {
+    child: Box<dyn Widget>,
+    source: crate::core::KeyboardInsetSource,
+    key: Option<WidgetKey>,
+}
+
+impl KeyboardAvoidance {
+    /// Create a new `KeyboardAvoidance` wrapping `child`.
+    ///
+    /// The `source` is read live each render. In production, obtain it from
+    /// the framework (the chat screen uses the default app-wide source via
+    /// `RenderContext::keyboard_inset()`). For tests, construct a
+    /// `KeyboardInsetSource::default()` and call `set_target(...)` directly.
+    pub fn new(child: impl Widget + 'static) -> Self {
+        Self {
+            child: Box::new(child),
+            source: crate::core::KeyboardInsetSource::default(),
+            key: None,
+        }
+    }
+
+    /// Provide a specific `KeyboardInsetSource` (e.g. the app-wide one).
+    /// When the chat screen constructs this widget, it should pass the
+    /// source obtained from the framework's `WindowState`.
+    pub fn with_source(mut self, source: crate::core::KeyboardInsetSource) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// Set the widget key.
+    pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+}
+
+impl Clone for KeyboardAvoidance {
+    fn clone(&self) -> Self {
+        Self {
+            child: self.child.clone_boxed(),
+            source: self.source.clone(),
+            key: self.key.clone(),
+        }
+    }
+}
+
+impl Component for KeyboardAvoidance {
+    type State = KeyboardAvoidanceState;
+
+    fn key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        // 1. Read live source snapshot.
+        let snap = self.source.get();
+
+        // 2. Detect target change. If changed, start/retarget the tween.
+        if snap != state.last_seen {
+            state.start_tween_to(snap.target_height, snap);
+        }
+
+        // 3. Compute effective bottom padding.
+        let safe_bottom = ctx.safe_area().bottom;
+        let bottom = state.effective_bottom_padding(safe_bottom);
+
+        // 4. Build the layout: column with bottom padding, fills parent.
+        let layout = crate::layout::Layout::default()
+            .flex_direction(crate::layout::FlexDirection::Column)
+            .align(crate::layout::AlignItems::Stretch)
+            .flex_grow(1.0)
+            .min_height(0.0)
+            .padding_each(0.0, 0.0, 0.0, bottom);
+
+        WithLayout::new(self.child.clone_boxed(), layout).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::animation::AnimationTicker;
+    use crate::ThreeTreePipeline;
+    use std::sync::Arc;
+
+    // ----- Helper: build a pipeline + render context with given sources -----
+    fn build_pipeline() -> (ThreeTreePipeline, Arc<AnimationTicker>) {
+        let ticker = Arc::new(AnimationTicker::new());
+        let pipeline = ThreeTreePipeline::new(ticker.clone());
+        (pipeline, ticker)
+    }
+
+    // ----- Widget-level behavior tests (no pipeline; just exercise state) -----
+
+    #[test]
+    fn effective_padding_zero_when_no_keyboard_no_safe_area() {
+        // Desktop: source = 0, safe area = 0 → padding 0.
+        let mut state = KeyboardAvoidanceState::default();
+        state.animated_inset = 0.0;
+        let safe_bottom = 0.0;
+        let pad = state.effective_bottom_padding(safe_bottom);
+        assert_eq!(pad, 0.0);
+    }
+
+    #[test]
+    fn effective_padding_uses_safe_area_when_keyboard_down() {
+        let mut state = KeyboardAvoidanceState::default();
+        state.animated_inset = 0.0;
+        let safe_bottom = 34.0;
+        let pad = state.effective_bottom_padding(safe_bottom);
+        assert_eq!(pad, 34.0);
+    }
+
+    #[test]
+    fn effective_padding_uses_keyboard_when_up() {
+        let mut state = KeyboardAvoidanceState::default();
+        state.animated_inset = 300.0;
+        let safe_bottom = 34.0;
+        let pad = state.effective_bottom_padding(safe_bottom);
+        assert_eq!(pad, 300.0); // max(34, 300)
+    }
+
+    #[test]
+    fn effective_padding_never_below_safe_area_during_slide() {
+        // Mid-slide: animated_inset = 10 (below safe area 34).
+        let mut state = KeyboardAvoidanceState::default();
+        state.animated_inset = 10.0;
+        let safe_bottom = 34.0;
+        let pad = state.effective_bottom_padding(safe_bottom);
+        assert_eq!(pad, 34.0); // max(34, 10)
+    }
+
+    #[test]
+    fn start_tween_snaps_when_duration_zero() {
+        // duration_secs == 0 → snap immediately, no animation.
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::ZERO);
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.0,
+                curve: KeyboardCurve::EaseInOut,
+            },
+        );
+        // Controller should have advanced to completion on the first advance()
+        // call; but start_tween_to also sets animated_inset = to_inset when
+        // duration is zero (snap path).
+        assert_eq!(state.animated_inset, 300.0);
+        assert_eq!(state.to_inset, 300.0);
+    }
+
+    #[test]
+    fn advance_tween_interpolates_halfway() {
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::from_millis(250));
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.25,
+                curve: KeyboardCurve::Linear, // linear so halfway is exactly 150
+            },
+        );
+        let start = state.controller.start_time().unwrap();
+        state.advance(start + Duration::from_millis(125));
+        assert!(
+            (state.animated_inset - 150.0).abs() < 1.0,
+            "expected ~150 at halfway, got {}",
+            state.animated_inset
+        );
+    }
+
+    #[test]
+    fn advance_tween_completes_at_target() {
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::from_millis(250));
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.25,
+                curve: KeyboardCurve::Linear,
+            },
+        );
+        let start = state.controller.start_time().unwrap();
+        state.advance(start + Duration::from_millis(260));
+        assert!(
+            (state.animated_inset - 300.0).abs() < 0.5,
+            "expected 300 at completion, got {}",
+            state.animated_inset
+        );
+    }
+
+    #[test]
+    fn mid_tween_retarget_starts_from_current_animated_value() {
+        let mut state = KeyboardAvoidanceState::default();
+        state.from_inset = 0.0;
+        state.animated_inset = 0.0;
+        state.controller = AnimationController::new(Duration::from_millis(100));
+        state.start_tween_to(
+            300.0,
+            KeyboardInsetSnapshot {
+                target_height: 300.0,
+                duration_secs: 0.1,
+                curve: KeyboardCurve::Linear,
+            },
+        );
+        let start = state.controller.start_time().unwrap();
+        state.advance(start + Duration::from_millis(25)); // 25% → 75
+        assert!((state.animated_inset - 75.0).abs() < 1.0);
+
+        // Retarget to 0 (keyboardWillHide) — new tween should start from 75.
+        state.start_tween_to(
+            0.0,
+            KeyboardInsetSnapshot {
+                target_height: 0.0,
+                duration_secs: 0.1,
+                curve: KeyboardCurve::Linear,
+            },
+        );
+        assert_eq!(
+            state.from_inset, 75.0,
+            "from_inset must be current animated value"
+        );
+        assert_eq!(state.to_inset, 0.0);
+        let start2 = state.controller.start_time().unwrap();
+        state.advance(start2 + Duration::from_millis(50)); // 50% of 0→75 reversed = 75-37.5
+        assert!(
+            (state.animated_inset - 37.5).abs() < 1.5,
+            "expected ~37.5 halfway down from 75, got {}",
+            state.animated_inset
+        );
+    }
+
+    #[test]
+    fn curve_mapping_matches_uikit_raw_values() {
+        assert_eq!(
+            curve_for(KeyboardCurve::EaseInOut).transform(0.5),
+            EaseInOutCurve.transform(0.5)
+        );
+        assert_eq!(
+            curve_for(KeyboardCurve::EaseIn).transform(0.5),
+            EaseInCurve.transform(0.5)
+        );
+        assert_eq!(
+            curve_for(KeyboardCurve::EaseOut).transform(0.5),
+            EaseOutCurve.transform(0.5)
+        );
+        assert_eq!(
+            curve_for(KeyboardCurve::Linear).transform(0.5),
+            LinearCurve.transform(0.5)
+        );
+    }
+
+    // ----- Layout integration test (uses ThreeTreePipeline) -----
+
+    #[test]
+    fn widget_mounts_in_pipeline() {
+        let (mut pipeline, _ticker) = build_pipeline();
+        let view = KeyboardAvoidance::new(crate::Text::new("hi")).boxed();
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 2,
+            "expected element tree to mount"
+        );
+    }
+}
