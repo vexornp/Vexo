@@ -112,6 +112,13 @@ impl KeyboardAvoidanceState {
         controller.forward(); // value 0 → 1 over duration
         self.controller = controller;
         self.last_seen = target;
+        log::debug!(
+            "[KBD_AVOID] start_tween: from={:.1} to={:.1} duration={:.3}s controller_value={:.3}",
+            self.from_inset,
+            self.to_inset,
+            target.duration_secs,
+            self.controller.value()
+        );
     }
 
     /// Advance the tween. Called from `on_tick`.
@@ -120,6 +127,13 @@ impl KeyboardAvoidanceState {
         let t = self.controller.value();
         let eased = self.curve.transform(t);
         self.animated_inset = self.from_inset + (self.to_inset - self.from_inset) * eased as f32;
+        log::debug!(
+            "[KBD_AVOID] on_tick/advance: t={:.3} eased={:.3} animated={:.1} dir={:?}",
+            t,
+            eased,
+            self.animated_inset,
+            self.controller.direction()
+        );
     }
 }
 
@@ -226,13 +240,33 @@ impl Component for KeyboardAvoidance {
             state.to_inset = snap.target_height;
             state.last_seen = snap;
             state.mounted = true;
+            log::debug!(
+                "[KBD_AVOID] render (first/mount): snap target={:.1} animated={:.1}",
+                snap.target_height,
+                state.animated_inset
+            );
         } else if snap != state.last_seen {
+            log::debug!(
+                "[KBD_AVOID] render (retarget): old target={:.1} new target={:.1} animated={:.1}",
+                state.last_seen.target_height,
+                snap.target_height,
+                state.animated_inset
+            );
             state.start_tween_to(snap.target_height, snap);
         }
 
-        // 3. Compute effective bottom padding.
-        let safe_bottom = ctx.safe_area().bottom;
-        let bottom = state.effective_bottom_padding(safe_bottom);
+        // 3. Effective bottom padding = animated keyboard inset only.
+        //    Safe-area avoidance (home indicator, notch) is `SafeArea`'s job —
+        //    the two widgets compose. An ancestor like TabBarView already
+        //    claims the bottom safe area, so reading ctx.safe_area() here
+        //    would double-pad. When the keyboard is down, padding is 0
+        //    (transparent pass-through).
+        let bottom = state.animated_inset;
+        log::debug!(
+            "[KBD_AVOID] render: animated_inset={:.1} effective_bottom={:.1} controller_value={:.3} dir={:?}",
+            state.animated_inset, bottom,
+            state.controller.value(), state.controller.direction()
+        );
 
         // 4. Build the layout: column with bottom padding, fills parent.
         let layout = crate::layout::Layout::default()

@@ -572,8 +572,25 @@ impl<A: Application + 'static> WindowState<A> {
             let prev = self.keyboard_inset_snapshot_prev;
             let curr = self.keyboard_inset_source.get();
             if curr != prev {
+                log::debug!(
+                    "[KBD_AVOID] poll detected change: prev=(h={:.1},d={:.3}) curr=(h={:.1},d={:.3}) → mark root needs_build + mark_all_needs_layout + request_frame",
+                    prev.target_height, prev.duration_secs,
+                    curr.target_height, curr.duration_secs,
+                );
                 self.keyboard_inset_snapshot_prev = curr;
+                // Mark the root element as needing build so the widget tree
+                // re-renders. This is necessary because KeyboardAvoidance reads
+                // the keyboard-inset source in render() (not in layout() like
+                // SafeArea does), so mark_all_needs_layout() alone would
+                // re-lay-out with stale padding. Marking the root triggers a
+                // cascade: root rebuilds → children get updated widgets →
+                // KeyboardAvoidance's render() picks up the new target and
+                // starts/retargets its tween.
+                if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                    self.three_tree_pipeline.mark_needs_build(root_id);
+                }
                 self.three_tree_pipeline.mark_all_needs_layout();
+                self.request_frame();
             }
         }
 

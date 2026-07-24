@@ -218,23 +218,44 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         );
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
-        MultiChild::new(
-            children![
-                // The tab bar (a sibling below) owns the bottom safe-area edge
-                // (home indicator) — its SafeArea insets the bar's content.
-                // Wrap the page stack in SafeAreaClaim::bottom so the page's
-                // own SafeArea sees bottom=0 and doesn't re-apply the home-
-                // indicator padding, which would create a gap between the
-                // page content and the tab bar.
-                WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
-                bar,
-            ],
-            Layout::default()
-                .flex_direction(FlexDirection::Column)
-                .width_percent(1.0)
-                .height_percent(1.0),
-        )
-        .boxed()
+        // When the software keyboard is up, collapse the tab bar so the page
+        // content fills the screen. This lets KeyboardAvoidance pad by the
+        // full keyboard height (measured from the screen bottom) without
+        // double-counting the tab bar's height. The keyboard covers the area
+        // where the tab bar was, so hiding it is visually correct.
+        let keyboard_up = ctx.keyboard_inset().target_height > 0.0;
+
+        if keyboard_up {
+            MultiChild::new(
+                children![WithLayout::new(
+                    SafeAreaClaim::bottom(stack),
+                    Layout::flex_fill()
+                ),],
+                Layout::default()
+                    .flex_direction(FlexDirection::Column)
+                    .width_percent(1.0)
+                    .height_percent(1.0),
+            )
+            .boxed()
+        } else {
+            MultiChild::new(
+                children![
+                    // The tab bar (a sibling below) owns the bottom safe-area edge
+                    // (home indicator) — its SafeArea insets the bar's content.
+                    // Wrap the page stack in SafeAreaClaim::bottom so the page's
+                    // own SafeArea sees bottom=0 and doesn't re-apply the home-
+                    // indicator padding, which would create a gap between the
+                    // page content and the tab bar.
+                    WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
+                    bar,
+                ],
+                Layout::default()
+                    .flex_direction(FlexDirection::Column)
+                    .width_percent(1.0)
+                    .height_percent(1.0),
+            )
+            .boxed()
+        }
     }
 }
 

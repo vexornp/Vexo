@@ -194,7 +194,7 @@ impl Drop for KeyboardObserver {
 fn handle_keyboard_notification(
     notif: &NSNotification,
     source: &KeyboardInsetSource,
-    scale_factor: f32,
+    _scale_factor: f32,
     window_logical_height: f32,
     show: bool,
 ) {
@@ -235,8 +235,12 @@ fn handle_keyboard_notification(
                         size as objc2_foundation::NSUInteger,
                     );
                 }
-                let height_px = rect.size_height as f32;
-                let height_logical = height_px / scale_factor;
+                let height_pts = rect.size_height as f32;
+                // UIKit's keyboardFrameEndUserInfoKey returns a CGRect in the
+                // window's coordinate space, which on iOS is in POINTS (logical
+                // px), NOT physical px. Do NOT divide by scale_factor — the
+                // height is already in logical px.
+                let height_logical = height_pts;
                 // Defensive: never report a negative height (can happen if
                 // the keyboard frame is off-screen in slide-over / stage
                 // manager configurations), and never exceed the window's
@@ -269,5 +273,12 @@ fn handle_keyboard_notification(
         .unwrap_or(0); // EaseInOut is UIKit's default
     let curve = KeyboardCurve::from_uikit_raw(curve_raw);
 
+    log::debug!(
+        "[KBD_AVOID] notification: show={} target_height={:.1} duration={:.3} curve={:?}",
+        show,
+        target_height,
+        duration_secs,
+        curve
+    );
     source.set_target(target_height, duration_secs, curve);
 }
