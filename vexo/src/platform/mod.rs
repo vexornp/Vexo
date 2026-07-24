@@ -10,6 +10,8 @@ pub mod arboard_clipboard;
 pub mod clipboard;
 #[cfg(target_os = "ios")]
 pub mod ios_clipboard;
+#[cfg(target_os = "ios")]
+pub mod keyboard_ios;
 pub mod stub_clipboard;
 pub use clipboard::Clipboard;
 

@@ -27,13 +27,32 @@ component_state_derive = { path = "component_state_derive" }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 arboard = { workspace = true }
 
-# Clipboard backend for iOS: talks to UIPasteboard via objc2.
-# Versions pinned to what the workspace already resolves transitively
-# (objc2 0.6.x, objc2-foundation/ui-kit 0.3.2) so this adds no lock churn.
+# iOS UIKit / Foundation adapters: clipboard (UIPasteboard) and keyboard
+# notifications (UIResponder via NSNotificationCenter). Versions pinned to
+# what the workspace already resolves transitively (objc2 0.6.x,
+# objc2-foundation/ui-kit 0.3.2, block2 0.6.x) so this adds no lock churn.
+#
+# Feature notes:
+#  - `NSNotification` exposes NSNotificationCenter + NSNotification.
+#  - `NSOperation` + `block2` are required by NSNotificationCenter's
+#    block-based `addObserverForName:object:queue:usingBlock:` API.
+#  - objc2-ui-kit doesn't generate typed accessors for the keyboard
+#    notification names / userInfo keys (they're NS_TYPED_EXTENSIBLE_ENUM
+#    NSString constants), so we construct them as plain NSStrings and don't
+#    need `UIResponder` / `UIApplication` features here.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = { version = ">=0.6.2, <0.8.0", default-features = false, features = ["std"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "NSString",
+    "NSNotification",
+    "NSDictionary",
+    "NSValue",
+    "NSObject",
+    "NSOperation",
+    "block2",
+] }
 objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["UIPasteboard"] }
+block2 = { version = "0.6.2", default-features = false }
 
 # Android runtime deps:
 #  - `android-activity` provides `AndroidApp`, the handle passed to

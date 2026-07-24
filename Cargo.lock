@@ -2837,6 +2837,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "bitflags 2.13.1",
+ "block2",
  "bytemuck",
  "component_state_derive",
  "env_logger 0.10.2",
