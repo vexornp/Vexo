@@ -342,6 +342,15 @@ impl Element for ScrollViewElement {
     }
 
     fn register_gestures(&mut self, arena: &mut GestureArena, self_id: ElementKey) {
+        // Stop any in-flight momentum/spring on press. register_gestures is
+        // called on EVERY element in the hit path during the press phase,
+        // BEFORE on_event bubbling. This matters because child GestureDetectors
+        // return Some(()) on press (stopping propagation), which would prevent
+        // the ScrollView's on_event Pressed handler from firing. Without this,
+        // the spring would keep advancing during drag — content bouncing back
+        // while the finger is still down.
+        self.momentum.stop();
+        self.spring.stop();
         arena.add(Box::new(VerticalDragRecognizer::new()), self_id);
     }
 
@@ -394,6 +403,7 @@ impl Element for ScrollViewElement {
                 // callback. This is one of the six termination conditions for
                 // momentum: a fresh touch-down cancels inertia.
                 self.momentum.stop();
+                self.spring.stop();
                 self.velocity_tracker.clear();
                 self.last_move_time = None;
                 // Drag just won (on the move that crossed slop). Initialize
@@ -2689,6 +2699,98 @@ mod tests {
         assert!(
             !ticker.has_active(),
             "unmount should stop spring and unregister ticker handle"
+        );
+    }
+
+    #[test]
+    fn test_press_stops_spring_even_with_child_gesture_detector() {
+        use crate::animation::AnimationTicker;
+        use crate::core::Point;
+        use crate::core::ScaleSource;
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        use crate::widgets::{ScrollController, ScrollView};
+        use crate::ThreeTreePipeline;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let ctrl = ScrollController::new();
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row").boxed().on_press(|| ()));
+        }
+        let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let move_evt = InputEvent::PointerMoved {
+            position: Point::new(200.0, 500.0),
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &move_evt,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        let release = InputEvent::PointerButton {
+            position: Point::new(200.0, 500.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 500.0),
+            &release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert!(
+            ticker.has_active(),
+            "spring should be active after release in overscroll"
+        );
+
+        let press2 = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(200.0, 300.0),
+            &press2,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert!(
+            !ticker.has_active(),
+            "press should stop spring even when child GestureDetector blocks on_event propagation"
         );
     }
 }
