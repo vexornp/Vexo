@@ -81,8 +81,18 @@ impl KeyboardObserver {
     /// Install keyboard observers on the default `NotificationCenter`.
     ///
     /// `scale_factor` converts the keyboard frame (physical px, as reported
-    /// by UIKit) to logical px. Returns a handle whose `Drop` removes the
-    /// observers.
+    /// by UIKit) to logical px. `window_logical_height` caps the reported
+    /// height so an iPad stage-manager / slide-over keyboard frame (which can
+    /// exceed the window's own height) doesn't push the avoidance padding
+    /// beyond the window. Pass `f32::MAX` to disable the cap.
+    /// Returns a handle whose `Drop` removes the observers.
+    ///
+    /// # v1 limitation
+    ///
+    /// `WindowState` constructs the observer during window init, when the
+    /// window's live size isn't yet available. It passes `f32::MAX` (no cap),
+    /// preserving pre-clamp behavior. A future improvement should thread the
+    /// live window height (e.g., update it on each `SurfaceResized`).
     ///
     /// # Safety (caller contract)
     ///
@@ -90,7 +100,11 @@ impl KeyboardObserver {
     /// and the keyboard notifications are main-thread-affine. `WindowState`
     /// upholds this by constructing the observer during window init on the
     /// main thread.
-    pub fn install(source: KeyboardInsetSource, scale_factor: f64) -> Self {
+    pub fn install(
+        source: KeyboardInsetSource,
+        scale_factor: f64,
+        window_logical_height: f32,
+    ) -> Self {
         let center = NSNotificationCenter::defaultCenter();
 
         let scale = scale_factor as f32;
@@ -101,7 +115,13 @@ impl KeyboardObserver {
             // SAFETY: UIKit hands us a valid `NSNotification *` for the
             // lifetime of the callback. We only read it on the main thread.
             let notif = unsafe { notif.as_ref() };
-            handle_keyboard_notification(notif, &source_for_show, scale, /*show=*/ true);
+            handle_keyboard_notification(
+                notif,
+                &source_for_show,
+                scale,
+                window_logical_height,
+                /*show=*/ true,
+            );
         });
         // SAFETY: `addObserverForName:object:queue:usingBlock:` is marked
         // `#[unsafe(method)]` for thread-safety reasons; we only invoke it
@@ -123,7 +143,13 @@ impl KeyboardObserver {
         let hide_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             // SAFETY: same as above.
             let notif = unsafe { notif.as_ref() };
-            handle_keyboard_notification(notif, &source_for_hide, scale, /*show=*/ false);
+            handle_keyboard_notification(
+                notif,
+                &source_for_hide,
+                scale,
+                window_logical_height,
+                /*show=*/ false,
+            );
         });
         // SAFETY: same as the show registration above.
         let hide_token = unsafe {
@@ -160,12 +186,16 @@ impl Drop for KeyboardObserver {
 /// Extract keyboard frame / duration / curve from a notification's `userInfo`
 /// and write them into the source.
 ///
-/// - `show == true`: target height = frame end height (clamped to >= 0).
+/// - `show == true`: target height = frame end height (clamped to
+///   `[0, window_logical_height]` — the upper bound prevents iPad
+///   stage-manager / slide-over frames, which can exceed the window's own
+///   height, from over-padding the avoidance widget).
 /// - `show == false`: target height = 0 (keyboard dismissing).
 fn handle_keyboard_notification(
     notif: &NSNotification,
     source: &KeyboardInsetSource,
     scale_factor: f32,
+    window_logical_height: f32,
     show: bool,
 ) {
     let user_info: Option<Retained<NSDictionary>> = notif.userInfo();
@@ -209,8 +239,12 @@ fn handle_keyboard_notification(
                 let height_logical = height_px / scale_factor;
                 // Defensive: never report a negative height (can happen if
                 // the keyboard frame is off-screen in slide-over / stage
-                // manager configurations).
-                height_logical.max(0.0)
+                // manager configurations), and never exceed the window's
+                // own logical height (on iPad with stage manager /
+                // slide-over the keyboard frame can be taller than the
+                // app window). `window_logical_height == f32::MAX` is the
+                // "no cap" sentinel used when the live height is unknown.
+                height_logical.min(window_logical_height).max(0.0)
             }
             None => return,
         }

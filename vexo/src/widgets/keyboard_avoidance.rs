@@ -260,6 +260,12 @@ mod tests {
         (pipeline, ticker)
     }
 
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
     // ----- Widget-level behavior tests (no pipeline; just exercise state) -----
 
     #[test]
@@ -439,6 +445,74 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 2,
             "expected element tree to mount"
+        );
+    }
+
+    #[test]
+    fn layout_shrinks_child_by_keyboard_inset() {
+        // Spec: a non-zero keyboard inset must shrink the child's computed
+        // bounds by ~inset. We set the source to 300px (snap, no animation),
+        // lay out at 400×800, and assert some render object in the tree has
+        // computed-bounds height ~500 (800 − 300), within ±5px tolerance.
+        // The flex_fill wrapper expands to fill the content area, so its
+        // ContainerRenderObject is the one that reflects the inset.
+        use crate::core::{Bounds, KeyboardCurve, KeyboardInsetSource, Logical, Size};
+        use crate::layout::{Layout, TaffyLayoutEngine};
+        use crate::widgets::WithLayout;
+        use crate::RenderObjectKey;
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // Plumb the source BEFORE update() so the widget's first render
+        // (which snaps to the current target) sees 300px.
+        let source = KeyboardInsetSource::default();
+        source.set_target(300.0, 0.0, KeyboardCurve::EaseInOut);
+        pipeline.set_keyboard_inset_source(source);
+
+        // Wrap Text in a flex_fill WithLayout so the wrapper expands to fill
+        // the available content area (800 − 300 = 500). A bare Text sizes
+        // to its content (~29px) and wouldn't reflect the inset; the flex_fill
+        // wrapper does.
+        let child = WithLayout::new(crate::Text::new("hi"), Layout::flex_fill());
+        let view = KeyboardAvoidance::new(child).boxed();
+        pipeline.update(view);
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(400.0, 800.0), &mut engine, &mut font_system);
+
+        // Walk the render-object tree and collect every computed bounds.
+        // We expect at least one RO whose height is ~500 (the flex_fill
+        // wrapper filling the 800 − 300 content area).
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        fn collect_bounds(
+            ro_reg: &crate::RenderObjectRegistry,
+            id: RenderObjectKey,
+            out: &mut Vec<Bounds<Logical>>,
+        ) {
+            if let Some(ro) = ro_reg.get(id) {
+                if let Some(b) = ro.computed_bounds() {
+                    out.push(b);
+                }
+                for &child in ro.children() {
+                    collect_bounds(ro_reg, child, out);
+                }
+            }
+        }
+
+        let mut all_bounds = Vec::new();
+        collect_bounds(ro_reg, root, &mut all_bounds);
+
+        // Find any RO whose height is within ±5px of 500.
+        let found = all_bounds
+            .iter()
+            .find(|b| (b.height() - 500.0).abs() <= 5.0);
+        assert!(
+            found.is_some(),
+            "expected some render object with height ~500 (800 − 300 inset), \
+             but no computed bounds matched. All bounds: {all_bounds:?}"
         );
     }
 }

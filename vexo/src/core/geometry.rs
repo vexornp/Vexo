@@ -746,7 +746,7 @@ impl KeyboardCurve {
 }
 
 /// Snapshot of the keyboard-inset state at a point in time.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct KeyboardInsetSnapshot {
     /// Target bottom inset in logical pixels (0 when keyboard is down).
     pub target_height: f32,
@@ -799,12 +799,7 @@ impl KeyboardInsetSource {
         KeyboardInsetSnapshot {
             target_height: f32::from_bits(self.inner.target_height.load(Ordering::Relaxed)),
             duration_secs: f32::from_bits(self.inner.duration_secs.load(Ordering::Relaxed)),
-            curve: match self.inner.curve.load(Ordering::Relaxed) {
-                1 => KeyboardCurve::EaseIn,
-                2 => KeyboardCurve::EaseOut,
-                3 => KeyboardCurve::Linear,
-                _ => KeyboardCurve::EaseInOut,
-            },
+            curve: KeyboardCurve::from_uikit_raw(self.inner.curve.load(Ordering::Relaxed)),
         }
     }
 
@@ -1300,6 +1295,16 @@ mod keyboard_inset_source_tests {
         assert_eq!(s.current_target_height(), 336.0);
         s.set_target(0.0, 0.25, KeyboardCurve::EaseInOut);
         assert_eq!(s.current_target_height(), 0.0);
+    }
+
+    #[test]
+    fn from_uikit_raw_maps_all_values() {
+        assert_eq!(KeyboardCurve::from_uikit_raw(0), KeyboardCurve::EaseInOut);
+        assert_eq!(KeyboardCurve::from_uikit_raw(1), KeyboardCurve::EaseIn);
+        assert_eq!(KeyboardCurve::from_uikit_raw(2), KeyboardCurve::EaseOut);
+        assert_eq!(KeyboardCurve::from_uikit_raw(3), KeyboardCurve::Linear);
+        // Out-of-range falls back to EaseInOut (UIKit's default)
+        assert_eq!(KeyboardCurve::from_uikit_raw(255), KeyboardCurve::EaseInOut);
     }
 }
 

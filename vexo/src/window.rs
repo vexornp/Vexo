@@ -9,7 +9,7 @@ use winit::{
 
 use crate::animation::AnimationTicker;
 use crate::core::{
-    Absolute, KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource, Logical, Physical, Point,
+    Absolute, KeyboardInsetSnapshot, KeyboardInsetSource, Logical, Physical, Point,
     ScaleSource, SafeAreaSource, Size,
 };
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
@@ -141,9 +141,16 @@ impl<A: Application + 'static> WindowState<A> {
         #[cfg(target_os = "ios")]
         let keyboard_observer = {
             let scale = scale_source.get().factor_f64();
+            // v1 limitation: the live window size isn't available yet at
+            // `WindowState::new()` (the window is just being created), so we
+            // pass `f32::MAX` to disable the clamp. The clamp code in
+            // `handle_keyboard_notification` is still correct; a future
+            // improvement would thread the live height from `SurfaceResized`.
+            let window_logical_height = f32::MAX;
             Some(crate::platform::keyboard_ios::KeyboardObserver::install(
                 keyboard_inset_source.clone(),
                 scale,
+                window_logical_height,
             ))
         };
 
@@ -156,11 +163,7 @@ impl<A: Application + 'static> WindowState<A> {
             scale_source,
             safe_area_source,
             keyboard_inset_source,
-            keyboard_inset_snapshot_prev: KeyboardInsetSnapshot {
-                target_height: 0.0,
-                duration_secs: 0.0,
-                curve: KeyboardCurve::EaseInOut,
-            },
+            keyboard_inset_snapshot_prev: KeyboardInsetSnapshot::default(),
             #[cfg(target_os = "ios")]
             keyboard_observer,
             _phantom: std::marker::PhantomData,
