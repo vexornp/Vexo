@@ -273,12 +273,5 @@ fn handle_keyboard_notification(
         .unwrap_or(0); // EaseInOut is UIKit's default
     let curve = KeyboardCurve::from_uikit_raw(curve_raw);
 
-    log::debug!(
-        "[KBD_AVOID] notification: show={} target_height={:.1} duration={:.3} curve={:?}",
-        show,
-        target_height,
-        duration_secs,
-        curve
-    );
     source.set_target(target_height, duration_secs, curve);
 }

@@ -572,11 +572,6 @@ impl<A: Application + 'static> WindowState<A> {
             let prev = self.keyboard_inset_snapshot_prev;
             let curr = self.keyboard_inset_source.get();
             if curr != prev {
-                log::debug!(
-                    "[KBD_AVOID] poll detected change: prev=(h={:.1},d={:.3}) curr=(h={:.1},d={:.3}) → mark root needs_build + mark_all_needs_layout + request_frame",
-                    prev.target_height, prev.duration_secs,
-                    curr.target_height, curr.duration_secs,
-                );
                 self.keyboard_inset_snapshot_prev = curr;
                 // Mark the root element as needing build so the widget tree
                 // re-renders. This is necessary because KeyboardAvoidance reads

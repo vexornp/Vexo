@@ -116,13 +116,28 @@ impl AnimationController {
         let duration = self.duration.as_secs_f64();
         let raw = elapsed / duration;
 
-        self.value = match self.direction {
-            AnimationDirection::Forward => raw.min(1.0),
-            AnimationDirection::Reverse => (1.0 - raw).max(0.0),
+        // Direction-aware completion: a Forward tween starts at value=0 and
+        // completes at value>=1.0; a Reverse tween starts at value=1 and
+        // completes at value<=0.0. Checking BOTH bounds regardless of
+        // direction is a bug — it stops a Forward tween on its very first
+        // advance when elapsed≈0 (value=0.0), which happens when `advance`
+        // is called with a `now` that predates `start_time` (e.g. a stale
+        // `now` captured once per perform_rebuilds cycle and reused across
+        // elements, where a controller created during an earlier element's
+        // rebuild has start_time > now). See KeyboardAvoidance retarget bug.
+        let completed = match self.direction {
+            AnimationDirection::Forward => {
+                self.value = raw.min(1.0);
+                self.value >= 1.0
+            }
+            AnimationDirection::Reverse => {
+                self.value = (1.0 - raw).max(0.0);
+                self.value <= 0.0
+            }
             AnimationDirection::Stopped => return,
         };
 
-        if self.value >= 1.0 || self.value <= 0.0 {
+        if completed {
             self.direction = AnimationDirection::Stopped;
             self.start_time = None;
             self.unregister_from_ticker();
@@ -321,5 +336,44 @@ mod tests {
         ctrl.advance(Instant::now());
         assert!(ctrl.value().abs() < 0.001);
         assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+    }
+
+    // Regression: a Forward tween must NOT stop when its first `advance`
+    // sees zero (or near-zero) elapsed time. This happens when `advance` is
+    // called with a `now` that predates `start_time` — e.g. a stale `now`
+    // captured once per perform_rebuilds cycle and reused across elements,
+    // where a controller created during an earlier element's rebuild has
+    // start_time > now. The old completion check `value <= 0.0 || value >=
+    // 1.0` wrongly stopped a Forward tween at its starting value (0.0),
+    // which killed the KeyboardAvoidance dismiss tween whenever the user
+    // tapped outside *during* the show tween.
+    #[test]
+    fn test_controller_forward_does_not_stop_at_zero_elapsed() {
+        let mut ctrl = AnimationController::new(Duration::from_millis(250));
+        ctrl.forward();
+        // `now` == start_time → elapsed == 0 → raw == 0 → value == 0.0.
+        // A Forward tween at its start must NOT be considered complete.
+        let start = ctrl.start_time.unwrap();
+        ctrl.advance(start);
+        assert_eq!(ctrl.direction, AnimationDirection::Forward);
+        assert!(ctrl.value().abs() < 1e-9);
+        // And it must still progress on a later advance with real elapsed.
+        ctrl.advance(start + Duration::from_millis(125));
+        assert_eq!(ctrl.direction, AnimationDirection::Forward);
+        assert!((ctrl.value() - 0.5).abs() < 0.01);
+    }
+
+    // Regression: a Reverse tween must NOT stop at value==1.0 (its start).
+    #[test]
+    fn test_controller_reverse_does_not_stop_at_start_value() {
+        let mut ctrl = AnimationController::new(Duration::from_millis(250));
+        ctrl.reverse();
+        let start = ctrl.start_time.unwrap();
+        ctrl.advance(start); // elapsed == 0 → value == 1.0 (Reverse start)
+        assert_eq!(ctrl.direction, AnimationDirection::Reverse);
+        assert!((ctrl.value() - 1.0).abs() < 1e-9);
+        ctrl.advance(start + Duration::from_millis(125));
+        assert_eq!(ctrl.direction, AnimationDirection::Reverse);
+        assert!((ctrl.value() - 0.5).abs() < 0.01);
     }
 }
