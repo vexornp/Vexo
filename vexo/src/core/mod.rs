@@ -56,8 +56,8 @@ mod stroke;
 
 pub use color::Color;
 pub use geometry::{
-    Absolute, AffineTransform, Bounds, Logical, Physical, Point, Position, Relative,
-    SafeAreaSource, Scale, ScaleSource, Size,
+    Absolute, AffineTransform, Bounds, KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource,
+    Logical, Physical, Point, Position, Relative, SafeAreaSource, Scale, ScaleSource, Size,
 };
 pub use id::WidgetId;
 pub use stroke::Stroke;

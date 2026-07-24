@@ -34,7 +34,7 @@
 //! ```
 
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 // ============================================================================
@@ -707,6 +707,133 @@ impl Default for SafeAreaSource {
 }
 
 // ============================================================================
+// KEYBOARD INSET SOURCE
+// ============================================================================
+
+/// Keyboard animation curve, mirroring UIKit's
+/// `UIViewAnimationCurve` raw values reported via
+/// `UIResponder.keyboardAnimationCurveUserInfoKey`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum KeyboardCurve {
+    /// UIKit raw value 0. The default keyboard curve; ease-in-ease-out.
+    EaseInOut = 0,
+    /// UIKit raw value 1.
+    EaseIn = 1,
+    /// UIKit raw value 2.
+    EaseOut = 2,
+    /// UIKit raw value 3.
+    Linear = 3,
+}
+
+impl Default for KeyboardCurve {
+    fn default() -> Self {
+        Self::EaseInOut
+    }
+}
+
+impl KeyboardCurve {
+    /// Map a UIKit `UIViewAnimationCurve` raw value to our enum.
+    /// Falls back to `EaseInOut` (UIKit's default) for unknown values.
+    pub fn from_uikit_raw(raw: u8) -> Self {
+        match raw {
+            1 => Self::EaseIn,
+            2 => Self::EaseOut,
+            3 => Self::Linear,
+            _ => Self::EaseInOut,
+        }
+    }
+}
+
+/// Snapshot of the keyboard-inset state at a point in time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeyboardInsetSnapshot {
+    /// Target bottom inset in logical pixels (0 when keyboard is down).
+    pub target_height: f32,
+    /// Duration of the keyboard's own animation, in seconds.
+    /// 0.0 means "snap immediately" (no animation).
+    pub duration_secs: f32,
+    /// Keyboard animation curve.
+    pub curve: KeyboardCurve,
+}
+
+/// Shared handle to the keyboard's target inset (logical pixels),
+/// animation duration, and curve.
+///
+/// Mirrors [`SafeAreaSource`]'s design: a dumb `Arc`-atomic value with no
+/// callbacks. The iOS keyboard shim writes via [`set_target`] on each
+/// `keyboardWillShow/Hide` notification; the [`KeyboardAvoidance`] widget
+/// reads via [`get`] each render and owns the animated tween in its own state.
+///
+/// On desktop / Android the shim is absent, so this stays at its default
+/// (all-zero) and `KeyboardAvoidance` is a transparent pass-through.
+///
+/// [`KeyboardAvoidance`]: crate::widgets::KeyboardAvoidance
+/// [`set_target`]: Self::set_target
+/// [`get`]: Self::get
+#[derive(Clone)]
+pub struct KeyboardInsetSource {
+    inner: Arc<KeyboardInsetInner>,
+}
+
+struct KeyboardInsetInner {
+    target_height: AtomicU32,
+    duration_secs: AtomicU32,
+    curve: AtomicU8,
+}
+
+impl KeyboardInsetSource {
+    /// Create a new source with all-zero defaults (keyboard down, no animation).
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(KeyboardInsetInner {
+                target_height: AtomicU32::new(0.0_f32.to_bits()),
+                duration_secs: AtomicU32::new(0.0_f32.to_bits()),
+                curve: AtomicU8::new(KeyboardCurve::EaseInOut as u8),
+            }),
+        }
+    }
+
+    /// Read the current snapshot.
+    pub fn get(&self) -> KeyboardInsetSnapshot {
+        KeyboardInsetSnapshot {
+            target_height: f32::from_bits(self.inner.target_height.load(Ordering::Relaxed)),
+            duration_secs: f32::from_bits(self.inner.duration_secs.load(Ordering::Relaxed)),
+            curve: match self.inner.curve.load(Ordering::Relaxed) {
+                1 => KeyboardCurve::EaseIn,
+                2 => KeyboardCurve::EaseOut,
+                3 => KeyboardCurve::Linear,
+                _ => KeyboardCurve::EaseInOut,
+            },
+        }
+    }
+
+    /// Update the target inset, animation duration, and curve.
+    /// Called only by the iOS keyboard shim on each notification.
+    /// Visible to all clone holders immediately.
+    pub fn set_target(&self, height: f32, duration_secs: f32, curve: KeyboardCurve) {
+        self.inner
+            .target_height
+            .store(height.to_bits(), Ordering::Relaxed);
+        self.inner
+            .duration_secs
+            .store(duration_secs.to_bits(), Ordering::Relaxed);
+        self.inner.curve.store(curve as u8, Ordering::Relaxed);
+    }
+
+    /// Convenience: read just the current target height.
+    pub fn current_target_height(&self) -> f32 {
+        f32::from_bits(self.inner.target_height.load(Ordering::Relaxed))
+    }
+}
+
+impl Default for KeyboardInsetSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
 // AFFINE TRANSFORM
 // ============================================================================
 
@@ -1129,6 +1256,50 @@ mod safe_area_source_tests {
                 bottom: 34.0
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod keyboard_inset_source_tests {
+    use super::{KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource};
+
+    #[test]
+    fn default_is_all_zero() {
+        let s = KeyboardInsetSource::default();
+        let snap = s.get();
+        assert_eq!(snap.target_height, 0.0);
+        assert_eq!(snap.duration_secs, 0.0);
+        assert_eq!(snap.curve, KeyboardCurve::EaseInOut);
+    }
+
+    #[test]
+    fn set_target_then_get_returns_written_values() {
+        let s = KeyboardInsetSource::default();
+        s.set_target(300.0, 0.25, KeyboardCurve::EaseIn);
+        let snap = s.get();
+        assert_eq!(snap.target_height, 300.0);
+        assert_eq!(snap.duration_secs, 0.25);
+        assert_eq!(snap.curve, KeyboardCurve::EaseIn);
+    }
+
+    #[test]
+    fn clones_share_storage() {
+        let s = KeyboardInsetSource::default();
+        let clone = s.clone();
+        s.set_target(250.0, 0.3, KeyboardCurve::Linear);
+        let snap = clone.get();
+        assert_eq!(snap.target_height, 250.0);
+        assert_eq!(snap.duration_secs, 0.3);
+        assert_eq!(snap.curve, KeyboardCurve::Linear);
+    }
+
+    #[test]
+    fn current_target_height_returns_latest() {
+        let s = KeyboardInsetSource::default();
+        s.set_target(336.0, 0.25, KeyboardCurve::EaseInOut);
+        assert_eq!(s.current_target_height(), 336.0);
+        s.set_target(0.0, 0.25, KeyboardCurve::EaseInOut);
+        assert_eq!(s.current_target_height(), 0.0);
     }
 }
 

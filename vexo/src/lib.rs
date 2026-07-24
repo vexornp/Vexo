@@ -5,6 +5,7 @@ use winit::event_loop::EventLoop;
 
 pub use core::AffineTransform;
 pub use core::Color;
+pub use core::{KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource};
 pub use glyphon;
 pub use image_data::{ImageData, ImageDataError};
 pub use uniffi;
