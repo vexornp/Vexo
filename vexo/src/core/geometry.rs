@@ -735,12 +735,28 @@ impl Default for KeyboardCurve {
 
 impl KeyboardCurve {
     /// Map a UIKit `UIViewAnimationCurve` raw value to our enum.
-    /// Falls back to `EaseInOut` (UIKit's default) for unknown values.
+    ///
+    /// The standard `UIViewAnimationCurve` values are 0 (easeInOut), 1
+    /// (easeIn), 2 (easeOut), 3 (linear). However, iOS keyboard notifications
+    /// report `raw = 7` — a private value that, when converted to
+    /// `UIViewAnimationOptions` via `curve << 16`, yields `0x70000`: bits
+    /// 16-17 (the curve field) are `0b11 = 3 = linear`, and bit 18 is
+    /// `allowUserInteraction`. So **the keyboard actually animates with a
+    /// LINEAR curve**, not EaseInOut.
+    ///
+    /// Extracting the bottom 2 bits (`raw & 0x3`) handles all cases
+    /// correctly: standard values 0-3 pass through unchanged, and the
+    /// keyboard's private value 7 → 3 → Linear. Without this, raw=7 fell
+    /// into the `_ => EaseInOut` fallback, making the input view start
+    /// slowly (ease-in phase) while the keyboard moved at constant speed —
+    /// the keyboard dismissed far faster than the input view moved down.
     pub fn from_uikit_raw(raw: u8) -> Self {
-        match raw {
+        match raw & 0x3 {
+            0 => Self::EaseInOut,
             1 => Self::EaseIn,
             2 => Self::EaseOut,
             3 => Self::Linear,
+            // Unreachable: `u8 & 0x3` is always 0..=3.
             _ => Self::EaseInOut,
         }
     }
@@ -1344,8 +1360,29 @@ mod keyboard_inset_source_tests {
         assert_eq!(KeyboardCurve::from_uikit_raw(1), KeyboardCurve::EaseIn);
         assert_eq!(KeyboardCurve::from_uikit_raw(2), KeyboardCurve::EaseOut);
         assert_eq!(KeyboardCurve::from_uikit_raw(3), KeyboardCurve::Linear);
-        // Out-of-range falls back to EaseInOut (UIKit's default)
-        assert_eq!(KeyboardCurve::from_uikit_raw(255), KeyboardCurve::EaseInOut);
+    }
+
+    #[test]
+    fn from_uikit_raw_keyboard_private_value_7_is_linear() {
+        // iOS keyboard notifications report raw=7 — a private
+        // UIViewAnimationCurve value. When converted to
+        // UIViewAnimationOptions via `curve << 16` (0x70000), bits 16-17
+        // (the curve field) are 0b11 = 3 = linear. The keyboard animates
+        // with a LINEAR curve, not EaseInOut. Mapping raw=7 to EaseInOut
+        // (the old fallback) caused the input view to start slowly while
+        // the keyboard moved at constant speed — the keyboard dismissed
+        // far faster than the input view moved down.
+        assert_eq!(KeyboardCurve::from_uikit_raw(7), KeyboardCurve::Linear);
+
+        // The bottom-2-bits masking also handles higher private values.
+        // raw=4 (0b100) → bits 0-1 = 0b00 = 0 → EaseInOut.
+        assert_eq!(KeyboardCurve::from_uikit_raw(4), KeyboardCurve::EaseInOut);
+        // raw=5 (0b101) → bits 0-1 = 0b01 = 1 → EaseIn.
+        assert_eq!(KeyboardCurve::from_uikit_raw(5), KeyboardCurve::EaseIn);
+        // raw=6 (0b110) → bits 0-1 = 0b10 = 2 → EaseOut.
+        assert_eq!(KeyboardCurve::from_uikit_raw(6), KeyboardCurve::EaseOut);
+        // raw=255 (0b11111111) → bits 0-1 = 0b11 = 3 → Linear.
+        assert_eq!(KeyboardCurve::from_uikit_raw(255), KeyboardCurve::Linear);
     }
 }
 
