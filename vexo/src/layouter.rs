@@ -14,10 +14,10 @@
 //! 3. Apply computed layouts to all render objects whose Taffy nodes
 //!    were recomputed
 
-use crate::core::{Logical, SafeAreaSource, Size};
+use crate::core::{Logical, Size};
 use crate::dirty::DirtyTracking;
 use crate::id::RenderObjectKey;
-use crate::layout::{EdgeInsets, LayoutEngine, LayoutNodeKey};
+use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::render_object::{LayoutContext, RenderObjectRegistry};
 
 /// Zero-sized struct holding layout-related associated functions.
@@ -38,7 +38,6 @@ impl Layouter {
         available_size: Size<Logical>,
         engine: &mut dyn LayoutEngine,
         font_system: &mut glyphon::FontSystem,
-        safe_area_source: SafeAreaSource,
     ) {
         // Clean up orphaned layout nodes from render objects removed during reconciliation
         let orphaned_nodes = render_objects.drain_orphaned_layout_nodes();
@@ -65,32 +64,12 @@ impl Layouter {
             None => return,
         };
 
-        // Phase 0: Top-down safe-area pre-pass.
-        //
-        // Propagate "effective" insets (global insets minus ancestors'
-        // claims) from root to leaves so `SafeAreaRenderObject::layout()`
-        // pads by the *remaining* insets, not the raw global ones. This
-        // prevents double-consumption: when a sibling bar (e.g. TabBarView's
-        // tab bar) owns the bottom edge, the page content's `SafeArea`
-        // (wrapped in `SafeAreaClaim::bottom`) sees `bottom == 0` and adds
-        // no bottom padding.
-        //
-        // The walk runs every layout pass. Rotation marks all ROs dirty
-        // (`mark_all_needs_layout`), so new global insets are picked up
-        // without a widget rebuild. The walk is O(n) — same as Phase 3
-        // (`apply_layout_recursive`) which already walks the entire tree.
-        {
-            let global_insets = safe_area_source.get();
-            Self::resolve_effective_safe_area(render_objects, root_id, global_insets);
-        }
-
         // Phase 1: Update dirty render objects in the Taffy tree.
         // We must process in bottom-up order because parent containers
         // need their children's LayoutNodeKeys to exist before they can
         // create/update their own Taffy nodes.
         {
             let mut ctx = LayoutContext::new(engine, font_system);
-            ctx.set_safe_area_source(safe_area_source.clone());
             let dirty_keys: Vec<RenderObjectKey> = dirty.drain_layout().collect();
             Self::layout_dirty_recursive(render_objects, root_id, &dirty_keys, &mut ctx);
         }
@@ -106,7 +85,6 @@ impl Layouter {
         // TODO: optimize to only apply to recomputed subtrees
         {
             let mut ctx = LayoutContext::new(engine, font_system);
-            ctx.set_safe_area_source(safe_area_source);
             Self::apply_layout_recursive(render_objects, root_id, &mut ctx);
         }
 
@@ -156,42 +134,6 @@ impl Layouter {
 
         if let Some(obj) = render_objects.get_mut(id) {
             obj.layout(ctx, &child_nodes);
-        }
-    }
-
-    /// Top-down pre-pass: propagate effective safe-area insets from root to
-    /// leaves, applying each render object's claim.
-    ///
-    /// For each render object:
-    /// 1. `set_effective_safe_area(parent_effective)` — store what *this* RO
-    ///    should see (SafeAreaRenderObject reads this in `layout()`).
-    /// 2. Read `safe_area_claim()` — which edges this RO declares "owned".
-    /// 3. Compute `child_effective = claim.remove_from(parent_effective)` —
-    ///    claimed edges zeroed for descendants.
-    /// 4. Recurse into children with `child_effective`.
-    ///
-    /// Pass-through ROs (Opacity, SafeAreaClaim, etc.) transparently
-    /// propagate: they don't store effective insets (no-op default), and
-    /// their claim (if any) reduces insets for their subtree.
-    fn resolve_effective_safe_area(
-        render_objects: &mut RenderObjectRegistry,
-        id: RenderObjectKey,
-        parent_effective: EdgeInsets,
-    ) {
-        let (claim, children) = {
-            let ro = match render_objects.get_mut(id) {
-                Some(ro) => ro,
-                None => return,
-            };
-            ro.set_effective_safe_area(parent_effective);
-            let claim = ro.safe_area_claim();
-            let children: Vec<RenderObjectKey> = ro.children().to_vec();
-            (claim, children)
-        };
-
-        let child_effective = claim.remove_from(parent_effective);
-        for child_id in children {
-            Self::resolve_effective_safe_area(render_objects, child_id, child_effective);
         }
     }
 

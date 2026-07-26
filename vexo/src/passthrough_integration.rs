@@ -5,7 +5,6 @@
 //! so the grandchild receives the grandparent's constraints.
 
 use crate::core::AffineTransform;
-use crate::core::SafeAreaSource;
 use crate::core::{Color, Size};
 use crate::dirty::DirtyTracking;
 use crate::id::{ElementKey, RenderObjectKey};
@@ -81,7 +80,6 @@ fn test_passthrough_opacity_child_receives_grandparent_width() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child_bounds = registry
@@ -141,7 +139,6 @@ fn test_nested_passthrough_links_correctly() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child_bounds = registry
@@ -196,7 +193,6 @@ fn test_passthrough_adopts_child_size() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let opacity_bounds = registry
@@ -250,7 +246,6 @@ fn test_passthrough_removal_no_double_cleanup() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     // Remove the Opacity RO (pass-through). Should NOT orphan the child's node.
@@ -317,7 +312,6 @@ fn test_offstage_flag_flip_in_pipeline() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     // Initially: off1 onstage, child1 should have width 300.
@@ -370,7 +364,6 @@ fn test_offstage_flag_flip_in_pipeline() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     // After flip: off2 onstage, child2 should have width 300.
@@ -504,7 +497,6 @@ fn test_nav_transition_text_does_not_wrap() {
         Size::new(375.0, 667.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let text_bounds = registry
@@ -572,7 +564,10 @@ fn build_indexed_stack_tree(
         Box::new(OffstageRenderObject::new(offstage1_flag)),
         offstage1_elem,
     );
-    let stack_key = registry.create(Box::new(IndexedStackRenderObject::new(index, Layout::stack())), stack_elem);
+    let stack_key = registry.create(
+        Box::new(IndexedStackRenderObject::new(index, Layout::stack())),
+        stack_elem,
+    );
 
     registry.set_child(offstage0_key, child0_key);
     registry.set_child(offstage1_key, child1_key);
@@ -614,7 +609,6 @@ fn test_indexed_stack_only_visible_child_is_laid_out() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child0_bounds = registry
@@ -662,7 +656,6 @@ fn test_indexed_stack_offstage_child_not_linked_to_taffy_node() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let stack_node = registry
@@ -723,7 +716,6 @@ fn test_indexed_stack_index_flip_relays_visible_child() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child0_bounds_before = registry
@@ -764,7 +756,6 @@ fn test_indexed_stack_index_flip_relays_visible_child() {
         Size::new(300.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child1_bounds_after = registry
@@ -824,7 +815,6 @@ fn test_indexed_stack_visible_child_receives_grandparent_width() {
         Size::new(375.0, 200.0),
         &mut engine,
         &mut font_system,
-        SafeAreaSource::default(),
     );
 
     let child_bounds = registry

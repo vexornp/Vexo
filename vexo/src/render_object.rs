@@ -18,7 +18,7 @@ use slotmap::{SecondaryMap, SlotMap};
 
 use crate::core::{Point, Size};
 use crate::input::MouseTrackerAnnotation;
-use crate::layout::{EdgeInsets, LayoutEngine, LayoutNodeKey};
+use crate::layout::{LayoutEngine, LayoutNodeKey};
 use crate::render::RenderCommand;
 
 use super::id::{ElementKey, RenderObjectKey};
@@ -48,7 +48,6 @@ pub struct LayoutResult {
 pub struct LayoutContext<'a> {
     engine: &'a mut dyn LayoutEngine,
     font_system: &'a mut glyphon::FontSystem,
-    safe_area_source: crate::core::SafeAreaSource,
 }
 
 impl<'a> LayoutContext<'a> {
@@ -57,7 +56,6 @@ impl<'a> LayoutContext<'a> {
         Self {
             engine,
             font_system,
-            safe_area_source: crate::core::SafeAreaSource::default(),
         }
     }
 
@@ -74,19 +72,6 @@ impl<'a> LayoutContext<'a> {
     /// Get the font system.
     pub fn font_system(&mut self) -> &mut glyphon::FontSystem {
         self.font_system
-    }
-
-    /// Install the shared safe-area source so render objects (e.g. `SafeArea`)
-    /// can resolve live insets during [`RenderObject::layout`]. Set once per
-    /// layout pass by the [`Layouter`](crate::layouter::Layouter); defaults to
-    /// all-zero (desktop / tests).
-    pub fn set_safe_area_source(&mut self, source: crate::core::SafeAreaSource) {
-        self.safe_area_source = source;
-    }
-
-    /// Get a clone of the safe-area source.
-    pub fn safe_area_source(&self) -> crate::core::SafeAreaSource {
-        self.safe_area_source.clone()
     }
 }
 
@@ -202,86 +187,6 @@ impl HitTestContext {
     /// Create a mock hit test context.
     pub fn mock() -> Self {
         Self {}
-    }
-}
-
-// ============================================================================
-// SAFE AREA CLAIM EDGES
-// ============================================================================
-
-/// Which safe-area edges a render object claims for its descendants.
-///
-/// A claimed edge is "owned" — descendants see a zero inset for that edge
-/// (via the layouter's top-down safe-area pre-pass), preventing
-/// double-consumption. For example, a `TabBarView`'s tab bar owns the
-/// bottom edge (home indicator); the page content above it is wrapped in
-/// `SafeAreaClaim::bottom(..)` so the content's `SafeArea` sees
-/// `bottom == 0` and doesn't re-apply the bottom padding.
-///
-/// `SafeArea` claims its enabled sides; `SafeAreaClaim` claims
-/// caller-specified sides. Nesting is safe: claiming an already-claimed
-/// edge is a harmless no-op (the walk zeroes the edge once; re-zeroing
-/// changes nothing).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SafeAreaClaimEdges {
-    pub top: bool,
-    pub right: bool,
-    pub bottom: bool,
-    pub left: bool,
-}
-
-impl SafeAreaClaimEdges {
-    /// No edges claimed — descendants see the parent's insets unchanged.
-    pub const NONE: Self = Self {
-        top: false,
-        right: false,
-        bottom: false,
-        left: false,
-    };
-
-    /// All edges claimed — descendants see all-zero insets.
-    pub const ALL: Self = Self {
-        top: true,
-        right: true,
-        bottom: true,
-        left: true,
-    };
-
-    /// Claim the top edge only.
-    pub const TOP: Self = Self {
-        top: true,
-        right: false,
-        bottom: false,
-        left: false,
-    };
-
-    /// Claim the bottom edge only.
-    pub const BOTTOM: Self = Self {
-        top: false,
-        right: false,
-        bottom: true,
-        left: false,
-    };
-
-    /// Claim the left and right edges (horizontal / notch).
-    pub const HORIZONTAL: Self = Self {
-        top: false,
-        right: true,
-        bottom: false,
-        left: true,
-    };
-
-    /// Zero out the claimed edges in the given insets, returning the
-    /// reduced insets that descendants should see.
-    ///
-    /// Unclaimed edges pass through unchanged.
-    pub fn remove_from(&self, insets: EdgeInsets) -> EdgeInsets {
-        EdgeInsets {
-            top: if self.top { 0.0 } else { insets.top },
-            right: if self.right { 0.0 } else { insets.right },
-            bottom: if self.bottom { 0.0 } else { insets.bottom },
-            left: if self.left { 0.0 } else { insets.left },
-        }
     }
 }
 
@@ -486,50 +391,6 @@ pub trait RenderObject {
     /// Default: `false` (normal ROs own their Taffy node).
     fn is_pass_through(&self) -> bool {
         false
-    }
-
-    /// Which safe-area edges this render object claims for its descendants.
-    ///
-    /// Claimed edges are zeroed in the "effective" insets propagated to
-    /// children by the layouter's top-down safe-area pre-pass (see
-    /// [`Layouter::resolve_effective_safe_area`]). This prevents
-    /// double-consumption: when a sibling bar (e.g. a tab bar) owns the
-    /// bottom edge, the page content's `SafeArea` should see `bottom == 0`
-    /// and not re-apply the home-indicator padding.
-    ///
-    /// `SafeArea` claims its enabled sides; `SafeAreaClaim` claims
-    /// caller-specified sides. All other render objects pass through
-    /// whatever the parent provides.
-    ///
-    /// Default: no claim ([`SafeAreaClaimEdges::NONE`]).
-    fn safe_area_claim(&self) -> SafeAreaClaimEdges {
-        SafeAreaClaimEdges::NONE
-    }
-
-    /// Receive the effective safe-area insets for this render object, as
-    /// computed by the layouter's top-down pre-pass (parent's effective
-    /// minus ancestors' claims).
-    ///
-    /// Stored before [`layout`](RenderObject::layout) runs so
-    /// `SafeAreaRenderObject` can pad its child by the *remaining* insets
-    /// rather than the raw global ones. The walk runs every layout pass,
-    /// so rotation (which marks all ROs dirty) picks up new global insets
-    /// without a widget rebuild.
-    ///
-    /// Default: no-op (only `SafeAreaRenderObject` uses the stored value).
-    fn set_effective_safe_area(&mut self, _insets: EdgeInsets) {
-        // no-op by default
-    }
-
-    /// The effective safe-area insets currently stored for this render
-    /// object (set by the layouter's top-down pre-pass via
-    /// [`set_effective_safe_area`](RenderObject::set_effective_safe_area)).
-    ///
-    /// Returns `None` for render objects that don't track safe-area insets
-    /// (the default). `SafeAreaRenderObject` overrides this to expose its
-    /// stored value, enabling tests and introspection without downcasting.
-    fn effective_safe_area(&self) -> Option<EdgeInsets> {
-        None
     }
 
     /// Get the image data that needs registration in the atlas, if any.

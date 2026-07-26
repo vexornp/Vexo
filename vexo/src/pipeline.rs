@@ -408,7 +408,6 @@ impl ThreeTreePipeline {
             available_size,
             engine,
             font_system,
-            self.build_owner.safe_area_source(),
         );
         self.cached_commands = None;
     }

@@ -12,7 +12,7 @@ pub enum Orientation {
 }
 
 /// Per-side flag for `MediaQuery::remove_padding` / `remove_view_insets` /
-/// `remove_view_padding`. Replaces the deleted `SafeAreaClaimEdges`.
+/// `remove_view_padding`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RemoveEdges {
     pub top: bool,

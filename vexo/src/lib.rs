@@ -178,7 +178,6 @@ pub use reconcile::Reconcilable;
 )]
 pub use render_object::{
     HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject, RenderObjectRegistry,
-    SafeAreaClaimEdges,
 };
 #[deprecated(
     since = "0.x",
