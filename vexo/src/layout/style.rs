@@ -41,6 +41,9 @@ impl Default for EdgeInsets {
 }
 
 impl EdgeInsets {
+    /// All-zero insets. Convenient const for defaults and tests.
+    pub const ZERO: Self = Self { left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 };
+
     /// Create uniform insets on all sides.
     pub fn all(value: f32) -> Self {
         Self { left: value, right: value, top: value, bottom: value }

@@ -298,7 +298,7 @@ pub struct Size<T> {
 
 impl<T> Size<T> {
     /// Create a new size.
-    pub fn new(width: f32, height: f32) -> Self {
+    pub const fn new(width: f32, height: f32) -> Self {
         Self {
             width,
             height,
