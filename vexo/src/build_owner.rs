@@ -101,6 +101,12 @@ pub struct BuildOwner {
     /// Defaults to all-zero (desktop / pre-init / keyboard down), making
     /// keyboard avoidance a no-op for tests and desktop builds.
     keyboard_inset_source: KeyboardInsetSource,
+
+    /// Platform-derived fields for `MediaQueryData` (size, scale, brightness).
+    /// Backed by atomics inside [`MediaQueryDataSource`]. Updated each frame
+    /// by [`WindowState`](crate::window::WindowState); read by the root
+    /// `MediaQuery` component via `RenderContext::media_query_sources()`.
+    media_query_data_source: crate::core::MediaQueryDataSource,
 }
 
 impl BuildOwner {
@@ -115,6 +121,7 @@ impl BuildOwner {
             pending_unfocus: RefCell::new(false),
             safe_area_source: SafeAreaSource::default(),
             keyboard_inset_source: KeyboardInsetSource::default(),
+            media_query_data_source: crate::core::MediaQueryDataSource::default(),
         }
     }
 
@@ -314,6 +321,27 @@ impl BuildOwner {
     /// updates happen via [`KeyboardInsetSource::set_target()`] on either clone.
     pub fn set_keyboard_inset_source(&mut self, source: KeyboardInsetSource) {
         self.keyboard_inset_source = source;
+    }
+
+    /// Get a clone of the shared media-query data source.
+    ///
+    /// Returns a cheaply-clonable handle ([`MediaQueryDataSource`] is
+    /// `Arc`-based) whose `get()` always reads the latest values written by
+    /// [`WindowState`](crate::window::WindowState). Used by the root
+    /// `MediaQuery` component via
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources).
+    pub fn media_query_data_source(&self) -> crate::core::MediaQueryDataSource {
+        self.media_query_data_source.clone()
+    }
+
+    /// Replace the media-query data source.
+    ///
+    /// Called once at window init so the [`BuildOwner`] shares the same
+    /// atomics as [`WindowState`](crate::window::WindowState); subsequent
+    /// per-frame updates happen via [`MediaQueryDataSource::set()`] on
+    /// either clone.
+    pub fn set_media_query_data_source(&mut self, source: crate::core::MediaQueryDataSource) {
+        self.media_query_data_source = source;
     }
 }
 

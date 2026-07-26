@@ -213,6 +213,17 @@ impl ThreeTreePipeline {
         self.build_owner.set_keyboard_inset_source(source);
     }
 
+    /// Install the media-query data source on the [`BuildOwner`].
+    ///
+    /// Called once at window init by
+    /// [`WindowState`](crate::window::WindowState) so the same atomics are
+    /// shared between the window (which writes size/scale/brightness each
+    /// frame) and the element tree (which reads them via
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)).
+    pub fn set_media_query_data_source(&mut self, source: crate::core::MediaQueryDataSource) {
+        self.build_owner.set_media_query_data_source(source);
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:
