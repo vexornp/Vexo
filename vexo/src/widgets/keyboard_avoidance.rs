@@ -139,8 +139,20 @@ impl KeyboardAvoidanceState {
         // active list forever, keeping has_active()==true and driving
         // perpetual frame requests / rebuilds even after the tween settles.
         self.controller.stop();
+        // FIXME: UIKit reports 0.383s for the keyboard animation duration,
+        // but the keyboard's REAL visual animation is significantly shorter
+        // (the keyboard finishes well before our 383ms tween completes,
+        // making the input view appear to lag on dismiss). The `DidShow/
+        // DidHide` notifications fire even later (541ms/447ms) due to
+        // runloop scheduling delays, so they can't be used to measure the
+        // true duration. As a pragmatic fix, clamp the duration to 250ms —
+        // the standard iOS keyboard animation duration. This makes the
+        // input view track the keyboard more closely. A proper fix would
+        // use a CADisplayLink + presentationLayer to track the keyboard's
+        // actual visual position every frame.
+        let effective_duration = target.duration_secs.min(0.25).max(0.10);
         let mut controller =
-            AnimationController::new(Duration::from_secs_f64(target.duration_secs as f64));
+            AnimationController::new(Duration::from_secs_f64(effective_duration as f64));
         if let Some(ticker) = &self.ticker {
             controller.set_ticker(ticker.clone());
         }
