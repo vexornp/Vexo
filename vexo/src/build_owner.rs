@@ -92,14 +92,15 @@ pub struct BuildOwner {
     /// for tests and desktop builds.
     safe_area_source: SafeAreaSource,
 
-    /// Keyboard target inset source (logical pixels), shared with all
-    /// [`RenderContext`](crate::stateful_widget::RenderContext)s so
-    /// `KeyboardAvoidance` can read live values during `Component::render()`.
+    /// Keyboard current-height source (logical pixels), shared with all
+    /// [`RenderContext`](crate::stateful_widget::RenderContext)s so the root
+    /// `MediaQuery` can read live values during `Component::render()`.
     ///
     /// Backed by atomics inside [`KeyboardInsetSource`], so updates from
-    /// the iOS keyboard shim are visible here without additional locking.
-    /// Defaults to all-zero (desktop / pre-init / keyboard down), making
-    /// keyboard avoidance a no-op for tests and desktop builds.
+    /// the render-loop interpolation driver are visible here without
+    /// additional locking. Defaults to all-zero (desktop / pre-init /
+    /// keyboard down), making keyboard avoidance a no-op for tests and
+    /// desktop builds.
     keyboard_inset_source: KeyboardInsetSource,
 
     /// Platform-derived fields for `MediaQueryData` (size, scale, brightness).
@@ -306,10 +307,11 @@ impl BuildOwner {
     /// Get a clone of the shared keyboard-inset source.
     ///
     /// Returns a cheaply-clonable handle ([`KeyboardInsetSource`] is `Arc`-based)
-    /// whose [`KeyboardInsetSource::get()`] always reads the latest target
-    /// written by the iOS keyboard shim. Used by
-    /// [`RenderContext::keyboard_inset()`](crate::stateful_widget::RenderContext::keyboard_inset)
-    /// so `KeyboardAvoidance` can resolve the target during render.
+    /// whose [`KeyboardInsetSource::get()`] always reads the latest current
+    /// keyboard height written by the render-loop interpolation driver. Used
+    /// by
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)
+    /// so the root `MediaQuery` can resolve `viewInsets.bottom` during render.
     pub fn keyboard_inset_source(&self) -> KeyboardInsetSource {
         self.keyboard_inset_source.clone()
     }
@@ -318,7 +320,7 @@ impl BuildOwner {
     ///
     /// Called once at window init so the [`BuildOwner`] shares the same
     /// atomics as [`WindowState`](crate::window::WindowState); subsequent
-    /// updates happen via [`KeyboardInsetSource::set_target()`] on either clone.
+    /// updates happen via [`KeyboardInsetSource::set()`] on either clone.
     pub fn set_keyboard_inset_source(&mut self, source: KeyboardInsetSource) {
         self.keyboard_inset_source = source;
     }

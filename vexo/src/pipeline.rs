@@ -206,9 +206,10 @@ impl ThreeTreePipeline {
     ///
     /// Called once at window init by
     /// [`WindowState`](crate::window::WindowState) so the same atomics are
-    /// shared between the window (which writes the target on each iOS
-    /// keyboard notification) and the element tree (which reads them via
-    /// [`RenderContext::keyboard_inset()`](crate::stateful_widget::RenderContext::keyboard_inset)).
+    /// shared between the window (which writes the current keyboard height
+    /// each frame via the render-loop interpolation driver) and the element
+    /// tree (which reads them via
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)).
     pub fn set_keyboard_inset_source(&mut self, source: crate::core::KeyboardInsetSource) {
         self.build_owner.set_keyboard_inset_source(source);
     }

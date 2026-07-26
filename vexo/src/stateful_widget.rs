@@ -359,28 +359,12 @@ impl<'a> RenderContext<'a> {
         self.build_owner.safe_area_source().get()
     }
 
-    /// Current keyboard-inset snapshot (target height + duration + curve +
-    /// animation start instant).
-    ///
-    /// Reflects the live values written by the iOS keyboard shim
-    /// (`keyboardWillShow/Hide` notifications); all-zero on desktop / when
-    /// the keyboard is down. `KeyboardAvoidance` calls this during
-    /// [`Component::render()`] to start/retarget its inset tween, seeding the
-    /// tween's `start_time` with the snapshot's `animation_start` so the input
-    /// view lifts in lockstep with the OS keyboard slide.
-    pub fn keyboard_inset(&self) -> crate::core::KeyboardInsetSnapshot {
-        self.build_owner.keyboard_inset_source().get()
-    }
-
     /// Snapshot of all three platform sources. Intended for the root
     /// `MediaQuery` component only; all other widgets read `MediaQuery::of`.
     pub fn media_query_sources(&self) -> MediaQuerySourcesSnapshot {
         MediaQuerySourcesSnapshot {
             safe_area: self.build_owner.safe_area_source().get(),
-            keyboard_current_height: self
-                .build_owner
-                .keyboard_inset_source()
-                .current_target_height(),
+            keyboard_current_height: self.build_owner.keyboard_inset_source().get(),
             media_query: self.build_owner.media_query_data_source().get(),
         }
     }

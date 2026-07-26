@@ -5,7 +5,7 @@ use winit::event_loop::EventLoop;
 
 pub use core::AffineTransform;
 pub use core::Color;
-pub use core::{KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource};
+pub use core::{KeyboardAnimation, KeyboardAnimationSource, KeyboardInsetSource};
 pub use glyphon;
 pub use image_data::{ImageData, ImageDataError};
 pub use uniffi;
@@ -205,12 +205,11 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
-    BottomBarHeight, Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition,
-    FractionalTranslation, GestureDetector, Grid, Image, IndexedStack, KeyboardAvoidance,
-    MediaQuery, MediaQueryData, MediaQueryMutator, MultiChild, Offstage, Opacity, Positioned,
-    RemoveEdges, SafeArea, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack,
-    Text, TextEdit, TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget,
-    WithLayout,
+    Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
+    GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
+    MultiChild, Offstage, Opacity, Positioned, RemoveEdges, SafeArea, ScrollController, ScrollView,
+    SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
+    TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

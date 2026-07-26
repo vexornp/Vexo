@@ -34,9 +34,8 @@
 //! ```
 
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 
 // ============================================================================
 // MARKER TYPES: Logical vs Physical
@@ -711,169 +710,148 @@ impl Default for SafeAreaSource {
 // KEYBOARD INSET SOURCE
 // ============================================================================
 
-/// Keyboard animation curve, mirroring UIKit's
-/// `UIViewAnimationCurve` raw values reported via
-/// `UIResponder.keyboardAnimationCurveUserInfoKey`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum KeyboardCurve {
-    /// UIKit raw value 0. The default keyboard curve; ease-in-ease-out.
-    EaseInOut = 0,
-    /// UIKit raw value 1.
-    EaseIn = 1,
-    /// UIKit raw value 2.
-    EaseOut = 2,
-    /// UIKit raw value 3.
-    Linear = 3,
-}
-
-impl Default for KeyboardCurve {
-    fn default() -> Self {
-        Self::EaseInOut
-    }
-}
-
-impl KeyboardCurve {
-    /// Map a UIKit `UIViewAnimationCurve` raw value to our enum.
-    ///
-    /// The standard `UIViewAnimationCurve` values are 0 (easeInOut), 1
-    /// (easeIn), 2 (easeOut), 3 (linear). However, iOS keyboard notifications
-    /// report `raw = 7` — a private value that, when converted to
-    /// `UIViewAnimationOptions` via `curve << 16`, yields `0x70000`: bits
-    /// 16-17 (the curve field) are `0b11 = 3 = linear`, and bit 18 is
-    /// `allowUserInteraction`. So **the keyboard actually animates with a
-    /// LINEAR curve**, not EaseInOut.
-    ///
-    /// Extracting the bottom 2 bits (`raw & 0x3`) handles all cases
-    /// correctly: standard values 0-3 pass through unchanged, and the
-    /// keyboard's private value 7 → 3 → Linear. Without this, raw=7 fell
-    /// into the `_ => EaseInOut` fallback, making the input view start
-    /// slowly (ease-in phase) while the keyboard moved at constant speed —
-    /// the keyboard dismissed far faster than the input view moved down.
-    pub fn from_uikit_raw(raw: u8) -> Self {
-        match raw & 0x3 {
-            0 => Self::EaseInOut,
-            1 => Self::EaseIn,
-            2 => Self::EaseOut,
-            3 => Self::Linear,
-            // Unreachable: `u8 & 0x3` is always 0..=3.
-            _ => Self::EaseInOut,
-        }
-    }
-}
-
-/// Snapshot of the keyboard-inset state at a point in time.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct KeyboardInsetSnapshot {
-    /// Target bottom inset in logical pixels (0 when keyboard is down).
-    pub target_height: f32,
-    /// Duration of the keyboard's own animation, in seconds.
-    /// 0.0 means "snap immediately" (no animation).
-    pub duration_secs: f32,
-    /// Keyboard animation curve.
-    pub curve: KeyboardCurve,
-    /// The instant the OS keyboard animation began, captured in the iOS shim
-    /// at the moment `keyboardWillShow/Hide` fired.
-    ///
-    /// `KeyboardAvoidance` uses this to seed its avoidance tween's
-    /// `start_time` so the input view tracks the keyboard in lockstep instead
-    /// of lagging by a frame (which otherwise makes the keyboard appear to
-    /// cover the input before it lifts). `None` for the snap path
-    /// (`duration_secs == 0`), on non-iOS platforms (no shim ever writes), and
-    /// in tests that don't care about timing — the widget falls back to
-    /// `Instant::now()` in that case.
-    pub animation_start: Option<Instant>,
-}
-
-/// Shared handle to the keyboard's target inset (logical pixels),
-/// animation duration, and curve.
-///
-/// Mirrors [`SafeAreaSource`]'s design: a dumb `Arc`-atomic value with no
-/// callbacks. The iOS keyboard shim writes via [`set_target`] on each
-/// `keyboardWillShow/Hide` notification; the [`KeyboardAvoidance`] widget
-/// reads via [`get`] each render and owns the animated tween in its own state.
-///
-/// On desktop / Android the shim is absent, so this stays at its default
-/// (all-zero) and `KeyboardAvoidance` is a transparent pass-through.
-///
-/// [`KeyboardAvoidance`]: crate::widgets::KeyboardAvoidance
-/// [`set_target`]: Self::set_target
-/// [`get`]: Self::get
+/// Shared atomic cell holding the current keyboard height (logical px).
+/// Updated each frame by the render loop's interpolation driver (which reads
+/// animation params from [`KeyboardAnimationSource`]); stays 0 on desktop /
+/// Android (no shim installed).
 #[derive(Clone)]
 pub struct KeyboardInsetSource {
     inner: Arc<KeyboardInsetInner>,
 }
 
 struct KeyboardInsetInner {
-    target_height: AtomicU32,
-    duration_secs: AtomicU32,
-    curve: AtomicU8,
-    /// Wall-clock instant the OS keyboard animation began. Stored in a
-    /// `Mutex` (not an atomic) because `Instant` has no atomic representation;
-    /// updates are rare (one per keyboard notification) and, on iOS, always
-    /// main-thread. Reads are also main-thread (the render loop), so contention
-    /// is nonexistent.
-    animation_start: Mutex<Option<Instant>>,
+    current_height: AtomicU32,
 }
 
 impl KeyboardInsetSource {
-    /// Create a new source with all-zero defaults (keyboard down, no animation).
     pub fn new() -> Self {
         Self {
             inner: Arc::new(KeyboardInsetInner {
-                target_height: AtomicU32::new(0.0_f32.to_bits()),
-                duration_secs: AtomicU32::new(0.0_f32.to_bits()),
-                curve: AtomicU8::new(KeyboardCurve::EaseInOut as u8),
-                animation_start: Mutex::new(None),
+                current_height: AtomicU32::new(0.0_f32.to_bits()),
             }),
         }
     }
 
-    /// Read the current snapshot.
-    pub fn get(&self) -> KeyboardInsetSnapshot {
-        KeyboardInsetSnapshot {
-            target_height: f32::from_bits(self.inner.target_height.load(Ordering::Relaxed)),
-            duration_secs: f32::from_bits(self.inner.duration_secs.load(Ordering::Relaxed)),
-            curve: KeyboardCurve::from_uikit_raw(self.inner.curve.load(Ordering::Relaxed)),
-            animation_start: *self.inner.animation_start.lock().unwrap(),
-        }
+    pub fn get(&self) -> f32 {
+        f32::from_bits(self.inner.current_height.load(Ordering::Relaxed))
     }
 
-    /// Update the target inset, animation duration, curve, and the OS
-    /// animation's start instant.
-    ///
-    /// Called only by the iOS keyboard shim on each notification.
-    /// `animation_start` should be `Instant::now()` captured at the moment the
-    /// notification fired, so the [`KeyboardAvoidance`] widget can align its
-    /// tween's start time with the keyboard's own animation. Pass `None` for
-    /// the snap path (`duration_secs == 0`) or when there's no associated
-    /// animation (tests, non-iOS). Visible to all clone holders immediately.
-    ///
-    /// [`KeyboardAvoidance`]: crate::widgets::KeyboardAvoidance
-    pub fn set_target(
-        &self,
-        height: f32,
-        duration_secs: f32,
-        curve: KeyboardCurve,
-        animation_start: Option<Instant>,
-    ) {
+    pub fn set(&self, current_height: f32) {
         self.inner
-            .target_height
-            .store(height.to_bits(), Ordering::Relaxed);
-        self.inner
-            .duration_secs
-            .store(duration_secs.to_bits(), Ordering::Relaxed);
-        self.inner.curve.store(curve as u8, Ordering::Relaxed);
-        *self.inner.animation_start.lock().unwrap() = animation_start;
-    }
-
-    /// Convenience: read just the current target height.
-    pub fn current_target_height(&self) -> f32 {
-        f32::from_bits(self.inner.target_height.load(Ordering::Relaxed))
+            .current_height
+            .store(current_height.to_bits(), Ordering::Relaxed);
     }
 }
 
 impl Default for KeyboardInsetSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// KEYBOARD ANIMATION SOURCE
+// ============================================================================
+
+/// Animation parameters for the current keyboard show/hide transition.
+/// Written by the iOS shim on `keyboardWillShow/Hide`; read + interpolated
+/// by `WindowState::render_retain()` each frame to drive
+/// `KeyboardInsetSource::set()`.
+#[derive(Clone, Debug)]
+pub struct KeyboardAnimation {
+    /// Height the animation starts from (the source's current height at
+    /// notification time).
+    pub from: f32,
+    /// Height the animation is tweening toward (`target_height` for show,
+    /// `0.0` for hide).
+    pub target: f32,
+    /// Animation duration in seconds. `0.0` means "snap immediately."
+    pub duration_secs: f32,
+    /// The instant the OS keyboard animation began (captured in the iOS
+    /// shim at the moment the notification fired).
+    pub start: std::time::Instant,
+    /// The animation curve, mapped from UIKit's raw curve value via
+    /// `raw & 0x3`: 0→EaseInOut, 1→EaseIn, 2→EaseOut, 3→Linear.
+    /// Stored as a raw `u8` so the cell is `Send + Sync`; the render loop
+    /// maps it to a `Box<dyn Curve>` when interpolating.
+    pub curve_raw: u8,
+}
+
+impl KeyboardAnimation {
+    /// Map a UIKit `UIViewAnimationCurve` raw value to the curve enum.
+    /// Mirrors the deleted `KeyboardCurve::from_uikit_raw`: `raw & 0x3`
+    /// extracts the bottom 2 bits, handling the keyboard's private raw=7
+    /// (→ 3 → Linear) correctly.
+    pub fn curve(&self) -> Box<dyn crate::animation::Curve> {
+        use crate::animation::{EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve};
+        match self.curve_raw & 0x3 {
+            0 => Box::new(EaseInOutCurve),
+            1 => Box::new(EaseInCurve),
+            2 => Box::new(EaseOutCurve),
+            _ => Box::new(LinearCurve),
+        }
+    }
+
+    /// Compute the interpolated height at time `now`.
+    /// Returns `None` if the animation has completed (elapsed >= duration),
+    /// so the caller can set the final value and mark the animation inactive.
+    pub fn interpolate(&self, now: std::time::Instant) -> Option<f32> {
+        if self.duration_secs <= 0.0 {
+            return None;
+        }
+        let elapsed = now.duration_since(self.start).as_secs_f32();
+        let t = (elapsed / self.duration_secs).min(1.0);
+        if t >= 1.0 {
+            return None;
+        }
+        let eased = self.curve().transform(t as f64) as f32;
+        Some(self.from + (self.target - self.from) * eased)
+    }
+}
+
+/// Shared cell holding the current keyboard animation params (or `None` when
+/// the keyboard is at rest). Written by the iOS shim; read by the render loop.
+///
+/// Uses `Mutex<Option<KeyboardAnimation>>` (not atomics) because
+/// `Instant` and `f32` pairs have no atomic representation, and updates are
+/// rare (one per keyboard notification) + main-thread-only, so contention
+/// is nonexistent.
+#[derive(Clone)]
+pub struct KeyboardAnimationSource {
+    inner: Arc<std::sync::Mutex<Option<KeyboardAnimation>>>,
+}
+
+impl KeyboardAnimationSource {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Replace the current animation params. Called by the iOS shim on
+    /// each `keyboardWillShow/Hide` notification.
+    pub fn set(&self, animation: KeyboardAnimation) {
+        *self.inner.lock().unwrap() = Some(animation);
+    }
+
+    /// Read + take the current animation. Returns `Some(animation)` if an
+    /// animation is active; the caller is expected to either re-store it
+    /// (still animating) or leave it `None` (completed).
+    pub fn take(&self) -> Option<KeyboardAnimation> {
+        self.inner.lock().unwrap().take()
+    }
+
+    /// Store an animation back after reading (if still active).
+    pub fn restore(&self, animation: KeyboardAnimation) {
+        *self.inner.lock().unwrap() = Some(animation);
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.inner.lock().unwrap().is_some()
+    }
+}
+
+impl Default for KeyboardAnimationSource {
     fn default() -> Self {
         Self::new()
     }
@@ -1393,82 +1371,131 @@ mod safe_area_source_tests {
 
 #[cfg(test)]
 mod keyboard_inset_source_tests {
-    use super::{KeyboardCurve, KeyboardInsetSnapshot, KeyboardInsetSource};
-    use std::time::Instant;
+    use super::*;
 
     #[test]
-    fn default_is_all_zero() {
-        let s = KeyboardInsetSource::default();
-        let snap = s.get();
-        assert_eq!(snap.target_height, 0.0);
-        assert_eq!(snap.duration_secs, 0.0);
-        assert_eq!(snap.curve, KeyboardCurve::EaseInOut);
-        assert_eq!(snap.animation_start, None);
+    fn default_is_zero() {
+        let src = KeyboardInsetSource::new();
+        assert_eq!(src.get(), 0.0);
     }
 
     #[test]
-    fn set_target_then_get_returns_written_values() {
-        let s = KeyboardInsetSource::default();
+    fn set_updates_value() {
+        let src = KeyboardInsetSource::new();
+        src.set(300.0);
+        assert_eq!(src.get(), 300.0);
+    }
+
+    #[test]
+    fn clones_share_state() {
+        let src = KeyboardInsetSource::new();
+        let clone = src.clone();
+        src.set(250.0);
+        assert_eq!(clone.get(), 250.0);
+    }
+}
+
+#[cfg(test)]
+mod keyboard_animation_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn interpolate_returns_from_at_t0() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start: Instant::now(),
+            curve_raw: 3, // Linear
+        };
+        let val = anim.interpolate(anim.start).unwrap();
+        assert!(val.abs() < 1.0, "expected ~0 at t=0, got {}", val);
+    }
+
+    #[test]
+    fn interpolate_returns_none_when_complete() {
+        let start = Instant::now() - Duration::from_millis(500);
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start,
+            curve_raw: 3,
+        };
+        assert!(anim.interpolate(Instant::now()).is_none());
+    }
+
+    #[test]
+    fn interpolate_returns_none_when_duration_zero() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.0,
+            start: Instant::now(),
+            curve_raw: 3,
+        };
+        assert!(anim.interpolate(Instant::now()).is_none());
+    }
+
+    #[test]
+    fn interpolate_linear_halfway() {
         let start = Instant::now();
-        s.set_target(300.0, 0.25, KeyboardCurve::EaseIn, Some(start));
-        let snap = s.get();
-        assert_eq!(snap.target_height, 300.0);
-        assert_eq!(snap.duration_secs, 0.25);
-        assert_eq!(snap.curve, KeyboardCurve::EaseIn);
-        assert_eq!(snap.animation_start, Some(start));
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start,
+            curve_raw: 3, // Linear
+        };
+        // At t=0.125s (halfway through 0.25s), linear → 150px.
+        let val = anim
+            .interpolate(start + Duration::from_millis(125))
+            .unwrap();
+        assert!(
+            (val - 150.0).abs() < 2.0,
+            "expected ~150 at halfway, got {}",
+            val
+        );
     }
 
     #[test]
-    fn clones_share_storage() {
-        let s = KeyboardInsetSource::default();
-        let clone = s.clone();
-        let start = Instant::now();
-        s.set_target(250.0, 0.3, KeyboardCurve::Linear, Some(start));
-        let snap = clone.get();
-        assert_eq!(snap.target_height, 250.0);
-        assert_eq!(snap.duration_secs, 0.3);
-        assert_eq!(snap.curve, KeyboardCurve::Linear);
-        assert_eq!(snap.animation_start, Some(start));
+    fn curve_raw_7_maps_to_linear() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 100.0,
+            duration_secs: 1.0,
+            start: Instant::now(),
+            curve_raw: 7, // iOS keyboard private value → 7 & 3 = 3 → Linear
+        };
+        // Linear at t=0.5 → 50px.
+        let val = anim
+            .interpolate(anim.start + Duration::from_millis(500))
+            .unwrap();
+        assert!(
+            (val - 50.0).abs() < 1.0,
+            "expected ~50 (linear) for raw=7, got {}",
+            val
+        );
     }
 
     #[test]
-    fn current_target_height_returns_latest() {
-        let s = KeyboardInsetSource::default();
-        s.set_target(336.0, 0.25, KeyboardCurve::EaseInOut, None);
-        assert_eq!(s.current_target_height(), 336.0);
-        s.set_target(0.0, 0.25, KeyboardCurve::EaseInOut, None);
-        assert_eq!(s.current_target_height(), 0.0);
-    }
-
-    #[test]
-    fn from_uikit_raw_maps_all_values() {
-        assert_eq!(KeyboardCurve::from_uikit_raw(0), KeyboardCurve::EaseInOut);
-        assert_eq!(KeyboardCurve::from_uikit_raw(1), KeyboardCurve::EaseIn);
-        assert_eq!(KeyboardCurve::from_uikit_raw(2), KeyboardCurve::EaseOut);
-        assert_eq!(KeyboardCurve::from_uikit_raw(3), KeyboardCurve::Linear);
-    }
-
-    #[test]
-    fn from_uikit_raw_keyboard_private_value_7_is_linear() {
-        // iOS keyboard notifications report raw=7 — a private
-        // UIViewAnimationCurve value. When converted to
-        // UIViewAnimationOptions via `curve << 16` (0x70000), bits 16-17
-        // (the curve field) are 0b11 = 3 = linear. The keyboard animates
-        // with a LINEAR curve, not EaseInOut. Mapping raw=7 to EaseInOut
-        // (the old fallback) caused the input view to start slowly while
-        // the keyboard moved at constant speed — the keyboard dismissed
-        // far faster than the input view moved down.
-        assert_eq!(KeyboardCurve::from_uikit_raw(7), KeyboardCurve::Linear);
-
-        // The bottom-2-bits masking also handles higher private values.
-        // raw=4 (0b100) → bits 0-1 = 0b00 = 0 → EaseInOut.
-        assert_eq!(KeyboardCurve::from_uikit_raw(4), KeyboardCurve::EaseInOut);
-        // raw=5 (0b101) → bits 0-1 = 0b01 = 1 → EaseIn.
-        assert_eq!(KeyboardCurve::from_uikit_raw(5), KeyboardCurve::EaseIn);
-        // raw=6 (0b110) → bits 0-1 = 0b10 = 2 → EaseOut.
-        assert_eq!(KeyboardCurve::from_uikit_raw(6), KeyboardCurve::EaseOut);
-        // raw=255 (0b11111111) → bits 0-1 = 0b11 = 3 → Linear.
-        assert_eq!(KeyboardCurve::from_uikit_raw(255), KeyboardCurve::Linear);
+    fn animation_source_set_take_restore() {
+        let src = KeyboardAnimationSource::new();
+        assert!(src.take().is_none());
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start: Instant::now(),
+            curve_raw: 3,
+        };
+        src.set(anim.clone());
+        let taken = src.take().unwrap();
+        assert_eq!(taken.target, 300.0);
+        assert!(src.take().is_none());
+        src.restore(taken);
+        assert!(src.take().is_some());
     }
 }
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use vexo::{
     children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
-    Key, KeyboardAvoidance, Layout, LifecycleContext, MultiChild, RenderContext, ScrollController,
+    Key, Layout, LifecycleContext, MediaQuery, MultiChild, RenderContext, ScrollController,
     ScrollView, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant};
@@ -109,8 +109,10 @@ impl Component for ChatScreen {
 
         let input_bar = build_input_bar(tc, on_send_closure);
 
+        let mq = MediaQuery::of(ctx);
+        let bottom_pad = mq.viewInsets.bottom;
         DecoratedBox::with_style(
-            KeyboardAvoidance::new(MultiChild::new(
+            MultiChild::new(
                 children![
                     WithLayout::new(
                         ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
@@ -121,8 +123,9 @@ impl Component for ChatScreen {
                 Layout::column()
                     .flex_grow(1.0)
                     .flex_basis(0.0)
-                    .min_height(0.0),
-            )),
+                    .min_height(0.0)
+                    .padding_each(0.0, 0.0, 0.0, bottom_pad),
+            ),
             Style::default().background(theme.background),
         )
         .boxed()
@@ -295,21 +298,12 @@ mod tests {
         }
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
-        // Chat screen root is `DecoratedBox(KeyboardAvoidance(MultiChild(...)))`.
+        // Chat screen root is `DecoratedBox(MultiChild(...))`.
         // - proxy        = ChatScreen's StatefulElement ProxyRenderObject
         // - chat_decorated = DecoratedBox (background)
-        // - keyboard_proxy  = KeyboardAvoidance's StatefulElement ProxyRenderObject
-        // - keyboard_layout = WithLayout (the column with bottom padding from
-        //                      KeyboardAvoidance::render())
         // - chat_col        = the inner MultiChild column [scrollview, input_bar]
-        // Each Component (StatefulElement) inserts a ProxyRenderObject, and
-        // KeyboardAvoidance::render() wraps its child in a WithLayout — so
-        // wrapping the column adds two single-child layers between the
-        // DecoratedBox and the column.
         let chat_decorated = find_child(ro_reg, proxy, 0).expect("chat decorated root");
-        let keyboard_proxy = find_child(ro_reg, chat_decorated, 0).expect("keyboard proxy");
-        let keyboard_layout = find_child(ro_reg, keyboard_proxy, 0).expect("keyboard layout");
-        let chat_col = find_child(ro_reg, keyboard_layout, 0).expect("chat column");
+        let chat_col = find_child(ro_reg, chat_decorated, 0).expect("chat column");
         let input_wrapper = find_child(ro_reg, chat_col, 1).expect("input bar wrapper");
         let input_bounds = ro_reg
             .get(input_wrapper)

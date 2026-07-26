@@ -9,8 +9,7 @@ use winit::{
 
 use crate::animation::AnimationTicker;
 use crate::core::{
-    Absolute, KeyboardInsetSnapshot, KeyboardInsetSource, Logical, Physical, Point,
-    ScaleSource, SafeAreaSource, Size,
+    Absolute, KeyboardInsetSource, Logical, Physical, Point, ScaleSource, SafeAreaSource, Size,
 };
 use crate::input::{ButtonState, InputEvent, Modifiers, SystemCursorKind};
 use crate::layout::{LayoutEngine, TaffyLayoutEngine};
@@ -56,20 +55,20 @@ pub struct WindowState<A: Application + 'static> {
     safe_area_source: SafeAreaSource,
 
     /// Shared keyboard-inset source (logical pixels). Updated by the iOS
-    /// keyboard shim on each `keyboardWillShow/Hide` notification; read by
-    /// `KeyboardAvoidance` widgets during render via
-    /// `RenderContext::keyboard_inset()`. On desktop this stays at 0 (no
-    /// shim is installed).
+    /// keyboard shim + the render-loop interpolation driver each frame; read
+    /// by the root `MediaQuery` via `RenderContext::media_query_sources()`.
+    /// On desktop this stays at 0 (no shim is installed).
     keyboard_inset_source: KeyboardInsetSource,
+
+    /// Shared keyboard animation source. Written by the iOS shim on each
+    /// `keyboardWillShow/Hide`; read + interpolated each frame by the
+    /// render loop to drive `keyboard_inset_source.set()`.
+    keyboard_animation_source: crate::core::KeyboardAnimationSource,
 
     /// Shared media-query data source (size, scale, brightness). Updated
     /// each frame from `Window` metrics; read by the root `MediaQuery`
     /// component via `RenderContext::media_query_sources()`.
     media_query_data_source: crate::core::MediaQueryDataSource,
-
-    /// Previous keyboard-inset snapshot, used by the per-frame poll to
-    /// detect changes. Updated each frame in `render_retain()`.
-    keyboard_inset_snapshot_prev: KeyboardInsetSnapshot,
 
     #[cfg(target_os = "ios")]
     keyboard_observer: Option<crate::platform::keyboard_ios::KeyboardObserver>,
@@ -137,6 +136,8 @@ impl<A: Application + 'static> WindowState<A> {
 
         let keyboard_inset_source = KeyboardInsetSource::default();
 
+        let keyboard_animation_source = crate::core::KeyboardAnimationSource::default();
+
         let media_query_data_source = crate::core::MediaQueryDataSource::default();
 
         let mut three_tree_pipeline = ThreeTreePipeline::new(animation_ticker.clone());
@@ -168,6 +169,7 @@ impl<A: Application + 'static> WindowState<A> {
             });
             Some(crate::platform::keyboard_ios::KeyboardObserver::install(
                 keyboard_inset_source.clone(),
+                keyboard_animation_source.clone(),
                 scale,
                 window_logical_height,
                 request_frame,
@@ -183,8 +185,8 @@ impl<A: Application + 'static> WindowState<A> {
             scale_source,
             safe_area_source,
             keyboard_inset_source,
+            keyboard_animation_source,
             media_query_data_source,
-            keyboard_inset_snapshot_prev: KeyboardInsetSnapshot::default(),
             #[cfg(target_os = "ios")]
             keyboard_observer,
             _phantom: std::marker::PhantomData,
@@ -507,44 +509,42 @@ impl<A: Application + 'static> WindowState<A> {
         self.three_tree_pipeline.focused_element().is_some()
     }
 
-    /// Check if the keyboard-inset source has changed since the last
-    /// `render_retain()` poll.
+    /// Check if the keyboard animation source has pending params (i.e. an
+    /// animation is active or queued).
     ///
-    /// Read-only — does **not** update `keyboard_inset_snapshot_prev`; the
-    /// poll inside `render_retain()` owns that. This is for `about_to_wait`
-    /// to detect a change that landed **during** render (after the poll ran)
-    /// and break what would otherwise be a render-loop deadlock.
+    /// Read-only. This is for `about_to_wait` to detect a pending animation
+    /// that landed **during** render (after the interpolation poll ran) and
+    /// break what would otherwise be a render-loop deadlock.
     ///
     /// ## The deadlock (dismiss only)
     ///
     /// When the user taps outside a focused TextEdit, focus clears during
     /// `perform_rebuilds()`, and the focus-change block calls
     /// `set_ime_allowed(false)`. UIKit fires `keyboardWillHide` — often
-    /// synchronously — updating the source to 0. But the source poll at the
-    /// top of `render_retain()` already ran, so this frame misses the change.
-    /// The `request_frame()` in the focus block is inside `RedrawRequested`,
-    /// which on iOS doesn't reliably re-arm the CADisplayLink.
+    /// synchronously — writing animation params to the source. But the
+    /// interpolation poll at the top of `render_retain()` already ran, so
+    /// this frame misses the params.
     ///
     /// Then `about_to_wait` runs. Its two existing frame drivers are both
     /// dead: `check_cursor_blink()` is false (TextEdit just unfocused), and
-    /// `animation_ticker().has_active()` is false (the avoidance tween hasn't
-    /// started — the poll missed the change). No frame is requested. The OS
+    /// `animation_ticker().has_active()` is false (the interpolation hasn't
+    /// started — the poll missed the params). No frame is requested. The OS
     /// keyboard keeps sliding down (GPU-driven, independent of our render
     /// loop); our input view freezes. Eventually some stray event wakes the
-    /// loop, the poll detects the change, the tween starts — but the keyboard
-    /// is already gone, so the input view animates down after the keyboard
-    /// disappeared.
+    /// loop, the poll picks up the params, the interpolation starts — but
+    /// the keyboard is already gone, so the input view animates down after
+    /// the keyboard disappeared.
     ///
     /// For **show** this doesn't deadlock: cursor blink turns **on**
     /// (TextEdit focused), so `check_cursor_blink()` keeps the loop alive
-    /// until the poll catches up and the tween starts.
+    /// until the poll catches up and the interpolation starts.
     ///
     /// This method breaks the dismiss deadlock by giving `about_to_wait` a
-    /// third reason to request a frame: the keyboard source changed. The
-    /// next `render_retain()` poll then detects the change, starts the tween
-    /// (seeded to the notification instant), and the ticker takes over.
+    /// third reason to request a frame: the animation source has pending
+    /// params. The next `render_retain()` poll then interpolates and writes
+    /// `current_height`.
     pub fn keyboard_inset_changed(&self) -> bool {
-        self.keyboard_inset_source.get() != self.keyboard_inset_snapshot_prev
+        self.keyboard_animation_source.has_pending()
     }
 
     /// Render using the three-tree retain-mode pipeline.
@@ -651,30 +651,39 @@ impl<A: Application + 'static> WindowState<A> {
             }
         }
 
-        // 4.5. Poll the keyboard-inset source for changes. The iOS shim
-        //      writes to it asynchronously from UIKit notifications; we
-        //      detect the change here and mark the tree dirty so
-        //      KeyboardAvoidance widgets re-render and start/retarget their
-        //      tweens. Mirrors the safe-area poll above. On desktop the
-        //      source never changes (no shim), so this is a no-op.
+        // 4.5. Keyboard animation interpolation.
+        //
+        // The iOS shim writes animation params to `keyboard_animation_source`
+        // on each keyboardWillShow/Hide notification. Each frame, if an
+        // animation is active, we interpolate the current height and write
+        // it to `keyboard_inset_source`. The root MediaQuery reads
+        // `keyboard_inset_source.get()` via `media_query_sources()`, so
+        // this drives `MediaQueryData.viewInsets.bottom` frame-by-frame.
+        //
+        // On desktop the animation source is always `None` (no shim), so
+        // this block is a no-op and `keyboard_inset_source` stays at 0.
         {
-            let prev = self.keyboard_inset_snapshot_prev;
-            let curr = self.keyboard_inset_source.get();
-            if curr != prev {
-                self.keyboard_inset_snapshot_prev = curr;
-                // Mark the root element as needing build so the widget tree
-                // re-renders. This is necessary because KeyboardAvoidance reads
-                // the keyboard-inset source in render() (not in layout() like
-                // SafeArea does), so mark_all_needs_layout() alone would
-                // re-lay-out with stale padding. Marking the root triggers a
-                // cascade: root rebuilds → children get updated widgets →
-                // KeyboardAvoidance's render() picks up the new target and
-                // starts/retargets its tween.
-                if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
-                    self.three_tree_pipeline.mark_needs_build(root_id);
+            if let Some(anim) = self.keyboard_animation_source.take() {
+                let now = std::time::Instant::now();
+                match anim.interpolate(now) {
+                    Some(height) => {
+                        self.keyboard_inset_source.set(height);
+                        self.keyboard_animation_source.restore(anim);
+                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                            self.three_tree_pipeline.mark_needs_build(root_id);
+                        }
+                        self.three_tree_pipeline.mark_all_needs_layout();
+                        self.request_frame();
+                    }
+                    None => {
+                        self.keyboard_inset_source.set(anim.target);
+                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                            self.three_tree_pipeline.mark_needs_build(root_id);
+                        }
+                        self.three_tree_pipeline.mark_all_needs_layout();
+                        self.request_frame();
+                    }
                 }
-                self.three_tree_pipeline.mark_all_needs_layout();
-                self.request_frame();
             }
         }
 
