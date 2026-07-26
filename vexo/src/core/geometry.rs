@@ -34,7 +34,7 @@
 //! ```
 
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -880,6 +880,92 @@ impl Default for KeyboardInsetSource {
 }
 
 // ============================================================================
+// MEDIA QUERY DATA SOURCE
+// ============================================================================
+
+/// Snapshot of the platform-derived parts of `MediaQueryData` that have
+/// no existing source. Read by the root `MediaQuery` component when
+/// composing `MediaQueryData` each render.
+///
+/// Uses `bool` for brightness (not `Brightness`) so this core cell has no
+/// dependency on `widgets/theme.rs`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MediaQueryDataSourceSnapshot {
+    pub size: crate::core::Size<crate::core::Logical>,
+    pub device_pixel_ratio: f32,
+    pub is_dark: bool,
+}
+
+/// Shared atomic cell holding the platform-derived parts of `MediaQueryData`
+/// that have no existing source. Updated by `WindowState` each frame; read by
+/// the root `MediaQuery` component.
+///
+/// `padding` / `viewInsets` / `viewPadding` stay on the existing
+/// `SafeAreaSource` / `KeyboardInsetSource` cells (they already propagate
+/// correctly); this cell carries only the new fields.
+#[derive(Clone)]
+pub struct MediaQueryDataSource {
+    inner: Arc<MediaQueryDataInner>,
+}
+
+struct MediaQueryDataInner {
+    size_w: AtomicU32,
+    size_h: AtomicU32,
+    device_pixel_ratio: AtomicU32,
+    is_dark: AtomicBool,
+}
+
+impl MediaQueryDataSource {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(MediaQueryDataInner {
+                size_w: AtomicU32::new(0.0_f32.to_bits()),
+                size_h: AtomicU32::new(0.0_f32.to_bits()),
+                device_pixel_ratio: AtomicU32::new(1.0_f32.to_bits()),
+                is_dark: AtomicBool::new(false),
+            }),
+        }
+    }
+
+    pub fn set(
+        &self,
+        size: crate::core::Size<crate::core::Logical>,
+        device_pixel_ratio: f32,
+        is_dark: bool,
+    ) {
+        self.inner
+            .size_w
+            .store(size.width.to_bits(), Ordering::Relaxed);
+        self.inner
+            .size_h
+            .store(size.height.to_bits(), Ordering::Relaxed);
+        self.inner
+            .device_pixel_ratio
+            .store(device_pixel_ratio.to_bits(), Ordering::Relaxed);
+        self.inner.is_dark.store(is_dark, Ordering::Relaxed);
+    }
+
+    pub fn get(&self) -> MediaQueryDataSourceSnapshot {
+        MediaQueryDataSourceSnapshot {
+            size: crate::core::Size::new(
+                f32::from_bits(self.inner.size_w.load(Ordering::Relaxed)),
+                f32::from_bits(self.inner.size_h.load(Ordering::Relaxed)),
+            ),
+            device_pixel_ratio: f32::from_bits(
+                self.inner.device_pixel_ratio.load(Ordering::Relaxed),
+            ),
+            is_dark: self.inner.is_dark.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl Default for MediaQueryDataSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
 // AFFINE TRANSFORM
 // ============================================================================
 
@@ -1383,6 +1469,42 @@ mod keyboard_inset_source_tests {
         assert_eq!(KeyboardCurve::from_uikit_raw(6), KeyboardCurve::EaseOut);
         // raw=255 (0b11111111) → bits 0-1 = 0b11 = 3 → Linear.
         assert_eq!(KeyboardCurve::from_uikit_raw(255), KeyboardCurve::Linear);
+    }
+}
+
+#[cfg(test)]
+mod media_query_data_source_tests {
+    use super::*;
+    use crate::core::{Logical, Size};
+
+    #[test]
+    fn default_is_all_zero() {
+        let src = MediaQueryDataSource::new();
+        let snap = src.get();
+        assert_eq!(snap.size, Size::<Logical>::new(0.0, 0.0));
+        assert_eq!(snap.device_pixel_ratio, 1.0);
+        assert!(!snap.is_dark);
+    }
+
+    #[test]
+    fn set_updates_values() {
+        let src = MediaQueryDataSource::new();
+        src.set(Size::new(400.0, 800.0), 2.0, true);
+        let snap = src.get();
+        assert_eq!(snap.size, Size::<Logical>::new(400.0, 800.0));
+        assert_eq!(snap.device_pixel_ratio, 2.0);
+        assert!(snap.is_dark);
+    }
+
+    #[test]
+    fn clones_share_state() {
+        let src = MediaQueryDataSource::new();
+        let clone = src.clone();
+        src.set(Size::new(100.0, 200.0), 3.0, false);
+        let snap = clone.get();
+        assert_eq!(snap.size, Size::<Logical>::new(100.0, 200.0));
+        assert_eq!(snap.device_pixel_ratio, 3.0);
+        assert!(!snap.is_dark);
     }
 }
 
