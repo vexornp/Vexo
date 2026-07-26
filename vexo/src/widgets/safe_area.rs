@@ -135,6 +135,10 @@ impl Clone for SafeArea {
 impl Component for SafeArea {
     type State = SimpleState<()>;
 
+    fn widget_child(&self) -> Option<&dyn Widget> {
+        Some(self.child.as_ref())
+    }
+
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let mq = MediaQuery::of(ctx);
         let insets = mq.padding;

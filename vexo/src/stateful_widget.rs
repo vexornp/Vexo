@@ -464,6 +464,10 @@ pub trait Component: Sized + 'static {
     fn key(&self) -> Option<WidgetKey> {
         None
     }
+
+    fn widget_child(&self) -> Option<&dyn Widget> {
+        None
+    }
 }
 
 /// Element for Component widgets.
@@ -995,6 +999,10 @@ impl<W: Component + Clone + 'static> Widget for W {
         // Without this delegation, the blanket impl would hard-code `None`
         // and `with_key()` builders on Component types would silently no-op.
         <Self as Component>::key(self)
+    }
+
+    fn child(&self) -> Option<&dyn Widget> {
+        <Self as Component>::widget_child(self)
     }
 
     fn create_element(&self) -> Box<dyn Element> {
