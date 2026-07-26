@@ -208,9 +208,9 @@ pub use update_result::UpdateResult;
 pub use widgets::{
     BottomBarHeight, Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition,
     FractionalTranslation, GestureDetector, Grid, Image, IndexedStack, KeyboardAvoidance,
-    MultiChild, Offstage, Opacity, Positioned, SafeArea, SafeAreaClaim, ScrollController,
-    ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
-    TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
+    MediaQuery, MediaQueryData, MediaQueryMutator, MultiChild, Offstage, Opacity, Positioned,
+    SafeArea, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit,
+    TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

@@ -45,8 +45,8 @@ use std::time::{Duration, Instant};
 use vexo::{
     children, AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
     DecoratedBox, FractionalTranslation, IndexedStack, JustifyContent, Layout, LifecycleContext,
-    MultiChild, Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text, Theme, Widget,
-    WithLayout,
+    MediaQuery, MultiChild, Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text,
+    Theme, Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -581,7 +581,7 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             }
         };
 
-        let safe_insets = ctx.safe_area();
+        let safe_insets = MediaQuery::of(ctx).padding;
         let nav = tokens::navigation::colors(&Theme::of(ctx));
         let nav_bar = self.build_nav_bar(&title, can_pop, &safe_insets, &nav);
 

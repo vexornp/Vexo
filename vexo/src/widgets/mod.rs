@@ -46,7 +46,7 @@ pub use keyboard_avoidance::{BottomBarHeight, KeyboardAvoidance};
 pub(crate) use media_query::RootMediaQuery;
 pub use media_query::{MediaQuery, MediaQueryData, MediaQueryMutator, Orientation, RemoveEdges};
 pub use multi_child::MultiChild;
-pub use safe_area::{SafeArea, SafeAreaClaim};
+pub use safe_area::SafeArea;
 pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
 pub use text::Text;
