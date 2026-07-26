@@ -20,6 +20,7 @@ use crate::animation::{
     AnimationController, Curve, EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve,
 };
 use crate::core::{KeyboardCurve, KeyboardInsetSnapshot};
+use crate::inherited_widget::{impl_widget_for_inherited, InheritedWidget};
 use crate::{
     Component, ComponentState, LifecycleContext, RenderContext, Widget, WidgetKey, WithLayout,
 };
@@ -42,6 +43,62 @@ use crate::{
 /// early in computation, but since that frame is displayed one frame late,
 /// the visual completion aligns with the keyboard.
 const RENDER_LATENCY: Duration = Duration::from_millis(16);
+
+// ============================================================================
+// BOTTOM BAR HEIGHT — InheritedWidget for fixed bottom obstructions
+// ============================================================================
+
+/// InheritedWidget that exposes the total height of fixed bottom-bar
+/// obstructions (e.g. a tab bar + its safe-area inset) to descendants.
+///
+/// Provided by ancestors like `TabBarView` so that `KeyboardAvoidance` inside
+/// the page content can subtract this height from its keyboard padding.
+/// Without this, `KeyboardAvoidance` pads by the full keyboard height, but the
+/// tab bar sits between the page content and the screen bottom — leaving a gap
+/// equal to the tab bar height between the input bar and the keyboard.
+///
+/// The data flows **downward** (TabBarView → page content → KeyboardAvoidance),
+/// which is the correct direction for InheritedWidgets.
+///
+/// When no `BottomBarHeight` ancestor exists (desktop, tests, pages without a
+/// tab bar), the value is `None` → `KeyboardAvoidance` pads by the full
+/// animated keyboard inset (its default behavior).
+pub struct BottomBarHeight {
+    height: f32,
+    child: Box<dyn Widget>,
+}
+
+impl BottomBarHeight {
+    pub fn new(height: f32, child: impl Widget + 'static) -> Self {
+        Self {
+            height,
+            child: Box::new(child),
+        }
+    }
+}
+
+impl Clone for BottomBarHeight {
+    fn clone(&self) -> Self {
+        Self {
+            height: self.height,
+            child: self.child.clone_boxed(),
+        }
+    }
+}
+
+impl InheritedWidget for BottomBarHeight {
+    type Value = f32;
+
+    fn value(&self) -> &f32 {
+        &self.height
+    }
+
+    fn child(&self) -> &dyn Widget {
+        self.child.as_ref()
+    }
+}
+
+impl_widget_for_inherited!(BottomBarHeight);
 
 // ============================================================================
 // KEYBOARD AVOIDANCE STATE
@@ -290,13 +347,22 @@ impl Component for KeyboardAvoidance {
             state.start_tween_to(snap.target_height, snap);
         }
 
-        // 3. Effective bottom padding = animated keyboard inset only.
-        //    Safe-area avoidance (home indicator, notch) is `SafeArea`'s job —
-        //    the two widgets compose. An ancestor like TabBarView already
-        //    claims the bottom safe area, so reading ctx.safe_area() here
-        //    would double-pad. When the keyboard is down, padding is 0
-        //    (transparent pass-through).
-        let bottom = state.animated_inset;
+        // 3. Effective bottom padding = animated keyboard inset, minus any
+        //    fixed bottom-bar obstruction (e.g. a tab bar) provided by an
+        //    ancestor via the `BottomBarHeight` InheritedWidget. Without this
+        //    subtraction, the tab bar (which sits between the page content
+        //    and the screen bottom) would create a gap between the input bar
+        //    and the keyboard.
+        //
+        //    When no ancestor provides `BottomBarHeight` (desktop, tests,
+        //    pages without a tab bar), the obstruction is 0 — pad by the full
+        //    animated inset.
+        //
+        //    The padding is clamped to 0: when the keyboard is down (inset=0)
+        //    or partially up (inset < tab bar height), the input bar should
+        //    sit just above the tab bar, not be pushed below it.
+        let bottom_obstruction = ctx.depend_on_inherited_widget::<f32>().unwrap_or(0.0);
+        let bottom = (state.animated_inset - bottom_obstruction).max(0.0);
 
         // Build the layout: column with bottom padding, fills parent.
         let layout = crate::layout::Layout::default()

@@ -13,12 +13,16 @@ use std::sync::Arc;
 
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
-    children, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack, Layout,
-    LifecycleContext, MultiChild, RenderContext, SafeArea, SafeAreaClaim, Style, Theme, Widget,
-    WithLayout,
+    children, BottomBarHeight, Component, ComponentState, DecoratedBox, GestureDetector,
+    IndexedStack, Layout, LifecycleContext, MultiChild, RenderContext, SafeArea, SafeAreaClaim,
+    Style, Theme, Widget, WithLayout,
 };
 
 use crate::theme::tokens;
+
+/// Natural height of the tab bar row (excluding safe-area inset), in logical
+/// pixels. Matches iOS `UITabBar`'s standard 49pt height.
+const TAB_BAR_HEIGHT: f32 = 49.0;
 
 // ============================================================================
 // TAB CONTROLLER
@@ -219,12 +223,14 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
         // The tab bar always stays at its natural height. When the keyboard
-        // appears, it simply slides up and covers the tab bar — no collapse
-        // logic needed. KeyboardAvoidance (inside the page) pads the content
-        // by the keyboard height, so the input bar sits at the keyboard's top
-        // edge, above the (covered) tab bar. This avoids any layout jumps
-        // during keyboard show/dismiss animations.
-        MultiChild::new(
+        // appears, it slides up and covers the tab bar. KeyboardAvoidance
+        // (inside the page) reads `BottomBarHeight` (provided below) and
+        // subtracts it from the keyboard padding, so the input bar sits at
+        // the keyboard's top edge — no gap.
+        let safe_bottom = ctx.safe_area().bottom;
+        let bottom_bar_height = TAB_BAR_HEIGHT + safe_bottom;
+
+        let content = MultiChild::new(
             children![
                 WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
                 bar,
@@ -233,8 +239,11 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
                 .flex_direction(FlexDirection::Column)
                 .width_percent(1.0)
                 .height_percent(1.0),
-        )
-        .boxed()
+        );
+
+        // Expose the tab bar's total height to descendants so
+        // KeyboardAvoidance can subtract it from the keyboard padding.
+        BottomBarHeight::new(bottom_bar_height, content).boxed()
     }
 }
 
