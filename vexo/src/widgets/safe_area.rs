@@ -133,10 +133,6 @@ impl Clone for SafeArea {
 }
 
 impl Component for SafeArea {
-    // Note: The task brief specified `type State = ()`, but `()` does not
-    // implement `ComponentState` (only `SimpleState<T: Default>` does — see
-    // `vexo/src/stateful_widget.rs:167`). We use `SimpleState<()>`, matching
-    // the existing pattern in `widgets/media_query.rs:264`.
     type State = SimpleState<()>;
 
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
@@ -211,19 +207,12 @@ mod tests {
         let cloned = w.clone();
         assert_eq!(cloned.top, false);
         assert_eq!(cloned.minimum, w.minimum);
-        // The child Box is always present; verify it survived the clone by
-        // downcasting to the Text we put in. (`SafeArea` is a `Component` and
-        // gets the blanket `Widget` impl, whose `child()` returns `None`, so
-        // we can't use `cloned.child()` here — check the field directly.)
-        assert!(
-            cloned
-                .child
-                .as_ref()
-                .as_any()
-                .downcast_ref::<Text>()
-                .is_some(),
-            "cloned child should be a Text"
-        );
+        assert!(cloned
+            .child
+            .as_ref()
+            .as_any()
+            .downcast_ref::<Text>()
+            .is_some());
     }
 
     #[test]
