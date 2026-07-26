@@ -338,6 +338,10 @@ Vexo's public API maps to web framework concepts:
 | `InheritedWidget` trait | React Context Provider / Vue `provide()` |
 | `RenderContext::depend_on_inherited_widget::<V>()` | React `useContext()` / Vue `inject()` |
 | `Theme` / `ThemeData` | CSS custom properties / Tailwind theme |
+| `MediaQuery::of(ctx)` | React `useMediaQuery()` / CSS `@media` |
+| `MediaQueryData` | Flutter `MediaQueryData` |
+| `MediaQuery::remove_padding` / `remove_view_insets` | Flutter `MediaQuery.removePadding` / `removeViewInsets` |
+| `SafeArea` (Component) | Flutter `SafeArea` (reads `MediaQuery.padding` at render time) |
 
 ## Three-Tree Architecture
 

@@ -207,8 +207,8 @@ pub use update_result::UpdateResult;
 pub use widgets::{
     Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
     GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
-    MultiChild, Offstage, Opacity, Positioned, RemoveEdges, SafeArea, ScrollController, ScrollView,
-    SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
+    MultiChild, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
+    ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
     TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
