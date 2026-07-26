@@ -1418,17 +1418,20 @@ git commit -m "refactor(vexo_uikit): migrate TabBarView to MediaQuery subtree mu
 
 ---
 
-## Task 10: Rework iOS keyboard shim to `CADisplayLink` continuous-height reporting
+## Task 10: Simplify `KeyboardInsetSource` + render-loop-driven keyboard animation
 
 **Files:**
-- Modify: `vexo/src/platform/keyboard_ios.rs`
-- Modify: `vexo/src/core/geometry.rs` (simplify `KeyboardInsetSource`)
+- Modify: `vexo/src/core/geometry.rs` (simplify `KeyboardInsetSource`; add `KeyboardAnimationSource`)
+- Modify: `vexo/src/platform/keyboard_ios.rs` (rewrite: store animation params, no tween)
+- Modify: `vexo/src/window.rs` (interpolate each frame in the existing per-frame poll block)
 
 **Interfaces:**
-- Consumes: `objc2`, `objc2-foundation`, `objc2-ui-kit` (for `CADisplayLink` if available; if not, raw `objc2` msg_send), `KeyboardInsetSource::set(current_height: f32)`.
-- Produces: `KeyboardInsetSource` simplified to `current_height: f32` only; `KeyboardInsetSnapshot` and `KeyboardCurve` deleted; iOS shim runs a `CADisplayLink` writing `current_height` each frame.
+- Consumes: `objc2`, `objc2-foundation`, `block2`, `KeyboardInsetSource::set(current_height: f32)`, `crate::animation::{Curve, EaseInOutCurve, EaseInCurve, EaseOutCurve, LinearCurve}`.
+- Produces: `KeyboardInsetSource` simplified to `current_height: f32` only; `KeyboardInsetSnapshot` and `KeyboardCurve` deleted; new `KeyboardAnimationSource` cell holding `{ from, target, duration_secs, start: Instant, curve: Box<dyn Curve>, active: bool }`; iOS shim writes animation params to the new source on `keyboardWillShow/Hide`; `WindowState::render_retain()` interpolates each frame and writes `current_height` to `KeyboardInsetSource`.
 
-**This is the iOS rework — high risk. The Rust-side source simplification must compile on non-iOS first; the iOS shim changes only affect iOS builds.**
+**Architecture decision:** Rather than installing a separate `CADisplayLink` (which would require an `NSObject` subclass + `declare_class!` + raw `msg_send!` since `objc2-ui-kit` doesn't enable the `CADisplayLink` feature), the interpolation runs in the **existing render loop** (`WindowState::render_retain()`). On iOS, winit's event loop is already `CADisplayLink`-driven — `request_frame()` arms the next vsync. So the interpolation timing is vsync-accurate, identical to a separate `CADisplayLink`, with far less code.
+
+The curve mapping reuses `vexo/src/animation/curve.rs`'s `EaseInOutCurve`/`EaseInCurve`/`EaseOutCurve`/`LinearCurve` (which survive this plan — Task 11 only deletes `KeyboardCurve` and `curve_for` from `keyboard_avoidance.rs`, not the underlying curves). The raw UIKit curve value is mapped via `raw & 0x3` (same logic as the deleted `KeyboardCurve::from_uikit_raw`): 0→EaseInOut, 1→EaseIn, 2→EaseOut, 3→Linear. iOS keyboard raw=7 → 3 → Linear.
 
 - [ ] **Step 1: Simplify `KeyboardInsetSource` in `core/geometry.rs`**
 
@@ -1440,16 +1443,9 @@ Edit `vexo/src/core/geometry.rs`. Replace the entire `KeyboardCurve` enum, `Keyb
 // ============================================================================
 
 /// Shared atomic cell holding the current keyboard height (logical px).
-/// Updated each frame by the iOS shim's `CADisplayLink` (which samples the
-/// OS keyboard's actual frame position using the OS-reported animation
-/// curve); stays 0 on desktop / Android (no shim installed).
-///
-/// Mirrors [`SafeAreaSource`]'s design: a dumb `Arc`-atomic value with no
-/// callbacks. The iOS keyboard shim writes via [`set`]; the root
-/// `MediaQuery` reads via [`get`] each render.
-///
-/// [`set`]: Self::set
-/// [`get`]: Self::get
+/// Updated each frame by the render loop's interpolation driver (which reads
+/// animation params from [`KeyboardAnimationSource`]); stays 0 on desktop /
+/// Android (no shim installed).
 #[derive(Clone)]
 pub struct KeyboardInsetSource {
     inner: Arc<KeyboardInsetInner>,
@@ -1460,7 +1456,6 @@ struct KeyboardInsetInner {
 }
 
 impl KeyboardInsetSource {
-    /// Create a new source with `current_height = 0` (keyboard down).
     pub fn new() -> Self {
         Self {
             inner: Arc::new(KeyboardInsetInner {
@@ -1469,24 +1464,14 @@ impl KeyboardInsetSource {
         }
     }
 
-    /// Read the current keyboard height (logical px).
     pub fn get(&self) -> f32 {
         f32::from_bits(self.inner.current_height.load(Ordering::Relaxed))
     }
 
-    /// Update the current keyboard height. Visible to all clone holders
-    /// immediately. Called each frame by the iOS shim's `CADisplayLink`
-    /// callback while the keyboard animation is running.
     pub fn set(&self, current_height: f32) {
         self.inner
             .current_height
             .store(current_height.to_bits(), Ordering::Relaxed);
-    }
-
-    /// Convenience alias for `get()` — kept for compatibility with callers
-    /// that previously called `current_target_height()`.
-    pub fn current_target_height(&self) -> f32 {
-        self.get()
     }
 }
 
@@ -1497,7 +1482,7 @@ impl Default for KeyboardInsetSource {
 }
 ```
 
-Delete the `mod keyboard_inset_source_tests` module and replace with:
+Replace the `mod keyboard_inset_source_tests` module with:
 
 ```rust
 #[cfg(test)]
@@ -1524,49 +1509,260 @@ mod keyboard_inset_source_tests {
         src.set(250.0);
         assert_eq!(clone.get(), 250.0);
     }
+}
+```
 
-    #[test]
-    fn current_target_height_alias() {
-        let src = KeyboardInsetSource::new();
-        src.set(100.0);
-        assert_eq!(src.current_target_height(), 100.0);
+- [ ] **Step 2: Add `KeyboardAnimationSource` to `core/geometry.rs`**
+
+After the `KeyboardInsetSource` impl block, add:
+
+```rust
+// ============================================================================
+// KEYBOARD ANIMATION SOURCE
+// ============================================================================
+
+/// Animation parameters for the current keyboard show/hide transition.
+/// Written by the iOS shim on `keyboardWillShow/Hide`; read + interpolated
+/// by `WindowState::render_retain()` each frame to drive
+/// `KeyboardInsetSource::set()`.
+#[derive(Clone, Debug)]
+pub struct KeyboardAnimation {
+    /// Height the animation starts from (the source's current height at
+    /// notification time).
+    pub from: f32,
+    /// Height the animation is tweening toward (`target_height` for show,
+    /// `0.0` for hide).
+    pub target: f32,
+    /// Animation duration in seconds. `0.0` means "snap immediately."
+    pub duration_secs: f32,
+    /// The instant the OS keyboard animation began (captured in the iOS
+    /// shim at the moment the notification fired).
+    pub start: std::time::Instant,
+    /// The animation curve, mapped from UIKit's raw curve value via
+    /// `raw & 0x3`: 0→EaseInOut, 1→EaseIn, 2→EaseOut, 3→Linear.
+    /// Stored as a raw `u8` so the cell is `Send + Sync`; the render loop
+    /// maps it to a `Box<dyn Curve>` when interpolating.
+    pub curve_raw: u8,
+}
+
+impl KeyboardAnimation {
+    /// Map a UIKit `UIViewAnimationCurve` raw value to the curve enum.
+    /// Mirrors the deleted `KeyboardCurve::from_uikit_raw`: `raw & 0x3`
+    /// extracts the bottom 2 bits, handling the keyboard's private raw=7
+    /// (→ 3 → Linear) correctly.
+    pub fn curve(&self) -> Box<dyn crate::animation::Curve> {
+        use crate::animation::{EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve};
+        match self.curve_raw & 0x3 {
+            0 => Box::new(EaseInOutCurve),
+            1 => Box::new(EaseInCurve),
+            2 => Box::new(EaseOutCurve),
+            _ => Box::new(LinearCurve),
+        }
+    }
+
+    /// Compute the interpolated height at time `now`.
+    /// Returns `None` if the animation has completed (elapsed >= duration),
+    /// so the caller can set the final value and mark the animation inactive.
+    pub fn interpolate(&self, now: std::time::Instant) -> Option<f32> {
+        if self.duration_secs <= 0.0 {
+            return None;
+        }
+        let elapsed = now.duration_since(self.start).as_secs_f32();
+        let t = (elapsed / self.duration_secs).min(1.0);
+        if t >= 1.0 {
+            return None;
+        }
+        let eased = self.curve().transform(t as f64) as f32;
+        Some(self.from + (self.target - self.from) * eased)
+    }
+}
+
+/// Shared cell holding the current keyboard animation params (or `None` when
+/// the keyboard is at rest). Written by the iOS shim; read by the render loop.
+///
+/// Uses `Mutex<Option<KeyboardAnimation>>` (not atomics) because
+/// `Instant` and `f32` pairs have no atomic representation, and updates are
+/// rare (one per keyboard notification) + main-thread-only, so contention
+/// is nonexistent.
+#[derive(Clone)]
+pub struct KeyboardAnimationSource {
+    inner: Arc<std::sync::Mutex<Option<KeyboardAnimation>>>,
+}
+
+impl KeyboardAnimationSource {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Replace the current animation params. Called by the iOS shim on
+    /// each `keyboardWillShow/Hide` notification.
+    pub fn set(&self, animation: KeyboardAnimation) {
+        *self.inner.lock().unwrap() = Some(animation);
+    }
+
+    /// Read + take the current animation. Returns `Some(animation)` if an
+    /// animation is active; the caller is expected to either re-store it
+    /// (still animating) or leave it `None` (completed).
+    pub fn take(&self) -> Option<KeyboardAnimation> {
+        self.inner.lock().unwrap().take()
+    }
+
+    /// Store an animation back after reading (if still active).
+    pub fn restore(&self, animation: KeyboardAnimation) {
+        *self.inner.lock().unwrap() = Some(animation);
+    }
+}
+
+impl Default for KeyboardAnimationSource {
+    fn default() -> Self {
+        Self::new()
     }
 }
 ```
 
-- [ ] **Step 2: Update `RenderContext::media_query_sources` (Task 5's accessor)**
+Add `KeyboardAnimationSource` and `KeyboardAnimation` to the re-export in `vexo/src/core/mod.rs`.
 
-Edit `vexo/src/stateful_widget.rs`. The `media_query_sources` method from Task 5 currently calls `keyboard_inset_source().current_target_height()`. After Task 10 Step 1, `current_target_height()` still exists (as an alias). Optionally simplify to `.get()` — but leave as-is to minimize churn. Verify it still compiles.
+Add a test module:
 
-- [ ] **Step 3: Build (non-iOS)**
+```rust
+#[cfg(test)]
+mod keyboard_animation_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn interpolate_returns_from_at_t0() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start: Instant::now(),
+            curve_raw: 3, // Linear
+        };
+        let val = anim.interpolate(anim.start).unwrap();
+        assert!(val.abs() < 1.0, "expected ~0 at t=0, got {}", val);
+    }
+
+    #[test]
+    fn interpolate_returns_none_when_complete() {
+        let start = Instant::now() - Duration::from_millis(500);
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start,
+            curve_raw: 3,
+        };
+        assert!(anim.interpolate(Instant::now()).is_none());
+    }
+
+    #[test]
+    fn interpolate_returns_none_when_duration_zero() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.0,
+            start: Instant::now(),
+            curve_raw: 3,
+        };
+        assert!(anim.interpolate(Instant::now()).is_none());
+    }
+
+    #[test]
+    fn interpolate_linear_halfway() {
+        let start = Instant::now();
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start,
+            curve_raw: 3, // Linear
+        };
+        // At t=0.125s (halfway through 0.25s), linear → 150px.
+        let val = anim.interpolate(start + Duration::from_millis(125)).unwrap();
+        assert!((val - 150.0).abs() < 2.0, "expected ~150 at halfway, got {}", val);
+    }
+
+    #[test]
+    fn curve_raw_7_maps_to_linear() {
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 100.0,
+            duration_secs: 1.0,
+            start: Instant::now(),
+            curve_raw: 7, // iOS keyboard private value → 7 & 3 = 3 → Linear
+        };
+        // Linear at t=0.5 → 50px.
+        let val = anim.interpolate(anim.start + Duration::from_millis(500)).unwrap();
+        assert!((val - 50.0).abs() < 1.0, "expected ~50 (linear) for raw=7, got {}", val);
+    }
+
+    #[test]
+    fn animation_source_set_take_restore() {
+        let src = KeyboardAnimationSource::new();
+        assert!(src.take().is_none());
+        let anim = KeyboardAnimation {
+            from: 0.0,
+            target: 300.0,
+            duration_secs: 0.25,
+            start: Instant::now(),
+            curve_raw: 3,
+        };
+        src.set(anim.clone());
+        let taken = src.take().unwrap();
+        assert_eq!(taken.target, 300.0);
+        assert!(src.take().is_none());
+        src.restore(taken);
+        assert!(src.take().is_some());
+    }
+}
+```
+
+- [ ] **Step 3: Update `RenderContext::media_query_sources`**
+
+Edit `vexo/src/stateful_widget.rs`. The `media_query_sources` method from Task 5 calls `keyboard_inset_source().current_target_height()`. After Step 1, `current_target_height()` no longer exists. Change it to `.get()`:
+
+```rust
+    pub fn media_query_sources(&self) -> MediaQuerySourcesSnapshot {
+        MediaQuerySourcesSnapshot {
+            safe_area: self.build_owner.safe_area_source().get(),
+            keyboard_current_height: self.build_owner.keyboard_inset_source().get(),
+            media_query: self.build_owner.media_query_data_source().get(),
+        }
+    }
+```
+
+- [ ] **Step 4: Build (non-iOS) to verify the source simplification compiles**
 
 Run: `cargo build -p vexo`
-Expected: compiles. The `KeyboardInsetSnapshot` / `KeyboardCurve` types are gone; any remaining references will error here.
+Expected: compiles. The `KeyboardInsetSnapshot` / `KeyboardCurve` types are gone.
 
-Run: `rg "KeyboardInsetSnapshot|KeyboardCurve" vexo/src/ vexo_uikit/src/ shared_app/src/`
-If any references remain outside `keyboard_ios.rs`, fix them. (`keyboard_ios.rs` will be rewritten in Step 4.)
+Run: `rg "KeyboardInsetSnapshot|KeyboardCurve|current_target_height" vexo/src/ vexo_uikit/src/ shared_app/src/`
+If any references remain outside `keyboard_ios.rs`, fix them. (`keyboard_ios.rs` will be rewritten in Step 5.)
 
-- [ ] **Step 4: Rewrite `keyboard_ios.rs` to drive `CADisplayLink`**
+Run: `cargo test -p vexo --lib core::geometry`
+Expected: all geometry tests PASS (including the new `keyboard_animation_tests`).
 
-Edit `vexo/src/platform/keyboard_ios.rs`. Replace the entire file with a `CADisplayLink`-driven implementation. The new structure:
+- [ ] **Step 5: Rewrite `keyboard_ios.rs` to store animation params (no tween)**
+
+Edit `vexo/src/platform/keyboard_ios.rs`. Replace the entire file. The new structure: on each notification, capture `{ target_height, duration_secs, curve_raw }`, read the current `current_height` from the source (the `from` value), construct a `KeyboardAnimation`, write it to `KeyboardAnimationSource`, then call `request_frame()` so the render loop starts interpolating. No `CADisplayLink` is installed here — the render loop does the interpolation.
 
 ```rust
 //! iOS keyboard observer — bridges UIKit keyboard notifications to
-//! [`KeyboardInsetSource`](crate::core::KeyboardInsetSource) by sampling
-//! the keyboard's actual frame position each frame via `CADisplayLink`.
+//! [`KeyboardAnimationSource`](crate::core::KeyboardAnimationSource).
 //!
-//! On `keyboardWillShow/Hide`, the observer captures the keyboard's end
-//! frame height + animation duration + start instant, then installs a
-//! `CADisplayLink` that fires each frame. Each callback computes the
-//! elapsed fraction of the animation, queries UIKit's private animation
-//! curve (raw value 7 for the keyboard) to compute the current height,
-//! and writes it to the source. When the animation completes (elapsed
-//! >= duration), the display link is stopped and the source is set to
-//! the final target (height or 0).
+//! On `keyboardWillShow/Hide`, the observer captures the keyboard's end-frame
+//! height, animation duration, and animation curve raw value from `userInfo`,
+//! reads the current keyboard height (the `from` value), constructs a
+//! [`KeyboardAnimation`], and writes it to the animation source. It then
+//! requests a frame so the render loop (`WindowState::render_retain()`)
+//! starts interpolating `KeyboardInsetSource.current_height` each vsync.
 //!
-//! This mirrors Flutter's model: `MediaQuery.viewInsets.bottom` is
-//! animated by the OS, frame-by-frame, so widgets reading it track the
-//! keyboard slide without running their own tween.
+//! The interpolation itself runs in the render loop, not here — the render
+//! loop is already `CADisplayLink`-driven on iOS (via winit), so the timing
+//! is vsync-accurate without installing a separate display link.
 
 use core::ffi::c_void;
 use core::ptr::NonNull;
@@ -1575,14 +1771,17 @@ use std::time::Instant;
 
 use objc2::rc::Retained;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2_foundation::{NSDictionary, NSNotification, NSNotificationCenter, NSNumber, NSObject, NSString, NSValue};
+use objc2_foundation::{
+    NSDictionary, NSNotification, NSNotificationCenter, NSNumber, NSObject, NSString, NSValue,
+};
 
-use crate::core::KeyboardInsetSource;
+use crate::core::{KeyboardAnimation, KeyboardAnimationSource, KeyboardInsetSource};
 
 const KEYBOARD_WILL_SHOW: &str = "UIKeyboardWillShowNotification";
 const KEYBOARD_WILL_HIDE: &str = "UIKeyboardWillHideNotification";
 const KEYBOARD_FRAME_END_KEY: &str = "UIKeyboardFrameEndUserInfoKey";
 const KEYBOARD_ANIMATION_DURATION_KEY: &str = "UIKeyboardAnimationDurationUserInfoKey";
+const KEYBOARD_ANIMATION_CURVE_KEY: &str = "UIKeyboardAnimationCurveUserInfoKey";
 
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
@@ -1602,44 +1801,37 @@ pub struct KeyboardObserver {
 impl KeyboardObserver {
     pub fn install(
         source: KeyboardInsetSource,
-        scale_factor: f64,
+        animation_source: KeyboardAnimationSource,
+        _scale_factor: f64,
         window_logical_height: f32,
         request_frame: Arc<dyn Fn() + Send + Sync>,
     ) -> Self {
-        let _ = scale_factor; // keyboard frame is in logical px already
         let center = NSNotificationCenter::defaultCenter();
 
         let show_name = NSString::from_str(KEYBOARD_WILL_SHOW);
         let source_for_show = source.clone();
+        let anim_for_show = animation_source.clone();
         let request_for_show = request_frame.clone();
         let window_h_for_show = window_logical_height;
         let show_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             let notif = unsafe { notif.as_ref() };
             let target_height = extract_target_height(notif, window_h_for_show);
             let duration_secs = extract_duration(notif);
-            let start = Instant::now();
-            // Drive the animation: set initial height to current (the OS
-            // keyboard starts moving immediately), then poll each frame.
-            // For simplicity (v1), set the target immediately and let the
-            // CADisplayLink below refine. Actually, the OS keyboard animates
-            // from current to target over `duration_secs`; we sample each
-            // frame. The simplest correct implementation: start a polling
-            // loop driven by request_frame that reads the OS keyboard's
-            // live frame each call.
-            //
-            // However, reading the OS keyboard's live frame requires
-            // accessing the UIKit keyboard window, which is private API.
-            // The supported approach: install a CADisplayLink and sample
-            // the animation curve ourselves. But the curve is private
-            // (raw=7), so we approximate with the OS-reported curve.
-            //
-            // v1 implementation: step to target on the next frame. This
-            // loses the smooth animation but is correct (no stuck state).
-            // A follow-up task should install a real CADisplayLink that
-            // interpolates using the reported duration + curve.
-            source_for_show.set(target_height);
+            let curve_raw = extract_curve_raw(notif);
+            let from = source_for_show.get();
+            let animation = KeyboardAnimation {
+                from,
+                target: target_height,
+                duration_secs,
+                start: Instant::now(),
+                curve_raw,
+            };
+            if duration_secs <= 0.0 {
+                source_for_show.set(target_height);
+            } else {
+                anim_for_show.set(animation);
+            }
             request_for_show();
-            let _ = (duration_secs, start);
         });
         let show_token = unsafe {
             center.addObserverForName_object_queue_usingBlock(
@@ -1652,12 +1844,26 @@ impl KeyboardObserver {
 
         let hide_name = NSString::from_str(KEYBOARD_WILL_HIDE);
         let source_for_hide = source.clone();
+        let anim_for_hide = animation_source.clone();
         let request_for_hide = request_frame.clone();
         let hide_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             let notif = unsafe { notif.as_ref() };
             let _ = extract_target_height(notif, window_logical_height);
-            let _ = extract_duration(notif);
-            source_for_hide.set(0.0);
+            let duration_secs = extract_duration(notif);
+            let curve_raw = extract_curve_raw(notif);
+            let from = source_for_hide.get();
+            let animation = KeyboardAnimation {
+                from,
+                target: 0.0,
+                duration_secs,
+                start: Instant::now(),
+                curve_raw,
+            };
+            if duration_secs <= 0.0 {
+                source_for_hide.set(0.0);
+            } else {
+                anim_for_hide.set(animation);
+            }
             request_for_hide();
         });
         let hide_token = unsafe {
@@ -1706,7 +1912,7 @@ fn extract_target_height(notif: &NSNotification, window_logical_height: f32) -> 
             let size = core::mem::size_of::<CGRect>();
             unsafe {
                 value.getValue_size(
-                    NonNull::new_unchecked(&mut rect as *mut CGRect as *mut c_void),
+                    NonNull::from(&mut rect) as *mut _ as *mut c_void,
                     size as objc2_foundation::NSUInteger,
                 );
             }
@@ -1732,67 +1938,141 @@ fn extract_duration(notif: &NSNotification) -> f32 {
         .map(|n| n.as_f32())
         .unwrap_or(0.25)
 }
+
+fn extract_curve_raw(notif: &NSNotification) -> u8 {
+    let user_info: Option<Retained<NSDictionary>> = notif.userInfo();
+    let user_info = match user_info {
+        Some(ui) => ui,
+        None => return 0,
+    };
+    let user_info: &NSDictionary<NSString, NSObject> =
+        unsafe { user_info.cast_unchecked::<NSString, NSObject>() };
+    let curve_key = NSString::from_str(KEYBOARD_ANIMATION_CURVE_KEY);
+    user_info
+        .objectForKey(&curve_key)
+        .and_then(|obj| obj.downcast::<NSNumber>().ok())
+        .map(|n| n.as_u8())
+        .unwrap_or(0)
+}
 ```
 
-**IMPORTANT v1 limitation documented in the code above:** this first version steps `current_height` to `target_height` immediately on the show notification (and to 0 on hide), without running a `CADisplayLink`-driven interpolation. This is the "graceful degradation" path described in the spec's error-handling section. The smooth animation requires installing a `CADisplayLink` and interpolating using the OS-reported curve — this is a follow-up sub-task (see Task 10b below) because it requires careful `objc2` `CADisplayLink` wiring that should be tested on-device.
+**Note:** `NonNull::from(&mut rect)` replaces the original's `NonNull::new_unchecked` — safer equivalent.
 
-The code must compile cleanly on iOS. The non-iOS build does not include this file (it's `#[cfg(target_os = "ios")]` somewhere — verify with `rg "keyboard_ios" vexo/src/`).
+- [ ] **Step 6: Add `keyboard_animation_source` field to `WindowState` + wire the shim**
 
-- [ ] **Step 5: Build (non-iOS) and test**
+Edit `vexo/src/window.rs`.
+
+Find the `keyboard_inset_source: KeyboardInsetSource,` field (around line 63) and add after it:
+
+```rust
+    /// Shared keyboard animation source. Written by the iOS shim on each
+    /// `keyboardWillShow/Hide`; read + interpolated each frame by the
+    /// render loop to drive `keyboard_inset_source.set()`.
+    keyboard_animation_source: crate::core::KeyboardAnimationSource,
+```
+
+Find the `let keyboard_inset_source = KeyboardInsetSource::default();` line (around line 133) and add after it:
+
+```rust
+        let keyboard_animation_source = crate::core::KeyboardAnimationSource::default();
+```
+
+Find where `KeyboardObserver::install(...)` is called (search `rg "KeyboardObserver::install" vexo/src/`). Add the `keyboard_animation_source.clone()` argument after `keyboard_inset_source.clone()`:
+
+```rust
+            let _observer = crate::platform::keyboard_ios::KeyboardObserver::install(
+                keyboard_inset_source.clone(),
+                keyboard_animation_source.clone(),
+                scale_factor,
+                f32::MAX,
+                request_frame_callback,
+            );
+```
+
+Find the `keyboard_inset_source,` line in the struct initializer (around line 177) and add after it:
+
+```rust
+            keyboard_animation_source,
+```
+
+- [ ] **Step 7: Add the interpolation driver to `WindowState::render_retain()`**
+
+Edit `vexo/src/window.rs`. Find the keyboard poll block (the `// 4.5. Poll the keyboard-inset source` block, currently lines ~617-642). Replace the entire block with:
+
+```rust
+        // 4.5. Keyboard animation interpolation.
+        //
+        // The iOS shim writes animation params to `keyboard_animation_source`
+        // on each keyboardWillShow/Hide notification. Each frame, if an
+        // animation is active, we interpolate the current height and write
+        // it to `keyboard_inset_source`. The root MediaQuery reads
+        // `keyboard_inset_source.get()` via `media_query_sources()`, so
+        // this drives `MediaQueryData.viewInsets.bottom` frame-by-frame.
+        //
+        // On desktop the animation source is always `None` (no shim), so
+        // this block is a no-op and `keyboard_inset_source` stays at 0.
+        {
+            if let Some(anim) = self.keyboard_animation_source.take() {
+                let now = std::time::Instant::now();
+                match anim.interpolate(now) {
+                    Some(height) => {
+                        self.keyboard_inset_source.set(height);
+                        self.keyboard_animation_source.restore(anim);
+                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                            self.three_tree_pipeline.mark_needs_build(root_id);
+                        }
+                        self.three_tree_pipeline.mark_all_needs_layout();
+                        self.request_frame();
+                    }
+                    None => {
+                        self.keyboard_inset_source.set(anim.target);
+                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                            self.three_tree_pipeline.mark_needs_build(root_id);
+                        }
+                        self.three_tree_pipeline.mark_all_needs_layout();
+                        self.request_frame();
+                    }
+                }
+            }
+        }
+```
+
+**Note:** The `keyboard_height_prev` field added in Task 12's plan is NOT needed — the animation source's `take()`/`restore()` pattern handles the "is it still animating" check. If Task 12 has already run and added `keyboard_height_prev`, remove it here (the interpolation block replaces the simple poll).
+
+- [ ] **Step 8: Build (non-iOS) and test**
 
 Run: `cargo build -p vexo`
-Expected: compiles. (`keyboard_ios.rs` is iOS-only and not compiled on macOS.)
+Expected: compiles.
 
 Run: `cargo build`
-Expected: compiles (whole workspace, macOS host).
+Expected: compiles (whole workspace).
 
-Run: `cargo test -p vexo --lib core::geometry::keyboard_inset_source_tests`
-Expected: 4 tests PASS.
+Run: `cargo test -p vexo --lib core::geometry`
+Expected: all geometry tests PASS (including new `keyboard_animation_tests`).
 
-- [ ] **Step 6: Build for iOS (if possible)**
+Run: `cargo test -p vexo`
+Expected: all framework tests PASS.
+
+- [ ] **Step 9: Build for iOS (if possible)**
 
 Run: `cargo build --target aarch64-apple-ios -p vexo` (if the iOS target is set up).
-If the target is unavailable, skip this step and note it in the commit message.
+If the target is unavailable, skip and note it in the commit message.
 
-Expected: compiles. If `block2::RcBlock` or `objc2` APIs differ, fix per the existing file's patterns (the original file used the same APIs).
+Expected: compiles. The iOS shim's `install()` signature changed (added `animation_source` param); verify the call site compiles.
 
-- [ ] **Step 7: Commit**
-
-```bash
-git add vexo/src/core/geometry.rs vexo/src/platform/keyboard_ios.rs
-git commit -m "refactor(vexo): simplify KeyboardInsetSource to current_height + rework iOS shim (v1 step-to-target)"
-```
-
----
-
-## Task 10b: iOS `CADisplayLink` smooth interpolation (follow-up)
-
-**This task is optional for the initial landing — Task 10's v1 (step-to-target) is functionally correct, just not animated. Land Task 10 first, then do 10b as a follow-up PR.**
-
-**Files:**
-- Modify: `vexo/src/platform/keyboard_ios.rs`
-
-- [ ] **Step 1: Install a `CADisplayLink` in the show/hide block**
-
-The `CADisplayLink` fires each frame. On each fire:
-1. Compute `elapsed = (Instant::now() - start).as_secs_f32()`.
-2. Compute `t = (elapsed / duration).min(1.0)`.
-3. Apply the keyboard's curve (raw=7 → use a linear approximation, or query `UIViewAnimationCurve` private bits as the deleted `KeyboardCurve::from_uikit_raw` did).
-4. Compute `current = from + (target - from) * curve(t)`.
-5. Write `current` to `source`.
-6. If `t >= 1.0`, stop the display link.
-
-The `from` height is the source's current value at notification time (read before starting the link). The `target` is `target_height` (show) or `0.0` (hide).
-
-- [ ] **Step 2: Test on-device**
-
-This requires running the iOS app and observing the keyboard animation. The user must do this — do NOT run `cargo run` for iOS yourself.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add vexo/src/platform/keyboard_ios.rs
-git commit -m "feat(ios): CADisplayLink-driven smooth keyboard height interpolation"
+git add vexo/src/core/geometry.rs vexo/src/core/mod.rs vexo/src/stateful_widget.rs vexo/src/platform/keyboard_ios.rs vexo/src/window.rs
+git commit -m "feat(vexo): render-loop-driven keyboard animation (replaces per-widget tween)
+
+- Simplify KeyboardInsetSource to current_height: f32 (Y1)
+- Add KeyboardAnimationSource cell holding {from, target, duration, start, curve_raw}
+- iOS shim writes animation params on keyboardWillShow/Hide (no tween)
+- WindowState::render_retain() interpolates each vsync using the
+  OS-reported curve (raw & 0x3 mapping), driving MediaQuery.viewInsets.bottom
+- Delete KeyboardInsetSnapshot, KeyboardCurve (dead code)
+- Reuses existing CADisplayLink-driven render loop (winit) for vsync-accurate timing"
 ```
 
 ---
@@ -1915,38 +2195,14 @@ Edit `vexo/src/stateful_widget.rs`. Find the `pub fn safe_area(&self) -> crate::
 
 In the same file, find `pub fn keyboard_inset(&self) -> crate::core::KeyboardInsetSnapshot` (around line 362) and delete it (including its doc comment).
 
-- [ ] **Step 3: Simplify `WindowState`'s keyboard poll block**
+- [ ] **Step 3: Clean up `WindowState`'s dead keyboard fields**
 
-Edit `vexo/src/window.rs`. The `keyboard_inset_snapshot_prev: KeyboardInsetSnapshot` field (line 67) is now dead (the type is deleted). Replace the per-frame keyboard poll block (lines ~617-642) with a simpler version that compares `current_height`:
+Edit `vexo/src/window.rs`. Task 10 already replaced the keyboard poll block with the interpolation driver. The old `keyboard_inset_snapshot_prev` field (if still present — Task 10 may have already removed it) is dead because `KeyboardInsetSnapshot` was deleted in Task 10.
 
-Find the field `keyboard_inset_snapshot_prev: KeyboardInsetSnapshot,` (line 67) and delete it.
+Run: `rg "keyboard_inset_snapshot_prev" vexo/src/window.rs`
+If matches found: delete the field declaration, the initializer in `WindowState::new`, and any remaining references. The interpolation driver from Task 10 Step 7 handles the per-frame polling — no replacement field is needed.
 
-Find the `keyboard_inset_snapshot_prev: KeyboardInsetSnapshot::default(),` initializer (around line 178) and delete it.
-
-Replace the keyboard poll block (lines ~617-642) with:
-
-```rust
-        // 4.5. Poll the keyboard-inset source for changes. The iOS shim
-        //      writes to it each frame (CADisplayLink-driven); we detect
-        //      the change here and mark the tree dirty so the root
-        //      MediaQuery re-renders with the new viewInsets.bottom.
-        //      On desktop the source never changes (no shim), so this is
-        //      a no-op. We compare against the previous value stored in
-        //      `keyboard_height_prev`.
-        {
-            let curr = self.keyboard_inset_source.get();
-            if curr != self.keyboard_height_prev {
-                self.keyboard_height_prev = curr;
-                if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
-                    self.three_tree_pipeline.mark_needs_build(root_id);
-                }
-                self.three_tree_pipeline.mark_all_needs_layout();
-                self.request_frame();
-            }
-        }
-```
-
-Add the new field `keyboard_height_prev: f32,` to `WindowState` (replacing the deleted `keyboard_inset_snapshot_prev`). Initialize it to `0.0` in `WindowState::new`.
+If Task 10 already removed `keyboard_inset_snapshot_prev`, skip this step.
 
 - [ ] **Step 4: Build and test**
 
