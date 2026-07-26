@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
-    children, BottomBarHeight, Component, ComponentState, DecoratedBox, GestureDetector,
-    IndexedStack, Layout, LifecycleContext, MultiChild, RenderContext, SafeArea, SafeAreaClaim,
-    Style, Theme, Widget, WithLayout,
+    children, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack, Layout,
+    LifecycleContext, MediaQuery, MultiChild, RemoveEdges, RenderContext, SafeArea, Style, Theme,
+    Widget, WithLayout,
 };
 
 use crate::theme::tokens;
@@ -160,13 +160,11 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             .position(|t| *t == self.controller.current())
             .unwrap_or(0);
 
-        // Build all pages (IndexedStack keeps them all mounted).
         let mut stack = IndexedStack::new(current_index);
         for tab in &self.tabs {
             stack = stack.push((self.page_builder)(tab));
         }
 
-        // Build the tab bar row.
         let nav = tokens::navigation::colors(&Theme::of(ctx));
         let mut bar = MultiChild::empty(Layout::default().width_percent(1.0).height(49.0));
         for tab in &self.tabs {
@@ -187,31 +185,12 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             bar = bar.push(item);
         }
 
-        // The tab bar row owns its bottom safe-area (home indicator) and
-        // left/right insets (landscape notch), mirroring how
-        // `NavigationStackView` owns the top inset for its nav bar. `top(false)`
-        // because the bar is at the bottom — no status-bar inset to consume.
-        //
-        // `SafeArea` bakes in `flex_grow(1.0)` (correct for content areas that
-        // should fill their parent, but wrong for the tab bar which should be
-        // its intrinsic height). Wrapping in `WithLayout` with `flex_grow(0.0)`
-        // + `flex_shrink(0.0)` pins the bar to its content height so it doesn't
-        // steal space from the page area above.
-        //
-        // The `DecoratedBox` paints `mobile_header_bg` edge-to-edge so the bar
-        // (and the home-indicator inset below it) has a themed background
-        // instead of showing the window's clear color (white in dark mode).
         let bar = DecoratedBox::with_style(
             SafeArea::new(bar.boxed()).top(false).boxed(),
             Style::default().background(nav.mobile_header_bg),
         );
         let bar = WithLayout::new(bar, Layout::default().flex_grow(0.0).flex_shrink(0.0));
 
-        // SwiftUI-style hairline along the tab bar's top edge (the seam
-        // between the page content and the bar). 1 logical px — Taffy floors
-        // sub-pixel heights to 0, so a true 1-physical-px `1/scale` height
-        // would vanish on Retina. Sits above the `SafeArea`-wrapped bar so it
-        // spans the full width edge-to-edge. See `HAIRLINE_THICKNESS`.
         let hairline = DecoratedBox::with_style(
             MultiChild::empty(
                 Layout::row()
@@ -222,28 +201,19 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         );
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
-        // The tab bar always stays at its natural height. When the keyboard
-        // appears, it slides up and covers the tab bar. KeyboardAvoidance
-        // (inside the page) reads `BottomBarHeight` (provided below) and
-        // subtracts it from the keyboard padding, so the input bar sits at
-        // the keyboard's top edge — no gap.
-        let safe_bottom = ctx.safe_area().bottom;
-        let bottom_bar_height = TAB_BAR_HEIGHT + safe_bottom;
+        let mq = MediaQuery::of(ctx);
+        let tab_bar_height = TAB_BAR_HEIGHT + mq.padding.bottom;
 
+        let page = MediaQuery::reduce_view_insets_bottom(stack, tab_bar_height);
+        let page = MediaQuery::remove_padding(page, RemoveEdges::BOTTOM);
         let content = MultiChild::new(
-            children![
-                WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
-                bar,
-            ],
+            children![WithLayout::new(page, Layout::flex_fill()), bar,],
             Layout::default()
                 .flex_direction(FlexDirection::Column)
                 .width_percent(1.0)
                 .height_percent(1.0),
         );
-
-        // Expose the tab bar's total height to descendants so
-        // KeyboardAvoidance can subtract it from the keyboard padding.
-        BottomBarHeight::new(bottom_bar_height, content).boxed()
+        content.boxed()
     }
 }
 

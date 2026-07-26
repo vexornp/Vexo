@@ -208,8 +208,9 @@ pub use widgets::{
     BottomBarHeight, Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition,
     FractionalTranslation, GestureDetector, Grid, Image, IndexedStack, KeyboardAvoidance,
     MediaQuery, MediaQueryData, MediaQueryMutator, MultiChild, Offstage, Opacity, Positioned,
-    SafeArea, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit,
-    TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
+    RemoveEdges, SafeArea, ScrollController, ScrollView, SlideDirection, SlideTransition, Stack,
+    Text, TextEdit, TextEditState, TextEditingController, Theme, ThemeData, Transform, Widget,
+    WithLayout,
 };
 
 extern crate alloc;
