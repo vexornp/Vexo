@@ -547,6 +547,29 @@ impl<A: Application + 'static> WindowState<A> {
         self.keyboard_animation_source.has_pending()
     }
 
+    /// Mark only the `RootMediaQuery` element as needing rebuild, rather than
+    /// the root element. This avoids re-calling `Application::view()` (which
+    /// constructs the entire app widget tree) on every keyboard animation
+    /// frame. `RootMediaQuery::render()` reads the platform sources and creates
+    /// a new `MediaQuery` widget; the `InheritedWidget` mechanism then
+    /// propagates to only the elements that called `MediaQuery::of(ctx)`.
+    fn mark_root_media_query_needs_build(&mut self) {
+        let rmq_id = self
+            .three_tree_pipeline
+            .element_registry()
+            .root()
+            .and_then(|root| {
+                self.three_tree_pipeline
+                    .element_registry()
+                    .children(root)
+                    .first()
+                    .copied()
+            });
+        if let Some(id) = rmq_id {
+            self.three_tree_pipeline.mark_needs_build(id);
+        }
+    }
+
     /// Render using the three-tree retain-mode pipeline.
     ///
     /// This method implements the full retain-mode rendering flow:
@@ -669,17 +692,13 @@ impl<A: Application + 'static> WindowState<A> {
                     Some(height) => {
                         self.keyboard_inset_source.set(height);
                         self.keyboard_animation_source.restore(anim);
-                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
-                            self.three_tree_pipeline.mark_needs_build(root_id);
-                        }
+                        self.mark_root_media_query_needs_build();
                         self.three_tree_pipeline.mark_all_needs_layout();
                         self.request_frame();
                     }
                     None => {
                         self.keyboard_inset_source.set(anim.target);
-                        if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
-                            self.three_tree_pipeline.mark_needs_build(root_id);
-                        }
+                        self.mark_root_media_query_needs_build();
                         self.three_tree_pipeline.mark_all_needs_layout();
                         self.request_frame();
                     }
@@ -687,8 +706,20 @@ impl<A: Application + 'static> WindowState<A> {
             }
         }
 
-        // 5. Perform state-driven rebuilds
-        self.three_tree_pipeline.perform_rebuilds();
+        // 5. Perform state-driven rebuilds.
+        //
+        // Loop until the rebuild cascade settles: marking `RootMediaQuery`
+        // dirty triggers a new `MediaQuery` widget, whose `InheritedWidget`
+        // update marks dependents dirty, which may in turn mark their
+        // children dirty. Processing all of them in one frame avoids a
+        // 1-frame-per-tree-level lag that would make the keyboard animation
+        // visibly stutter.
+        loop {
+            self.three_tree_pipeline.perform_rebuilds();
+            if !self.three_tree_pipeline.has_pending_rebuilds() {
+                break;
+            }
+        }
 
         // 5.5. Render-loop focus / keyboard sync.
         //
