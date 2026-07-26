@@ -602,7 +602,7 @@ impl<A: Application + 'static> WindowState<A> {
         // 4. Refresh safe-area insets (logical pixels) from the platform.
         //    winit polls UIKit's `safeAreaInsets` here; on desktop this is
         //    always zero. Done BEFORE rebuilds/reconcile so that widgets
-        //    reading `ctx.safe_area()` during `render()` (e.g.
+        //    reading `MediaQuery::of(ctx).padding` during `render()` (e.g.
         //    `NavigationStackView`'s nav bar) see the real insets on the
         //    very first frame. A change marks the tree dirty so layout
         //    re-runs (e.g. on device rotation).

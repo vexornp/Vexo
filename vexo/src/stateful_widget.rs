@@ -347,18 +347,6 @@ impl<'a> RenderContext<'a> {
         self.build_owner.focused_element() == Some(self.element_id)
     }
 
-    /// Current device safe-area insets in logical pixels.
-    ///
-    /// Reflects the live values written each frame by
-    /// [`WindowState`](crate::window::WindowState) (status bar / notch / home
-    /// indicator on mobile; all-zero on desktop). Widgets such as `SafeArea`
-    /// call this during [`Component::render()`] to inset their children.
-    ///
-    /// The returned [`EdgeInsets`] uses `left, right, top, bottom` field order.
-    pub fn safe_area(&self) -> crate::layout::EdgeInsets {
-        self.build_owner.safe_area_source().get()
-    }
-
     /// Snapshot of all three platform sources. Intended for the root
     /// `MediaQuery` component only; all other widgets read `MediaQuery::of`.
     pub fn media_query_sources(&self) -> MediaQuerySourcesSnapshot {
