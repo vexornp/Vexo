@@ -296,19 +296,21 @@ mod tests {
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
         // Chat screen root is `DecoratedBox(KeyboardAvoidance(MultiChild(...)))`.
-        // - proxy        = ChatScreen's StatefulElement ProxyRenderObject
-        // - chat_decorated = DecoratedBox (background)
-        // - keyboard_proxy  = KeyboardAvoidance's StatefulElement ProxyRenderObject
-        // - keyboard_layout = WithLayout (the column with bottom padding from
-        //                      KeyboardAvoidance::render())
-        // - chat_col        = the inner MultiChild column [scrollview, input_bar]
-        // Each Component (StatefulElement) inserts a ProxyRenderObject, and
-        // KeyboardAvoidance::render() wraps its child in a WithLayout — so
-        // wrapping the column adds two single-child layers between the
-        // DecoratedBox and the column.
+        // - proxy             = ChatScreen's StatefulElement ProxyRenderObject
+        // - chat_decorated    = DecoratedBox (background)
+        // - keyboard_proxy    = KeyboardAvoidance's StatefulElement ProxyRenderObject
+        // - inherited_proxy   = AnimatedKeyboardInset's InheritedElement ProxyRenderObject
+        // - keyboard_layout   = WithLayout (the column with bottom padding from
+        //                       KeyboardAvoidance::render())
+        // - chat_col          = the inner MultiChild column [scrollview, input_bar]
+        // Each Component (StatefulElement) and InheritedWidget inserts a
+        // ProxyRenderObject, and KeyboardAvoidance::render() wraps its child
+        // in a WithLayout — so the full chain from DecoratedBox to the column
+        // is: decorated → keyboard_proxy → inherited_proxy → layout → column.
         let chat_decorated = find_child(ro_reg, proxy, 0).expect("chat decorated root");
         let keyboard_proxy = find_child(ro_reg, chat_decorated, 0).expect("keyboard proxy");
-        let keyboard_layout = find_child(ro_reg, keyboard_proxy, 0).expect("keyboard layout");
+        let inherited_proxy = find_child(ro_reg, keyboard_proxy, 0).expect("inherited proxy");
+        let keyboard_layout = find_child(ro_reg, inherited_proxy, 0).expect("keyboard layout");
         let chat_col = find_child(ro_reg, keyboard_layout, 0).expect("chat column");
         let input_wrapper = find_child(ro_reg, chat_col, 1).expect("input bar wrapper");
         let input_bounds = ro_reg

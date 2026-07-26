@@ -20,6 +20,10 @@ use vexo::{
 
 use crate::theme::tokens;
 
+/// Natural height of the tab bar row (excluding safe-area inset), in logical
+/// pixels. Matches iOS `UITabBar`'s standard 49pt height.
+const TAB_BAR_HEIGHT: f32 = 49.0;
+
 // ============================================================================
 // TAB CONTROLLER
 // ============================================================================
@@ -218,14 +222,37 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         );
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
-        // When the software keyboard is up, collapse the tab bar so the page
-        // content fills the screen. This lets KeyboardAvoidance pad by the
-        // full keyboard height (measured from the screen bottom) without
-        // double-counting the tab bar's height. The keyboard covers the area
-        // where the tab bar was, so hiding it is visually correct.
-        let keyboard_up = ctx.keyboard_inset().target_height > 0.0;
+        // Collapse the tab bar in sync with the keyboard avoidance tween.
+        //
+        // `AnimatedKeyboardInset` (provided by `KeyboardAvoidance` as an
+        // InheritedWidget) gives us the live animated inset each frame. The
+        // tab bar height animates as `max(0, TAB_BAR_HEIGHT - animated_inset)`:
+        //
+        //   - Keyboard fully up (inset ≥ 49): tab bar height = 0 (collapsed).
+        //     KeyboardAvoidance pads by the full inset → input bar sits
+        //     exactly at the keyboard's top edge.
+        //   - Keyboard fully down (inset = 0): tab bar height = 49 (natural).
+        //     KeyboardAvoidance pads by 0 → input bar sits above the tab bar.
+        //   - During dismiss (inset animating 318→0): tab bar stays
+        //     collapsed while inset > 49, then gradually reappears as inset
+        //     drops below 49. The input bar tracks the keyboard's top edge
+        //     the entire time — no instant layout jump.
+        //
+        // Before this fix, the tab bar snapped based on `target_height > 0`
+        // (the keyboard's TARGET, which flips instantly). On dismiss, the tab
+        // bar reappeared instantly (49px jump) while KeyboardAvoidance was
+        // still animating, making the keyboard appear to "run away" downward.
+        //
+        // When no `KeyboardAvoidance` ancestor provides the animated inset
+        // (desktop, tests, or pages without KeyboardAvoidance), fall back to
+        // the keyboard's target_height — matching the old instant behavior.
+        let animated_inset = ctx
+            .depend_on_inherited_widget::<f32>()
+            .unwrap_or_else(|| ctx.keyboard_inset().target_height);
+        let collapse = (TAB_BAR_HEIGHT - animated_inset).max(0.0);
 
-        if keyboard_up {
+        if collapse <= 0.0 {
+            // Tab bar fully collapsed — keyboard covers its area.
             MultiChild::new(
                 children![WithLayout::new(
                     SafeAreaClaim::bottom(stack),
@@ -238,14 +265,11 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             )
             .boxed()
         } else {
+            // Tab bar partially or fully visible. Animate its height from 0
+            // to TAB_BAR_HEIGHT by constraining the bar's layout.
+            let bar = WithLayout::new(bar, Layout::default().height(collapse).flex_shrink(0.0));
             MultiChild::new(
                 children![
-                    // The tab bar (a sibling below) owns the bottom safe-area edge
-                    // (home indicator) — its SafeArea insets the bar's content.
-                    // Wrap the page stack in SafeAreaClaim::bottom so the page's
-                    // own SafeArea sees bottom=0 and doesn't re-apply the home-
-                    // indicator padding, which would create a gap between the
-                    // page content and the tab bar.
                     WithLayout::new(SafeAreaClaim::bottom(stack), Layout::flex_fill()),
                     bar,
                 ],

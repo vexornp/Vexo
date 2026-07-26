@@ -41,7 +41,7 @@ pub use super::{GlobalKey, Key};
 pub use container::ChildPush;
 pub use grid::Grid;
 pub use image::Image;
-pub use keyboard_avoidance::KeyboardAvoidance;
+pub use keyboard_avoidance::{AnimatedKeyboardInset, KeyboardAvoidance};
 pub use multi_child::MultiChild;
 pub use safe_area::{SafeArea, SafeAreaClaim};
 pub use scroll_controller::ScrollController;

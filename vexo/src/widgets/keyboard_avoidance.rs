@@ -20,6 +20,7 @@ use crate::animation::{
     AnimationController, Curve, EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve,
 };
 use crate::core::{KeyboardCurve, KeyboardInsetSnapshot};
+use crate::inherited_widget::{impl_widget_for_inherited, InheritedWidget};
 use crate::{
     Component, ComponentState, LifecycleContext, RenderContext, Widget, WidgetKey, WithLayout,
 };
@@ -42,6 +43,60 @@ use crate::{
 /// early in computation, but since that frame is displayed one frame late,
 /// the visual completion aligns with the keyboard.
 const RENDER_LATENCY: Duration = Duration::from_millis(16);
+
+// ============================================================================
+// ANIMATED KEYBOARD INSET — InheritedWidget exposing the live animated inset
+// ============================================================================
+
+/// InheritedWidget that exposes the current animated keyboard inset (logical
+/// pixels) to descendants.
+///
+/// `KeyboardAvoidance` provides this every frame so that siblings like
+/// `TabBarView` can collapse/expand **in sync** with the avoidance tween,
+/// instead of snapping based on the keyboard's target height (which flips
+/// instantly). Without this, the tab bar would reappear instantly when the
+/// keyboard starts dismissing — a 49px layout jump that makes the keyboard
+/// appear to "run away" from the input view.
+///
+/// Descendants read it via `RenderContext::depend_on_inherited_widget::<f32>()`.
+/// When no `KeyboardAvoidance` ancestor exists (desktop, tests), the value
+/// is `None` → caller should use its natural height.
+pub struct AnimatedKeyboardInset {
+    inset: f32,
+    child: Box<dyn Widget>,
+}
+
+impl AnimatedKeyboardInset {
+    pub fn new(inset: f32, child: impl Widget + 'static) -> Self {
+        Self {
+            inset,
+            child: Box::new(child),
+        }
+    }
+}
+
+impl Clone for AnimatedKeyboardInset {
+    fn clone(&self) -> Self {
+        Self {
+            inset: self.inset,
+            child: self.child.clone_boxed(),
+        }
+    }
+}
+
+impl InheritedWidget for AnimatedKeyboardInset {
+    type Value = f32;
+
+    fn value(&self) -> &f32 {
+        &self.inset
+    }
+
+    fn child(&self) -> &dyn Widget {
+        self.child.as_ref()
+    }
+}
+
+impl_widget_for_inherited!(AnimatedKeyboardInset);
 
 // ============================================================================
 // KEYBOARD AVOIDANCE STATE
@@ -139,20 +194,8 @@ impl KeyboardAvoidanceState {
         // active list forever, keeping has_active()==true and driving
         // perpetual frame requests / rebuilds even after the tween settles.
         self.controller.stop();
-        // FIXME: UIKit reports 0.383s for the keyboard animation duration,
-        // but the keyboard's REAL visual animation is significantly shorter
-        // (the keyboard finishes well before our 383ms tween completes,
-        // making the input view appear to lag on dismiss). The `DidShow/
-        // DidHide` notifications fire even later (541ms/447ms) due to
-        // runloop scheduling delays, so they can't be used to measure the
-        // true duration. As a pragmatic fix, clamp the duration to 250ms —
-        // the standard iOS keyboard animation duration. This makes the
-        // input view track the keyboard more closely. A proper fix would
-        // use a CADisplayLink + presentationLayer to track the keyboard's
-        // actual visual position every frame.
-        let effective_duration = target.duration_secs.min(0.25).max(0.10);
         let mut controller =
-            AnimationController::new(Duration::from_secs_f64(effective_duration as f64));
+            AnimationController::new(Duration::from_secs_f64(target.duration_secs as f64));
         if let Some(ticker) = &self.ticker {
             controller.set_ticker(ticker.clone());
         }
@@ -318,7 +361,12 @@ impl Component for KeyboardAvoidance {
             .min_height(0.0)
             .padding_each(0.0, 0.0, 0.0, bottom);
 
-        WithLayout::new(self.child.clone_boxed(), layout).boxed()
+        let child = WithLayout::new(self.child.clone_boxed(), layout).boxed();
+
+        // Expose the animated inset to descendants (e.g. TabBarView) so they
+        // can collapse/expand in sync with this tween instead of snapping
+        // based on the keyboard's target height.
+        AnimatedKeyboardInset::new(state.animated_inset, child).boxed()
     }
 }
 
