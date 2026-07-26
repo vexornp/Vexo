@@ -24,6 +24,25 @@ use crate::{
     Component, ComponentState, LifecycleContext, RenderContext, Widget, WidgetKey, WithLayout,
 };
 
+/// Compensation for render-to-display latency (1 frame at 60 Hz ≈ 16 ms).
+///
+/// Our frame is rendered now but displayed on the next vsync. The keyboard is
+/// composited by Core Animation and displayed immediately. Without this
+/// offset, our input view lags the keyboard by one frame:
+///
+/// - **Show:** the keyboard is slightly higher than the input → a few px of
+///   overlap. Barely visible — the opaque keyboard covering the input looks
+///   natural.
+/// - **Dismiss:** the keyboard is slightly lower than the input → a visible
+///   gap between the keyboard's top edge and the input's bottom. The keyboard
+///   appears to "run away" downward, finishing ~16 ms before the input.
+///
+/// Extrapolating the tween by one frame makes the *displayed* input position
+/// match the keyboard's *displayed* position. The tween completes one frame
+/// early in computation, but since that frame is displayed one frame late,
+/// the visual completion aligns with the keyboard.
+const RENDER_LATENCY: Duration = Duration::from_millis(16);
+
 // ============================================================================
 // KEYBOARD AVOIDANCE STATE
 // ============================================================================
@@ -149,8 +168,15 @@ impl KeyboardAvoidanceState {
     }
 
     /// Advance the tween. Called from `on_tick`.
+    ///
+    /// `now` is the instant the frame begins rendering. The frame is displayed
+    /// ~1 vsync later, so we extrapolate by [`RENDER_LATENCY`] to compute the
+    /// position at *display* time — matching where the keyboard will be when
+    /// the frame is shown. Without this, the input view is always one frame
+    /// behind the keyboard (see [`RENDER_LATENCY`] docs).
     pub fn advance(&mut self, now: Instant) {
-        self.controller.advance(now);
+        let display_time = now + RENDER_LATENCY;
+        self.controller.advance(display_time);
         let t = self.controller.value();
         let eased = self.curve.transform(t);
         self.animated_inset = self.from_inset + (self.to_inset - self.from_inset) * eased as f32;
@@ -383,9 +409,12 @@ mod tests {
             },
         );
         let start = state.controller.start_time().unwrap();
-        state.advance(start + Duration::from_millis(125));
+        // advance() extrapolates by RENDER_LATENCY (16ms). At t=125ms, the
+        // effective time is 125+16=141ms → 141/250 = 56.4% → 169.2px.
+        // To hit exactly 50% (150px), we pass 125-16=109ms so effective = 125ms.
+        state.advance(start + Duration::from_millis(125) - RENDER_LATENCY);
         assert!(
-            (state.animated_inset - 150.0).abs() < 1.0,
+            (state.animated_inset - 150.0).abs() < 2.0,
             "expected ~150 at halfway, got {}",
             state.animated_inset
         );
@@ -407,7 +436,9 @@ mod tests {
             },
         );
         let start = state.controller.start_time().unwrap();
-        state.advance(start + Duration::from_millis(260));
+        // advance() extrapolates by RENDER_LATENCY (16ms). Pass 260-16=244ms
+        // so effective time = 260ms > 250ms → completed.
+        state.advance(start + Duration::from_millis(260) - RENDER_LATENCY);
         assert!(
             (state.animated_inset - 300.0).abs() < 0.5,
             "expected 300 at completion, got {}",
@@ -431,8 +462,10 @@ mod tests {
             },
         );
         let start = state.controller.start_time().unwrap();
-        state.advance(start + Duration::from_millis(25)); // 25% → 75
-        assert!((state.animated_inset - 75.0).abs() < 1.0);
+        // advance() extrapolates by RENDER_LATENCY (16ms). Pass 25-16=9ms so
+        // effective = 25ms → 25% → 75px.
+        state.advance(start + Duration::from_millis(25) - RENDER_LATENCY);
+        assert!((state.animated_inset - 75.0).abs() < 2.0);
 
         // Retarget to 0 (keyboardWillHide) — new tween should start from 75.
         state.start_tween_to(
@@ -450,9 +483,10 @@ mod tests {
         );
         assert_eq!(state.to_inset, 0.0);
         let start2 = state.controller.start_time().unwrap();
-        state.advance(start2 + Duration::from_millis(50)); // 50% of 0→75 reversed = 75-37.5
+        // Pass 50-16=34ms so effective = 50ms → 50% of 0→75 reversed = 75-37.5
+        state.advance(start2 + Duration::from_millis(50) - RENDER_LATENCY);
         assert!(
-            (state.animated_inset - 37.5).abs() < 1.5,
+            (state.animated_inset - 37.5).abs() < 2.5,
             "expected ~37.5 halfway down from 75, got {}",
             state.animated_inset
         );
@@ -463,10 +497,13 @@ mod tests {
         // Regression: when the iOS shim reports the instant the keyboard
         // animation began (animation_start = Some(...)), the avoidance tween
         // must seed its controller's start_time to THAT instant — not
-        // Instant::now() — and advance immediately so the first rendered
-        // frame reflects the time already elapsed. Otherwise the input view
-        // lags the keyboard by a frame for the whole animation: the keyboard
-        // appears to cover the input, then the input catches up underneath.
+        // Instant::now() — and advance immediately so the first rendered frame
+        // reflects the time already elapsed. Otherwise the input view lags
+        // the keyboard by a frame for the whole animation.
+        //
+        // Note: advance() extrapolates by RENDER_LATENCY (16ms) to compensate
+        // for render-to-display latency. So the effective elapsed is
+        // ~50ms + 16ms = ~66ms of a 250ms linear tween = ~26.4% = ~79px.
         let mut state = KeyboardAvoidanceState::default();
         state.from_inset = 0.0;
         state.animated_inset = 0.0;
@@ -490,13 +527,11 @@ mod tests {
         assert_eq!(state.controller.start_time(), Some(notif_instant));
 
         // The immediate advance inside start_tween_to must have advanced
-        // animated_inset to reflect ~50ms of a 250ms linear tween = 20% = 60px.
-        // Allow slack for the time between capturing `notif_instant` and the
-        // internal Instant::now() in advance — so the lower bound is 60, and
-        // it must be well short of the 300 target (not completed).
+        // animated_inset to reflect ~66ms effective elapsed (~79px, partway).
+        // Must be well short of the 300 target (not completed).
         assert!(
-            state.animated_inset >= 60.0 && state.animated_inset < 250.0,
-            "expected animated_inset to reflect ~50ms elapsed (~60px, partway), \
+            state.animated_inset >= 70.0 && state.animated_inset < 250.0,
+            "expected animated_inset to reflect ~66ms elapsed (~79px, partway), \
              got {}; should already be partway — not 0 (no advance) and not 300 \
              (completed)",
             state.animated_inset
