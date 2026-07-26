@@ -104,7 +104,7 @@ pub struct BuildOwner {
     keyboard_inset_source: KeyboardInsetSource,
 
     /// Platform-derived fields for `MediaQueryData` (size, scale, brightness).
-    /// Backed by atomics inside [`MediaQueryDataSource`]. Updated each frame
+    /// Backed by atomics inside [`crate::core::MediaQueryDataSource`]. Updated each frame
     /// by [`WindowState`](crate::window::WindowState); read by the root
     /// `MediaQuery` component via `RenderContext::media_query_sources()`.
     media_query_data_source: crate::core::MediaQueryDataSource,
@@ -289,7 +289,7 @@ impl BuildOwner {
     /// Returns a cheaply-clonable handle ([`SafeAreaSource`] is `Arc`-based)
     /// whose [`SafeAreaSource::get()`] always reads the latest insets set by
     /// [`WindowState`](crate::window::WindowState). Used by
-    /// [`RenderContext::safe_area()`](crate::stateful_widget::RenderContext::safe_area)
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)
     /// so widgets such as `SafeArea` can resolve insets during render.
     pub fn safe_area_source(&self) -> SafeAreaSource {
         self.safe_area_source.clone()
@@ -327,7 +327,7 @@ impl BuildOwner {
 
     /// Get a clone of the shared media-query data source.
     ///
-    /// Returns a cheaply-clonable handle ([`MediaQueryDataSource`] is
+    /// Returns a cheaply-clonable handle ([`crate::core::MediaQueryDataSource`] is
     /// `Arc`-based) whose `get()` always reads the latest values written by
     /// [`WindowState`](crate::window::WindowState). Used by the root
     /// `MediaQuery` component via
@@ -340,7 +340,7 @@ impl BuildOwner {
     ///
     /// Called once at window init so the [`BuildOwner`] shares the same
     /// atomics as [`WindowState`](crate::window::WindowState); subsequent
-    /// per-frame updates happen via [`MediaQueryDataSource::set()`] on
+    /// per-frame updates happen via [`crate::core::MediaQueryDataSource::set()`] on
     /// either clone.
     pub fn set_media_query_data_source(&mut self, source: crate::core::MediaQueryDataSource) {
         self.media_query_data_source = source;

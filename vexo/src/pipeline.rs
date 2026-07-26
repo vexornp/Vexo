@@ -197,7 +197,7 @@ impl ThreeTreePipeline {
     /// [`WindowState`](crate::window::WindowState) so the same atomics are
     /// shared between the window (which writes insets each frame) and the
     /// element tree (which reads them via
-    /// [`RenderContext::safe_area()`](crate::stateful_widget::RenderContext::safe_area)).
+    /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)).
     pub fn set_safe_area_source(&mut self, source: crate::core::SafeAreaSource) {
         self.build_owner.set_safe_area_source(source);
     }

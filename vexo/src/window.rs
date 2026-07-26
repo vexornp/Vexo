@@ -50,7 +50,7 @@ pub struct WindowState<A: Application + 'static> {
     /// Shared safe-area insets source (logical pixels).
     ///
     /// Updated each frame from `Window::safe_area()`; read by the element tree
-    /// via `RenderContext::safe_area()`. On desktop the underlying insets are
+    /// via `RenderContext::media_query_sources()`. On desktop the underlying insets are
     /// always zero, so this is a no-op.
     safe_area_source: SafeAreaSource,
 
@@ -142,7 +142,7 @@ impl<A: Application + 'static> WindowState<A> {
 
         let mut three_tree_pipeline = ThreeTreePipeline::new(animation_ticker.clone());
         // Share the same atomics so per-frame `safe_area_source.set()` calls
-        // below are visible to RenderContext::safe_area() during render.
+        // below are visible to RenderContext::media_query_sources() during render.
         three_tree_pipeline.set_safe_area_source(safe_area_source.clone());
         three_tree_pipeline.set_keyboard_inset_source(keyboard_inset_source.clone());
         three_tree_pipeline.set_media_query_data_source(media_query_data_source.clone());

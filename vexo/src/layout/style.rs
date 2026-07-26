@@ -3,7 +3,7 @@
 //! This module provides a builder-style struct for specifying layout
 //! properties like padding, margin, flex, and grid settings.
 
-use crate::core::{Size, Logical};
+use crate::core::{Logical, Size};
 
 // ============================================================================
 // DIMENSION
@@ -36,32 +36,59 @@ pub struct EdgeInsets {
 
 impl Default for EdgeInsets {
     fn default() -> Self {
-        Self { left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 }
+        Self {
+            left: 0.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
     }
 }
 
 impl EdgeInsets {
-    /// All-zero insets. Convenient const for defaults and tests.
-    pub const ZERO: Self = Self { left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 };
+    pub const ZERO: Self = Self {
+        left: 0.0,
+        right: 0.0,
+        top: 0.0,
+        bottom: 0.0,
+    };
 
     /// Create uniform insets on all sides.
     pub fn all(value: f32) -> Self {
-        Self { left: value, right: value, top: value, bottom: value }
+        Self {
+            left: value,
+            right: value,
+            top: value,
+            bottom: value,
+        }
     }
 
     /// Create horizontal insets (left and right).
     pub fn horizontal(value: f32) -> Self {
-        Self { left: value, right: value, ..Default::default() }
+        Self {
+            left: value,
+            right: value,
+            ..Default::default()
+        }
     }
 
     /// Create vertical insets (top and bottom).
     pub fn vertical(value: f32) -> Self {
-        Self { top: value, bottom: value, ..Default::default() }
+        Self {
+            top: value,
+            bottom: value,
+            ..Default::default()
+        }
     }
 
     /// Create symmetric horizontal and vertical insets.
     pub fn symmetric(horizontal: f32, vertical: f32) -> Self {
-        Self { left: horizontal, right: horizontal, top: vertical, bottom: vertical }
+        Self {
+            left: horizontal,
+            right: horizontal,
+            top: vertical,
+            bottom: vertical,
+        }
     }
 }
 
@@ -165,7 +192,12 @@ pub struct Inset {
 impl Inset {
     /// Create uniform inset on all sides.
     pub fn all(value: f32) -> Self {
-        Self { top: Some(value), right: Some(value), bottom: Some(value), left: Some(value) }
+        Self {
+            top: Some(value),
+            right: Some(value),
+            bottom: Some(value),
+            left: Some(value),
+        }
     }
 }
 
@@ -185,7 +217,10 @@ pub enum TrackSizing {
     /// Percentage of container.
     Percent(f32),
     /// Min-max constraint.
-    MinMax { min: Box<TrackSizing>, max: Box<TrackSizing> },
+    MinMax {
+        min: Box<TrackSizing>,
+        max: Box<TrackSizing>,
+    },
 }
 
 /// Grid item placement.
@@ -334,7 +369,12 @@ impl Layout {
 
     /// Set padding with specific values for each side.
     pub fn padding_each(mut self, left: f32, right: f32, top: f32, bottom: f32) -> Self {
-        self.padding = Some(EdgeInsets { left, right, top, bottom });
+        self.padding = Some(EdgeInsets {
+            left,
+            right,
+            top,
+            bottom,
+        });
         self
     }
 
@@ -346,7 +386,12 @@ impl Layout {
 
     /// Set margin with specific values for each side.
     pub fn margin_each(mut self, left: f32, right: f32, top: f32, bottom: f32) -> Self {
-        self.margin = Some(EdgeInsets { left, right, top, bottom });
+        self.margin = Some(EdgeInsets {
+            left,
+            right,
+            top,
+            bottom,
+        });
         self
     }
 
@@ -696,7 +741,10 @@ impl Layout {
     /// Use this for scrollable content areas that should fill the remaining
     /// space in a flex column without pushing siblings off screen.
     pub fn flex_fill() -> Self {
-        Self::default().flex_grow(1.0).flex_basis(0.0).min_height(0.0)
+        Self::default()
+            .flex_grow(1.0)
+            .flex_basis(0.0)
+            .min_height(0.0)
     }
 
     /// Create a layout with fixed dimensions.
@@ -726,18 +774,24 @@ impl Layout {
 
         taffy::Style {
             // Box model
-            padding: self.padding.map(|p| Rect {
-                left: length(p.left),
-                right: length(p.right),
-                top: length(p.top),
-                bottom: length(p.bottom),
-            }).unwrap_or_else(Rect::zero),
-            margin: self.margin.map(|m| Rect {
-                left: length(m.left),
-                right: length(m.right),
-                top: length(m.top),
-                bottom: length(m.bottom),
-            }).unwrap_or_else(Rect::zero),
+            padding: self
+                .padding
+                .map(|p| Rect {
+                    left: length(p.left),
+                    right: length(p.right),
+                    top: length(p.top),
+                    bottom: length(p.bottom),
+                })
+                .unwrap_or_else(Rect::zero),
+            margin: self
+                .margin
+                .map(|m| Rect {
+                    left: length(m.left),
+                    right: length(m.right),
+                    top: length(m.top),
+                    bottom: length(m.bottom),
+                })
+                .unwrap_or_else(Rect::zero),
             size: Size {
                 width: self.width.map(|d| d.to_taffy()).unwrap_or_else(auto),
                 height: self.height.map(|d| d.to_taffy()).unwrap_or_else(auto),
@@ -752,8 +806,14 @@ impl Layout {
             },
 
             // Flexbox
-            display: self.display.map(|d| d.to_taffy()).unwrap_or(taffy::prelude::Display::Flex),
-            flex_direction: self.flex_direction.map(|d| d.to_taffy()).unwrap_or_default(),
+            display: self
+                .display
+                .map(|d| d.to_taffy())
+                .unwrap_or(taffy::prelude::Display::Flex),
+            flex_direction: self
+                .flex_direction
+                .map(|d| d.to_taffy())
+                .unwrap_or_default(),
             flex_wrap: self.flex_wrap.map(|w| w.to_taffy()).unwrap_or_default(),
             flex_grow: self.flex_grow.unwrap_or(0.0),
             flex_shrink: self.flex_shrink.unwrap_or(1.0),
@@ -761,19 +821,29 @@ impl Layout {
             justify_content: self.justify_content.map(|j| j.to_taffy()),
             align_items: self.align_items.map(|a| a.to_taffy()),
             align_content: self.align_content.map(|a| a.to_taffy()),
-            gap: self.gap.map(|g| Size {
-                width: length(g.width),
-                height: length(g.height),
-            }).unwrap_or_else(Size::zero),
+            gap: self
+                .gap
+                .map(|g| Size {
+                    width: length(g.width),
+                    height: length(g.height),
+                })
+                .unwrap_or_else(Size::zero),
 
             // Grid - use GridTemplateComponent for templates
-            grid_template_columns: self.grid_template_columns.as_ref()
+            grid_template_columns: self
+                .grid_template_columns
+                .as_ref()
                 .map(|t| t.iter().map(|ts| ts.to_taffy_template()).collect())
                 .unwrap_or_default(),
-            grid_template_rows: self.grid_template_rows.as_ref()
+            grid_template_rows: self
+                .grid_template_rows
+                .as_ref()
                 .map(|t| t.iter().map(|ts| ts.to_taffy_template()).collect())
                 .unwrap_or_default(),
-            grid_column: self.grid_column.map(|p| p.to_taffy_line()).unwrap_or_default(),
+            grid_column: self
+                .grid_column
+                .map(|p| p.to_taffy_line())
+                .unwrap_or_default(),
             grid_row: self.grid_row.map(|p| p.to_taffy_line()).unwrap_or_default(),
 
             // Positioning
@@ -788,17 +858,38 @@ impl Layout {
 
             // Overflow
             overflow: taffy::geometry::Point {
-                x: self.overflow_x.map(|o| o.to_taffy()).unwrap_or(taffy::style::Overflow::Visible),
-                y: self.overflow_y.map(|o| o.to_taffy()).unwrap_or(taffy::style::Overflow::Visible),
+                x: self
+                    .overflow_x
+                    .map(|o| o.to_taffy())
+                    .unwrap_or(taffy::style::Overflow::Visible),
+                y: self
+                    .overflow_y
+                    .map(|o| o.to_taffy())
+                    .unwrap_or(taffy::style::Overflow::Visible),
             },
 
             // Grid auto
-            grid_auto_flow: self.grid_auto_flow.map(|f| f.to_taffy()).unwrap_or_default(),
-            grid_auto_rows: self.grid_auto_rows.as_ref()
-                .map(|v| v.iter().map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max())).collect())
+            grid_auto_flow: self
+                .grid_auto_flow
+                .map(|f| f.to_taffy())
                 .unwrap_or_default(),
-            grid_auto_columns: self.grid_auto_columns.as_ref()
-                .map(|v| v.iter().map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max())).collect())
+            grid_auto_rows: self
+                .grid_auto_rows
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            grid_auto_columns: self
+                .grid_auto_columns
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .map(|ts| minmax(ts.to_taffy_min(), ts.to_taffy_max()))
+                        .collect()
+                })
                 .unwrap_or_default(),
 
             ..Default::default()
@@ -906,10 +997,22 @@ impl Position {
 impl Inset {
     fn to_taffy(self) -> taffy::Rect<taffy::prelude::LengthPercentageAuto> {
         taffy::Rect {
-            top: self.top.map(taffy::prelude::length).unwrap_or_else(taffy::prelude::auto),
-            right: self.right.map(taffy::prelude::length).unwrap_or_else(taffy::prelude::auto),
-            bottom: self.bottom.map(taffy::prelude::length).unwrap_or_else(taffy::prelude::auto),
-            left: self.left.map(taffy::prelude::length).unwrap_or_else(taffy::prelude::auto),
+            top: self
+                .top
+                .map(taffy::prelude::length)
+                .unwrap_or_else(taffy::prelude::auto),
+            right: self
+                .right
+                .map(taffy::prelude::length)
+                .unwrap_or_else(taffy::prelude::auto),
+            bottom: self
+                .bottom
+                .map(taffy::prelude::length)
+                .unwrap_or_else(taffy::prelude::auto),
+            left: self
+                .left
+                .map(taffy::prelude::length)
+                .unwrap_or_else(taffy::prelude::auto),
         }
     }
 }
@@ -923,9 +1026,9 @@ impl TrackSizing {
             TrackSizing::Fr(v) => GridTemplateComponent::Single(fr(*v)),
             TrackSizing::Px(v) => GridTemplateComponent::Single(length(*v)),
             TrackSizing::Percent(v) => GridTemplateComponent::Single(percent(*v)),
-            TrackSizing::MinMax { min, max } => GridTemplateComponent::Single(
-                minmax(min.to_taffy_min(), max.to_taffy_max())
-            ),
+            TrackSizing::MinMax { min, max } => {
+                GridTemplateComponent::Single(minmax(min.to_taffy_min(), max.to_taffy_max()))
+            }
         }
     }
 
@@ -1304,10 +1407,7 @@ mod tests {
 
     #[test]
     fn test_layout_to_taffy_style() {
-        let layout = Layout::default()
-            .padding(10.0)
-            .margin(5.0)
-            .flex_grow(1.0);
+        let layout = Layout::default().padding(10.0).margin(5.0).flex_grow(1.0);
 
         let style = layout.to_taffy_style();
         assert_eq!(style.flex_grow, 1.0);
@@ -1418,7 +1518,9 @@ mod tests {
 
     #[test]
     fn test_layout_overflow_each() {
-        let layout = Layout::default().overflow_x(Overflow::Hidden).overflow_y(Overflow::Scroll);
+        let layout = Layout::default()
+            .overflow_x(Overflow::Hidden)
+            .overflow_y(Overflow::Scroll);
         assert_eq!(layout.overflow_x, Some(Overflow::Hidden));
         assert_eq!(layout.overflow_y, Some(Overflow::Scroll));
     }
@@ -1439,7 +1541,8 @@ mod tests {
 
     #[test]
     fn test_layout_auto_columns() {
-        let layout = Layout::default().auto_columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)]);
+        let layout =
+            Layout::default().auto_columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)]);
         assert!(layout.grid_auto_columns.is_some());
         let cols = layout.grid_auto_columns.unwrap();
         assert_eq!(cols.len(), 2);

@@ -1356,7 +1356,7 @@ mod safe_area_source_tests {
         // WindowState updates insets each frame (e.g., after rotation)
         window_source.set(44.0, 0.0, 44.0, 34.0);
 
-        // BuildOwner (and thus RenderContext::safe_area()) sees the update
+        // BuildOwner (and thus RenderContext::media_query_sources()) sees the update
         assert_eq!(
             build_owner_source.get(),
             EdgeInsets {
