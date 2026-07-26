@@ -269,6 +269,70 @@ impl Component for MediaQueryMutator {
     }
 }
 
+/// Framework-internal root `Component` that composes `MediaQueryData` from
+/// the three platform sources and provides it to the application subtree
+/// via `MediaQuery::new(data, child)`. App authors never touch this — the
+/// framework wraps `Application::view()` output in `RootMediaQuery` before
+/// mounting.
+pub(crate) struct RootMediaQuery {
+    child: Box<dyn Widget>,
+}
+
+impl RootMediaQuery {
+    pub(crate) fn new(child: Box<dyn Widget>) -> Self {
+        Self { child }
+    }
+}
+
+impl Clone for RootMediaQuery {
+    fn clone(&self) -> Self {
+        Self {
+            child: self.child.clone_boxed(),
+        }
+    }
+}
+
+impl Component for RootMediaQuery {
+    type State = SimpleState<()>;
+
+    fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let sources = ctx.media_query_sources();
+        let viewPadding = sources.safe_area;
+        let viewInsets = EdgeInsets {
+            left: 0.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: sources.keyboard_current_height,
+        };
+        let padding = EdgeInsets {
+            top: (viewPadding.top - viewInsets.top).max(0.0),
+            bottom: (viewPadding.bottom - viewInsets.bottom).max(0.0),
+            left: (viewPadding.left - viewInsets.left).max(0.0),
+            right: (viewPadding.right - viewInsets.right).max(0.0),
+        };
+        let orientation = if sources.media_query.size.width >= sources.media_query.size.height {
+            Orientation::Landscape
+        } else {
+            Orientation::Portrait
+        };
+        let brightness = if sources.media_query.is_dark {
+            Brightness::Dark
+        } else {
+            Brightness::Light
+        };
+        let data = MediaQueryData {
+            size: sources.media_query.size,
+            device_pixel_ratio: sources.media_query.device_pixel_ratio,
+            padding,
+            viewInsets,
+            viewPadding,
+            platform_brightness: brightness,
+            orientation,
+        };
+        MediaQuery::new(data, self.child.clone_boxed()).boxed()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

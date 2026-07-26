@@ -313,6 +313,15 @@ pub struct RenderContext<'a> {
     inherited_registry: &'a InheritedRegistry,
 }
 
+/// Snapshot of all three platform sources, read by the root `MediaQuery`
+/// component. Intended for the root only; all other widgets read
+/// `MediaQuery::of(ctx)`.
+pub struct MediaQuerySourcesSnapshot {
+    pub safe_area: crate::layout::EdgeInsets,
+    pub keyboard_current_height: f32,
+    pub media_query: crate::core::MediaQueryDataSourceSnapshot,
+}
+
 impl<'a> RenderContext<'a> {
     /// Construct a `RenderContext` for use in `Component::render()`.
     ///
@@ -361,6 +370,19 @@ impl<'a> RenderContext<'a> {
     /// view lifts in lockstep with the OS keyboard slide.
     pub fn keyboard_inset(&self) -> crate::core::KeyboardInsetSnapshot {
         self.build_owner.keyboard_inset_source().get()
+    }
+
+    /// Snapshot of all three platform sources. Intended for the root
+    /// `MediaQuery` component only; all other widgets read `MediaQuery::of`.
+    pub fn media_query_sources(&self) -> MediaQuerySourcesSnapshot {
+        MediaQuerySourcesSnapshot {
+            safe_area: self.build_owner.safe_area_source().get(),
+            keyboard_current_height: self
+                .build_owner
+                .keyboard_inset_source()
+                .current_target_height(),
+            media_query: self.build_owner.media_query_data_source().get(),
+        }
     }
 
     /// Read the nearest inherited value of type `V`. Establishes a
