@@ -62,6 +62,11 @@ pub struct WindowState<A: Application + 'static> {
     /// shim is installed).
     keyboard_inset_source: KeyboardInsetSource,
 
+    /// Shared media-query data source (size, scale, brightness). Updated
+    /// each frame from `Window` metrics; read by the root `MediaQuery`
+    /// component via `RenderContext::media_query_sources()`.
+    media_query_data_source: crate::core::MediaQueryDataSource,
+
     /// Previous keyboard-inset snapshot, used by the per-frame poll to
     /// detect changes. Updated each frame in `render_retain()`.
     keyboard_inset_snapshot_prev: KeyboardInsetSnapshot,
@@ -132,11 +137,14 @@ impl<A: Application + 'static> WindowState<A> {
 
         let keyboard_inset_source = KeyboardInsetSource::default();
 
+        let media_query_data_source = crate::core::MediaQueryDataSource::default();
+
         let mut three_tree_pipeline = ThreeTreePipeline::new(animation_ticker.clone());
         // Share the same atomics so per-frame `safe_area_source.set()` calls
         // below are visible to RenderContext::safe_area() during render.
         three_tree_pipeline.set_safe_area_source(safe_area_source.clone());
         three_tree_pipeline.set_keyboard_inset_source(keyboard_inset_source.clone());
+        three_tree_pipeline.set_media_query_data_source(media_query_data_source.clone());
 
         #[cfg(target_os = "ios")]
         let keyboard_observer = {
@@ -175,6 +183,7 @@ impl<A: Application + 'static> WindowState<A> {
             scale_source,
             safe_area_source,
             keyboard_inset_source,
+            media_query_data_source,
             keyboard_inset_snapshot_prev: KeyboardInsetSnapshot::default(),
             #[cfg(target_os = "ios")]
             keyboard_observer,
@@ -611,6 +620,34 @@ impl<A: Application + 'static> WindowState<A> {
             }
             if self.safe_area_source.get() != prev {
                 self.three_tree_pipeline.mark_all_needs_layout();
+            }
+        }
+
+        // 4.1. Refresh media-query data source (size, scale, brightness).
+        //      Read live from the window each frame; mark the tree dirty
+        //      when any value changes so the root MediaQuery re-renders.
+        {
+            let prev = self.media_query_data_source.get();
+            if let Some(win) = &self.window {
+                let scale = self.scale_source.get().factor();
+                let physical_w = self.backend.width() as f32;
+                let physical_h = self.backend.height() as f32;
+                let logical_w = physical_w / scale;
+                let logical_h = physical_h / scale;
+                let is_dark = win.theme().unwrap_or(winit::window::Theme::Light)
+                    == winit::window::Theme::Dark;
+                self.media_query_data_source.set(
+                    crate::core::Size::<crate::core::Logical>::new(logical_w, logical_h),
+                    scale,
+                    is_dark,
+                );
+            }
+            if self.media_query_data_source.get() != prev {
+                if let Some(root_id) = self.three_tree_pipeline.element_registry().root() {
+                    self.three_tree_pipeline.mark_needs_build(root_id);
+                }
+                self.three_tree_pipeline.mark_all_needs_layout();
+                self.request_frame();
             }
         }
 

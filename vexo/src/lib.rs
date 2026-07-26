@@ -266,7 +266,8 @@ impl<A: Application> Component for RootComponent<A> {
     type State = A::State;
 
     fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
-        A::view(state)
+        let app_view = A::view(state);
+        crate::widgets::RootMediaQuery::new(app_view).boxed()
     }
 }
 
