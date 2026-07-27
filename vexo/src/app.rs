@@ -154,12 +154,6 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
             if state.keyboard_inset_changed() {
                 state.request_frame();
             }
-            // Start/stop the CADisplayLink on iOS based on animation activity.
-            // The display link fires at vsync rate (60/120Hz), calling
-            // window.request_redraw() each tick. Without it, winit's
-            // CFRunLoopTimer throttles to ~15 FPS, making keyboard animations
-            // jerky and causing the input bar to finish after the keyboard.
-            state.sync_display_link();
         }
     }
 

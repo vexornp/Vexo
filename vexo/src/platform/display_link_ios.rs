@@ -18,18 +18,16 @@
 //! step per vsync, giving smooth 60/120 FPS motion that matches the OS
 //! keyboard.
 //!
-//! ## Proactive start
+//! ## Always-on
 //!
-//! `DisplayLink` is wrapped in `Arc` and shared with the keyboard observer.
-//! When a keyboard notification fires, the observer calls `start()` on its
-//! clone *before* returning. This is critical: the CADisplayLink is a
-//! hardware wake source, so once started it will fire on the next vsync
-//! (≤16.7ms) regardless of whether winit's CFRunLoop is awake. Without this
-//! proactive start, the first animation frame would be delayed by up to
-//! ~163ms waiting for CFRunLoop to wake (see `docs/` and git history for the
-//! cold-start bug analysis).
+//! `DisplayLink` starts unpaused in `new()` and is never explicitly stopped.
+//! iOS auto-pauses `CADisplayLink` when the app is suspended (home swipe,
+//! app switcher) and auto-resumes on foreground return. `Drop` invalidates
+//! the link when `WindowState` is torn down. The `is_occluded` early-return
+//! in `render_retain` prevents wasted CPU/GPU work when the surface is
+//! hidden but the app is still foregrounded (control center, notification
+//! shade).
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use objc2::rc::Retained;
@@ -75,7 +73,6 @@ define_class!(
             // `tick` calls). The `DisplayLink` outlives the target because it
             // owns the `_target` Retained. The callback is `Send + Sync` so
             // calling from the main-thread display-link callback is safe.
-            log::debug!("[KBDBG] display-link tick");
             unsafe {
                 let boxed = &*(ivars.callback as *mut Box<FrameCallback>);
                 (boxed)();
@@ -85,13 +82,9 @@ define_class!(
 );
 
 /// Handle to a `CADisplayLink` that drives `window.request_redraw()` each
-/// vsync while running. Created once per window; started/stopped as
-/// animations come and go.
-///
-/// `start()` and `stop()` take `&self` (interior mutability via `AtomicBool`)
-/// so callers that hold a shared `Arc<DisplayLink>` — e.g., the keyboard
-/// observer — can start the link proactively from a notification handler
-/// without needing exclusive access.
+/// vsync. Created once per window in `WindowState::new`; started unpaused;
+/// invalidated in `Drop` when the window is torn down. iOS auto-pauses the
+/// link when the app is suspended.
 pub struct DisplayLink {
     link: Retained<CADisplayLink>,
     _target: Retained<DisplayLinkTarget>,
@@ -100,10 +93,6 @@ pub struct DisplayLink {
     /// Freed in `Drop` AFTER the display link is invalidated, so `tick` can
     /// never read a dangling pointer.
     callback_raw: *mut Box<FrameCallback>,
-    /// Tracks the running state. Mirrors `CADisplayLink`'s paused flag, but
-    /// lets `start()`/`stop()` take `&self` so an `Arc<DisplayLink>` shared
-    /// with the keyboard observer can start the link proactively.
-    running: AtomicBool,
 }
 
 // SAFETY: `CADisplayLink` and its target must be used on the main thread
@@ -114,8 +103,9 @@ unsafe impl Send for DisplayLink {}
 unsafe impl Sync for DisplayLink {}
 
 impl DisplayLink {
-    /// Create a display link that calls `on_frame` each vsync while running.
-    /// Starts paused; call `start()` to begin firing.
+    /// Create a display link that calls `on_frame` each vsync. The link
+    /// starts unpaused (always-on); iOS auto-pauses when the app is
+    /// suspended and auto-resumes on foreground.
     pub fn new(on_frame: Arc<dyn Fn() + Send + Sync>) -> Self {
         // Double-box: outer Box gives us a stable thin pointer to store in
         // the ivar; inner Arc holds the trait object. The outer Box is kept
@@ -141,39 +131,15 @@ impl DisplayLink {
             link.addToRunLoop_forMode(&runloop, &NSRunLoopCommonModes);
         }
 
-        // Start paused.
-        link.setPaused(true);
+        // Start unpaused — always-on. iOS auto-pauses when the app is
+        // suspended and auto-resumes on foreground. See module doc.
+        link.setPaused(false);
 
         Self {
             link,
             _target: target,
             callback_raw,
-            running: AtomicBool::new(false),
         }
-    }
-
-    /// Begin firing the display link each vsync. Idempotent. Takes `&self` so
-    /// an `Arc<DisplayLink>` shared with the keyboard observer can start the
-    /// link proactively from a notification handler — this is what fixes the
-    /// 163ms cold-start delay: the link is a hardware wake source, so once
-    /// started it fires on the next vsync regardless of winit's CFRunLoop
-    /// state.
-    pub fn start(&self) {
-        if !self.running.swap(true, Ordering::AcqRel) {
-            self.link.setPaused(false);
-        }
-    }
-
-    /// Pause the display link. Idempotent.
-    pub fn stop(&self) {
-        if self.running.swap(false, Ordering::AcqRel) {
-            self.link.setPaused(true);
-        }
-    }
-
-    /// Whether the link is currently firing.
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Acquire)
     }
 }
 
