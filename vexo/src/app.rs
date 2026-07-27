@@ -122,38 +122,7 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
 
     fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
         for state in self.windows.values_mut() {
-            if state.check_cursor_blink() {
-                state.request_frame();
-            }
-            // Keep the event loop alive while animations are active. On iOS,
-            // request_redraw() called from within RedrawRequested (i.e. from
-            // inside the CADisplayLink callback) doesn't reliably re-arm the
-            // display link for the next vsync, so navigation push/pop
-            // animations stall after the first frame. Re-requesting here from
-            // about_to_wait — the standard winit hook for continuous
-            // animation — keeps the display link firing until the animation
-            // completes.
-            if state.animation_ticker().has_active() {
-                state.request_frame();
-            }
-            // Break the keyboard-dismiss deadlock. When the user taps outside
-            // a focused TextEdit, set_ime_allowed(false) fires during render
-            // (inside RedrawRequested), but the keyboard-source poll already
-            // ran. request_redraw from inside RedrawRequested doesn't re-arm
-            // the display link on iOS, and both existing frame drivers are
-            // dead (cursor blink off — unfocused; ticker inactive — tween not
-            // started). Without this check the render loop stalls: the OS
-            // keyboard slides down while our input view freezes, then the
-            // tween starts late (after the keyboard is gone). See
-            // WindowState::keyboard_inset_changed() for the full analysis.
-            //
-            // On iOS, the CADisplayLink (started by sync_display_link below)
-            // also keeps frames flowing, but this request_frame() ensures the
-            // first frame after the notification fires immediately rather than
-            // waiting for the next vsync.
-            if state.keyboard_inset_changed() {
-                state.request_frame();
-            }
+            state.poll_idle_frame_drivers();
         }
     }
 

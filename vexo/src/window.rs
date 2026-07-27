@@ -537,43 +537,22 @@ impl<A: Application + 'static> WindowState<A> {
         self.three_tree_pipeline.focused_element().is_some()
     }
 
-    /// Check if the keyboard animation source has pending params (i.e. an
-    /// animation is active or queued).
-    ///
-    /// Read-only. This is for `about_to_wait` to detect a pending animation
-    /// that landed **during** render (after the interpolation poll ran) and
-    /// break what would otherwise be a render-loop deadlock.
-    ///
-    /// ## The deadlock (dismiss only)
-    ///
-    /// When the user taps outside a focused TextEdit, focus clears during
-    /// `perform_rebuilds()`, and the focus-change block calls
-    /// `set_ime_allowed(false)`. UIKit fires `keyboardWillHide` — often
-    /// synchronously — writing animation params to the source. But the
-    /// interpolation poll at the top of `render_retain()` already ran, so
-    /// this frame misses the params.
-    ///
-    /// Then `about_to_wait` runs. Its two existing frame drivers are both
-    /// dead: `check_cursor_blink()` is false (TextEdit just unfocused), and
-    /// `animation_ticker().has_active()` is false (the interpolation hasn't
-    /// started — the poll missed the params). No frame is requested. The OS
-    /// keyboard keeps sliding down (GPU-driven, independent of our render
-    /// loop); our input view freezes. Eventually some stray event wakes the
-    /// loop, the poll picks up the params, the interpolation starts — but
-    /// the keyboard is already gone, so the input view animates down after
-    /// the keyboard disappeared.
-    ///
-    /// For **show** this doesn't deadlock: cursor blink turns **on**
-    /// (TextEdit focused), so `check_cursor_blink()` keeps the loop alive
-    /// until the poll catches up and the interpolation starts.
-    ///
-    /// This method breaks the dismiss deadlock by giving `about_to_wait` a
-    /// third reason to request a frame: the animation source has pending
-    /// params. The next `render_retain()` poll then interpolates and writes
-    /// `current_height`.
-    pub fn keyboard_inset_changed(&self) -> bool {
-        self.keyboard_animation_source.has_pending()
+    /// Poll platform-specific idle frame drivers. On desktop, this checks
+    /// cursor blink and animation ticker and requests a frame if either is
+    /// active. On iOS, the always-on CADisplayLink drives frames at vsync
+    /// rate, so there's nothing to poll — this is a no-op.
+    #[cfg(not(target_os = "ios"))]
+    pub fn poll_idle_frame_drivers(&mut self) {
+        if self.check_cursor_blink() {
+            self.request_frame();
+        }
+        if self.animation_ticker().has_active() {
+            self.request_frame();
+        }
     }
+
+    #[cfg(target_os = "ios")]
+    pub fn poll_idle_frame_drivers(&mut self) {}
 
     /// Mark only the `RootMediaQuery` element as needing rebuild, rather than
     /// the root element. This avoids re-calling `Application::view()` (which
@@ -895,20 +874,6 @@ impl<A: Application + 'static> WindowState<A> {
                 prepared_text,
                 &mut self.font_system,
             )?;
-
-        // 14. If a TextEdit is focused, keep the event loop alive so
-        //     about_to_wait fires and can check cursor blink timing.
-        //     request_redraw() is idempotent; the next render_retain() will
-        //     early-return if nothing is dirty (blink hasn't toggled yet).
-        if self.three_tree_pipeline.focused_element().is_some() {
-            self.request_frame();
-        }
-
-        // Keep the frame loop alive while animations are active so that
-        // tick() continues to fire each frame.
-        if self.animation_ticker.has_active() {
-            self.request_frame();
-        }
 
         Ok(())
     }

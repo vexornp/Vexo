@@ -10,7 +10,7 @@
 //! `CADisplayLink` is a Core Animation timer that fires once per display
 //! refresh (60/120Hz), synced to the vsync. It is the canonical iOS way to
 //! drive animations. This module wraps it in a Rust-friendly handle that
-//! starts/stops the display link while animations are active.
+//! runs the display link for the lifetime of the window.
 //!
 //! The display link callback calls `window.request_redraw()`, which queues a
 //! `RedrawRequested` event. The render loop's interpolation driver (in
