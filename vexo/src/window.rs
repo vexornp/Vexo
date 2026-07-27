@@ -605,6 +605,13 @@ impl<A: Application + 'static> WindowState<A> {
         }
 
         // 2. Check if there's anything to render
+        // Check cursor blink BEFORE computing has_dirty — if blink toggled,
+        // check_cursor_blink() calls dirty.mark_needs_paint(ro_id), which
+        // makes has_dirty true and prevents the early-return below. On iOS
+        // the always-on CADisplayLink drives frames but poll_idle_frame_drivers
+        // is a no-op, so this is the only place cursor blink is checked on iOS.
+        self.check_cursor_blink();
+
         let (has_dirty, needs_reconcile) = {
             let pipeline = &self.three_tree_pipeline;
 
@@ -616,12 +623,15 @@ impl<A: Application + 'static> WindowState<A> {
 
         // If the keyboard animation source has pending params, always run
         // (even if nothing is dirty yet) so the interpolation driver at step
-        // 4.5 can advance the animation. The CADisplayLink callback calls
-        // `window.request_redraw()` without setting `needs_redraw`, so without
-        // this guard the render would skip and the animation would stall.
+        // 4.5 can advance the animation. Same for the animation ticker: if
+        // active, we must run so tick() (step 5, below) can fire callbacks.
+        // The CADisplayLink callback calls `window.request_redraw()` without
+        // setting `needs_redraw`, so without these guards the render would
+        // skip and animations would stall.
         let kb_active = self.keyboard_animation_source.has_pending();
+        let anim_active = self.animation_ticker.has_active();
 
-        if !self.needs_redraw && !has_dirty && !needs_reconcile && !kb_active {
+        if !self.needs_redraw && !has_dirty && !needs_reconcile && !kb_active && !anim_active {
             // Nothing changed — skip all work.
             return Ok(());
         }
