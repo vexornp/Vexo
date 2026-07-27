@@ -118,8 +118,20 @@ pub struct WindowState<A: Application + 'static> {
     /// CADisplayLink driver for vsync-rate animation on iOS. Started when
     /// animations are active (keyboard show/hide, animation ticker); stopped
     /// when idle to conserve power. On desktop this field doesn't exist.
+    ///
+    /// Wrapped in `Arc` so the keyboard observer can hold a clone and start
+    /// the link proactively from a notification handler (fixing the 163ms
+    /// cold-start delay — see `platform/keyboard_ios.rs`).
+    ///
+    // TODO(future): Consider always running the display link while the app is
+    // foregrounded (like Flutter does). The battery cost of a paused-vs-running
+    // display link is negligible on modern iOS (the hardware interrupt fires
+    // regardless; the question is just whether the callback runs). Always-on
+    // would: (1) eliminate the proactive-start logic, (2) eliminate the
+    // sync_display_link start/stop logic, (3) guarantee zero cold-start delay
+    // for ANY animation, not just keyboard. Trade-off: tiny idle battery cost.
     #[cfg(target_os = "ios")]
-    display_link: Option<crate::platform::display_link_ios::DisplayLink>,
+    display_link: Arc<crate::platform::display_link_ios::DisplayLink>,
 }
 
 
@@ -158,6 +170,21 @@ impl<A: Application + 'static> WindowState<A> {
         three_tree_pipeline.set_media_query_data_source(media_query_data_source.clone());
 
         #[cfg(target_os = "ios")]
+        let display_link = {
+            // CADisplayLink callback: just request a redraw. The render loop's
+            // interpolation driver (in render_retain) advances the keyboard
+            // animation one step per vsync. winit's event loop uses
+            // CFRunLoopTimer (throttled to ~15 FPS), so without this display
+            // link the keyboard animation only gets 4-5 frames and finishes
+            // visibly after the OS keyboard.
+            let window_for_dl = window.clone();
+            let on_frame: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                window_for_dl.request_redraw();
+            });
+            Arc::new(crate::platform::display_link_ios::DisplayLink::new(on_frame))
+        };
+
+        #[cfg(target_os = "ios")]
         let keyboard_observer = {
             let scale = scale_source.get().factor_f64();
             // v1 limitation: the live window size isn't available yet at
@@ -183,22 +210,8 @@ impl<A: Application + 'static> WindowState<A> {
                 scale,
                 window_logical_height,
                 request_frame,
+                display_link.clone(),
             ))
-        };
-
-        #[cfg(target_os = "ios")]
-        let display_link = {
-            // CADisplayLink callback: just request a redraw. The render loop's
-            // interpolation driver (in render_retain) advances the keyboard
-            // animation one step per vsync. winit's event loop uses
-            // CFRunLoopTimer (throttled to ~15 FPS), so without this display
-            // link the keyboard animation only gets 4-5 frames and finishes
-            // visibly after the OS keyboard.
-            let window_for_dl = window.clone();
-            let on_frame: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                window_for_dl.request_redraw();
-            });
-            Some(crate::platform::display_link_ios::DisplayLink::new(on_frame))
         };
 
         Ok(Self {
@@ -579,20 +592,18 @@ impl<A: Application + 'static> WindowState<A> {
     /// active. Called from `about_to_wait`. On desktop this is a no-op (no
     /// display link field exists).
     #[cfg(target_os = "ios")]
-    pub fn sync_display_link(&mut self) {
+    pub fn sync_display_link(&self) {
         let needs_vsync = self.keyboard_animation_source.has_pending()
             || self.animation_ticker().has_active();
-        if let Some(dl) = &mut self.display_link {
-            if needs_vsync {
-                dl.start();
-            } else {
-                dl.stop();
-            }
+        if needs_vsync {
+            self.display_link.start();
+        } else {
+            self.display_link.stop();
         }
     }
 
     #[cfg(not(target_os = "ios"))]
-    pub fn sync_display_link(&mut self) {}
+    pub fn sync_display_link(&self) {}
 
     /// Mark only the `RootMediaQuery` element as needing rebuild, rather than
     /// the root element. This avoids re-calling `Application::view()` (which

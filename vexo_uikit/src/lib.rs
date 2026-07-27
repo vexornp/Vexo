@@ -19,6 +19,9 @@ pub mod theme;
 pub mod button;
 pub use button::{Button, ButtonState, ButtonVariant};
 
+pub mod keyboard_avoider;
+pub use keyboard_avoider::KeyboardAvoider;
+
 pub mod navigation;
 pub use navigation::{
     base_fx_alpha, NavigationController, NavigationStackView, NavigationStackViewState,

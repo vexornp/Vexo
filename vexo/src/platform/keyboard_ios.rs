@@ -5,12 +5,15 @@
 //! height, animation duration, and animation curve raw value from `userInfo`,
 //! reads the current keyboard height (the `from` value), constructs a
 //! [`KeyboardAnimation`], and writes it to the animation source. It then
-//! requests a frame so the render loop (`WindowState::render_retain()`)
-//! starts interpolating `KeyboardInsetSource.current_height` each vsync.
+//! proactively starts the shared `CADisplayLink` (a hardware wake source) so
+//! the next vsync fires a redraw regardless of winit's CFRunLoop state. This
+//! fixes the 163ms cold-start delay that occurred when winit's CFRunLoop was
+//! parked at notification time — without the proactive start, the first
+//! animation frame would wait for some unrelated system event to wake the
+//! run loop.
 //!
-//! The interpolation itself runs in the render loop, not here — the render
-//! loop is already `CADisplayLink`-driven on iOS (via winit), so the timing
-//! is vsync-accurate without installing a separate display link.
+//! The interpolation itself runs in the render loop (`render_retain`), one
+//! step per vsync tick.
 
 use core::ffi::c_void;
 use core::ptr::NonNull;
@@ -24,6 +27,7 @@ use objc2_foundation::{
 };
 
 use crate::core::{KeyboardAnimation, KeyboardAnimationSource, KeyboardInsetSource};
+use crate::platform::display_link_ios::DisplayLink;
 
 const KEYBOARD_WILL_SHOW: &str = "UIKeyboardWillShowNotification";
 const KEYBOARD_WILL_HIDE: &str = "UIKeyboardWillHideNotification";
@@ -53,6 +57,7 @@ impl KeyboardObserver {
         _scale_factor: f64,
         window_logical_height: f32,
         request_frame: Arc<dyn Fn() + Send + Sync>,
+        display_link: Arc<DisplayLink>,
     ) -> Self {
         let center = NSNotificationCenter::defaultCenter();
 
@@ -60,6 +65,7 @@ impl KeyboardObserver {
         let source_for_show = source.clone();
         let anim_for_show = animation_source.clone();
         let request_for_show = request_frame.clone();
+        let dl_for_show = display_link.clone();
         let window_h_for_show = window_logical_height;
         let show_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             let notif = unsafe { notif.as_ref() };
@@ -86,6 +92,14 @@ impl KeyboardObserver {
             } else {
                 anim_for_show.set(animation);
             }
+            // Proactively start the CADisplayLink BEFORE requesting a frame.
+            // The display link is a hardware wake source: once started, it
+            // fires on the next vsync (≤16.7ms) and calls request_redraw(),
+            // regardless of whether winit's CFRunLoop is currently parked.
+            // Without this, the first animation frame would be delayed by up
+            // to ~163ms waiting for CFRunLoop to wake from some unrelated
+            // system event.
+            dl_for_show.start();
             request_for_show();
         });
         let show_token = unsafe {
@@ -101,6 +115,7 @@ impl KeyboardObserver {
         let source_for_hide = source.clone();
         let anim_for_hide = animation_source.clone();
         let request_for_hide = request_frame.clone();
+        let dl_for_hide = display_link.clone();
         let hide_block = block2::RcBlock::new(move |notif: NonNull<NSNotification>| {
             let notif = unsafe { notif.as_ref() };
             let _ = extract_target_height(notif, window_logical_height);
@@ -125,6 +140,8 @@ impl KeyboardObserver {
             } else {
                 anim_for_hide.set(animation);
             }
+            // Proactively start the CADisplayLink — same rationale as SHOW.
+            dl_for_hide.start();
             request_for_hide();
         });
         let hide_token = unsafe {

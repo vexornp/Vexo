@@ -5,55 +5,13 @@ use std::rc::Rc;
 
 use vexo::{
     children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
-    Image, ImageData, Key, Layout, LifecycleContext, MediaQuery, Memo, MultiChild, RenderContext,
-    ScrollController, ScrollView, SimpleState, Style, Text, TextEdit, TextEditingController, Theme,
-    Widget, WidgetKey, WithLayout,
+    Image, ImageData, Key, Layout, LifecycleContext, MultiChild, RenderContext, ScrollController,
+    ScrollView, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
 };
-use vexo_uikit::{Button, ButtonVariant};
+use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
 
 use crate::data::{ConvId, Message, MessageAuthor};
 use crate::widgets::avatar::avatar;
-
-/// Small Component that reads `MediaQuery::of(ctx).viewInsets.bottom` and
-/// applies it as bottom padding to its child. By isolating the MediaQuery
-/// dependency here (instead of in ChatScreen::render), ChatScreen itself is
-/// NOT marked as a MediaQuery dependent and does NOT rebuild on every keyboard
-/// animation frame. Only this tiny component rebuilds — and because the child
-/// is wrapped in `Memo<()>` (deps never change), `Memo::should_rebuild()`
-/// returns false on every cascade, so the child subtree is NOT reconciled.
-#[derive(Clone)]
-struct KeyboardInsetPadding {
-    child: Rc<dyn Widget>,
-}
-
-impl KeyboardInsetPadding {
-    fn new(child: Rc<dyn Widget>) -> Self {
-        Self { child }
-    }
-}
-
-impl Component for KeyboardInsetPadding {
-    type State = SimpleState<()>;
-
-    fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let bottom = MediaQuery::of(ctx).viewInsets.bottom;
-        // Memo<()> with unit deps: should_rebuild always returns false after
-        // mount, so the child's render() is never re-invoked during keyboard
-        // frames. The build closure runs once (on mount) and deep-clones the
-        // child widget tree into Memo's internal Rc cache; subsequent parent
-        // cascades stop at Memo without touching the child subtree.
-        let child = self.child.clone();
-        WithLayout::new(
-            Memo::new((), move || child.as_ref().clone_boxed()),
-            Layout::default()
-                .flex_grow(1.0)
-                .flex_basis(0.0)
-                .min_height(0.0)
-                .padding_each(0.0, 0.0, 0.0, bottom),
-        )
-        .boxed()
-    }
-}
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
@@ -184,9 +142,8 @@ impl Component for ChatScreen {
 
         // Build the content WITHOUT reading MediaQuery — ChatScreen is NOT a
         // MediaQuery dependent, so it does NOT rebuild on keyboard animation
-        // frames. The bottom padding is applied by KeyboardInsetPadding below,
-        // which IS a MediaQuery dependent but wraps the content in Memo<()>
-        // so its rebuild is O(1).
+        // frames. KeyboardAvoider (from vexo_uikit) is the MediaQuery
+        // dependent; it wraps the content in Memo<()> so its rebuild is O(1).
         let content = DecoratedBox::with_style(
             MultiChild::new(
                 children![
@@ -205,7 +162,7 @@ impl Component for ChatScreen {
         )
         .boxed();
 
-        KeyboardInsetPadding::new(Rc::from(content)).boxed()
+        KeyboardAvoider::new(content).boxed()
     }
 }
 
@@ -375,10 +332,11 @@ mod tests {
         }
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
-        // Chat screen now wraps content in KeyboardInsetPadding (Component) →
-        // WithLayout → Shared (proxy) → DecoratedBox → MultiChild[scrollview, input_bar].
-        // Each Component/Shared adds a proxy render object layer. Walk down
-        // through all proxy layers until we find the DecoratedBox.
+        // Chat screen now wraps content in KeyboardAvoider (Component) →
+        // WithLayout → Memo (Component) → Shared (proxy) → DecoratedBox →
+        // MultiChild[scrollview, input_bar]. Each Component/Shared adds a
+        // proxy render object layer. Walk down through all proxy layers
+        // until we find the DecoratedBox.
         let mut current = proxy;
         let chat_decorated = loop {
             let child = find_child(ro_reg, current, 0).expect("child of proxy");
