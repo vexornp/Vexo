@@ -49,9 +49,11 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSValue",
     "NSObject",
     "NSOperation",
+    "NSRunLoop",
     "block2",
 ] }
 objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["UIPasteboard"] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["CADisplayLink"] }
 block2 = { version = "0.6.2", default-features = false }
 
 # Android runtime deps:

@@ -520,6 +520,17 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
 impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> {
     type State = NavigationStackViewState<Dest>;
 
+    /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
+    /// During keyboard animation, the parent cascades `update()` to us with
+    /// fresh closures but the controller's path hasn't changed. Comparing
+    /// observable controller state stops the cascade before it rebuilds the
+    /// entire page stack. Note: state-driven rebuilds (Signal, MediaQuery
+    /// invalidation) bypass this hook — those still re-render, which is why
+    /// rotation and safe-area changes still work.
+    fn should_rebuild(&self, old: &Self) -> bool {
+        self.controller.path() != old.controller.path() || self.controller.pending().is_some()
+    }
+
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         // 1. Check for a pending op from the controller. If present and we
         //    don't yet have a transition, start one — but only if the state

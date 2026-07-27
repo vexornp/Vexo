@@ -159,6 +159,14 @@ pub struct InheritedElement<W: InheritedWidget> {
     /// Held so children can read it; dropped on unmount.
     subtree_map: Option<std::sync::Arc<InheritedMap>>,
     focus_attachment: Option<FocusAttachment>,
+    /// Raw pointer to the child widget from the last `update()`/`mount()`.
+    /// Used to detect whether the child actually changed between updates —
+    /// if the pointer is the same (because the InheritedWidget shares the
+    /// child via `Rc`), we skip `update_child()` and avoid rebuilding the
+    /// entire subtree. This is critical for keyboard animations: without it,
+    /// every keyboard frame clones the entire app widget tree and cascades a
+    /// rebuild through every element (60ms+ for a 20-message chat).
+    child_ptr: Option<*const dyn Widget>,
 }
 
 impl<W: InheritedWidget> InheritedElement<W> {
@@ -170,6 +178,9 @@ impl<W: InheritedWidget> InheritedElement<W> {
             render_object_id: None,
             subtree_map: None,
             focus_attachment: None,
+            // Dummy null pointer — will be set in mount(). Never dereferenced
+            // before mount() sets it.
+            child_ptr: None,
         }
     }
 
@@ -254,7 +265,10 @@ impl<W: InheritedWidget + Widget> Element for InheritedElement<W> {
         // 5. Inflate child — child's mount will receive this element's map
         // (the reconciler passes `self.subtree_map` as the child's
         // `inherited_map` by looking it up in `inherited_map_storage`).
-        context.inflate_child(None, self.get_child_widget().clone_boxed());
+        let child_widget = self.get_child_widget().clone_boxed();
+        // Store the child pointer for future comparison in update().
+        self.child_ptr = Some(self.get_child_widget() as *const dyn Widget);
+        context.inflate_child(None, child_widget);
     }
 
     fn update(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
@@ -291,14 +305,30 @@ impl<W: InheritedWidget + Widget> Element for InheritedElement<W> {
         }
 
         // Reconcile child via child_ops (same as SafeAreaElement::rebuild).
-        let old_child = context.children().first().copied();
-        let child_widget = self.get_child_widget().clone_boxed();
-        match old_child {
-            Some(old_child_key) => {
-                context.update_child(old_child_key, child_widget);
-            }
-            None => {
-                context.inflate_child(None, child_widget);
+        //
+        // OPTIMIZATION: Skip `update_child()` when the child widget hasn't
+        // changed (same pointer). This happens when the InheritedWidget was
+        // rebuilt just to change its VALUE (e.g., MediaQuery during keyboard
+        // animation), not its child. Without this check, every keyboard frame
+        // would clone the entire app widget tree and cascade a rebuild
+        // through every element (60ms+ for a 20-message chat).
+        //
+        // This works because MediaQuery stores its child as `Rc<dyn Widget>`,
+        // so cloning the MediaQuery widget shares the same Rc (same pointer).
+        // The old_child_ptr was captured during mount() or a previous update()
+        // where the child actually changed.
+        let new_child_ptr = self.get_child_widget() as *const dyn Widget;
+        if Some(new_child_ptr) != self.child_ptr {
+            let old_child = context.children().first().copied();
+            let child_widget = self.get_child_widget().clone_boxed();
+            self.child_ptr = Some(new_child_ptr);
+            match old_child {
+                Some(old_child_key) => {
+                    context.update_child(old_child_key, child_widget);
+                }
+                None => {
+                    context.inflate_child(None, child_widget);
+                }
             }
         }
 

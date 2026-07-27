@@ -52,8 +52,8 @@ pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
 pub use layout::{
-    AlignItems, AlignSelf, Display, FlexDirection, GridAutoFlow, JustifyContent, Layout, Overflow,
-    DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
+    AlignItems, AlignSelf, Display, EdgeInsets, FlexDirection, GridAutoFlow, JustifyContent, Layout,
+    Overflow, DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
 };
 
 /// Platform service abstractions (clipboard, etc.).
@@ -206,7 +206,7 @@ pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
     Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
-    GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
+    GestureDetector, Grid, Image, IndexedStack, Memo, MediaQuery, MediaQueryData, MediaQueryMutator,
     MultiChild, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
     ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
     TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,

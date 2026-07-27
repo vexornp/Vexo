@@ -110,6 +110,16 @@ pub struct WindowState<A: Application + 'static> {
     /// Platform clipboard backend (arboard on desktop, stub on iOS).
     /// Shared via `Arc` so EventContexts can cheaply clone it during dispatch.
     clipboard: Arc<dyn Clipboard>,
+
+    /// Timestamp of the last keyboard-interpolation frame, for measuring
+    /// inter-frame gaps during keyboard animations (diagnostic logging).
+    last_kb_frame: Option<std::time::Instant>,
+
+    /// CADisplayLink driver for vsync-rate animation on iOS. Started when
+    /// animations are active (keyboard show/hide, animation ticker); stopped
+    /// when idle to conserve power. On desktop this field doesn't exist.
+    #[cfg(target_os = "ios")]
+    display_link: Option<crate::platform::display_link_ios::DisplayLink>,
 }
 
 
@@ -176,6 +186,21 @@ impl<A: Application + 'static> WindowState<A> {
             ))
         };
 
+        #[cfg(target_os = "ios")]
+        let display_link = {
+            // CADisplayLink callback: just request a redraw. The render loop's
+            // interpolation driver (in render_retain) advances the keyboard
+            // animation one step per vsync. winit's event loop uses
+            // CFRunLoopTimer (throttled to ~15 FPS), so without this display
+            // link the keyboard animation only gets 4-5 frames and finishes
+            // visibly after the OS keyboard.
+            let window_for_dl = window.clone();
+            let on_frame: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                window_for_dl.request_redraw();
+            });
+            Some(crate::platform::display_link_ios::DisplayLink::new(on_frame))
+        };
+
         Ok(Self {
             backend,
             window: Some(window),
@@ -199,6 +224,9 @@ impl<A: Application + 'static> WindowState<A> {
             animation_ticker,
             current_modifiers: Modifiers::default(),
             clipboard,
+            last_kb_frame: None,
+            #[cfg(target_os = "ios")]
+            display_link,
         })
     }
 
@@ -547,6 +575,25 @@ impl<A: Application + 'static> WindowState<A> {
         self.keyboard_animation_source.has_pending()
     }
 
+    /// Start or stop the CADisplayLink based on whether any animation is
+    /// active. Called from `about_to_wait`. On desktop this is a no-op (no
+    /// display link field exists).
+    #[cfg(target_os = "ios")]
+    pub fn sync_display_link(&mut self) {
+        let needs_vsync = self.keyboard_animation_source.has_pending()
+            || self.animation_ticker().has_active();
+        if let Some(dl) = &mut self.display_link {
+            if needs_vsync {
+                dl.start();
+            } else {
+                dl.stop();
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    pub fn sync_display_link(&mut self) {}
+
     /// Mark only the `RootMediaQuery` element as needing rebuild, rather than
     /// the root element. This avoids re-calling `Application::view()` (which
     /// constructs the entire app widget tree) on every keyboard animation
@@ -607,11 +654,19 @@ impl<A: Application + 'static> WindowState<A> {
             )
         };
 
-        if !self.needs_redraw && !has_dirty && !needs_reconcile {
+        // If the keyboard animation source has pending params, always run
+        // (even if nothing is dirty yet) so the interpolation driver at step
+        // 4.5 can advance the animation. The CADisplayLink callback calls
+        // `window.request_redraw()` without setting `needs_redraw`, so without
+        // this guard the render would skip and the animation would stall.
+        let kb_active = self.keyboard_animation_source.has_pending();
+
+        if !self.needs_redraw && !has_dirty && !needs_reconcile && !kb_active {
             // Nothing changed — skip all work.
             return Ok(());
         }
 
+        let __render_start = std::time::Instant::now();
         self.needs_redraw = false;
         self.frame_builder.clear();
 
@@ -688,8 +743,21 @@ impl<A: Application + 'static> WindowState<A> {
         {
             if let Some(anim) = self.keyboard_animation_source.take() {
                 let now = std::time::Instant::now();
+                let elapsed_ms = now.duration_since(anim.start).as_secs_f32() * 1000.0;
+                let gap_ms = self
+                    .last_kb_frame
+                    .map(|t| now.duration_since(t).as_secs_f32() * 1000.0)
+                    .unwrap_or(0.0);
+                self.last_kb_frame = Some(now);
                 match anim.interpolate(now) {
                     Some(height) => {
+                        log::debug!(
+                            "[KBDBG] frame elapsed={:.0}ms gap={:.0}ms height={:.1} (target={:.1})",
+                            elapsed_ms,
+                            gap_ms,
+                            height,
+                            anim.target
+                        );
                         self.keyboard_inset_source.set(height);
                         self.keyboard_animation_source.restore(anim);
                         self.mark_root_media_query_needs_build();
@@ -697,6 +765,13 @@ impl<A: Application + 'static> WindowState<A> {
                         self.request_frame();
                     }
                     None => {
+                        log::debug!(
+                            "[KBDBG] DONE elapsed={:.0}ms gap={:.0}ms (dur={:.0}ms) target={:.1} — snapping",
+                            elapsed_ms,
+                            gap_ms,
+                            anim.duration_secs * 1000.0,
+                            anim.target
+                        );
                         self.keyboard_inset_source.set(anim.target);
                         self.mark_root_media_query_needs_build();
                         self.three_tree_pipeline.mark_all_needs_layout();
@@ -714,12 +789,14 @@ impl<A: Application + 'static> WindowState<A> {
         // children dirty. Processing all of them in one frame avoids a
         // 1-frame-per-tree-level lag that would make the keyboard animation
         // visibly stutter.
+        let __t0 = std::time::Instant::now();
         loop {
             self.three_tree_pipeline.perform_rebuilds();
             if !self.three_tree_pipeline.has_pending_rebuilds() {
                 break;
             }
         }
+        let __t_rebuild = __t0.elapsed();
 
         // 5.5. Render-loop focus / keyboard sync.
         //
@@ -777,11 +854,13 @@ impl<A: Application + 'static> WindowState<A> {
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
         // 8. Layout dirty render objects
+        let __t1 = std::time::Instant::now();
         self.three_tree_pipeline.layout(
             logical_size,
             self.layout_engine.as_mut(),
             &mut self.font_system,
         );
+        let __t_layout = __t1.elapsed();
 
         // 8. Inject cursor focus/blink state into render objects before paint
         self.three_tree_pipeline.prepare_cursor_state();
@@ -794,7 +873,9 @@ impl<A: Application + 'static> WindowState<A> {
         self.three_tree_pipeline.register_images(&mut self.backend);
 
         // 9. Paint dirty render objects
+        let __t2 = std::time::Instant::now();
         let commands = self.three_tree_pipeline.paint();
+        let __t_paint = __t2.elapsed();
 
         // 9.5 Post-frame cursor update: re-hit-test at last mouse position
         // to catch cursor changes from widgets moving under a still mouse.
@@ -833,6 +914,7 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 13. Execute render
+        let __t3 = std::time::Instant::now();
         self.text_pipeline
             .execute_render(
                 &mut self.backend,
@@ -840,6 +922,7 @@ impl<A: Application + 'static> WindowState<A> {
                 prepared_text,
                 &mut self.font_system,
             )?;
+        let __t_gpu = __t3.elapsed();
 
         // 14. If a TextEdit is focused, keep the event loop alive so
         //     about_to_wait fires and can check cursor blink timing.
@@ -854,6 +937,16 @@ impl<A: Application + 'static> WindowState<A> {
         if self.animation_ticker.has_active() {
             self.request_frame();
         }
+
+        let __render_dur = __render_start.elapsed();
+        log::debug!(
+            "[KBDBG] render_retain dur={:.1}ms (rebuild={:.1} layout={:.1} paint={:.1} gpu={:.1})",
+            __render_dur.as_secs_f32() * 1000.0,
+            __t_rebuild.as_secs_f32() * 1000.0,
+            __t_layout.as_secs_f32() * 1000.0,
+            __t_paint.as_secs_f32() * 1000.0,
+            __t_gpu.as_secs_f32() * 1000.0,
+        );
 
         Ok(())
     }

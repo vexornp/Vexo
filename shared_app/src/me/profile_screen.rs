@@ -8,9 +8,9 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, Layout,
-    MultiChild, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget,
-    WithLayout,
+    children, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, ImageData,
+    Layout, MultiChild, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData,
+    Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
@@ -432,7 +432,10 @@ impl Component for AppearancePicker {
 /// Header row: avatar on the left, name + email stacked to the right.
 /// Display-only (no chevron, not tappable).
 fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let avatar_widget = avatar(&profile.avatar_bytes, 56.0);
+    let avatar_widget = avatar(
+        ImageData::from_bytes(&profile.avatar_bytes).expect("avatar bytes are valid PNG"),
+        56.0,
+    );
     let name = Text::new(profile.name.as_str())
         .with_font_size(17.0)
         .with_color(theme.on_background);

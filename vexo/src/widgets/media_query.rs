@@ -99,7 +99,7 @@ use crate::Component;
 
 pub struct MediaQuery {
     data: MediaQueryData,
-    child: Box<dyn Widget>,
+    child: std::rc::Rc<dyn Widget>,
     key: Option<WidgetKey>,
 }
 
@@ -107,7 +107,19 @@ impl MediaQuery {
     pub fn new(data: MediaQueryData, child: impl Widget + 'static) -> Self {
         Self {
             data,
-            child: Box::new(child),
+            child: std::rc::Rc::new(child),
+            key: None,
+        }
+    }
+
+    /// Constructor that accepts an `Rc<dyn Widget>` child, for use by
+    /// `RootMediaQuery::render()`. Sharing the `Rc` (instead of cloning the
+    /// widget tree) lets `InheritedElement::update()` detect that the child
+    /// hasn't changed (same `Rc` pointer) and skip the rebuild cascade.
+    pub(crate) fn new_with_rc(data: MediaQueryData, child: std::rc::Rc<dyn Widget>) -> Self {
+        Self {
+            data,
+            child,
             key: None,
         }
     }
@@ -201,7 +213,7 @@ impl Clone for MediaQuery {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
-            child: self.child.clone_boxed(),
+            child: std::rc::Rc::clone(&self.child),
             key: self.key.clone(),
         }
     }
@@ -235,17 +247,17 @@ impl_widget_for_inherited!(MediaQuery);
 /// `Component` trait bound is `Sized + 'static` (verified in Step 2 — no
 /// `Send`/`Sync`), so `Rc<dyn Fn>` satisfies the trait.
 pub struct MediaQueryMutator {
-    child: Box<dyn Widget>,
+    child: std::rc::Rc<dyn Widget>,
     compute: std::rc::Rc<dyn Fn(&MediaQueryData) -> MediaQueryData>,
 }
 
 impl MediaQueryMutator {
-    fn new(
+    pub fn new(
         child: Box<dyn Widget>,
         compute: impl Fn(&MediaQueryData) -> MediaQueryData + 'static,
     ) -> Self {
         Self {
-            child,
+            child: std::rc::Rc::from(child),
             compute: std::rc::Rc::new(compute),
         }
     }
@@ -254,7 +266,7 @@ impl MediaQueryMutator {
 impl Clone for MediaQueryMutator {
     fn clone(&self) -> Self {
         Self {
-            child: self.child.clone_boxed(),
+            child: std::rc::Rc::clone(&self.child),
             compute: self.compute.clone(),
         }
     }
@@ -262,10 +274,16 @@ impl Clone for MediaQueryMutator {
 
 impl Component for MediaQueryMutator {
     type State = SimpleState<()>;
+
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let parent = MediaQuery::of(ctx);
         let data = (self.compute)(&parent);
-        MediaQuery::new(data, self.child.clone_boxed()).boxed()
+        // Use new_with_rc so the child Rc is shared (Rc::clone, O(1)) instead
+        // of deep-cloned. This lets InheritedElement::update() compare Rc
+        // pointers and skip update_child() when the child hasn't changed —
+        // critical for keyboard animations where MediaQueryMutator rebuilds
+        // every frame but its child subtree is identical.
+        MediaQuery::new_with_rc(data, std::rc::Rc::clone(&self.child)).boxed()
     }
 }
 
@@ -275,19 +293,21 @@ impl Component for MediaQueryMutator {
 /// framework wraps `Application::view()` output in `RootMediaQuery` before
 /// mounting.
 pub(crate) struct RootMediaQuery {
-    child: Box<dyn Widget>,
+    child: std::rc::Rc<dyn Widget>,
 }
 
 impl RootMediaQuery {
     pub(crate) fn new(child: Box<dyn Widget>) -> Self {
-        Self { child }
+        Self {
+            child: std::rc::Rc::from(child),
+        }
     }
 }
 
 impl Clone for RootMediaQuery {
     fn clone(&self) -> Self {
         Self {
-            child: self.child.clone_boxed(),
+            child: std::rc::Rc::clone(&self.child),
         }
     }
 }
@@ -329,7 +349,7 @@ impl Component for RootMediaQuery {
             platform_brightness: brightness,
             orientation,
         };
-        MediaQuery::new(data, self.child.clone_boxed()).boxed()
+        MediaQuery::new_with_rc(data, std::rc::Rc::clone(&self.child)).boxed()
     }
 }
 

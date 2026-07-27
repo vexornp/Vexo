@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 use vexo::layout::{AlignItems, FlexDirection, JustifyContent};
 use vexo::{
-    children, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack, Layout,
-    LifecycleContext, MediaQuery, MultiChild, RemoveEdges, RenderContext, SafeArea, Style, Theme,
-    Widget, WithLayout,
+    children, Component, ComponentState, DecoratedBox, EdgeInsets, GestureDetector, IndexedStack,
+    Layout, LifecycleContext, MediaQuery, MediaQueryData, MediaQueryMutator, MultiChild,
+    RemoveEdges, RenderContext, SafeArea, SimpleState, Style, Theme, Widget, WithLayout,
 };
 
 use crate::theme::tokens;
@@ -153,6 +153,15 @@ impl<D: Hash + Eq + Clone + 'static> Default for TabBarViewStateD<D> {
 impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
     type State = TabBarViewStateD<D>;
 
+    /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
+    /// During keyboard animation, the parent cascades `update()` to us with
+    /// fresh closures but the tabs and current selection haven't changed.
+    /// Comparing only observable state stops the cascade before it rebuilds
+    /// the entire IndexedStack + tab bar UI.
+    fn should_rebuild(&self, old: &Self) -> bool {
+        self.tabs != old.tabs || self.controller.current() != old.controller.current()
+    }
+
     fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let current_index = self
             .tabs
@@ -201,10 +210,17 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         );
         let bar = MultiChild::new(children![hairline, bar], Layout::column().flex_shrink(0.0));
 
-        let mq = MediaQuery::of(ctx);
-        let tab_bar_height = TAB_BAR_HEIGHT + mq.padding.bottom;
-
-        let page = MediaQuery::reduce_view_insets_bottom(stack, tab_bar_height);
+        // IMPORTANT: Do NOT call MediaQuery::of(ctx) here — it would make
+        // TabBar a MediaQuery dependent, causing it to rebuild on every
+        // keyboard animation frame. Instead, compute tab_bar_height inside
+        // the MediaQueryMutator closure, which reads the parent MediaQuery
+        // during its own render(). TabBar itself is NOT a dependent.
+        let page = MediaQueryMutator::new(stack.boxed(), |parent: &MediaQueryData| {
+            let tab_bar_height = TAB_BAR_HEIGHT + parent.padding.bottom;
+            let mut v = parent.viewInsets;
+            v.bottom = (v.bottom - tab_bar_height).max(0.0);
+            parent.copy_with_view_insets(v)
+        });
         let page = MediaQuery::remove_padding(page, RemoveEdges::BOTTOM);
         let content = MultiChild::new(
             children![WithLayout::new(page, Layout::flex_fill()), bar,],

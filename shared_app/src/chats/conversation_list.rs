@@ -6,8 +6,8 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, AlignSelf, DecoratedBox, Layout, MultiChild, Positioned, ScrollView,
-    Stack, Style, Text, ThemeData, Widget, WithLayout,
+    children, AlignItems, AlignSelf, DecoratedBox, ImageData, Layout, MultiChild, Positioned,
+    ScrollView, Stack, Style, Text, ThemeData, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::NavColors;
 
@@ -51,7 +51,10 @@ fn build_conversation_row(
     theme: &ThemeData,
     on_press: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
-    let avatar = avatar(&conv.avatar_bytes, 40.0);
+    let avatar = avatar(
+        ImageData::from_bytes(&conv.avatar_bytes).expect("avatar bytes are valid PNG"),
+        40.0,
+    );
 
     let name_color = if is_selected {
         nav_colors.selected_text

@@ -2847,6 +2847,7 @@ dependencies = [
  "log",
  "objc2",
  "objc2-foundation",
+ "objc2-quartz-core",
  "objc2-ui-kit",
  "pollster",
  "slotmap",

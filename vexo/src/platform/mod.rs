@@ -9,6 +9,8 @@
 pub mod arboard_clipboard;
 pub mod clipboard;
 #[cfg(target_os = "ios")]
+pub mod display_link_ios;
+#[cfg(target_os = "ios")]
 pub mod ios_clipboard;
 #[cfg(target_os = "ios")]
 pub mod keyboard_ios;

@@ -146,9 +146,20 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
             // keyboard slides down while our input view freezes, then the
             // tween starts late (after the keyboard is gone). See
             // WindowState::keyboard_inset_changed() for the full analysis.
+            //
+            // On iOS, the CADisplayLink (started by sync_display_link below)
+            // also keeps frames flowing, but this request_frame() ensures the
+            // first frame after the notification fires immediately rather than
+            // waiting for the next vsync.
             if state.keyboard_inset_changed() {
                 state.request_frame();
             }
+            // Start/stop the CADisplayLink on iOS based on animation activity.
+            // The display link fires at vsync rate (60/120Hz), calling
+            // window.request_redraw() each tick. Without it, winit's
+            // CFRunLoopTimer throttles to ~15 FPS, making keyboard animations
+            // jerky and causing the input bar to finish after the keyboard.
+            state.sync_display_link();
         }
     }
 

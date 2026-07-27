@@ -770,20 +770,38 @@ pub struct KeyboardAnimation {
     /// The instant the OS keyboard animation began (captured in the iOS
     /// shim at the moment the notification fired).
     pub start: std::time::Instant,
-    /// The animation curve, mapped from UIKit's raw curve value via
-    /// `raw & 0x3`: 0→EaseInOut, 1→EaseIn, 2→EaseOut, 3→Linear.
+    /// The animation curve, mapped from UIKit's raw curve value. Standard
+    /// `UIViewAnimationCurve` values are 0=EaseInOut, 1=EaseIn, 2=EaseOut,
+    /// 3=Linear. iOS keyboard notifications report the private value `7`
+    /// (`UIKeyboardAnimationCurveKeyboard` = `0x4 | EaseInOut`), which Apple
+    /// renders as a smooth easeInOut-style curve — NOT linear. Treating the
+    /// bottom 2 bits (`7 & 0x3 = 3 → Linear`) is wrong: linear motion keeps
+    /// moving at constant velocity near the end (95% at t=0.95) while the
+    /// keyboard has nearly settled (~99.5% at t=0.95), so the input bar
+    /// appears to finish after the keyboard. We special-case raw=7 to
+    /// `EaseInOutCurve` to match the keyboard's actual deceleration.
     /// Stored as a raw `u8` so the cell is `Send + Sync`; the render loop
     /// maps it to a `Box<dyn Curve>` when interpolating.
     pub curve_raw: u8,
 }
 
 impl KeyboardAnimation {
-    /// Map a UIKit `UIViewAnimationCurve` raw value to the curve enum.
-    /// Mirrors the deleted `KeyboardCurve::from_uikit_raw`: `raw & 0x3`
-    /// extracts the bottom 2 bits, handling the keyboard's private raw=7
-    /// (→ 3 → Linear) correctly.
+    /// Map a UIKit `UIViewAnimationCurve` raw value (or the keyboard's
+    /// private curve raw value) to a curve. The standard documented values
+    /// are 0=EaseInOut, 1=EaseIn, 2=EaseOut, 3=Linear. iOS keyboard
+    /// notifications report the private value `7`, which Apple renders as a
+    /// smooth easeInOut-style curve (the high bit `0x4` is a "keyboard"
+    /// flag, not a curve-type selector). Map raw=7 directly to
+    /// `EaseInOutCurve` to match the keyboard's perceived deceleration.
     pub fn curve(&self) -> Box<dyn crate::animation::Curve> {
         use crate::animation::{EaseInCurve, EaseInOutCurve, EaseOutCurve, LinearCurve};
+        // iOS keyboard's private curve raw=7 = 0x4 | EaseInOut. Apple renders
+        // it as a smooth easeInOut, NOT linear. The bottom-2-bits trick
+        // (`7 & 0x3 = 3 → Linear`) is wrong and causes the input bar to
+        // visibly lag the keyboard near the end of the animation.
+        if self.curve_raw == 7 {
+            return Box::new(EaseInOutCurve);
+        }
         match self.curve_raw & 0x3 {
             0 => Box::new(EaseInOutCurve),
             1 => Box::new(EaseInCurve),
@@ -1460,22 +1478,39 @@ mod keyboard_animation_tests {
     }
 
     #[test]
-    fn curve_raw_7_maps_to_linear() {
+    fn curve_raw_7_maps_to_ease_in_out() {
+        // iOS keyboard notifications report the private curve raw value 7
+        // (`UIKeyboardAnimationCurveKeyboard`), which Apple renders as a
+        // smooth easeInOut-style curve. Mapping it to Linear (via `7 & 3`)
+        // is wrong: linear motion keeps moving at constant velocity near
+        // the end while the keyboard has nearly settled, so the input bar
+        // appears to finish after the keyboard.
         let anim = KeyboardAnimation {
             from: 0.0,
             target: 100.0,
             duration_secs: 1.0,
             start: Instant::now(),
-            curve_raw: 7, // iOS keyboard private value → 7 & 3 = 3 → Linear
+            curve_raw: 7,
         };
-        // Linear at t=0.5 → 50px.
+        // EaseInOut at t=0.75 → 1 - ((-2*0.75 + 2)² / 2) = 0.875 → 87.5px.
+        // (Linear at t=0.75 would be 75px, so this distinguishes the curves.)
         let val = anim
+            .interpolate(anim.start + Duration::from_millis(750))
+            .unwrap();
+        assert!(
+            (val - 87.5).abs() < 1.0,
+            "expected ~87.5 (easeInOut) for raw=7 at t=0.75, got {}",
+            val
+        );
+        // EaseInOut at t=0.5 → 2 * 0.5² = 0.5 → 50px (matches Linear here,
+        // so this is just a sanity check that the curve is monotonic).
+        let val_mid = anim
             .interpolate(anim.start + Duration::from_millis(500))
             .unwrap();
         assert!(
-            (val - 50.0).abs() < 1.0,
-            "expected ~50 (linear) for raw=7, got {}",
-            val
+            (val_mid - 50.0).abs() < 1.0,
+            "expected ~50 (easeInOut midpoint) for raw=7 at t=0.5, got {}",
+            val_mid
         );
     }
 

@@ -428,8 +428,8 @@ pub trait Component: Sized + 'static {
     /// the old element and mount a fresh one. This is essential when sibling
     /// Components of the same type are reordered or inserted/removed: without
     /// distinct keys, positional matching pairs the wrong (widget, element)
-    /// and stale per-element state (focus, cursor, blink) carries over to the
-    /// wrong logical widget.
+    /// and stale per-element state (focus, cursor, blink) carries over to
+    /// the wrong logical widget.
     ///
     /// Default: `None` (positional matching, fine for leaf components or
     /// static sibling sets). Override via `with_key()`-style builders.
@@ -439,6 +439,42 @@ pub trait Component: Sized + 'static {
 
     fn widget_child(&self) -> Option<&dyn Widget> {
         None
+    }
+
+    /// Whether `render()` should be called when the parent passes a new widget
+    /// via `update()` (the parent-cascade path). Default: `true` (always
+    /// rebuild).
+    ///
+    /// This is **level 3** of vexo's rebuild-skipping ladder. The full ladder:
+    ///
+    /// 1. **Default** — do nothing. `should_rebuild()` returns `true`. Always
+    ///    correct. Use for every component not in a measured hot path.
+    /// 2. **`Memo<T>`** — wrap a stable child subtree in `Memo::new(deps, || build())`.
+    ///    The framework caches the subtree and only re-invokes `build` when
+    ///    `deps` changes. This is vexo's analog of React's `useMemo` and
+    ///    Flutter's `const` widgets. No manual `Rc` caching required.
+    /// 3. **Explicit `should_rebuild()`** — override this method on the child
+    ///    to return `false` when the new widget is functionally identical to
+    ///    the old one (e.g., same data, fresh closures). Use only when `Memo`
+    ///    isn't feasible and the component sits in a hot path.
+    ///
+    /// **Important:** this hook only gates the parent-cascade path. The
+    /// state-driven path (`rebuild_from_state()`, triggered by `Signal::set`,
+    /// `InheritedWidget` invalidation, or pipeline dirtying on resize) always
+    /// re-renders regardless of this method's return value. This is why
+    /// rotation, theme toggles, and MediaQuery changes still work correctly
+    /// when `should_rebuild()` returns `false`.
+    ///
+    /// When overriding, compare **only fields that `render()` reads**. Skip
+    /// closure and controller fields — they're typically fresh allocations
+    /// with stable behavior. Never compare by pointer (the reconciler clones
+    /// widget instances, so pointer equality is meaningless).
+    ///
+    /// See `docs/rebuild-skipping-patterns.md` for the full rationale, when
+    /// *not* to optimize, and why a derive macro is not the right long-term
+    /// direction.
+    fn should_rebuild(&self, _old: &Self) -> bool {
+        true
     }
 }
 
@@ -635,6 +671,18 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.animation_ticker.clone(),
             );
             state_ref.on_update(&old_widget as &dyn Any, &mut lifecycle_ctx);
+        }
+
+        // If the widget hasn't meaningfully changed, skip the expensive
+        // render() + child reconciliation cascade. This is critical for
+        // keyboard animations: MediaQuery dependents (TabBar, NavigationStack)
+        // rebuild on every keyboard frame and cascade update() to children.
+        // Without this check, ChatScreen::render() rebuilds 20+ message
+        // bubbles every frame even though the widget data hasn't changed.
+        if !self.widget.should_rebuild(&old_widget) {
+            // Still need to reparent focus in case the tree structure changed
+            // above us.
+            return;
         }
 
         // Build the child widget tree using RenderContext

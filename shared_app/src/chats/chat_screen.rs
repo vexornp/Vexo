@@ -5,13 +5,55 @@ use std::rc::Rc;
 
 use vexo::{
     children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
-    Key, Layout, LifecycleContext, MediaQuery, MultiChild, RenderContext, ScrollController,
-    ScrollView, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
+    Image, ImageData, Key, Layout, LifecycleContext, MediaQuery, Memo, MultiChild, RenderContext,
+    ScrollController, ScrollView, SimpleState, Style, Text, TextEdit, TextEditingController, Theme,
+    Widget, WidgetKey, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant};
 
 use crate::data::{ConvId, Message, MessageAuthor};
 use crate::widgets::avatar::avatar;
+
+/// Small Component that reads `MediaQuery::of(ctx).viewInsets.bottom` and
+/// applies it as bottom padding to its child. By isolating the MediaQuery
+/// dependency here (instead of in ChatScreen::render), ChatScreen itself is
+/// NOT marked as a MediaQuery dependent and does NOT rebuild on every keyboard
+/// animation frame. Only this tiny component rebuilds — and because the child
+/// is wrapped in `Memo<()>` (deps never change), `Memo::should_rebuild()`
+/// returns false on every cascade, so the child subtree is NOT reconciled.
+#[derive(Clone)]
+struct KeyboardInsetPadding {
+    child: Rc<dyn Widget>,
+}
+
+impl KeyboardInsetPadding {
+    fn new(child: Rc<dyn Widget>) -> Self {
+        Self { child }
+    }
+}
+
+impl Component for KeyboardInsetPadding {
+    type State = SimpleState<()>;
+
+    fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let bottom = MediaQuery::of(ctx).viewInsets.bottom;
+        // Memo<()> with unit deps: should_rebuild always returns false after
+        // mount, so the child's render() is never re-invoked during keyboard
+        // frames. The build closure runs once (on mount) and deep-clones the
+        // child widget tree into Memo's internal Rc cache; subsequent parent
+        // cascades stop at Memo without touching the child subtree.
+        let child = self.child.clone();
+        WithLayout::new(
+            Memo::new((), move || child.as_ref().clone_boxed()),
+            Layout::default()
+                .flex_grow(1.0)
+                .flex_basis(0.0)
+                .min_height(0.0)
+                .padding_each(0.0, 0.0, 0.0, bottom),
+        )
+        .boxed()
+    }
+}
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
@@ -38,6 +80,11 @@ impl Clone for ChatScreen {
 #[derive(Default)]
 pub(crate) struct ChatScreenState {
     text_controller: Option<TextEditingController>,
+    /// Decoded avatar image data, cached so we don't re-decode the PNG on
+    /// every rebuild (ChatScreen rebuilds on every MediaQuery change, i.e.
+    /// every keyboard animation frame — 40+ PNG decodes/frame = 63ms).
+    them_avatar_image: Option<ImageData>,
+    me_avatar_image: Option<ImageData>,
 }
 
 impl ChatScreenState {
@@ -46,6 +93,21 @@ impl ChatScreenState {
             let mut fs = vexo::resource::new_font_system();
             self.text_controller = Some(TextEditingController::new("", &mut fs));
         }
+    }
+
+    /// Lazily decode and cache the avatar images. Called from `render()` on
+    /// first use (not `on_mount`, to avoid blocking on images that might not
+    /// be needed yet). After the first call, returns the cached `ImageData`.
+    fn them_avatar(&mut self, bytes: &Rc<[u8]>) -> &ImageData {
+        self.them_avatar_image.get_or_insert_with(|| {
+            ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG")
+        })
+    }
+
+    fn me_avatar(&mut self, bytes: &Rc<[u8]>) -> &ImageData {
+        self.me_avatar_image.get_or_insert_with(|| {
+            ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG")
+        })
     }
 }
 
@@ -76,6 +138,17 @@ impl Component for ChatScreen {
         Some(WidgetKey::Local(Key::new(self.conv_id.0.to_string())))
     }
 
+    /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
+    /// During keyboard animation, TabBar and NavigationStack cascade `update()`
+    /// to ChatScreen with fresh closure fields but identical data. Comparing
+    /// only the data fields the render reads lets the cascade stop here
+    /// instead of rebuilding 20+ message bubbles every frame.
+    fn should_rebuild(&self, old: &Self) -> bool {
+        self.conv_id != old.conv_id
+            || self.messages.len() != old.messages.len()
+            || self.messages != old.messages
+    }
+
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
@@ -83,8 +156,8 @@ impl Component for ChatScreen {
         for msg in &self.messages {
             list = list.push(build_message_bubble(
                 msg,
-                &self.avatar_bytes,
-                &self.me_avatar_bytes,
+                state.them_avatar(&self.avatar_bytes).clone(),
+                state.me_avatar(&self.me_avatar_bytes).clone(),
                 &theme,
             ));
         }
@@ -109,9 +182,12 @@ impl Component for ChatScreen {
 
         let input_bar = build_input_bar(tc, on_send_closure);
 
-        let mq = MediaQuery::of(ctx);
-        let bottom_pad = mq.viewInsets.bottom;
-        DecoratedBox::with_style(
+        // Build the content WITHOUT reading MediaQuery — ChatScreen is NOT a
+        // MediaQuery dependent, so it does NOT rebuild on keyboard animation
+        // frames. The bottom padding is applied by KeyboardInsetPadding below,
+        // which IS a MediaQuery dependent but wraps the content in Memo<()>
+        // so its rebuild is O(1).
+        let content = DecoratedBox::with_style(
             MultiChild::new(
                 children![
                     WithLayout::new(
@@ -123,19 +199,20 @@ impl Component for ChatScreen {
                 Layout::column()
                     .flex_grow(1.0)
                     .flex_basis(0.0)
-                    .min_height(0.0)
-                    .padding_each(0.0, 0.0, 0.0, bottom_pad),
+                    .min_height(0.0),
             ),
             Style::default().background(theme.background),
         )
-        .boxed()
+        .boxed();
+
+        KeyboardInsetPadding::new(Rc::from(content)).boxed()
     }
 }
 
 fn build_message_bubble(
     msg: &Message,
-    them_avatar_bytes: &Rc<[u8]>,
-    me_avatar_bytes: &Rc<[u8]>,
+    them_avatar_image: ImageData,
+    me_avatar_image: ImageData,
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
     let is_me = msg.author == MessageAuthor::Me;
@@ -163,7 +240,7 @@ fn build_message_bubble(
     .boxed();
 
     if is_me {
-        let me_avatar = avatar(me_avatar_bytes, 32.0);
+        let me_avatar = avatar(me_avatar_image, 32.0);
         MultiChild::new(
             children![
                 MultiChild::empty(Layout::default().flex_grow(1.0)),
@@ -174,7 +251,7 @@ fn build_message_bubble(
         )
         .boxed()
     } else {
-        let them_avatar = avatar(them_avatar_bytes, 32.0);
+        let them_avatar = avatar(them_avatar_image, 32.0);
         MultiChild::new(
             children![
                 them_avatar,
@@ -298,11 +375,28 @@ mod tests {
         }
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
-        // Chat screen root is `DecoratedBox(MultiChild(...))`.
-        // - proxy        = ChatScreen's StatefulElement ProxyRenderObject
-        // - chat_decorated = DecoratedBox (background)
-        // - chat_col        = the inner MultiChild column [scrollview, input_bar]
-        let chat_decorated = find_child(ro_reg, proxy, 0).expect("chat decorated root");
+        // Chat screen now wraps content in KeyboardInsetPadding (Component) →
+        // WithLayout → Shared (proxy) → DecoratedBox → MultiChild[scrollview, input_bar].
+        // Each Component/Shared adds a proxy render object layer. Walk down
+        // through all proxy layers until we find the DecoratedBox.
+        let mut current = proxy;
+        let chat_decorated = loop {
+            let child = find_child(ro_reg, current, 0).expect("child of proxy");
+            // Check if this child is the DecoratedBox (has 1 child that is the
+            // MultiChild column). We detect it by checking if its first child
+            // has multiple children (the column has [scrollview, input_bar]).
+            if let Some(grandchild) = find_child(ro_reg, child, 0) {
+                if ro_reg
+                    .get(grandchild)
+                    .and_then(|ro| ro.children().len().into())
+                    .unwrap_or(0)
+                    >= 2
+                {
+                    break child; // This is the DecoratedBox
+                }
+            }
+            current = child;
+        };
         let chat_col = find_child(ro_reg, chat_decorated, 0).expect("chat column");
         let input_wrapper = find_child(ro_reg, chat_col, 1).expect("input bar wrapper");
         let input_bounds = ro_reg

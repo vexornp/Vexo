@@ -67,6 +67,13 @@ impl KeyboardObserver {
             let duration_secs = extract_duration(notif);
             let curve_raw = extract_curve_raw(notif);
             let from = source_for_show.get();
+            log::debug!(
+                "[KBDBG] notify SHOW target={:.1} dur={:.0}ms curve={} from={:.1}",
+                target_height,
+                duration_secs * 1000.0,
+                curve_raw,
+                from
+            );
             let animation = KeyboardAnimation {
                 from,
                 target: target_height,
@@ -100,6 +107,12 @@ impl KeyboardObserver {
             let duration_secs = extract_duration(notif);
             let curve_raw = extract_curve_raw(notif);
             let from = source_for_hide.get();
+            log::debug!(
+                "[KBDBG] notify HIDE dur={:.0}ms curve={} from={:.1}",
+                duration_secs * 1000.0,
+                curve_raw,
+                from
+            );
             let animation = KeyboardAnimation {
                 from,
                 target: 0.0,

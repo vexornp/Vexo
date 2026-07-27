@@ -385,3 +385,17 @@ This method handles all four cases:
 | `DecoratedBoxElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
 | `StatefulElement` | Single (from `render()`) | Mounts in `mount()`, reconciles in `update()` via `update_child()` |
 | `GestureDetectorElement` | Single | Mounts in `mount()`, reconciles in `rebuild()` via `update_child()` |
+
+### Rebuild Skipping — The Three-Level Ladder
+
+Vexo has two rebuild paths: `update()` (parent-cascade, gated by `should_rebuild()`) and `rebuild_from_state()` (state-driven, always re-renders). The state-driven path fires on `Signal::set`, `InheritedWidget` invalidation (Theme, MediaQuery), and pipeline dirtying on resize — these bypass `should_rebuild()` entirely, which is why rotation and theme toggles work even when `should_rebuild()` returns `false`.
+
+When a component sits in a hot path (keyboard animation, scroll) and its `render()` is expensive, use one of three optimization levels (in increasing explicitness):
+
+1. **Default** — `should_rebuild()` returns `true`. Always correct. Use everywhere by default.
+2. **`Memo<T>`** — wrap a stable child subtree in `Memo::new(deps, || build())`. The framework caches the subtree and only re-invokes `build` when `deps` changes. Vexo's analog of React's `useMemo` / Flutter's `const` widgets. No manual `Rc` caching required.
+3. **Explicit `should_rebuild()`** — override on the child to return `false` when only closures/controllers differ but data is identical. Use only when `Memo` isn't feasible and profiling shows a problem.
+
+Current level-3 users: `ChatScreen` (`shared_app/src/chats/chat_screen.rs`), `TabBarView` (`vexo_uikit/src/tab_bar.rs`), `NavigationStackView` (`vexo_uikit/src/navigation.rs`). All three sit in the keyboard-animation path.
+
+**Do not** override `should_rebuild()` for components not in a measured hot path. **Do not** write a derive macro — closures and controllers can't be compared meaningfully, and the explicit hook is honest about being a manual escape hatch. See `docs/rebuild-skipping-patterns.md` for the full rationale.

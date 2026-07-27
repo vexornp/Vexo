@@ -1,8 +1,8 @@
 //! Contacts list screen.
 
 use vexo::{
-    children, Component, DecoratedBox, Layout, MultiChild, RenderContext, ScrollView, SimpleState,
-    Style, Text, Theme, Widget, WithLayout,
+    children, Component, DecoratedBox, ImageData, Layout, MultiChild, RenderContext, ScrollView,
+    SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 
 use crate::data::Contact;
@@ -39,7 +39,10 @@ impl Component for ContactsScreen {
 }
 
 fn build_contact_row(c: &Contact, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let avatar = avatar(&c.avatar_bytes, 40.0);
+    let avatar = avatar(
+        ImageData::from_bytes(&c.avatar_bytes).expect("avatar bytes are valid PNG"),
+        40.0,
+    );
 
     let name = Text::new(c.name.as_str())
         .with_font_size(16.0)
