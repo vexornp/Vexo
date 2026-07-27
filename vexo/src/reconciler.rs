@@ -400,8 +400,6 @@ impl Reconciler {
         let now = std::time::Instant::now();
 
         // Rebuild each dirty element
-        let __total_rb_start = std::time::Instant::now();
-        let mut rebuild_count: usize = 0;
         for element_id in dirty_ids {
             // Skip if element was removed during a previous rebuild
             if !element_registry.contains(element_id) {
@@ -439,19 +437,10 @@ impl Reconciler {
             );
 
             // Animate then rebuild from current state using with_element
-            let __t_rb = std::time::Instant::now();
             element_registry.with_element(element_id, &mut ctx, |element, ctx| {
                 element.animate(now, ctx);
                 element.rebuild_from_state(ctx);
             });
-            let __rb_dur = __t_rb.elapsed();
-            rebuild_count += 1;
-            log::debug!(
-                "[KBDBG] rebuild #{} element_id={:?} dur={:.2}ms",
-                rebuild_count,
-                element_id,
-                __rb_dur.as_secs_f32() * 1000.0
-            );
 
             // Execute any child operations emitted during rebuild
             Self::execute_child_ops(
@@ -470,15 +459,6 @@ impl Reconciler {
 
             // Exit build scope
             build_owner.exit_build_scope(element_id);
-        }
-
-        let __total_rb_dur = __total_rb_start.elapsed();
-        if rebuild_count > 0 {
-            log::debug!(
-                "[KBDBG] perform_rebuilds total: {} elements, {:.1}ms",
-                rebuild_count,
-                __total_rb_dur.as_secs_f32() * 1000.0
-            );
         }
     }
 

@@ -677,7 +677,6 @@ impl<A: Application + 'static> WindowState<A> {
             return Ok(());
         }
 
-        let __render_start = std::time::Instant::now();
         self.needs_redraw = false;
         self.frame_builder.clear();
 
@@ -800,14 +799,12 @@ impl<A: Application + 'static> WindowState<A> {
         // children dirty. Processing all of them in one frame avoids a
         // 1-frame-per-tree-level lag that would make the keyboard animation
         // visibly stutter.
-        let __t0 = std::time::Instant::now();
         loop {
             self.three_tree_pipeline.perform_rebuilds();
             if !self.three_tree_pipeline.has_pending_rebuilds() {
                 break;
             }
         }
-        let __t_rebuild = __t0.elapsed();
 
         // 5.5. Render-loop focus / keyboard sync.
         //
@@ -865,13 +862,11 @@ impl<A: Application + 'static> WindowState<A> {
         let logical_size = Size::<Logical>::new(logical_width, logical_height);
 
         // 8. Layout dirty render objects
-        let __t1 = std::time::Instant::now();
         self.three_tree_pipeline.layout(
             logical_size,
             self.layout_engine.as_mut(),
             &mut self.font_system,
         );
-        let __t_layout = __t1.elapsed();
 
         // 8. Inject cursor focus/blink state into render objects before paint
         self.three_tree_pipeline.prepare_cursor_state();
@@ -884,9 +879,7 @@ impl<A: Application + 'static> WindowState<A> {
         self.three_tree_pipeline.register_images(&mut self.backend);
 
         // 9. Paint dirty render objects
-        let __t2 = std::time::Instant::now();
         let commands = self.three_tree_pipeline.paint();
-        let __t_paint = __t2.elapsed();
 
         // 9.5 Post-frame cursor update: re-hit-test at last mouse position
         // to catch cursor changes from widgets moving under a still mouse.
@@ -925,7 +918,6 @@ impl<A: Application + 'static> WindowState<A> {
         );
 
         // 13. Execute render
-        let __t3 = std::time::Instant::now();
         self.text_pipeline
             .execute_render(
                 &mut self.backend,
@@ -933,7 +925,6 @@ impl<A: Application + 'static> WindowState<A> {
                 prepared_text,
                 &mut self.font_system,
             )?;
-        let __t_gpu = __t3.elapsed();
 
         // 14. If a TextEdit is focused, keep the event loop alive so
         //     about_to_wait fires and can check cursor blink timing.
@@ -948,16 +939,6 @@ impl<A: Application + 'static> WindowState<A> {
         if self.animation_ticker.has_active() {
             self.request_frame();
         }
-
-        let __render_dur = __render_start.elapsed();
-        log::debug!(
-            "[KBDBG] render_retain dur={:.1}ms (rebuild={:.1} layout={:.1} paint={:.1} gpu={:.1})",
-            __render_dur.as_secs_f32() * 1000.0,
-            __t_rebuild.as_secs_f32() * 1000.0,
-            __t_layout.as_secs_f32() * 1000.0,
-            __t_paint.as_secs_f32() * 1000.0,
-            __t_gpu.as_secs_f32() * 1000.0,
-        );
 
         Ok(())
     }
