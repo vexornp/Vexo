@@ -195,7 +195,15 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         }
 
         let bar = DecoratedBox::with_style(
-            SafeArea::new(bar.boxed()).top(false).boxed(),
+            MediaQueryMutator::new(
+                SafeArea::new(bar.boxed()).top(false).boxed(),
+                |parent: &MediaQueryData| {
+                    let mut p = parent.padding;
+                    p.bottom = parent.viewPadding.bottom;
+                    parent.copy_with_padding(p)
+                },
+            )
+            .boxed(),
             Style::default().background(nav.mobile_header_bg),
         );
         let bar = WithLayout::new(bar, Layout::default().flex_grow(0.0).flex_shrink(0.0));
@@ -625,6 +633,89 @@ mod tests {
             ctrl.current(),
             TestTab::B,
             "tapping at x=250 (slot 1, off-icon) must select tab B"
+        );
+    }
+
+    #[test]
+    fn test_tab_bar_height_constant_during_keyboard_animation() {
+        use vexo::animation::AnimationTicker;
+        use vexo::layout::TaffyLayoutEngine;
+        use vexo::render::RenderCommand;
+        use vexo::ThreeTreePipeline;
+
+        // Simulate what RootMediaQuery would produce for two keyboard states.
+        // safe_area.bottom = 34 (home indicator), keyboard interpolates 150 -> 0.
+        // padding.bottom = max(34 - kh, 0)  — the clamped formula that causes the pop.
+        fn mq_for_keyboard(kh: f32) -> MediaQueryData {
+            let mut mq = MediaQueryData::all_zero();
+            mq.size = vexo::core::Size::new(390.0, 600.0);
+            mq.padding.bottom = (34.0 - kh).max(0.0);
+            mq.viewInsets.bottom = kh;
+            mq.viewPadding.bottom = 34.0;
+            mq
+        }
+
+        fn build_view(kh: f32) -> Box<dyn Widget> {
+            let ctrl = TabController::new(TestTab::A);
+            let inner = TabBarView::new(
+                ctrl,
+                vec![TestTab::A, TestTab::B],
+                |tab| match tab {
+                    TestTab::A => Text::new("Page A").boxed(),
+                    TestTab::B => Text::new("Page B").boxed(),
+                    TestTab::C => Text::new("Page C").boxed(),
+                },
+                |_, is_selected| Text::new(if is_selected { "[A]" } else { "A" }).boxed(),
+            );
+            MediaQuery::new(mq_for_keyboard(kh), inner).boxed()
+        }
+
+        fn bar_bg_height(kh: f32) -> f32 {
+            let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+            pipeline.update(build_view(kh));
+            let mut engine = TaffyLayoutEngine::new();
+            let mut font_system = vexo::resource::new_font_system();
+            pipeline.layout(
+                vexo::core::Size::new(390.0, 600.0),
+                &mut engine,
+                &mut font_system,
+            );
+            let commands = pipeline.paint();
+            let nav_bg = crate::theme::tokens::navigation::colors(&vexo::ThemeData::light())
+                .mobile_header_bg;
+            commands
+                .iter()
+                .find_map(|cmd| {
+                    if let RenderCommand::Rect { bounds, fill, .. } = cmd {
+                        if *fill == nav_bg && bounds.width() >= 380.0 {
+                            return Some(bounds.height());
+                        }
+                    }
+                    None
+                })
+                .expect("expected a tab bar background rect")
+        }
+
+        // The bar height must be the SAME in both states: 49 + 34 = 83.
+        // Before the fix, mid-animation (kh=150) gives 49 (clamped padding=0),
+        // and end (kh=0) gives 83 (padding=34) — the "pop".
+        let mid = bar_bg_height(150.0);
+        let end = bar_bg_height(0.0);
+        assert!(
+            (mid - 83.0).abs() < 1.0,
+            "mid-animation bar height {} should be ~83 (49 + 34 home-indicator inset)",
+            mid
+        );
+        assert!(
+            (end - 83.0).abs() < 1.0,
+            "end bar height {} should be ~83",
+            end
+        );
+        assert!(
+            (mid - end).abs() < 0.5,
+            "bar height must be constant: mid={}, end={}",
+            mid,
+            end
         );
     }
 }
