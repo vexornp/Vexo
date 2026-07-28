@@ -49,9 +49,17 @@ pub struct KeyboardAvoider {
 impl KeyboardAvoider {
     /// Create a `KeyboardAvoider` wrapping `child`.
     ///
-    /// The child is stored as `Rc<dyn Widget>` so cloning the widget (which
-    /// the reconciler does on parent cascades) is O(1) — no deep clone of
-    /// the child subtree.
+    /// The child is stored as `Rc<dyn Widget>` so that `render()` can hand
+    /// `Shared::new(Rc::clone(&self.child))` the *same* `Rc` pointer across
+    /// `rebuild_from_state` calls (keyboard frames — same `&self` → same
+    /// `Rc` → `SharedElement` skips reconciliation). A fresh `Rc::new(child)`
+    /// only runs here, in the constructor, which the parent only calls when
+    /// building genuinely new content — so the resulting `KeyboardAvoider`
+    /// has a new `Rc` pointer and `SharedElement` reconciles.
+    ///
+    /// This is the "widget struct as cache" pattern — see
+    /// `docs/rebuild-skipping-patterns.md` § "Shared — compare the `Rc`
+    /// pointer of an already-built child".
     pub fn new(child: impl Widget + 'static) -> Self {
         Self {
             child: Rc::new(child),
@@ -64,14 +72,10 @@ impl Component for KeyboardAvoider {
 
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let bottom = MediaQuery::of(ctx).viewInsets.bottom;
-        // Use `Shared` (Rc pointer comparison) instead of `Memo<()>` so that:
-        // - Keyboard frames: `self.child` Rc is unchanged → `SharedElement`
-        //   skips `update_child` → O(1), no subtree reconciliation.
-        // - Conversation switch: parent passes a new `KeyboardAvoider` with a
-        //   new `child` Rc → `SharedElement` sees a different pointer →
-        //   reconciles the child subtree. (Previously `Memo<()>` blocked this
-        //   because its deps `()` never changed, so the cached old-conversation
-        //   content was never replaced.)
+        // `Rc::clone` (not `Rc::new`) so the pointer matches across
+        // `rebuild_from_state` calls on the same widget instance (keyboard
+        // frames → `SharedElement` skips), but differs when the parent
+        // constructs a fresh `KeyboardAvoider` (new content → reconciles).
         let child = Rc::clone(&self.child);
         WithLayout::new(
             Shared::new(child),

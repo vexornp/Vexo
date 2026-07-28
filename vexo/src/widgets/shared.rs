@@ -6,6 +6,30 @@
 //! `SharedElement` compares `Rc` pointers on `update()`/`rebuild()` and skips
 //! `update_child()` entirely when the pointer hasn't changed — turning an
 //! O(n) subtree reconciliation into O(1).
+//!
+//! ## `Shared` vs `Memo<T>` — when to use which
+//!
+//! Both are level-2 rebuild-skipping primitives (see
+//! `docs/rebuild-skipping-patterns.md`), but they decide "skip or reconcile"
+//! differently:
+//!
+//! - **`Memo<T>`** compares a user-declared `deps: T`. Use when the subtree
+//!   is built lazily and depends on known, comparable data. The caller is
+//!   responsible for capturing *everything* `build` reads in `deps` —
+//!   `Memo<()>` in particular blocks *all* parent cascades (since `()` is
+//!   always equal), which is almost never what you want.
+//! - **`Shared`** compares the `Rc` pointer of an already-built child. Use
+//!   when the caller already builds the widget and can cache the `Rc` across
+//!   renders — typically a wrapper `Component` that stores `child: Rc<dyn
+//!   Widget>` as a field. The widget struct's lifetime is the cache: a fresh
+//!   `Rc::new()` only runs in the constructor (gated by parent re-rendering),
+//!   so `render()` reusing `Rc::clone(&self.child)` shares the same pointer
+//!   across `rebuild_from_state` calls (keyboard frames) but yields a new
+//!   pointer when the parent constructs a fresh wrapper (new content).
+//!
+//! `Shared` is safer for wrapper components whose child is opaque (built by
+//! the caller, not by this component) — there's no `deps` to enumerate and
+//! get wrong. `KeyboardAvoider` is the canonical example.
 
 use std::any::Any;
 use std::rc::Rc;
@@ -23,12 +47,15 @@ use crate::widgets::Widget;
 
 /// Proxy widget wrapping `Rc<dyn Widget>`. `clone_boxed()` is O(1) (Rc clone).
 ///
-/// This is a **crate-internal** primitive used by `Memo` and the built-in
-/// `MediaQuery` family. App authors should use `Memo<T>` (the public API for
-/// level-2 rebuild skipping) instead of `Shared` directly — `Memo` handles
-/// `Rc` caching automatically, while bare `Shared` requires the caller to
-/// manually cache the `Rc` across renders (easy to get wrong: a fresh
-/// `Rc::new()` per render silently defeats the optimization).
+/// See the module docs for when to use `Shared` vs `Memo<T>`. Briefly:
+/// `Shared` is the right choice for wrapper `Component`s that store
+/// `child: Rc<dyn Widget>` as a field and reuse it across `render()` calls
+/// (e.g. `KeyboardAvoider`); `Memo<T>` is the right choice when the subtree
+/// is built lazily from comparable `deps`.
+///
+/// **Footgun:** a fresh `Rc::new()` per `render()` defeats the optimization
+/// (the pointer is always new → `SharedElement` always reconciles). Cache
+/// the `Rc` in the widget struct and use `Rc::clone` inside `render()`.
 #[derive(Clone)]
 pub struct Shared {
     child: Rc<dyn Widget>,

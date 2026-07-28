@@ -1,6 +1,68 @@
 //! `Memo` — a `Component` that caches its rendered subtree and only rebuilds
 //! when declared dependencies change.
 //!
+//! This is one of two public APIs for level 2 of the rebuild-skipping ladder
+//! (see `docs/rebuild-skipping-patterns.md`); the other is `Shared`. It
+//! eliminates the "forgot to cache the `Rc`" footgun that comes with manual
+//! `Shared` usage: the user declares *what* the subtree depends on via
+//! `deps`, and the framework handles caching internally.
+//!
+//! ## When to use
+//!
+//! Use `Memo` when a parent component re-renders frequently (keyboard frames,
+//! scroll, animation) but a child subtree only depends on a stable piece of
+//! data. Wrap the child build in `Memo::new(deps, || build_subtree(...))` and
+//! the framework will skip the child's `render()` + reconciliation cascade
+//! whenever `deps` is unchanged across parent rebuilds.
+//!
+//! ## Contract
+//!
+//! - `deps: T` must capture **everything** the `build` closure reads that
+//!   could change. If `build` reads an `InheritedWidget` value (Theme,
+//!   MediaQuery), capture that value in `deps` too — otherwise the cache will
+//!   be stale across that dependency's invalidation.
+//! - `deps` must implement `PartialEq + Clone`. The comparison is the sole
+//!   arbiter of whether to rebuild.
+//! - The `build` closure is invoked at most once per unique `deps` value
+//!   (specifically: on first mount, and whenever `deps` changes).
+//!
+//! ## `Memo<()>` is almost never correct
+//!
+//! Because `()` is always equal, `Memo::new((), …)` blocks **all** parent
+//! cascades unconditionally — not just the ones you intended to skip. This is
+//! a real footgun: a wrapper component that wraps its (opaque, caller-built)
+//! child in `Memo<()>` to skip keyboard-frame rebuilds will *also* skip
+//! rebuilds when the parent passes genuinely new content (e.g. switching
+//! conversations), leaving stale UI on screen.
+//!
+//! If the subtree has any input that can change, either:
+//! - capture that input in `deps` (requires the wrapper to know what the
+//!   child depends on — brittle when the child is opaque), or
+//! - use `Shared` instead, which compares the `Rc` pointer of the child
+//!   widget itself and thus reconciles whenever the parent builds new content.
+//!
+//! See `Shared`'s module docs for the wrapper-component pattern.
+//!
+//! ## What `Memo` does NOT cache
+//!
+//! `Memo` caches the **widget configuration tree**, not the element or render
+//! object trees. Descendants of `Memo` still respond to `Signal::set`,
+//! `InheritedWidget` invalidation, and pipeline-driven layout/paint via the
+//! state-driven rebuild path — those bypass `should_rebuild()` and re-render
+//! the relevant descendant regardless of `Memo`'s cache. This is why
+//! `Memo`-wrapped subtrees still update correctly on theme toggles and
+//! rotation even when `deps` hasn't changed.
+//!
+//! ## Example
+//!
+//! ```ignore
+//! // Settings list depends only on `items`; rebuild only when items change.
+//! Memo::new(
+//!     items.clone(),
+//!     || build_settings_list(&items),
+//! )
+//! ```
+//!
 //! This is the public API for level 2 of the rebuild-skipping ladder (see
 //! `docs/rebuild-skipping-patterns.md`). It eliminates the "forgot to cache
 //! the `Rc`" footgun that comes with manual `Shared` usage: the user declares

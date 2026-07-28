@@ -55,14 +55,16 @@ at level 1.
 **When to use:** everywhere by default. Don't override `should_rebuild()`
 unless profiling shows a problem.
 
-### Level 2 — `Memo<T>` (framework caching)
+### Level 2 — `Memo<T>` and `Shared` (framework caching)
 
-When a frequently-rebuilding parent has a child subtree that doesn't
-change, wrap the child build in `Memo::new(deps, || build_subtree())`.
-The framework caches the built subtree and only re-invokes `build` when
-`deps` changes. On parent cascades where `deps` is unchanged,
-`Memo::should_rebuild()` returns `false` and the cascade stops — no
-`render()`, no child reconciliation.
+When a frequently-rebuilding parent has a child subtree that doesn't change,
+level 2 caches the subtree so the cascade stops early. Vexo offers two
+primitives; they differ in *what* they compare to decide "skip or reconcile":
+
+#### `Memo<T>` — compare declared `deps`
+
+Wrap the child build in `Memo::new(deps, || build_subtree())`. The framework
+caches the built subtree and only re-invokes `build` when `deps` changes.
 
 ```rust
 // Parent re-renders every keyboard frame, but the settings list only
@@ -89,18 +91,71 @@ fn render(&self, state, ctx) -> Box<dyn Widget> {
   it in `deps` or the cache will be stale across that dependency's
   invalidation.
 - The `build` closure is invoked at most once per unique `deps` value.
+- **`Memo<()>` is almost never correct.** Since `()` is always equal,
+  `should_rebuild()` returns `false` on *every* parent cascade — not just
+  the ones you wanted to skip. This blocks genuine data updates (e.g.
+  switching conversations in a chat screen) even when the parent passes
+  fresh content. If the subtree has *any* input that can change, capture it
+  in `deps` or use `Shared` instead.
 - `Memo` caches the **widget configuration tree**, not the element or
   render-object trees. Descendants still respond to `Signal::set` and
   `InheritedWidget` invalidation via the state-driven rebuild path —
   those bypass `should_rebuild()` and re-render the relevant descendant
   regardless of `Memo`'s cache.
-- Internally, `Memo` uses `Shared` (a `pub(crate)` proxy widget with
-  `Rc` pointer comparison) to skip the child cascade. App authors never
-  touch `Shared` directly.
 
-**When to use:** when a parent re-renders frequently and has a child
-subtree that depends on stable data. This is vexo's analog of React's
-`useMemo` and Flutter's `const` widgets.
+**When to use:** when the subtree is built lazily and depends on known,
+comparable data. This is vexo's analog of React's `useMemo`.
+
+#### `Shared` — compare the `Rc` pointer of an already-built child
+
+`Shared::new(rc)` wraps an `Rc<dyn Widget>`. `SharedElement` compares the
+`Rc` pointer on `update()`/`rebuild()` and skips `update_child()` when the
+pointer is unchanged.
+
+The idiomatic pattern is a **wrapper `Component`** that stores
+`child: Rc<dyn Widget>` as a field and reuses it across `render()` calls:
+
+```rust
+// KeyboardAvoider is the only MediaQuery dependent in its subtree, so it
+// re-renders on every keyboard frame — but the child content only changes
+// when the PARENT builds a fresh KeyboardAvoider. Storing the child as Rc
+// and wrapping it in Shared gives: same Rc on keyboard frames (skip),
+// different Rc on parent rebuild (reconcile).
+#[derive(Clone)]
+pub struct KeyboardAvoider {
+    child: Rc<dyn Widget>,  // ← the cache lives in the widget struct
+}
+
+impl Component for KeyboardAvoider {
+    fn render(&self, _state, ctx) -> Box<dyn Widget> {
+        let bottom = MediaQuery::of(ctx).viewInsets.bottom;
+        let child = Rc::clone(&self.child);   // O(1), same pointer
+        WithLayout::new(
+            Shared::new(child),
+            Layout::default().padding_each(0., 0., 0., bottom),
+        ).boxed()
+    }
+}
+```
+
+The widget struct's lifetime *is* the cache: a fresh `Rc::new()` only runs
+in the constructor (which the parent only calls when building genuinely new
+content), while `render()` reuses the same `Rc` via `Rc::clone`. This is
+why `Shared` is safer than `Memo` when the child is opaque (built by the
+caller, not by this component) — there's no `deps` to enumerate and get
+wrong.
+
+**Key points:**
+- **Footgun:** a fresh `Rc::new()` inside `render()` defeats the
+  optimization (the pointer is always new → always reconciles). Always
+  cache the `Rc` in the widget struct and use `Rc::clone` in `render()`.
+- Like `Memo`, descendants of `Shared` still respond to `Signal::set` and
+  `InheritedWidget` invalidation via the state-driven rebuild path.
+
+**When to use:** wrapper components whose child is built by the caller
+(not by this component) and whose `render()` is on a hot path. `Memo`'s
+`deps` would have to enumerate every field that could affect the opaque
+child — `Shared` sidesteps that by comparing the child itself.
 
 ### Level 3 — Explicit `should_rebuild()` on the child
 
@@ -208,7 +263,7 @@ direction to invest in — not derive macros.
 | `StatefulElement::update()` (gated by should_rebuild) | `vexo/src/stateful_widget.rs` | Parent-cascade path. |
 | `StatefulElement::rebuild_from_state()` (NOT gated) | `vexo/src/stateful_widget.rs` | State-driven path. Always re-renders. |
 | `Memo<T>` (public API, level 2) | `vexo/src/widgets/memo.rs` | Caches subtree by `deps: T: PartialEq + Clone`. |
-| `Shared` (internal, used by `Memo`) | `vexo/src/widgets/shared.rs` | `pub(crate)` proxy with `Rc` pointer comparison. |
+| `Shared` (public API, level 2) | `vexo/src/widgets/shared.rs` | Proxy widget with `Rc` pointer comparison. Used by `Memo` internally and directly by wrapper components like `KeyboardAvoider`. |
 | `InheritedElement::update()` (Rc pointer check) | `vexo/src/inherited_widget.rs` | Skips child cascade when child `Rc` matches. |
 | `MediaQuery` (uses `Rc<dyn Widget>` child) | `vexo/src/widgets/media_query.rs` | Built-in user of `Rc` sharing. |
 | `RootMediaQuery` | `vexo/src/widgets/media_query.rs` | Framework-internal `Rc` sharing user. |
