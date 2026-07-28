@@ -50,7 +50,7 @@ pub use multi_child::MultiChild;
 pub use safe_area::SafeArea;
 pub use scroll_controller::ScrollController;
 pub use scroll_view::ScrollView;
-pub(crate) use shared::Shared;
+pub use shared::Shared;
 pub use text::Text;
 pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use theme::{Brightness, Theme, ThemeData};

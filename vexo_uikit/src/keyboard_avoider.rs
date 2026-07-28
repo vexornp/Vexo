@@ -3,9 +3,10 @@
 //!
 //! Isolates the `MediaQuery` dependency so the parent screen does NOT rebuild
 //! on every keyboard animation frame. Only this small component is a
-//! `MediaQuery` dependent; the child subtree is wrapped in `Memo<()>` so its
-//! `render()` is never re-invoked during keyboard animation (the cascade stops
-//! at the `Memo` boundary).
+//! `MediaQuery` dependent; the child subtree is wrapped in `Shared` (Rc pointer
+//! comparison) so its reconciliation is skipped when the child hasn't changed
+//! (keyboard frames) but still runs when the parent passes genuinely new content
+//! (e.g. switching conversations).
 //!
 //! ## When to use
 //!
@@ -27,15 +28,16 @@
 
 use std::rc::Rc;
 
-use vexo::{Component, Layout, MediaQuery, Memo, RenderContext, SimpleState, Widget, WithLayout};
+use vexo::{Component, Layout, MediaQuery, RenderContext, Shared, SimpleState, Widget, WithLayout};
 
 /// Wraps a child subtree and applies `MediaQuery.viewInsets.bottom` as bottom
 /// padding, so the child sits above the software keyboard.
 ///
 /// This component is the ONLY `MediaQuery` dependent in the subtree — the
 /// parent screen does not rebuild on keyboard frames. The child is wrapped
-/// in `Memo<()>` so its `render()` is never re-invoked during keyboard
-/// animation (the cascade stops at the `Memo` boundary).
+/// in `Shared` (Rc pointer comparison) so reconciliation is O(1) on keyboard
+/// frames (same Rc → skip) but still propagates when the parent passes new
+/// content (different Rc → reconcile).
 ///
 /// The wrapper fills its parent (`flex_grow(1.0)`, `flex_basis(0.0)`,
 /// `min_height(0.0)`), so the child area is "everything above the keyboard".
@@ -62,14 +64,17 @@ impl Component for KeyboardAvoider {
 
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let bottom = MediaQuery::of(ctx).viewInsets.bottom;
-        // Memo<()> with unit deps: should_rebuild always returns false after
-        // mount, so the child's render() is never re-invoked during keyboard
-        // frames. The build closure runs once (on mount) and deep-clones the
-        // child widget tree into Memo's internal Rc cache; subsequent parent
-        // cascades stop at Memo without touching the child subtree.
+        // Use `Shared` (Rc pointer comparison) instead of `Memo<()>` so that:
+        // - Keyboard frames: `self.child` Rc is unchanged → `SharedElement`
+        //   skips `update_child` → O(1), no subtree reconciliation.
+        // - Conversation switch: parent passes a new `KeyboardAvoider` with a
+        //   new `child` Rc → `SharedElement` sees a different pointer →
+        //   reconciles the child subtree. (Previously `Memo<()>` blocked this
+        //   because its deps `()` never changed, so the cached old-conversation
+        //   content was never replaced.)
         let child = Rc::clone(&self.child);
         WithLayout::new(
-            Memo::new((), move || child.as_ref().clone_boxed()),
+            Shared::new(child),
             Layout::default()
                 .flex_grow(1.0)
                 .flex_basis(0.0)

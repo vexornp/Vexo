@@ -112,6 +112,8 @@ mod stateful_integration_test;
 #[cfg(test)]
 mod inherited_integration_test;
 #[cfg(test)]
+mod root_signal_cascade_test;
+#[cfg(test)]
 mod window_integration_test;
 
 // --- Re-exports from former retain/ ---
@@ -202,9 +204,9 @@ pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
     Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
-    GestureDetector, Grid, Image, IndexedStack, Memo, MediaQuery, MediaQueryData, MediaQueryMutator,
+    GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
     MultiChild, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
-    ScrollView, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
+    ScrollView, Shared, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
     TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 

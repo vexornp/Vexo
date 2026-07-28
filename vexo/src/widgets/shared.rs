@@ -30,12 +30,12 @@ use crate::widgets::Widget;
 /// manually cache the `Rc` across renders (easy to get wrong: a fresh
 /// `Rc::new()` per render silently defeats the optimization).
 #[derive(Clone)]
-pub(crate) struct Shared {
+pub struct Shared {
     child: Rc<dyn Widget>,
 }
 
 impl Shared {
-    pub(crate) fn new(child: Rc<dyn Widget>) -> Self {
+    pub fn new(child: Rc<dyn Widget>) -> Self {
         Self { child }
     }
 }
