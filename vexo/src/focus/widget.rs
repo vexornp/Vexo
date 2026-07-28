@@ -18,8 +18,8 @@ use crate::id::{ElementKey, RenderObjectKey};
 use crate::input::InputEvent;
 use crate::key::WidgetKey;
 use crate::render_object::RenderObject;
+use crate::render_objects::ProxyRenderObject;
 use crate::widgets::Widget;
-use crate::stateful_widget::ProxyRenderObject;
 use crate::UpdateResult;
 
 // ============================================================================
@@ -156,10 +156,8 @@ impl FocusElement {
 
     fn mount_children(&mut self, context: &mut ElementContext) {
         if let Some(widget) = &self.widget {
-            let child_widgets: Vec<Box<dyn Widget>> = widget.children()
-                .iter()
-                .map(|c| c.clone_boxed())
-                .collect();
+            let child_widgets: Vec<Box<dyn Widget>> =
+                widget.children().iter().map(|c| c.clone_boxed()).collect();
             for (i, child_widget) in child_widgets.into_iter().enumerate() {
                 context.inflate_child(Some(i), child_widget);
             }
@@ -168,10 +166,8 @@ impl FocusElement {
 
     fn reconcile_children(&mut self, context: &mut ElementContext) {
         if let Some(widget) = &self.widget {
-            let new_child_widgets: Vec<Box<dyn Widget>> = widget.children()
-                .iter()
-                .map(|c| c.clone_boxed())
-                .collect();
+            let new_child_widgets: Vec<Box<dyn Widget>> =
+                widget.children().iter().map(|c| c.clone_boxed()).collect();
             let old_children = context.children().to_vec();
             let old_len = old_children.len();
             let new_len = new_child_widgets.len();
@@ -203,30 +199,48 @@ impl FocusElement {
 }
 
 impl Default for FocusElement {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RenderObjectElement for FocusElement {
-    fn widget(&self) -> Option<&dyn Widget> { self.widget.as_deref() }
+    fn widget(&self) -> Option<&dyn Widget> {
+        self.widget.as_deref()
+    }
     fn set_widget(&mut self, widget: Box<dyn Widget>) {
         if let Some(focus) = widget.as_any().downcast_ref::<Focus>() {
             self.key = focus.key();
         }
         self.widget = Some(widget);
     }
-    fn render_object_id(&self) -> Option<RenderObjectKey> { self.render_object }
-    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) { self.render_object = id; }
-    fn stored_key(&self) -> Option<WidgetKey> { self.key.clone() }
-    fn set_stored_key(&mut self, key: Option<WidgetKey>) { self.key = key; }
-    fn element_id(&self) -> Option<ElementKey> { self.id }
-    fn set_element_id(&mut self, id: Option<ElementKey>) { self.id = id; }
+    fn render_object_id(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
+    fn set_render_object_id(&mut self, id: Option<RenderObjectKey>) {
+        self.render_object = id;
+    }
+    fn stored_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
+    fn set_stored_key(&mut self, key: Option<WidgetKey>) {
+        self.key = key;
+    }
+    fn element_id(&self) -> Option<ElementKey> {
+        self.id
+    }
+    fn set_element_id(&mut self, id: Option<ElementKey>) {
+        self.id = id;
+    }
 }
 
 impl Element for FocusElement {
     fn mount(&mut self, context: &mut ElementContext) {
         let element_key = context.element_id;
         let parent_id = context.parent_focus_node_id();
-        let node_id = context.focus_manager().create_node_for_element(element_key, parent_id);
+        let node_id = context
+            .focus_manager()
+            .create_node_for_element(element_key, parent_id);
         if let Some(node_id) = node_id {
             self.focus_attachment = Some(FocusAttachment::new(node_id));
         }
@@ -265,9 +279,13 @@ impl Element for FocusElement {
         }
     }
 
-    fn render_object(&self) -> Option<RenderObjectKey> { self.render_object }
+    fn render_object(&self) -> Option<RenderObjectKey> {
+        self.render_object
+    }
 
-    fn widget_key(&self) -> Option<WidgetKey> { self.key.clone() }
+    fn widget_key(&self) -> Option<WidgetKey> {
+        self.key.clone()
+    }
 
     fn can_update(&self, widget: &dyn Any) -> bool {
         widget.downcast_ref::<Focus>().is_some()
@@ -282,11 +300,7 @@ impl Element for FocusElement {
         None
     }
 
-    fn rebuild(
-        &mut self,
-        new_widget: Box<dyn Any>,
-        context: &mut ElementContext,
-    ) {
+    fn rebuild(&mut self, new_widget: Box<dyn Any>, context: &mut ElementContext) {
         if let Ok(widget) = new_widget.downcast::<Box<dyn Widget>>() {
             if let Some(focus) = widget.as_any().downcast_ref::<Focus>() {
                 self.key = focus.key();
@@ -299,7 +313,11 @@ impl Element for FocusElement {
             // Update the render object with new properties
             if let Some(ro_id) = self.render_object {
                 if let Some(ro) = context.get_render_object_mut(ro_id) {
-                    let result = self.widget.as_ref().unwrap().update_render_object(ro.as_mut());
+                    let result = self
+                        .widget
+                        .as_ref()
+                        .unwrap()
+                        .update_render_object(ro.as_mut());
                     if result.contains(UpdateResult::LAYOUT) {
                         context.mark_needs_layout(ro_id);
                     }
@@ -319,14 +337,23 @@ impl Element for FocusElement {
         }
     }
 
-    fn child_mounted(&mut self, _slot: Option<usize>, child_ro: Option<RenderObjectKey>, context: &mut ElementContext) {
+    fn child_mounted(
+        &mut self,
+        _slot: Option<usize>,
+        child_ro: Option<RenderObjectKey>,
+        context: &mut ElementContext,
+    ) {
         if let Some(child_ro_key) = child_ro {
             self.insert_child_render_object(child_ro_key, context);
         }
     }
 
-    fn focus_attachment(&self) -> &Option<FocusAttachment> { &self.focus_attachment }
-    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> { &mut self.focus_attachment }
+    fn focus_attachment(&self) -> &Option<FocusAttachment> {
+        &self.focus_attachment
+    }
+    fn focus_attachment_mut(&mut self) -> &mut Option<FocusAttachment> {
+        &mut self.focus_attachment
+    }
 }
 
 #[cfg(test)]
@@ -350,16 +377,13 @@ mod tests {
 
     #[test]
     fn test_focus_on_focus_change() {
-        let focus = Focus::new(Text::new("Hello"))
-            .on_focus_change(|_focused| {});
+        let focus = Focus::new(Text::new("Hello")).on_focus_change(|_focused| {});
         assert!(focus.on_focus_change.is_some());
     }
 
     #[test]
     fn test_focus_key_delegates_to_child() {
-        let focus = Focus::new(
-            Text::new("Hello").with_key("my-key")
-        );
+        let focus = Focus::new(Text::new("Hello").with_key("my-key"));
         assert!(focus.key().is_some());
     }
 

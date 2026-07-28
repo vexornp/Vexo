@@ -12,14 +12,11 @@ use super::id::ElementKey;
 use super::id::RenderObjectKey;
 use super::inherited_registry::{InheritedMap, InheritedRegistry};
 use super::key::WidgetKey;
-use super::render_object::{
-    HitTestContext, LayoutContext, LayoutResult, PaintContext, RenderObject,
-};
+use super::render_object::RenderObject;
 use super::widgets::Widget;
 use super::EventContext;
 use crate::animation::AnimationTicker;
 use crate::input::InputEvent;
-use crate::render::RenderCommand;
 
 // ============================================================================
 // COMPONENT STATE TRAIT
@@ -862,150 +859,6 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 }
 
 // ============================================================================
-// PROXY RENDER OBJECT
-// ============================================================================
-
-/// Proxy render object for StatefulElement and InheritedWidget.
-///
-/// StatefulElement and InheritedElement don't render themselves — they
-/// delegate painting to their child. ProxyRenderObject is a **true layout
-/// pass-through**: it does NOT create a Taffy node of its own. Instead, it
-/// returns the child's Taffy node from `layout()`, so the layout engine
-/// links the grandparent directly to the grandchild — no intervening
-/// container to size to content and break the fill chain.
-///
-/// This matches `Offstage`-onstage, `Opacity`, and `FractionalTranslation`.
-///
-/// - No paint commands (invisible)
-/// - Bounds-based hit test (reads the shared Taffy node's computed bounds)
-/// - `is_pass_through() == true` (no owned Taffy node to clean up on removal)
-///
-/// # Coordinate handling in the painter / hit test
-///
-/// Because the proxy shares its child's Taffy node, both the proxy and its
-/// child read the *same* `computed_bounds` (origin relative to the Taffy
-/// *grandparent*). The painter and hit test apply a correction for
-/// pass-through ROs — subtracting `position_in_parent` when recursing into
-/// children — to avoid double-counting the shared offset. See
-/// `painter::paint_recursive` and `hit_test::hit_test_recursive`.
-pub struct ProxyRenderObject {
-    child: Option<RenderObjectKey>,
-    computed_bounds: Option<crate::core::Bounds<crate::core::Logical>>,
-    /// The child's Taffy node, returned to the parent so the grandparent
-    /// links the grandchild directly. `None` until `layout()` runs.
-    child_layout_node: Option<crate::layout::LayoutNodeKey>,
-}
-
-impl ProxyRenderObject {
-    /// Create a new ProxyRenderObject.
-    pub fn new() -> Self {
-        Self {
-            child: None,
-            computed_bounds: None,
-            child_layout_node: None,
-        }
-    }
-}
-
-impl Default for ProxyRenderObject {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RenderObject for ProxyRenderObject {
-    fn layout(
-        &mut self,
-        ctx: &mut LayoutContext,
-        child_nodes: &[crate::layout::LayoutNodeKey],
-    ) -> LayoutResult {
-        // Pass-through: return the child's node directly. No intervening
-        // container — the grandparent links the grandchild's Taffy node.
-        //
-        // StatefulElement and InheritedElement always have exactly one
-        // child. The defensive `None` case creates a throwaway zero-size
-        // leaf to avoid panicking on framework edge cases.
-        match child_nodes.first() {
-            Some(&child_node) => {
-                self.child_layout_node = Some(child_node);
-                LayoutResult {
-                    node: child_node,
-                    size: crate::core::Size::zero(),
-                }
-            }
-            None => {
-                let node = ctx.engine().create_leaf(&crate::layout::Layout::default());
-                self.child_layout_node = Some(node);
-                LayoutResult {
-                    node,
-                    size: crate::core::Size::zero(),
-                }
-            }
-        }
-    }
-
-    fn apply_layout(&mut self, ctx: &mut LayoutContext) {
-        if let Some(node) = self.child_layout_node {
-            if let Some(computed) = ctx.engine_ref().get_layout(node) {
-                self.computed_bounds = Some(computed.bounds);
-            }
-        }
-    }
-
-    fn is_pass_through(&self) -> bool {
-        true
-    }
-
-    fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
-        Vec::new()
-    }
-
-    fn hit_test(
-        &self,
-        position: crate::core::Point<crate::core::Logical>,
-        _ctx: &HitTestContext,
-    ) -> bool {
-        match &self.computed_bounds {
-            Some(bounds) => bounds.contains(&position),
-            None => false,
-        }
-    }
-
-    fn children(&self) -> &[RenderObjectKey] {
-        match &self.child {
-            Some(child) => std::slice::from_ref(child),
-            None => &[],
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn set_child_id(&mut self, child: RenderObjectKey) {
-        self.child = Some(child);
-    }
-
-    fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
-        if self.child == Some(old) {
-            self.child = Some(new);
-        }
-    }
-
-    fn layout_node(&self) -> Option<crate::layout::LayoutNodeKey> {
-        self.child_layout_node
-    }
-
-    fn computed_bounds(&self) -> Option<crate::core::Bounds<crate::core::Logical>> {
-        self.computed_bounds
-    }
-}
-
-// ============================================================================
 // WIDGET TRAIT IMPLEMENTATION FOR COMPONENT
 // ============================================================================
 
@@ -1031,7 +884,7 @@ impl<W: Component + Clone + 'static> Widget for W {
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(ProxyRenderObject::new())
+        Box::new(crate::render_objects::ProxyRenderObject::new())
     }
 
     fn as_any(&self) -> &dyn Any {

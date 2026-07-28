@@ -184,13 +184,9 @@ pub use render_object::{
     note = "Internal API — framework-managed, not for direct use"
 )]
 pub use render_objects::{
-    ContainerRenderObject, ImageRenderObject, TextEditRenderObject, TextRenderObject,
+    ContainerRenderObject, ImageRenderObject, ProxyRenderObject, TextEditRenderObject,
+    TextRenderObject,
 };
-#[deprecated(
-    since = "0.x",
-    note = "Internal API — framework-managed, not for direct use"
-)]
-pub use stateful_widget::ProxyRenderObject;
 #[deprecated(
     since = "0.x",
     note = "Internal API — framework-managed, not for direct use"

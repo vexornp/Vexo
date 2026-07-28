@@ -116,7 +116,7 @@ macro_rules! impl_widget_for_inherited {
             }
 
             fn create_render_object(&self) -> Box<dyn $crate::render_object::RenderObject> {
-                Box::new($crate::stateful_widget::ProxyRenderObject::new())
+                Box::new($crate::render_objects::ProxyRenderObject::new())
             }
 
             fn as_any(&self) -> &dyn::std::any::Any {

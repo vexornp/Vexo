@@ -17,7 +17,7 @@ use crate::focus::attachment::FocusAttachment;
 use crate::id::{ElementKey, RenderObjectKey};
 use crate::key::WidgetKey;
 use crate::render_object::RenderObject;
-use crate::stateful_widget::ProxyRenderObject;
+use crate::render_objects::ProxyRenderObject;
 use crate::update_result::UpdateResult;
 use crate::widgets::Widget;
 
