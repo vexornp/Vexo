@@ -411,8 +411,9 @@ pub trait Component: Sized + 'static {
     /// The mutable state type that persists across rebuilds.
     ///
     /// Must implement `ComponentState + Default` for initialization and lifecycle.
-    /// The blanket `impl<T: Default + 'static> ComponentState for T {}` ensures
-    /// backward compatibility with plain `Default` state types.
+    /// For stateless components, use `SimpleState<()>` (or `SimpleState<T>` to
+    /// stash plain non-reactive state) — it provides a no-op `ComponentState`
+    /// impl with `Deref`/`DerefMut` access to the inner value.
     type State: ComponentState + Default;
 
     /// Build the widget tree using current state.
