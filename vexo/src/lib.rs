@@ -116,6 +116,8 @@ mod inherited_integration_test;
 mod root_signal_cascade_test;
 #[cfg(test)]
 mod window_integration_test;
+#[cfg(test)]
+mod text_max_lines_integration_test;
 
 // --- Re-exports from former retain/ ---
 
