@@ -253,7 +253,9 @@ mod tests {
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
     use vexo::layout::TaffyLayoutEngine;
-    use vexo::{RenderObjectRegistry, Signal, ThreeTreePipeline};
+    use vexo::{
+        RenderObjectKey, RenderObjectRegistry, Signal, TextRenderObject, ThreeTreePipeline,
+    };
 
     fn seed_messages_signal() -> Signal<std::collections::HashMap<ConvId, Vec<Message>>> {
         crate::data::seed().messages.clone()
@@ -300,7 +302,7 @@ mod tests {
         let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal, |map| {
+            messages: Signal::derive(messages_signal.clone(), |map| {
                 map.get(&ConvId(1)).cloned().unwrap_or_default()
             }),
             avatar_bytes: seed_avatar(ConvId(1)),
@@ -315,6 +317,56 @@ mod tests {
             pipeline.element_registry().len() > 4,
             "expected multiple elements for 3 messages read from derived signal, got {}",
             pipeline.element_registry().len()
+        );
+
+        // Send a new message via the root Signal — this exercises the full
+        // derive chain: root `set_from` → derived Signal's subscriber closure
+        // → ChatScreen's `signal_value` dependency is marked dirty →
+        // `perform_rebuilds()` re-renders and the new bubble appears.
+        let mut updated_map = messages_signal.get_cloned();
+        let new_message_text = "LIVE_UPDATE_TEST_MESSAGE";
+        updated_map.get_mut(&ConvId(1)).unwrap().push(Message {
+            author: MessageAuthor::Me,
+            text: new_message_text.to_string(),
+            timestamp: 1732348000,
+        });
+        messages_signal.set_from(&updated_map);
+        pipeline.perform_rebuilds();
+
+        // Walk the render tree and assert the new message text appears in a
+        // TextRenderObject. `RenderObjectRegistry` exposes no `iter()`, so
+        // recurse from the root (same pattern as the
+        // `test_signal_value_registers_dependency_and_rebuilds` test in
+        // `vexo/src/stateful_widget.rs`).
+        fn find_text_in_tree(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            needle: &str,
+        ) -> bool {
+            let ro = match reg.get(key) {
+                Some(ro) => ro,
+                None => return false,
+            };
+            if ro
+                .as_any()
+                .downcast_ref::<TextRenderObject>()
+                .map_or(false, |t| t.content().contains(needle))
+            {
+                return true;
+            }
+            for &child in ro.children() {
+                if find_text_in_tree(reg, child, needle) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("render tree should have a root");
+        assert!(
+            find_text_in_tree(ro_reg, root, new_message_text),
+            "new message text should appear in render tree after signal set + rebuild"
         );
     }
 

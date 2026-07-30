@@ -25,11 +25,17 @@ impl<T> SignalInner<T> {
         if let Some(callback) = on_change {
             callback();
         }
-        let subs = self.subscribers.lock().unwrap();
-        for weak in subs.iter() {
-            if let Some(cb) = weak.upgrade() {
-                cb();
-            }
+        // Snapshot live subscribers under the lock, then drop the lock before
+        // invoking callbacks. This prevents re-entrant `set`/`set_from` on the
+        // same Signal (e.g. a derived-Signal closure that re-reads the parent)
+        // from deadlocking — Rust's `Mutex` is non-reentrant. Dead weaks are
+        // naturally filtered out since `Weak::upgrade` returns `None`.
+        let live: Vec<Arc<dyn Fn() + Send + Sync>> = {
+            let subs = self.subscribers.lock().unwrap();
+            subs.iter().filter_map(|w| w.upgrade()).collect()
+        };
+        for cb in &live {
+            cb();
         }
     }
 }
