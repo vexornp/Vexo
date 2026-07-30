@@ -1545,4 +1545,72 @@ mod tests {
         let deps = reg.dependents_for(provider_key);
         assert!(deps.contains(&element_id));
     }
+
+    #[test]
+    fn test_signal_value_registers_dependency_and_rebuilds() {
+        use crate::animation::AnimationTicker;
+        use crate::render_objects::TextRenderObject;
+        use crate::ThreeTreePipeline;
+
+        let external_signal = Signal::new(0u32);
+
+        #[derive(Clone)]
+        struct Reader {
+            signal: Signal<u32>,
+        }
+        #[derive(Default)]
+        struct ReaderState;
+        impl ComponentState for ReaderState {}
+        impl Component for Reader {
+            type State = ReaderState;
+            fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+                let val = ctx.signal_value(&self.signal);
+                Text::new(format!("val={}", val)).boxed()
+            }
+        }
+
+        let view = Reader {
+            signal: external_signal.clone(),
+        }
+        .boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+
+        external_signal.set(42);
+        pipeline.perform_rebuilds();
+
+        // `RenderObjectRegistry` exposes no immutable `iter()`, so walk the
+        // render object tree from its root looking for a `TextRenderObject`
+        // whose content reflects the rebuilt value.
+        fn find_text_content(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            needle: &str,
+        ) -> bool {
+            let ro = match reg.get(key) {
+                Some(ro) => ro,
+                None => return false,
+            };
+            if ro
+                .as_any()
+                .downcast_ref::<TextRenderObject>()
+                .map_or(false, |t| t.content().contains(needle))
+            {
+                return true;
+            }
+            for &child in ro.children() {
+                if find_text_content(reg, child, needle) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("render tree should have a root");
+        assert!(
+            find_text_content(ro_reg, root, "val=42"),
+            "Reader should rebuild with val=42 after signal set"
+        );
+    }
 }
