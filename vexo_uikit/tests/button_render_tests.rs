@@ -16,7 +16,13 @@ fn create_render_context<'a>(
     inherited_map: &'a InheritedMap,
     inherited_registry: &'a InheritedRegistry,
 ) -> RenderContext<'a> {
-    RenderContext::new(element_id, build_owner, inherited_map, inherited_registry)
+    RenderContext::new(
+        element_id,
+        build_owner,
+        inherited_map,
+        inherited_registry,
+        std::sync::Arc::new(|| {}),
+    )
 }
 
 /// Render a Button and return the widget tree, with a throwaway RenderContext.
