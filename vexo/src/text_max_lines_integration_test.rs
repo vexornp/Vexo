@@ -1,7 +1,5 @@
-//! Integration test: Text widget with max_lines produces truncated
-//! RenderCommand::Text content through the full pipeline.
+//! Integration test: Text widget wires max_lines through to TextRenderObject.
 
-use crate::render_object::RenderObject;
 use crate::render_objects::TextRenderObject;
 use crate::widgets::{Text, Widget};
 
