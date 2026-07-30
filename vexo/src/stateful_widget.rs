@@ -17,6 +17,7 @@ use super::widgets::Widget;
 use super::EventContext;
 use crate::animation::AnimationTicker;
 use crate::input::InputEvent;
+use crate::reactive::Signal;
 
 // ============================================================================
 // COMPONENT STATE TRAIT
@@ -308,6 +309,11 @@ pub struct RenderContext<'a> {
     /// Pipeline-owned registry; `depend_on_inherited_widget` uses interior
     /// mutability to register the caller as a dependent.
     inherited_registry: &'a InheritedRegistry,
+
+    /// Closure that marks this element dirty (sends its element_id through
+    /// the dirty channel). `signal_value` registers a clone of this `Arc`
+    /// as a subscriber so `Signal::set` triggers a rebuild of this element.
+    dirty_callback: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// Snapshot of all three platform sources, read by the root `MediaQuery`
@@ -330,12 +336,14 @@ impl<'a> RenderContext<'a> {
         build_owner: &'a BuildOwner,
         inherited_map: &'a InheritedMap,
         inherited_registry: &'a InheritedRegistry,
+        dirty_callback: Arc<dyn Fn() + Send + Sync>,
     ) -> Self {
         Self {
             element_id,
             build_owner,
             inherited_map,
             inherited_registry,
+            dirty_callback,
         }
     }
 
@@ -367,6 +375,23 @@ impl<'a> RenderContext<'a> {
         self.inherited_registry
             .add_dependent(provider, type_id, self.element_id);
         Some(value)
+    }
+
+    /// Read a `Signal<T>` and register this element as a subscriber so that
+    /// `Signal::set` (or a parent `Signal::derive` propagation) marks this
+    /// element dirty and triggers a rebuild.
+    ///
+    /// This is the read-tracking entry point used inside `Component::render`.
+    /// Calling it during a rebuild establishes the dependency edge; the
+    /// subscriber is held weakly by the `Signal`, so it disappears when the
+    /// element unmounts and the `dirty_callback`'s `Arc` is dropped.
+    pub fn signal_value<T: PartialEq + Clone + Send + Sync + 'static>(
+        &mut self,
+        signal: &Signal<T>,
+    ) -> T {
+        let value = signal.get_cloned();
+        signal.add_subscriber(&self.dirty_callback);
+        value
     }
 }
 
@@ -522,9 +547,15 @@ impl<W: Component + Clone> StatefulElement<W> {
         build_owner: &BuildOwner,
         inherited_map: &InheritedMap,
         inherited_registry: &InheritedRegistry,
+        dirty_callback: Arc<dyn Fn() + Send + Sync>,
     ) -> Box<dyn Widget> {
-        let mut render_ctx =
-            RenderContext::new(element_id, build_owner, inherited_map, inherited_registry);
+        let mut render_ctx = RenderContext::new(
+            element_id,
+            build_owner,
+            inherited_map,
+            inherited_registry,
+            dirty_callback,
+        );
         self.widget.render(state, &mut render_ctx)
     }
 }
@@ -600,7 +631,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         let mut lifecycle_ctx = LifecycleContext::new(
             context.build_owner,
             &self.widget as &dyn Any,
-            dirty_callback,
+            dirty_callback.clone(),
             context.animation_ticker.clone(),
         );
         state.on_mount(&mut lifecycle_ctx);
@@ -630,6 +661,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
+                dirty_callback,
             )
         };
 
@@ -656,16 +688,18 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         // Call ComponentState::on_update() lifecycle hook.
         // The widget has already been updated to the new instance.
         // State can compare old vs. new controllers and re-wire callbacks.
-        {
+        let dirty_callback: Arc<dyn Fn() + Send + Sync> = {
             let tx = context.dirty_sender.clone();
-            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            Arc::new(move || {
                 let _ = tx.send(element_id);
-            });
+            })
+        };
+        {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let mut lifecycle_ctx = LifecycleContext::new(
                 context.build_owner,
                 &self.widget as &dyn Any,
-                dirty_callback,
+                dirty_callback.clone(),
                 context.animation_ticker.clone(),
             );
             state_ref.on_update(&old_widget as &dyn Any, &mut lifecycle_ctx);
@@ -692,6 +726,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
+                dirty_callback,
             )
         };
 
@@ -777,16 +812,18 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         // Fire on_rebuild before building the child widget. This is the
         // only place state-driven side-effects run.
-        {
+        let dirty_callback: Arc<dyn Fn() + Send + Sync> = {
             let tx = context.dirty_sender.clone();
-            let dirty_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            Arc::new(move || {
                 let _ = tx.send(element_id);
-            });
+            })
+        };
+        {
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             let mut lifecycle_ctx = LifecycleContext::new(
                 context.build_owner,
                 &self.widget as &dyn Any,
-                dirty_callback,
+                dirty_callback.clone(),
                 context.animation_ticker.clone(),
             );
             state_ref.on_rebuild(&mut lifecycle_ctx);
@@ -801,6 +838,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
                 context.build_owner,
                 context.inherited_map,
                 context.inherited_registry,
+                dirty_callback,
             )
         };
 
@@ -1361,17 +1399,35 @@ mod tests {
         let empty_map = InheritedMap::empty();
 
         // Not focused initially
-        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
+        let ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+            std::sync::Arc::new(|| {}),
+        );
         assert!(!ctx.is_focused());
 
         // Set this element as focused
         build_owner.set_focused_element(Some(element_id));
-        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
+        let ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+            std::sync::Arc::new(|| {}),
+        );
         assert!(ctx.is_focused());
 
         // Clear focus
         build_owner.set_focused_element(None);
-        let ctx = RenderContext::new(element_id, &build_owner, &empty_map, &inherited_registry);
+        let ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &empty_map,
+            &inherited_registry,
+            std::sync::Arc::new(|| {}),
+        );
         assert!(!ctx.is_focused());
     }
 
@@ -1413,7 +1469,13 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
+        let mut ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &map,
+            &reg,
+            std::sync::Arc::new(|| {}),
+        );
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, Some(42));
@@ -1427,7 +1489,13 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
+        let mut ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &map,
+            &reg,
+            std::sync::Arc::new(|| {}),
+        );
 
         let v = ctx.depend_on_inherited_widget::<u32>();
         assert_eq!(v, None);
@@ -1444,7 +1512,13 @@ mod tests {
         let build_owner = BuildOwner::new();
         let element_id = make_element_key();
 
-        let mut ctx = RenderContext::new(element_id, &build_owner, &map, &reg);
+        let mut ctx = RenderContext::new(
+            element_id,
+            &build_owner,
+            &map,
+            &reg,
+            std::sync::Arc::new(|| {}),
+        );
 
         let _ = ctx.depend_on_inherited_widget::<u32>();
 

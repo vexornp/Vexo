@@ -254,7 +254,13 @@ mod tests {
         let build_owner = BuildOwner::new();
         let map = InheritedMap::empty();
         let reg = InheritedRegistry::new();
-        let mut ctx = RenderContext::new(make_element_key(), &build_owner, &map, &reg);
+        let mut ctx = RenderContext::new(
+            make_element_key(),
+            &build_owner,
+            &map,
+            &reg,
+            std::sync::Arc::new(|| {}),
+        );
 
         // First render: closure invoked, cache populated.
         let _w1 = memo.render(&mut state, &mut ctx);
@@ -280,7 +286,13 @@ mod tests {
         let build_owner = BuildOwner::new();
         let map = InheritedMap::empty();
         let reg = InheritedRegistry::new();
-        let mut ctx = RenderContext::new(make_element_key(), &build_owner, &map, &reg);
+        let mut ctx = RenderContext::new(
+            make_element_key(),
+            &build_owner,
+            &map,
+            &reg,
+            std::sync::Arc::new(|| {}),
+        );
 
         // First render with deps=1: closure invoked.
         let _w1 = memo.render(&mut state, &mut ctx);
