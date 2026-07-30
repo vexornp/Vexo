@@ -46,6 +46,13 @@ pub struct TextRenderObject {
     /// subpixel rounding.
     natural_text_width: Option<f32>,
     layout_node: Option<LayoutNodeKey>,
+    /// Maximum number of visible lines. None = unlimited.
+    max_lines: Option<u32>,
+    /// Content after ellipsis truncation, computed in apply_layout.
+    /// None until apply_layout runs, or when max_lines is None.
+    truncated_content: Option<String>,
+    /// Line count of the truncated content.
+    truncated_line_count: Option<usize>,
 }
 
 impl TextRenderObject {
@@ -61,6 +68,9 @@ impl TextRenderObject {
             measured_text_height: None,
             natural_text_width: None,
             layout_node: None,
+            max_lines: None,
+            truncated_content: None,
+            truncated_line_count: None,
         }
     }
 
@@ -88,6 +98,28 @@ impl TextRenderObject {
     pub fn with_font_family(mut self, family: Option<String>) -> Self {
         self.font_family = family;
         self
+    }
+
+    /// Set the maximum number of visible lines. `None` = unlimited.
+    pub fn with_max_lines(mut self, max_lines: Option<u32>) -> Self {
+        self.max_lines = max_lines.map(|n| n.max(1));
+        self
+    }
+
+    /// Get the max lines, if any.
+    pub fn max_lines(&self) -> Option<u32> {
+        self.max_lines
+    }
+
+    /// Set the max lines. Returns true if it changed.
+    pub fn set_max_lines(&mut self, max_lines: Option<u32>) -> bool {
+        let clamped = max_lines.map(|n| n.max(1));
+        if self.max_lines != clamped {
+            self.max_lines = clamped;
+            true
+        } else {
+            false
+        }
     }
 
     /// Get the text content.
@@ -170,7 +202,7 @@ impl RenderObject for TextRenderObject {
             font_size: self.font_size,
             line_height: self.line_height,
             font_family: self.font_family.clone(),
-            max_lines: None,
+            max_lines: self.max_lines,
         });
 
         let layout = Layout::default();
@@ -201,41 +233,60 @@ impl RenderObject for TextRenderObject {
         if let Some(node) = self.layout_node {
             if let Some(computed) = ctx.engine_ref().get_layout(node) {
                 self.computed_bounds = Some(computed.bounds);
-                // Measure the actual (possibly wrapped) text height at the
-                // final box width. Paint tells glyphon to wrap at
-                // `bounds.width()`, so the centered text must use the same
-                // wrapped height — otherwise multi-line text is centered as a
-                // single line and overflows the box, overlapping siblings.
-                let mut measurer = TextMeasurer::new(ctx.font_system());
-                let fam = self.font_family.as_deref();
-                let natural = measurer.measure(
-                    &self.content,
-                    self.font_size,
-                    self.line_height,
-                    fam,
-                    None,
-                    None,
-                );
-                // Taffy floors layout widths to integers, so a text whose
-                // natural width is e.g. 41.51 may receive box_w=41, which
-                // would spuriously trigger wrapping. Treat the box as
-                // unbounded when the natural width fits within tolerance.
-                let box_w = computed.bounds.width();
-                let effective_max = if natural.width <= box_w + LAYOUT_WIDTH_TOLERANCE {
-                    None
-                } else {
-                    Some(box_w)
+
+                // Scope the measurer so its &mut FontSystem borrow ends before
+                // truncate_with_ellipsis borrows ctx.font_system() again.
+                let (natural_width, effective_max, measured_height) = {
+                    let mut measurer = TextMeasurer::new(ctx.font_system());
+                    let fam = self.font_family.as_deref();
+                    let natural = measurer.measure(
+                        &self.content,
+                        self.font_size,
+                        self.line_height,
+                        fam,
+                        None,
+                        None,
+                    );
+                    let box_w = computed.bounds.width();
+                    let effective_max = if natural.width <= box_w + LAYOUT_WIDTH_TOLERANCE {
+                        None
+                    } else {
+                        Some(box_w)
+                    };
+                    let size = measurer.measure(
+                        &self.content,
+                        self.font_size,
+                        self.line_height,
+                        fam,
+                        effective_max,
+                        None,
+                    );
+                    (natural.width, effective_max, size.height)
                 };
-                let size = measurer.measure(
-                    &self.content,
-                    self.font_size,
-                    self.line_height,
-                    fam,
-                    effective_max,
-                    None,
-                );
-                self.measured_text_height = Some(size.height);
-                self.natural_text_width = Some(natural.width);
+
+                self.measured_text_height = Some(measured_height);
+                self.natural_text_width = Some(natural_width);
+
+                // Compute truncated content when max_lines is set.
+                if let Some(max_lines) = self.max_lines {
+                    let fam = self.font_family.as_deref();
+                    let truncation = crate::text_overflow::truncate_with_ellipsis(
+                        &self.content,
+                        self.font_size,
+                        self.line_height,
+                        fam,
+                        effective_max,
+                        max_lines,
+                        ctx.font_system(),
+                    );
+                    self.truncated_content = Some(truncation.content);
+                    self.truncated_line_count = Some(truncation.line_count);
+                    self.measured_text_height =
+                        Some(truncation.line_count as f32 * self.font_size * self.line_height);
+                } else {
+                    self.truncated_content = None;
+                    self.truncated_line_count = None;
+                }
             }
         }
     }
@@ -251,22 +302,30 @@ impl RenderObject for TextRenderObject {
                 // than the text's actual height. Use the wrapped height measured
                 // in `apply_layout` (at `bounds.width()`), falling back to a
                 // single line if measurement is unavailable.
-                let text_height = self
-                    .measured_text_height
-                    .unwrap_or(self.font_size * self.line_height);
+                let text_height = if let Some(line_count) = self.truncated_line_count {
+                    line_count as f32 * self.font_size * self.line_height
+                } else {
+                    self.measured_text_height
+                        .unwrap_or(self.font_size * self.line_height)
+                };
                 let vertical_offset = ((bounds.height() - text_height) / 2.0).max(0.0);
 
                 let text_pos = Point::new(pos.x, pos.y + vertical_offset);
-                // Match apply_layout's tolerance: Taffy floors layout widths
-                // to integers, so a box slightly narrower than the natural
-                // text width must not trigger wrapping at paint time. Pass
-                // None (no wrap) when the natural width fits within tolerance.
-                let max_width = match self.natural_text_width {
-                    Some(natural_w) if natural_w <= bounds.width() + LAYOUT_WIDTH_TOLERANCE => None,
-                    _ => Some(bounds.width()),
+                let max_width = if self.truncated_content.is_some() {
+                    Some(bounds.width())
+                } else {
+                    match self.natural_text_width {
+                        Some(natural_w) if natural_w <= bounds.width() + LAYOUT_WIDTH_TOLERANCE => {
+                            None
+                        }
+                        _ => Some(bounds.width()),
+                    }
                 };
                 commands.push(RenderCommand::Text {
-                    content: self.content.clone(),
+                    content: self
+                        .truncated_content
+                        .clone()
+                        .unwrap_or_else(|| self.content.clone()),
                     position: text_pos,
                     font_size: self.font_size,
                     color: self.color,
@@ -472,5 +531,92 @@ mod tests {
             _ => None,
         });
         assert_eq!(family, Some(None));
+    }
+
+    #[test]
+    fn test_text_render_object_with_max_lines() {
+        let ro = TextRenderObject::new("Hello").with_max_lines(Some(2));
+        assert_eq!(ro.max_lines(), Some(2));
+    }
+
+    #[test]
+    fn test_text_render_object_set_max_lines_change_detection() {
+        let mut ro = TextRenderObject::new("Hello");
+        assert!(ro.set_max_lines(Some(2)));
+        assert!(!ro.set_max_lines(Some(2)));
+        assert!(ro.set_max_lines(None));
+    }
+
+    #[test]
+    fn test_text_render_object_set_max_lines_clamps() {
+        let mut ro = TextRenderObject::new("Hello");
+        ro.set_max_lines(Some(0));
+        assert_eq!(ro.max_lines(), Some(1));
+    }
+
+    #[test]
+    fn test_text_render_object_apply_layout_truncates() {
+        let mut obj = TextRenderObject::new("This is a long text that should be truncated to fit")
+            .with_font_size(24.0)
+            .with_max_lines(Some(1));
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let _result = obj.layout(&mut ctx, &[]);
+        }
+
+        let text_node = obj.layout_node.expect("layout node should be set");
+        engine.compute(text_node, Size::new(100.0, 600.0), &mut font_system);
+
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
+        }
+
+        let truncated = obj
+            .truncated_content
+            .as_ref()
+            .expect("truncated_content should be set after apply_layout with max_lines");
+        assert!(
+            truncated.ends_with('…'),
+            "truncated content should end with …, got: {}",
+            truncated
+        );
+    }
+
+    #[test]
+    fn test_text_render_object_paint_emits_truncated_content() {
+        let mut ro = TextRenderObject::new("Hello World").with_max_lines(Some(1));
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+        ro.truncated_content = Some("Hello…".to_string());
+        ro.truncated_line_count = Some(1);
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        let text_cmd = cmds.iter().find_map(|c| match c {
+            RenderCommand::Text { content, .. } => Some(content.clone()),
+            _ => None,
+        });
+        assert_eq!(text_cmd, Some("Hello…".to_string()));
+    }
+
+    #[test]
+    fn test_text_render_object_paint_falls_back_to_content_when_no_truncation() {
+        let mut ro = TextRenderObject::new("Hello World");
+        ro.computed_bounds = Some(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0));
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let cmds = ro.paint(&mut ctx);
+
+        let text_cmd = cmds.iter().find_map(|c| match c {
+            RenderCommand::Text { content, .. } => Some(content.clone()),
+            _ => None,
+        });
+        assert_eq!(text_cmd, Some("Hello World".to_string()));
     }
 }

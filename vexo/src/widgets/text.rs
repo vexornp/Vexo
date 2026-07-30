@@ -18,6 +18,7 @@ pub struct Text {
     /// [`crate::Application::register_fonts`]); when `None`, the framework
     /// default is used.
     font_family: Option<String>,
+    max_lines: Option<u32>,
 }
 
 impl Text {
@@ -29,6 +30,7 @@ impl Text {
             font_size: 24.0,
             color: Color::BLACK,
             font_family: None,
+            max_lines: None,
         }
     }
 
@@ -66,6 +68,18 @@ impl Text {
         self
     }
 
+    /// Set the maximum number of visible lines. Truncation appends `…`.
+    /// Values < 1 are clamped to 1.
+    pub fn with_max_lines(mut self, max_lines: u32) -> Self {
+        self.max_lines = Some(max_lines.max(1));
+        self
+    }
+
+    /// Get the max lines, if any.
+    pub fn max_lines(&self) -> Option<u32> {
+        self.max_lines
+    }
+
     /// Get the text content.
     pub fn content(&self) -> &str {
         &self.content
@@ -95,6 +109,7 @@ impl Clone for Text {
             font_size: self.font_size,
             color: self.color,
             font_family: self.font_family.clone(),
+            max_lines: self.max_lines,
         }
     }
 }
@@ -115,7 +130,8 @@ impl Widget for Text {
             TextRenderObject::new(&self.content)
                 .with_font_size(self.font_size)
                 .with_color(self.color)
-                .with_font_family(self.font_family.clone()),
+                .with_font_family(self.font_family.clone())
+                .with_max_lines(self.max_lines),
         )
     }
 
@@ -139,6 +155,9 @@ impl Widget for Text {
                 result |= UpdateResult::PAINT;
             }
             if text_ro.set_font_family(self.font_family.clone()) {
+                result |= UpdateResult::LAYOUT;
+            }
+            if text_ro.set_max_lines(self.max_lines) {
                 result |= UpdateResult::LAYOUT;
             }
             result
@@ -269,6 +288,50 @@ mod tests {
         ro.set_font_size(24.0);
         let result = widget.update_render_object(&mut ro);
         // family unchanged → no LAYOUT flag from family
+        assert!(!result.contains(UpdateResult::LAYOUT));
+    }
+
+    #[test]
+    fn test_text_widget_with_max_lines() {
+        let w = Text::new("Hello").with_max_lines(3);
+        assert_eq!(w.max_lines(), Some(3));
+    }
+
+    #[test]
+    fn test_text_widget_with_max_lines_clamps_to_one() {
+        let w = Text::new("Hello").with_max_lines(0);
+        assert_eq!(w.max_lines(), Some(1));
+    }
+
+    #[test]
+    fn test_text_widget_default_max_lines_is_none() {
+        let w = Text::new("Hello");
+        assert!(w.max_lines().is_none());
+    }
+
+    #[test]
+    fn test_text_widget_clone_preserves_max_lines() {
+        let w = Text::new("Hello").with_max_lines(2);
+        let cloned = w.clone();
+        assert_eq!(cloned.max_lines(), Some(2));
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_max_lines_change() {
+        let widget = Text::new("Hello").with_max_lines(2);
+        let mut ro = TextRenderObject::new("Hello");
+        ro.set_font_size(24.0);
+        let result = widget.update_render_object(&mut ro);
+        assert!(result.contains(UpdateResult::LAYOUT));
+        assert_eq!(ro.max_lines(), Some(2));
+    }
+
+    #[test]
+    fn test_text_widget_update_render_object_max_lines_no_change() {
+        let widget = Text::new("Hello").with_max_lines(2);
+        let mut ro = TextRenderObject::new("Hello").with_max_lines(Some(2));
+        ro.set_font_size(24.0);
+        let result = widget.update_render_object(&mut ro);
         assert!(!result.contains(UpdateResult::LAYOUT));
     }
 }
