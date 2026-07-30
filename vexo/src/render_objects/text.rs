@@ -279,10 +279,18 @@ impl RenderObject for TextRenderObject {
                         max_lines,
                         ctx.font_system(),
                     );
-                    self.truncated_content = Some(truncation.content);
-                    self.truncated_line_count = Some(truncation.line_count);
-                    self.measured_text_height =
-                        Some(truncation.line_count as f32 * self.font_size * self.line_height);
+                    if truncation.content != self.content {
+                        // Truncation occurred — use truncated content and height.
+                        self.truncated_content = Some(truncation.content);
+                        self.truncated_line_count = Some(truncation.line_count);
+                        self.measured_text_height = Some(truncation.height);
+                    } else {
+                        // No truncation — content fits within max_lines.
+                        // Keep measured_text_height from the measurer block above;
+                        // paint uses the natural_text_width tolerance logic.
+                        self.truncated_content = None;
+                        self.truncated_line_count = None;
+                    }
                 } else {
                     self.truncated_content = None;
                     self.truncated_line_count = None;
