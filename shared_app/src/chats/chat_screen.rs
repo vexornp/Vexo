@@ -6,7 +6,8 @@ use std::rc::Rc;
 use vexo::{
     children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
     Image, ImageData, Key, Layout, LifecycleContext, MultiChild, RenderContext, ScrollController,
-    ScrollView, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
+    ScrollView, Signal, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey,
+    WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
 
@@ -15,15 +16,7 @@ use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
-    /// Snapshot used solely for `should_rebuild()` change detection. May be
-    /// stale when the parent cascade (TabBar → NavigationStack) is blocked by
-    /// their own `should_rebuild()` — `render()` does NOT read from this.
-    pub(crate) messages: Vec<Message>,
-    /// Live data source backed by the messages `Signal`. `render()` reads
-    /// from this so that state-driven rebuilds (e.g. after `set_text` clears
-    /// the input) always show the latest messages, even when the parent
-    /// cascade hasn't delivered a fresh widget.
-    pub(crate) messages_reader: Rc<dyn Fn() -> Vec<Message>>,
+    pub(crate) messages: Signal<Vec<Message>>,
     pub(crate) avatar_bytes: Rc<[u8]>,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
@@ -35,7 +28,6 @@ impl Clone for ChatScreen {
         Self {
             conv_id: self.conv_id.clone(),
             messages: self.messages.clone(),
-            messages_reader: Rc::clone(&self.messages_reader),
             avatar_bytes: Rc::clone(&self.avatar_bytes),
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             on_send: Rc::clone(&self.on_send),
@@ -107,19 +99,18 @@ impl Component for ChatScreen {
 
     /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
     /// During keyboard animation, TabBar and NavigationStack cascade `update()`
-    /// to ChatScreen with fresh closure fields but identical data. Comparing
-    /// the messages snapshot lets the cascade stop here instead of rebuilding
-    /// 20+ message bubbles every frame.
+    /// to ChatScreen with fresh closure fields but identical data. Only
+    /// `conv_id` participates in identity — the `messages` Signal drives
+    /// state-driven rebuilds via `RenderContext::signal_value`, so the parent
+    /// cascade can stop here without re-rendering message bubbles.
     fn should_rebuild(&self, old: &Self) -> bool {
         self.conv_id != old.conv_id
-            || self.messages.len() != old.messages.len()
-            || self.messages != old.messages
     }
 
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
-        let messages = (self.messages_reader)();
+        let messages = ctx.signal_value(&self.messages);
 
         let mut list = MultiChild::empty(Layout::column().gap(8.0).padding(12.0));
         for msg in &messages {
@@ -262,37 +253,38 @@ mod tests {
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
     use vexo::layout::TaffyLayoutEngine;
-    use vexo::{RenderObjectRegistry, ThreeTreePipeline};
+    use vexo::{
+        RenderObjectKey, RenderObjectRegistry, Signal, TextRenderObject, ThreeTreePipeline,
+    };
+
+    fn seed_messages_signal() -> Signal<std::collections::HashMap<ConvId, Vec<Message>>> {
+        crate::data::seed().messages.clone()
+    }
+
+    fn seed_avatar(conv_id: ConvId) -> Rc<[u8]> {
+        crate::data::seed()
+            .conversations
+            .iter()
+            .find(|c| c.id == conv_id)
+            .unwrap()
+            .avatar_bytes
+            .clone()
+    }
+
+    fn seed_me_avatar() -> Rc<[u8]> {
+        crate::data::seed().profile.avatar_bytes.clone()
+    }
 
     #[test]
     fn test_chat_screen_renders_messages() {
-        let state = crate::data::seed();
-        let messages_signal = state.messages.clone();
-        let messages = state
-            .messages
-            .get_cloned()
-            .get(&ConvId(1))
-            .cloned()
-            .unwrap();
-        let avatar_bytes = state
-            .conversations
-            .iter()
-            .find(|c| c.id == ConvId(1))
-            .unwrap()
-            .avatar_bytes
-            .clone();
+        let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages,
-            messages_reader: Rc::new(move || {
-                messages_signal
-                    .get_cloned()
-                    .get(&ConvId(1))
-                    .cloned()
-                    .unwrap_or_default()
+            messages: Signal::derive(messages_signal, |map| {
+                map.get(&ConvId(1)).cloned().unwrap_or_default()
             }),
-            avatar_bytes,
-            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            avatar_bytes: seed_avatar(ConvId(1)),
+            me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
         }
@@ -306,33 +298,15 @@ mod tests {
     }
 
     #[test]
-    fn test_chat_screen_reads_live_messages_from_reader() {
-        // Regression for iOS send bug: when the parent cascade is blocked
-        // (TabBar/NavigationStack should_rebuild returns false), ChatScreen
-        // rebuilds via its own dirty mark (set_text). render() must read
-        // live messages from messages_reader, not the stale self.messages
-        // snapshot.
-        let state = crate::data::seed();
-        let messages_signal = state.messages.clone();
-        let avatar_bytes = state
-            .conversations
-            .iter()
-            .find(|c| c.id == ConvId(1))
-            .unwrap()
-            .avatar_bytes
-            .clone();
+    fn test_chat_screen_reads_live_messages_from_signal() {
+        let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages: vec![],
-            messages_reader: Rc::new(move || {
-                messages_signal
-                    .get_cloned()
-                    .get(&ConvId(1))
-                    .cloned()
-                    .unwrap_or_default()
+            messages: Signal::derive(messages_signal.clone(), |map| {
+                map.get(&ConvId(1)).cloned().unwrap_or_default()
             }),
-            avatar_bytes,
-            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            avatar_bytes: seed_avatar(ConvId(1)),
+            me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
         }
@@ -341,30 +315,71 @@ mod tests {
         pipeline.update(view);
         assert!(
             pipeline.element_registry().len() > 4,
-            "expected multiple elements for 3 messages read from reader, got {}",
+            "expected multiple elements for 3 messages read from derived signal, got {}",
             pipeline.element_registry().len()
+        );
+
+        // Send a new message via the root Signal — this exercises the full
+        // derive chain: root `set_from` → derived Signal's subscriber closure
+        // → ChatScreen's `signal_value` dependency is marked dirty →
+        // `perform_rebuilds()` re-renders and the new bubble appears.
+        let mut updated_map = messages_signal.get_cloned();
+        let new_message_text = "LIVE_UPDATE_TEST_MESSAGE";
+        updated_map.get_mut(&ConvId(1)).unwrap().push(Message {
+            author: MessageAuthor::Me,
+            text: new_message_text.to_string(),
+            timestamp: 1732348000,
+        });
+        messages_signal.set_from(&updated_map);
+        pipeline.perform_rebuilds();
+
+        // Walk the render tree and assert the new message text appears in a
+        // TextRenderObject. `RenderObjectRegistry` exposes no `iter()`, so
+        // recurse from the root (same pattern as the
+        // `test_signal_value_registers_dependency_and_rebuilds` test in
+        // `vexo/src/stateful_widget.rs`).
+        fn find_text_in_tree(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            needle: &str,
+        ) -> bool {
+            let ro = match reg.get(key) {
+                Some(ro) => ro,
+                None => return false,
+            };
+            if ro
+                .as_any()
+                .downcast_ref::<TextRenderObject>()
+                .map_or(false, |t| t.content().contains(needle))
+            {
+                return true;
+            }
+            for &child in ro.children() {
+                if find_text_in_tree(reg, child, needle) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("render tree should have a root");
+        assert!(
+            find_text_in_tree(ro_reg, root, new_message_text),
+            "new message text should appear in render tree after signal set + rebuild"
         );
     }
 
     #[test]
     fn test_chat_screen_input_bar_pinned_to_bottom_with_few_messages() {
-        // Regression: with zero messages, the input bar must be pinned to
-        // the bottom of the view, not floating right below the (empty)
-        // message list.
-        let state = crate::data::seed();
-        let avatar_bytes = state
-            .conversations
-            .iter()
-            .find(|c| c.id == ConvId(4))
-            .unwrap()
-            .avatar_bytes
-            .clone();
+        let empty_map: std::collections::HashMap<ConvId, Vec<Message>> =
+            std::collections::HashMap::new();
+        let empty_signal = Signal::new(empty_map);
         let chat = ChatScreen {
             conv_id: ConvId(4),
-            messages: vec![], // zero messages — minimal content
-            messages_reader: Rc::new(|| Vec::new()),
-            avatar_bytes,
-            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            messages: Signal::derive(empty_signal, |_| Vec::new()),
+            avatar_bytes: seed_avatar(ConvId(4)),
+            me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
         };
@@ -393,17 +408,9 @@ mod tests {
         }
 
         let proxy = find_child(ro_reg, root, 0).expect("proxy");
-        // Chat screen now wraps content in KeyboardAvoider (Component) →
-        // WithLayout → Memo (Component) → Shared (proxy) → DecoratedBox →
-        // MultiChild[scrollview, input_bar]. Each Component/Shared adds a
-        // proxy render object layer. Walk down through all proxy layers
-        // until we find the DecoratedBox.
         let mut current = proxy;
         let chat_decorated = loop {
             let child = find_child(ro_reg, current, 0).expect("child of proxy");
-            // Check if this child is the DecoratedBox (has 1 child that is the
-            // MultiChild column). We detect it by checking if its first child
-            // has multiple children (the column has [scrollview, input_bar]).
             if let Some(grandchild) = find_child(ro_reg, child, 0) {
                 if ro_reg
                     .get(grandchild)
@@ -411,7 +418,7 @@ mod tests {
                     .unwrap_or(0)
                     >= 2
                 {
-                    break child; // This is the DecoratedBox
+                    break child;
                 }
             }
             current = child;

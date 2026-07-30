@@ -2,124 +2,142 @@
 //!
 //! Provides `Signal<T>` which bridges futures-signals `Mutable<T>`
 //! with the Vexo BuildOwner for automatic dirty marking when state changes.
+//!
+//! In addition to the owning-element notification (`on_change` / `set_dirty_callback`),
+//! `Signal` supports read-tracking: `RenderContext::signal_value` registers the
+//! reader element as a subscriber, and `Signal::set` notifies all subscribers.
+//! `Signal::derive` creates a derived Signal that auto-updates from a parent.
 
 pub use futures_signals::signal::{Mutable, ReadOnlyMutable, SignalExt};
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
-/// Reactive state primitive — the Vexo equivalent of React's `useState` or Vue's `ref()`.
-///
-/// When `set()` is called and the value changes, the owning element is
-/// automatically marked dirty, triggering a rebuild on the next frame.
-///
-/// # Usage in ComponentState
-///
-/// ```ignore
-/// use vexo::Signal;
-///
-/// #[derive(ComponentState)]
-/// struct CounterState {
-///     count: Signal<u32>,
-/// }
-///
-/// impl Default for CounterState {
-///     fn default() -> Self {
-///         Self { count: Signal::new(0) }
-///     }
-/// }
-///
-/// // In a callback:
-/// state.count.set(5);  // Automatically marks element dirty
-/// ```
-///
-/// # Clone Semantics
-///
-/// `Signal<T>` uses Arc semantics — cloning creates a new handle
-/// to the same underlying value and dirty callback. This allows callbacks
-/// to capture clones and still trigger rebuilds.
+struct SignalInner<T> {
+    value: Mutable<T>,
+    on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    subscribers: Mutex<Vec<Weak<dyn Fn() + Send + Sync>>>,
+    owned_subscriptions: Mutex<Vec<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl<T> SignalInner<T> {
+    fn notify(&self) {
+        let on_change = self.on_change.lock().unwrap().clone();
+        if let Some(callback) = on_change {
+            callback();
+        }
+        // Snapshot live subscribers under the lock, then drop the lock before
+        // invoking callbacks. This prevents re-entrant `set`/`set_from` on the
+        // same Signal (e.g. a derived-Signal closure that re-reads the parent)
+        // from deadlocking — Rust's `Mutex` is non-reentrant. Dead weaks are
+        // naturally filtered out since `Weak::upgrade` returns `None`.
+        let live: Vec<Arc<dyn Fn() + Send + Sync>> = {
+            let subs = self.subscribers.lock().unwrap();
+            subs.iter().filter_map(|w| w.upgrade()).collect()
+        };
+        for cb in &live {
+            cb();
+        }
+    }
+}
+
 pub struct Signal<T> {
-    /// The underlying Mutable value.
-    inner: Mutable<T>,
-
-    /// Callback invoked when the value changes.
-    /// Set during StatefulElement mount via `set_dirty_callback()`.
-    on_change: Option<Arc<dyn Fn() + Send + Sync>>,
+    inner: Arc<SignalInner<T>>,
 }
 
 impl<T> Signal<T> {
-    /// Create a new `Signal` with the given initial value.
-    ///
-    /// The dirty callback is not set until the element is mounted.
-    /// Until then, `set()` will update the value but not trigger a rebuild.
     pub fn new(value: T) -> Self {
         Self {
-            inner: Mutable::new(value),
-            on_change: None,
+            inner: Arc::new(SignalInner {
+                value: Mutable::new(value),
+                on_change: Mutex::new(None),
+                subscribers: Mutex::new(Vec::new()),
+                owned_subscriptions: Mutex::new(Vec::new()),
+            }),
         }
     }
 
-    /// Set the dirty callback. Called once during `StatefulElement` mount.
-    ///
-    /// The callback marks the owning element dirty in the BuildOwner.
     pub fn set_dirty_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
-        self.on_change = Some(callback);
+        *self.inner.on_change.lock().unwrap() = Some(callback);
     }
 
-    /// Get a read-only view of the underlying `Mutable`.
     pub fn read_only(&self) -> ReadOnlyMutable<T> {
-        self.inner.read_only()
+        self.inner.value.read_only()
+    }
+
+    pub fn add_subscriber(&self, callback: &Arc<dyn Fn() + Send + Sync>) {
+        self.inner
+            .subscribers
+            .lock()
+            .unwrap()
+            .push(Arc::downgrade(callback));
+    }
+}
+
+impl<T: PartialEq + Clone + Send + Sync + 'static> Signal<T> {
+    pub fn derive<P, F>(parent: Signal<P>, selector: F) -> Signal<T>
+    where
+        P: PartialEq + Clone + Send + Sync + 'static,
+        F: Fn(&P) -> T + Send + Sync + 'static,
+    {
+        let derived = Signal::new(selector(&parent.get_cloned()));
+        let weak_inner = Arc::downgrade(&derived.inner);
+        let parent_for_closure = parent.clone();
+        let closure: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let inner = weak_inner.upgrade();
+            let inner = match inner {
+                Some(i) => i,
+                None => return,
+            };
+            let new_val = selector(&parent_for_closure.get_cloned());
+            let old_val = inner.value.get_cloned();
+            if old_val != new_val {
+                inner.value.set(new_val);
+                inner.notify();
+            }
+        });
+        parent.add_subscriber(&closure);
+        derived
+            .inner
+            .owned_subscriptions
+            .lock()
+            .unwrap()
+            .push(closure);
+        derived
     }
 }
 
 impl<T: PartialEq + Copy> Signal<T> {
-    /// Get the current value (requires `T: Copy`).
     pub fn get(&self) -> T {
-        self.inner.get()
+        self.inner.value.get()
     }
 
-    /// Set the value and mark the owning element dirty only if the value changed.
-    ///
-    /// If the new value equals the old value, no dirty callback is fired,
-    /// avoiding spurious rebuilds.
     pub fn set(&self, value: T) {
-        let old = self.inner.get();
-        self.inner.set(value);
+        let old = self.inner.value.get();
+        self.inner.value.set(value);
         if old != value {
-            if let Some(ref callback) = self.on_change {
-                callback();
-            }
+            self.inner.notify();
         }
     }
 }
 
 impl<T: PartialEq + Clone> Signal<T> {
-    /// Get a cloned copy of the current value (requires `T: Clone`).
     pub fn get_cloned(&self) -> T {
-        self.inner.get_cloned()
+        self.inner.value.get_cloned()
     }
 
-    /// Set the value from a reference and mark dirty only if the value changed.
     pub fn set_from(&self, value: &T) {
-        let old = self.inner.get_cloned();
-        self.inner.set(value.clone());
+        let old = self.inner.value.get_cloned();
+        self.inner.value.set(value.clone());
         if old != *value {
-            if let Some(ref callback) = self.on_change {
-                callback();
-            }
+            self.inner.notify();
         }
     }
 }
 
 impl<T> Clone for Signal<T> {
-    /// Clone creates a new handle to the same underlying value.
-    ///
-    /// Both the original and the clone share the same `Mutable<T>` and
-    /// dirty callback. Setting the value through either handle will
-    /// trigger a rebuild.
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
-            on_change: self.on_change.clone(),
+            inner: Arc::clone(&self.inner),
         }
     }
 }
@@ -127,5 +145,148 @@ impl<T> Clone for Signal<T> {
 impl<T: Default> Default for Signal<T> {
     fn default() -> Self {
         Self::new(T::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn signal_add_subscriber_notified_on_set() {
+        let sig = Signal::new(0u32);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        sig.add_subscriber(&cb);
+        sig.set(1);
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "subscriber should fire on set"
+        );
+    }
+
+    #[test]
+    fn signal_subscriber_weak_dies_when_strong_dropped() {
+        let sig = Signal::new(0u32);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        sig.add_subscriber(&cb);
+        drop(cb);
+        sig.set(1);
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "subscriber should not fire after its strong ref dropped"
+        );
+    }
+
+    #[test]
+    fn signal_set_noop_does_not_notify() {
+        let sig = Signal::new(5u32);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        sig.add_subscriber(&cb);
+        sig.set(5);
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "set with equal value should not notify subscribers"
+        );
+    }
+
+    #[test]
+    fn signal_clone_shares_subscribers() {
+        let sig = Signal::new(0u32);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        let clone = sig.clone();
+        sig.add_subscriber(&cb);
+        clone.set(1);
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "subscriber added via one clone should fire when set via another clone"
+        );
+    }
+
+    #[test]
+    fn signal_set_dirty_callback_works_after_clone() {
+        let mut sig = Signal::new(0u32);
+        let clone = sig.clone();
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        sig.set_dirty_callback(Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+        clone.set(1);
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "on_change set via one clone should fire when set via another clone"
+        );
+    }
+
+    #[test]
+    fn signal_derive_updates_when_parent_changes() {
+        let parent = Signal::new(10u32);
+        let derived = Signal::derive(parent.clone(), |p| *p + 1);
+        assert_eq!(derived.get(), 11);
+        parent.set(20);
+        assert_eq!(
+            derived.get(),
+            21,
+            "derived should update when parent changes"
+        );
+    }
+
+    #[test]
+    fn signal_derive_noop_when_slice_unchanged() {
+        #[derive(PartialEq, Clone, Copy, Debug)]
+        struct Data {
+            a: u32,
+            b: u32,
+        }
+        let parent = Signal::new(Data { a: 1, b: 100 });
+        let derived = Signal::derive(parent.clone(), |p| p.b);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        derived.add_subscriber(&cb);
+        parent.set(Data { a: 2, b: 100 });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "derived subscribers should NOT fire when selected slice unchanged"
+        );
+        parent.set(Data { a: 2, b: 200 });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "derived subscribers should fire when selected slice changes"
+        );
+    }
+
+    #[test]
+    fn signal_derive_no_leak_when_dropped() {
+        let parent = Signal::new(10u32);
+        let derived = Signal::derive(parent.clone(), |p| *p + 1);
+        drop(derived);
+        parent.set(20);
     }
 }

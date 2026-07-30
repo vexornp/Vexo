@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use vexo::{
     children, AlignItems, Component, DecoratedBox, JustifyContent, Layout, MultiChild,
-    RenderContext, ScrollController, SimpleState, Style, Text, Theme, Widget, WithLayout,
+    RenderContext, ScrollController, Signal, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
@@ -45,7 +45,6 @@ impl Component for DesktopChatsPage {
         let theme = Theme::of(ctx);
         let nav_colors = navigation::colors(&theme);
         let selected = self.selected_conv.get_cloned();
-        let messages_map = self.messages.get_cloned();
 
         // --- Column 2: conversation list with title header + right hairline ---
         let selected_conv_for_select = self.selected_conv.clone();
@@ -65,7 +64,6 @@ impl Component for DesktopChatsPage {
         // --- Column 3: chat screen or empty placeholder ---
         let col3 = match selected {
             Some(id) => {
-                let msgs = messages_map.get(&id).cloned().unwrap_or_default();
                 let avatar = self
                     .conversations
                     .iter()
@@ -81,18 +79,14 @@ impl Component for DesktopChatsPage {
 
                 let msgs_for_send = self.messages.clone();
                 let id_for_send = id.clone();
-                let msgs_for_reader = self.messages.clone();
-                let id_for_reader = id.clone();
+                let id_for_derive = id.clone();
+                let msgs_for_derive = self.messages.clone();
+                let messages = Signal::derive(msgs_for_derive, move |map| {
+                    map.get(&id_for_derive).cloned().unwrap_or_default()
+                });
                 let chat = ChatScreen {
                     conv_id: id_for_send.clone(),
-                    messages: msgs,
-                    messages_reader: Rc::new(move || {
-                        msgs_for_reader
-                            .get_cloned()
-                            .get(&id_for_reader)
-                            .cloned()
-                            .unwrap_or_default()
-                    }),
+                    messages,
                     avatar_bytes: avatar,
                     me_avatar_bytes: self.me_avatar.clone(),
                     on_send: Rc::new(move |text: &str| {
