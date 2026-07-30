@@ -66,7 +66,6 @@ impl Component for MobileChatsPage {
             })
             .destination(move |d| match d {
                 ChatsRoute::Chat(id) => {
-                    let m = msgs.get_cloned().get(id).cloned().unwrap_or_default();
                     let avatar = convs
                         .iter()
                         .find(|c| c.id == *id)
@@ -74,18 +73,14 @@ impl Component for MobileChatsPage {
                         .unwrap_or_else(|| Rc::from([0u8; 0]));
                     let msgs_for_send = msgs.clone();
                     let id_for_send = id.clone();
-                    let msgs_for_reader = msgs.clone();
-                    let id_for_reader = id.clone();
+                    let id_for_derive = id.clone();
+                    let msgs_for_derive = msgs.clone();
+                    let messages = Signal::derive(msgs_for_derive, move |map| {
+                        map.get(&id_for_derive).cloned().unwrap_or_default()
+                    });
                     chat_screen::ChatScreen {
                         conv_id: id_for_send.clone(),
-                        messages: m,
-                        messages_reader: Rc::new(move || {
-                            msgs_for_reader
-                                .get_cloned()
-                                .get(&id_for_reader)
-                                .cloned()
-                                .unwrap_or_default()
-                        }),
+                        messages,
                         avatar_bytes: avatar,
                         me_avatar_bytes: me_avatar_for_dest.clone(),
                         on_send: Rc::new(move |text: &str| {
