@@ -59,6 +59,11 @@ impl Editor {
     ///
     /// After setting text, automatically re-applies the layout width constraint
     /// so that cursor_position() returns correct coordinates for wrapped text.
+    ///
+    /// Resets the cursor to the end of the new text and clears any selection.
+    /// Without this, the cursor remains at its old byte index, which may be
+    /// beyond the new text's length — causing cosmic-text to panic when the
+    /// next `Action::Insert` calls `split_off` at the stale index.
     pub fn set_text(
         &mut self,
         font_system: &mut FontSystem,
@@ -69,6 +74,15 @@ impl Editor {
         self.raw.with_buffer_mut(|buffer| {
             buffer.set_text(text, attrs, shaping, None);
         });
+        let (last_line, last_index) = self.raw.with_buffer(|buffer| {
+            let last_line = buffer.lines.len().saturating_sub(1);
+            let last_index = buffer.lines.get(last_line).map_or(0, |l| l.text().len());
+            (last_line, last_index)
+        });
+        self.raw
+            .set_selection(glyphon::cosmic_text::Selection::None);
+        self.raw
+            .set_cursor(glyphon::cosmic_text::Cursor::new(last_line, last_index));
         self.apply_width_and_shape(font_system);
     }
 

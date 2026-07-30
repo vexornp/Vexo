@@ -660,6 +660,20 @@ mod tests {
     }
 
     #[test]
+    fn test_controller_set_text_resets_cursor_for_insert() {
+        // Regression: set_text must reset the cursor so that inserting a
+        // character after clearing the text doesn't panic in cosmic-text's
+        // split_off (which asserts is_char_boundary at the cursor index).
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        // Cursor is at end (0, 5) after construction.
+        controller.set_text("", &mut fs);
+        // Inserting a char must not panic — cursor should be at (0, 0).
+        controller.insert_char('H', &mut fs);
+        assert_eq!(controller.text(), "H");
+    }
+
+    #[test]
     fn test_controller_insert_char() {
         let mut fs = create_test_font_system();
         let controller = TextEditingController::new("ab", &mut fs);
