@@ -67,6 +67,39 @@ impl<T> Signal<T> {
     }
 }
 
+impl<T: PartialEq + Clone + Send + Sync + 'static> Signal<T> {
+    pub fn derive<P, F>(parent: Signal<P>, selector: F) -> Signal<T>
+    where
+        P: PartialEq + Clone + Send + Sync + 'static,
+        F: Fn(&P) -> T + Send + Sync + 'static,
+    {
+        let derived = Signal::new(selector(&parent.get_cloned()));
+        let weak_inner = Arc::downgrade(&derived.inner);
+        let parent_for_closure = parent.clone();
+        let closure: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let inner = weak_inner.upgrade();
+            let inner = match inner {
+                Some(i) => i,
+                None => return,
+            };
+            let new_val = selector(&parent_for_closure.get_cloned());
+            let old_val = inner.value.get_cloned();
+            if old_val != new_val {
+                inner.value.set(new_val);
+                inner.notify();
+            }
+        });
+        parent.add_subscriber(&closure);
+        derived
+            .inner
+            .owned_subscriptions
+            .lock()
+            .unwrap()
+            .push(closure);
+        derived
+    }
+}
+
 impl<T: PartialEq + Copy> Signal<T> {
     pub fn get(&self) -> T {
         self.inner.value.get()
@@ -199,5 +232,55 @@ mod tests {
             1,
             "on_change set via one clone should fire when set via another clone"
         );
+    }
+
+    #[test]
+    fn signal_derive_updates_when_parent_changes() {
+        let parent = Signal::new(10u32);
+        let derived = Signal::derive(parent.clone(), |p| *p + 1);
+        assert_eq!(derived.get(), 11);
+        parent.set(20);
+        assert_eq!(
+            derived.get(),
+            21,
+            "derived should update when parent changes"
+        );
+    }
+
+    #[test]
+    fn signal_derive_noop_when_slice_unchanged() {
+        #[derive(PartialEq, Clone, Copy, Debug)]
+        struct Data {
+            a: u32,
+            b: u32,
+        }
+        let parent = Signal::new(Data { a: 1, b: 100 });
+        let derived = Signal::derive(parent.clone(), |p| p.b);
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        derived.add_subscriber(&cb);
+        parent.set(Data { a: 2, b: 100 });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "derived subscribers should NOT fire when selected slice unchanged"
+        );
+        parent.set(Data { a: 2, b: 200 });
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "derived subscribers should fire when selected slice changes"
+        );
+    }
+
+    #[test]
+    fn signal_derive_no_leak_when_dropped() {
+        let parent = Signal::new(10u32);
+        let derived = Signal::derive(parent.clone(), |p| *p + 1);
+        drop(derived);
+        parent.set(20);
     }
 }
