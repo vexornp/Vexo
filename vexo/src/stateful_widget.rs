@@ -523,6 +523,13 @@ pub struct StatefulElement<W: Component> {
 
     /// Focus tree attachment for this element.
     focus_attachment: Option<FocusAttachment>,
+
+    /// Closure that marks this element dirty (sends its `element_id` through
+    /// the dirty channel). Retained for the element's lifetime so that the
+    /// weak subscriber references registered by `RenderContext::signal_value`
+    /// (held weakly by external `Signal`s) stay valid between rebuilds. When
+    /// the element unmounts, this `Arc` drops and the weak refs auto-expire.
+    dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl<W: Component> StatefulElement<W> {
@@ -534,6 +541,7 @@ impl<W: Component> StatefulElement<W> {
             key: None,
             render_object_id: None,
             focus_attachment: None,
+            dirty_callback: None,
         }
     }
 }
@@ -654,6 +662,10 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         // Build the child widget tree using RenderContext
         let child_widget = {
+            // Retain the dirty_callback for the element's lifetime so that
+            // weak subscriber refs (from `signal_value`) survive past this
+            // `render()` call.
+            self.dirty_callback = Some(dirty_callback.clone());
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
                 element_id,
@@ -719,6 +731,10 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         // Build the child widget tree using RenderContext
         let child_widget = {
+            // Retain the dirty_callback so weak subscriber refs survive; only
+            // refresh it when a real render happens (skipped above when
+            // `should_rebuild` is false, leaving the prior callback valid).
+            self.dirty_callback = Some(dirty_callback.clone());
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
                 element_id,
@@ -831,6 +847,9 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
 
         // Build the child widget tree using RenderContext
         let child_widget = {
+            // Retain the dirty_callback so weak subscriber refs (re-registered
+            // by `signal_value` during this render) survive past this call.
+            self.dirty_callback = Some(dirty_callback.clone());
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
                 element_id,
