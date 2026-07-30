@@ -81,9 +81,18 @@ impl Component for DesktopChatsPage {
 
                 let msgs_for_send = self.messages.clone();
                 let id_for_send = id.clone();
+                let msgs_for_reader = self.messages.clone();
+                let id_for_reader = id.clone();
                 let chat = ChatScreen {
                     conv_id: id_for_send.clone(),
                     messages: msgs,
+                    messages_reader: Rc::new(move || {
+                        msgs_for_reader
+                            .get_cloned()
+                            .get(&id_for_reader)
+                            .cloned()
+                            .unwrap_or_default()
+                    }),
                     avatar_bytes: avatar,
                     me_avatar_bytes: self.me_avatar.clone(),
                     on_send: Rc::new(move |text: &str| {

@@ -74,9 +74,18 @@ impl Component for MobileChatsPage {
                         .unwrap_or_else(|| Rc::from([0u8; 0]));
                     let msgs_for_send = msgs.clone();
                     let id_for_send = id.clone();
+                    let msgs_for_reader = msgs.clone();
+                    let id_for_reader = id.clone();
                     chat_screen::ChatScreen {
                         conv_id: id_for_send.clone(),
                         messages: m,
+                        messages_reader: Rc::new(move || {
+                            msgs_for_reader
+                                .get_cloned()
+                                .get(&id_for_reader)
+                                .cloned()
+                                .unwrap_or_default()
+                        }),
                         avatar_bytes: avatar,
                         me_avatar_bytes: me_avatar_for_dest.clone(),
                         on_send: Rc::new(move |text: &str| {

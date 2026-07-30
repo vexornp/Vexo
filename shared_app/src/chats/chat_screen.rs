@@ -15,7 +15,15 @@ use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
+    /// Snapshot used solely for `should_rebuild()` change detection. May be
+    /// stale when the parent cascade (TabBar → NavigationStack) is blocked by
+    /// their own `should_rebuild()` — `render()` does NOT read from this.
     pub(crate) messages: Vec<Message>,
+    /// Live data source backed by the messages `Signal`. `render()` reads
+    /// from this so that state-driven rebuilds (e.g. after `set_text` clears
+    /// the input) always show the latest messages, even when the parent
+    /// cascade hasn't delivered a fresh widget.
+    pub(crate) messages_reader: Rc<dyn Fn() -> Vec<Message>>,
     pub(crate) avatar_bytes: Rc<[u8]>,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
@@ -27,6 +35,7 @@ impl Clone for ChatScreen {
         Self {
             conv_id: self.conv_id.clone(),
             messages: self.messages.clone(),
+            messages_reader: Rc::clone(&self.messages_reader),
             avatar_bytes: Rc::clone(&self.avatar_bytes),
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             on_send: Rc::clone(&self.on_send),
@@ -99,8 +108,8 @@ impl Component for ChatScreen {
     /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
     /// During keyboard animation, TabBar and NavigationStack cascade `update()`
     /// to ChatScreen with fresh closure fields but identical data. Comparing
-    /// only the data fields the render reads lets the cascade stop here
-    /// instead of rebuilding 20+ message bubbles every frame.
+    /// the messages snapshot lets the cascade stop here instead of rebuilding
+    /// 20+ message bubbles every frame.
     fn should_rebuild(&self, old: &Self) -> bool {
         self.conv_id != old.conv_id
             || self.messages.len() != old.messages.len()
@@ -110,8 +119,10 @@ impl Component for ChatScreen {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
+        let messages = (self.messages_reader)();
+
         let mut list = MultiChild::empty(Layout::column().gap(8.0).padding(12.0));
-        for msg in &self.messages {
+        for msg in &messages {
             list = list.push(build_message_bubble(
                 msg,
                 state.them_avatar(&self.avatar_bytes).clone(),
@@ -256,6 +267,7 @@ mod tests {
     #[test]
     fn test_chat_screen_renders_messages() {
         let state = crate::data::seed();
+        let messages_signal = state.messages.clone();
         let messages = state
             .messages
             .get_cloned()
@@ -272,6 +284,13 @@ mod tests {
         let view = ChatScreen {
             conv_id: ConvId(1),
             messages,
+            messages_reader: Rc::new(move || {
+                messages_signal
+                    .get_cloned()
+                    .get(&ConvId(1))
+                    .cloned()
+                    .unwrap_or_default()
+            }),
             avatar_bytes,
             me_avatar_bytes: state.profile.avatar_bytes.clone(),
             on_send: Rc::new(|_| ()),
@@ -283,6 +302,47 @@ mod tests {
         assert!(
             pipeline.element_registry().len() > 4,
             "expected multiple elements for 3 messages + input bar"
+        );
+    }
+
+    #[test]
+    fn test_chat_screen_reads_live_messages_from_reader() {
+        // Regression for iOS send bug: when the parent cascade is blocked
+        // (TabBar/NavigationStack should_rebuild returns false), ChatScreen
+        // rebuilds via its own dirty mark (set_text). render() must read
+        // live messages from messages_reader, not the stale self.messages
+        // snapshot.
+        let state = crate::data::seed();
+        let messages_signal = state.messages.clone();
+        let avatar_bytes = state
+            .conversations
+            .iter()
+            .find(|c| c.id == ConvId(1))
+            .unwrap()
+            .avatar_bytes
+            .clone();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: vec![],
+            messages_reader: Rc::new(move || {
+                messages_signal
+                    .get_cloned()
+                    .get(&ConvId(1))
+                    .cloned()
+                    .unwrap_or_default()
+            }),
+            avatar_bytes,
+            me_avatar_bytes: state.profile.avatar_bytes.clone(),
+            on_send: Rc::new(|_| ()),
+            scroll_controller: ScrollController::new(),
+        }
+        .boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        assert!(
+            pipeline.element_registry().len() > 4,
+            "expected multiple elements for 3 messages read from reader, got {}",
+            pipeline.element_registry().len()
         );
     }
 
@@ -302,6 +362,7 @@ mod tests {
         let chat = ChatScreen {
             conv_id: ConvId(4),
             messages: vec![], // zero messages — minimal content
+            messages_reader: Rc::new(|| Vec::new()),
             avatar_bytes,
             me_avatar_bytes: state.profile.avatar_bytes.clone(),
             on_send: Rc::new(|_| ()),
