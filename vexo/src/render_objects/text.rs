@@ -170,6 +170,7 @@ impl RenderObject for TextRenderObject {
             font_size: self.font_size,
             line_height: self.line_height,
             font_family: self.font_family.clone(),
+            max_lines: None,
         });
 
         let layout = Layout::default();
