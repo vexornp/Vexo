@@ -63,7 +63,7 @@ const ACCENT_RECT_LEFT_INSET: f32 = 12.0;
 const SWATCH_DIVIDER_THICKNESS: f32 = 1.0;
 /// Checkbox metrics.
 const CHECKBOX_SIZE: f32 = 22.0;
-const CHECKBOX_RADIUS: f32 = 6.0;
+const CHECKBOX_RADIUS: f32 = CHECKBOX_SIZE / 2.0;
 /// Cell internal padding and gaps.
 const CELL_PAD: f32 = 12.0;
 const CELL_GAP: f32 = 8.0;
