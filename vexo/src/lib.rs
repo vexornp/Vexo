@@ -45,6 +45,7 @@ pub mod state;
 mod text_cache;
 mod text_pipeline;
 mod text_processor;
+mod text_overflow;
 mod window;
 pub use window::WindowState;
 
