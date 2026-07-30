@@ -8,11 +8,10 @@ pub(crate) mod desktop;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use vexo::{Component, RenderContext, Signal, SimpleState, Text, Theme, Widget};
-use vexo_uikit::theme::tokens::navigation;
+use vexo::{Component, RenderContext, Signal, SimpleState, Text, Widget};
 use vexo_uikit::{NavigationController, NavigationStackView};
 
-use crate::chats::conversation_list::build_conversation_list;
+use crate::chats::conversation_list::ConversationList;
 use crate::data::{ChatsRoute, ConvId, Conversation, Message, MessageAuthor};
 
 /// Mobile Chats page. Renders the conversation list via the unified
@@ -39,19 +38,17 @@ impl Clone for MobileChatsPage {
 impl Component for MobileChatsPage {
     type State = SimpleState<()>;
 
-    fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let theme = Theme::of(ctx);
-        let nav_colors = navigation::colors(&theme);
+    fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let nav_for_select = self.nav.clone();
-        let chats_root = build_conversation_list(
-            self.conversations.clone(),
-            None,
-            &nav_colors,
-            &theme,
-            move |id| {
+        let chats_root = ConversationList {
+            conversations: self.conversations.clone(),
+            messages: self.messages.clone(),
+            selected: None,
+            on_select: Rc::new(move |id| {
                 nav_for_select.push(ChatsRoute::Chat(id));
-            },
-        );
+            }),
+        }
+        .boxed();
 
         let convs = self.conversations.clone();
         let msgs = self.messages.clone();
