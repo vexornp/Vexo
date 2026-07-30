@@ -337,6 +337,7 @@ mod tests {
             font_size: 24.0,
             line_height: 1.2,
             font_family: None,
+            max_lines: None,
         });
 
         let text_node = engine.create_leaf_with_context(&Layout::default(), context);
@@ -366,6 +367,7 @@ mod tests {
             font_size: 24.0,
             line_height: 1.2,
             font_family: None,
+            max_lines: None,
         });
 
         let text_node = engine.create_leaf_with_context(&Layout::default(), context);
@@ -427,6 +429,7 @@ mod tests {
             font_size: 24.0,
             line_height: 1.2,
             font_family: None,
+            max_lines: None,
         });
         let node = engine.create_leaf_with_context(&Layout::default(), ctx);
         engine.compute(node, Size::new(800.0, 600.0), &mut font_system);
@@ -440,6 +443,7 @@ mod tests {
             font_size: 24.0,
             line_height: 1.2,
             font_family: None,
+            max_lines: None,
         });
         engine.set_context(node, ctx2);
         assert!(engine.is_dirty(node));

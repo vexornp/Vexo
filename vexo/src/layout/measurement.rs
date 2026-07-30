@@ -26,6 +26,9 @@ pub struct TextMeasureContext {
     /// Optional font family name. When set, text is shaped against this
     /// family; when `None`, the framework default is used.
     pub font_family: Option<String>,
+    /// Maximum number of visible lines. When set, the measured height is
+    /// capped to `max_lines * font_size * line_height`. `None` = unlimited.
+    pub max_lines: Option<u32>,
 }
 
 /// Context for nodes that need custom measurement.
@@ -110,6 +113,7 @@ pub struct MeasureCacheKey {
     font_family_hash: u64,
     available_width_bits: Option<u32>,
     available_height_bits: Option<u32>,
+    max_lines_bits: Option<u32>,
 }
 
 impl MeasureCacheKey {
@@ -121,6 +125,7 @@ impl MeasureCacheKey {
         font_family: Option<&str>,
         available_width: Option<f32>,
         available_height: Option<f32>,
+        max_lines: Option<u32>,
     ) -> Self {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         content.hash(&mut hasher);
@@ -142,6 +147,7 @@ impl MeasureCacheKey {
             font_family_hash,
             available_width_bits: available_width.map(|f| f.to_bits()),
             available_height_bits: available_height.map(|f| f.to_bits()),
+            max_lines_bits: max_lines,
         }
     }
 }
@@ -251,6 +257,7 @@ pub fn measure_text_node(
                 text_ctx.font_family.as_deref(),
                 None,
                 None,
+                text_ctx.max_lines,
             );
 
             let mut measurer = TextMeasurer::new(font_system);
@@ -287,6 +294,7 @@ pub fn measure_text_node(
                     text_ctx.font_family.as_deref(),
                     Some(1.0),
                     None,
+                    text_ctx.max_lines,
                 );
                 let min_width = if let Some(cached) = cache.get(&min_key) {
                     cached.width
@@ -351,6 +359,7 @@ pub fn measure_text_node(
                     None
                 },
                 None,
+                text_ctx.max_lines,
             );
             cache.insert(cache_key, measured_size);
 
@@ -373,6 +382,23 @@ pub fn measure_text_node(
             };
 
             let result = Size { width, height };
+
+            // Cap height when max_lines is set. The truncated text occupies
+            // at most max_lines lines; the render object computes the actual
+            // truncated content in apply_layout.
+            let result = if let Some(max_lines) = text_ctx.max_lines {
+                let capped_height = (max_lines as f32) * text_ctx.font_size * text_ctx.line_height;
+                if result.height > capped_height {
+                    Size {
+                        width: result.width,
+                        height: capped_height,
+                    }
+                } else {
+                    result
+                }
+            } else {
+                result
+            };
 
             result
         }
@@ -453,7 +479,7 @@ mod tests {
     fn test_cache_hit() {
         let mut cache = MeasureCache::new();
 
-        let key = MeasureCacheKey::new("test", 24.0, 1.2, None, None, None);
+        let key = MeasureCacheKey::new("test", 24.0, 1.2, None, None, None, None);
         cache.insert(key.clone(), Size::new(100.0, 30.0));
 
         let result = cache.get(&key);
@@ -466,19 +492,88 @@ mod tests {
         cache.max_entries = 2;
 
         cache.insert(
-            MeasureCacheKey::new("a", 24.0, 1.2, None, None, None),
+            MeasureCacheKey::new("a", 24.0, 1.2, None, None, None, None),
             Size::new(1.0, 1.0),
         );
         cache.insert(
-            MeasureCacheKey::new("b", 24.0, 1.2, None, None, None),
+            MeasureCacheKey::new("b", 24.0, 1.2, None, None, None, None),
             Size::new(2.0, 2.0),
         );
         cache.insert(
-            MeasureCacheKey::new("c", 24.0, 1.2, None, None, None),
+            MeasureCacheKey::new("c", 24.0, 1.2, None, None, None, None),
             Size::new(3.0, 3.0),
         );
 
         // Cache should have been cleared when exceeding max_entries
         assert_eq!(cache.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_measure_caps_height_with_max_lines() {
+        let mut font_system = create_test_font_system();
+        let mut cache = MeasureCache::new();
+
+        let context = MeasureContext::Text(TextMeasureContext {
+            content: "This is a long text that should wrap multiple times".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+            font_family: None,
+            max_lines: Some(2),
+        });
+
+        let size = measure_text_node(
+            taffy::prelude::Size {
+                width: None,
+                height: None,
+            },
+            taffy::prelude::Size {
+                width: taffy::prelude::AvailableSpace::Definite(50.0),
+                height: taffy::prelude::AvailableSpace::MaxContent,
+            },
+            Some(&mut context.clone()),
+            &mut font_system,
+            &mut cache,
+        );
+
+        // Height should be capped to 2 lines: 2 * 24.0 * 1.2 = 57.6
+        assert!(
+            size.height <= 2.0 * 24.0 * 1.2 + 1.0,
+            "height {} should be capped to ~2 lines (57.6)",
+            size.height
+        );
+    }
+
+    #[test]
+    fn test_measure_no_cap_when_max_lines_none() {
+        let mut font_system = create_test_font_system();
+        let mut cache = MeasureCache::new();
+
+        let context = MeasureContext::Text(TextMeasureContext {
+            content: "This is a long text that should wrap multiple times".to_string(),
+            font_size: 24.0,
+            line_height: 1.2,
+            font_family: None,
+            max_lines: None,
+        });
+
+        let size = measure_text_node(
+            taffy::prelude::Size {
+                width: None,
+                height: None,
+            },
+            taffy::prelude::Size {
+                width: taffy::prelude::AvailableSpace::Definite(50.0),
+                height: taffy::prelude::AvailableSpace::MaxContent,
+            },
+            Some(&mut context.clone()),
+            &mut font_system,
+            &mut cache,
+        );
+
+        // Without max_lines, height should be the full wrapped height (> 2 lines).
+        assert!(
+            size.height > 2.0 * 24.0 * 1.2,
+            "without max_lines, height should not be capped"
+        );
     }
 }

@@ -151,6 +151,7 @@ impl RenderObject for TextEditRenderObject {
             font_size: self.font_size,
             line_height: DEFAULT_LINE_HEIGHT_MULTIPLIER,
             font_family: None,
+            max_lines: None,
         });
 
         let layout = Layout::default();
