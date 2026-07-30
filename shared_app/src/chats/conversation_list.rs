@@ -72,7 +72,8 @@ fn build_conversation_row(
         .with_color(name_color);
     let preview_text = Text::new(conv.last_preview.as_str())
         .with_font_size(13.0)
-        .with_color(preview_color);
+        .with_color(preview_color)
+        .with_max_lines(1);
 
     let info_col = MultiChild::new(
         children![name_text, preview_text],
