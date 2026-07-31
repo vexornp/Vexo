@@ -133,7 +133,7 @@ fn build_conversation_row(
         .with_font_size(12.0)
         .with_color(name_color);
 
-    let right_col = MultiChild::new(children![time_text], Layout::column());
+    let right_col = MultiChild::new(children![time_text], Layout::column().flex_shrink(0.0));
 
     let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
         Some(
@@ -147,7 +147,7 @@ fn build_conversation_row(
     };
 
     let avatar_with_badge = Stack::new()
-        .with_layout(Layout::stack().width(40.0).height(40.0))
+        .with_layout(Layout::stack().width(40.0).height(40.0).flex_shrink(0.0))
         .push(avatar)
         .push(badge)
         .boxed();
