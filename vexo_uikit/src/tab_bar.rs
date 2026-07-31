@@ -181,16 +181,19 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
             let ctrl = self.controller.clone();
             let tab_clone = tab.clone();
             let content = (self.tab_bar_builder)(tab, is_selected);
-            let item = GestureDetector::new(content)
-                .on_press(move || ctrl.switch_to(tab_clone.clone()))
-                .with_layout(
+            let item = GestureDetector::new(
+                WithLayout::new(
+                    content,
                     Layout::default()
                         .flex_direction(FlexDirection::Column)
                         .align(AlignItems::Stretch)
                         .flex_grow(1.0)
                         .justify(JustifyContent::Center),
                 )
-                .boxed();
+                .boxed(),
+            )
+            .on_press(move || ctrl.switch_to(tab_clone.clone()))
+            .boxed();
             bar = bar.push(item);
         }
 

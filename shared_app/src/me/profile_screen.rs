@@ -373,11 +373,10 @@ fn build_picker_cell(
             .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD),
     );
 
-    GestureDetector::new(content)
+    GestureDetector::new(WithLayout::new(content, Layout::default().flex_shrink(0.0)).boxed())
         .on_tap(move || {
             is_dark.set(set_value);
         })
-        .with_layout(Layout::default().flex_shrink(0.0))
         .boxed()
 }
 

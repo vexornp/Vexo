@@ -276,6 +276,17 @@ impl WithLayout {
         self
     }
 
+    /// Replace the layout.
+    ///
+    /// Mirrors `MultiChild::with_layout`: replaces the layout field
+    /// wholesale. Does NOT re-apply the `Column + Stretch` default
+    /// injection that `WithLayout::new` performs — callers who want
+    /// those defaults should use `WithLayout::new`.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
+    }
+
     /// Get the layout.
     pub fn layout_ref(&self) -> &Layout {
         &self.layout
@@ -462,5 +473,26 @@ mod tests {
         let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0).gap(4.0));
         assert!(w.layout_ref().padding.is_some());
         assert!(w.layout_ref().gap.is_some());
+    }
+
+    #[test]
+    fn test_with_layout_inherent_replace() {
+        let w = WithLayout::new(Text::new("Hello"), Layout::default().padding(10.0))
+            .with_layout(Layout::default().padding(20.0));
+        assert_eq!(
+            w.layout_ref().padding,
+            Some(crate::layout::EdgeInsets::all(20.0)),
+            "with_layout must replace the layout wholesale"
+        );
+        assert_eq!(
+            w.layout_ref().flex_direction,
+            None,
+            "with_layout must not inject Column"
+        );
+        assert_eq!(
+            w.layout_ref().align_items,
+            None,
+            "with_layout must not inject Stretch"
+        );
     }
 }
