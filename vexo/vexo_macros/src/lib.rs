@@ -119,12 +119,6 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
             let then_body = &if_expr.then_branch;
             if let Some((_, else_body)) = &if_expr.else_branch {
                 // if cond { a } else { b } -> build_either(if c { a.boxed() } else { b.boxed() })
-                //
-                // `Widget::boxed` is fully-qualified so the macro is self-contained
-                // (works regardless of what's in scope at the call site), matching the
-                // spec's "Absolute paths" invariant. A `let` binding evaluates the
-                // block before boxing: this avoids `unused_braces` warnings that would
-                // arise from placing the block directly in function-argument position.
                 Ok(quote! {
                     ::vexo::widgets::ChildPush::push_into(
                         ::vexo::view_builder::build_either(
