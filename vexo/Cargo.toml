@@ -19,6 +19,7 @@ bitflags = { workspace = true }
 futures-signals = { workspace = true }
 image = { workspace = true }
 component_state_derive = { path = "component_state_derive" }
+vexo_macros = { path = "vexo_macros" }
 
 # Clipboard backend for desktop platforms (macOS/Linux/Windows).
 # iOS uses UIPasteboard (objc2); Android uses a stub for now (see

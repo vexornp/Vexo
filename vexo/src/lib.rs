@@ -39,6 +39,7 @@ pub use frame_builder::FrameBuilder;
 pub mod reactive;
 pub mod resource;
 pub use component_state_derive::ComponentState;
+pub use vexo_macros::{column, row};
 pub use reactive::Signal;
 mod macros;
 pub mod state;
