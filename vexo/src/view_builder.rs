@@ -5,7 +5,7 @@
 //! for control-flow statements (`if`, `for`); plain widgets go straight through
 //! `ChildPush::push_into`.
 
-use crate::widgets::{ChildPush, Widget};
+use crate::widgets::Widget;
 
 /// Identity for the block's collected children. The macro builds the `Vec`
 /// inline via `ChildPush::push_into`, so this fn is called only when a user
