@@ -114,6 +114,10 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
     };
 
     match &expr {
+        syn::Expr::Let(let_expr) => Err(syn::Error::new(
+            let_expr.let_token.span,
+            "let bindings are not allowed inside a builder block; compute outside",
+        )),
         syn::Expr::If(if_expr) => {
             let cond = &if_expr.cond;
             let then_body = &if_expr.then_branch;

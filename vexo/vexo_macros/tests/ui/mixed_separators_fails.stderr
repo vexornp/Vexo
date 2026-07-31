@@ -1,0 +1,13 @@
+error: mixing `,` and `;` separators is not allowed inside `column!`/`row!`; pick one
+ --> tests/ui/mixed_separators_fails.rs:7:23
+  |
+7 |         Text::new("b");
+  |                       ^
+
+warning: unused import: `vexo::Text`
+ --> tests/ui/mixed_separators_fails.rs:2:5
+  |
+2 | use vexo::Text;
+  |     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
