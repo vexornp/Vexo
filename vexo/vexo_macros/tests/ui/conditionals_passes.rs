@@ -36,4 +36,23 @@ fn nested_if() {
     };
 }
 
+fn for_loop() {
+    let items = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+    column! {
+        for s in &items {
+            Text::new(s)
+        },
+    };
+}
+
+fn for_loop_interleaved() {
+    let cond = true;
+    let items = vec!["x".to_string()];
+    column! {
+        Text::new("header"),
+        if cond { Text::new("cond") },
+        for s in &items { Text::new(s) },
+    };
+}
+
 fn main() {}

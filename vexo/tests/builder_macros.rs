@@ -101,3 +101,36 @@ fn if_with_else_false_takes_else_branch() {
     };
     assert_eq!(w.children().len(), 1);
 }
+
+#[test]
+fn for_loop_renders_all_iterations() {
+    let items = vec![
+        "a".to_string(),
+        "b".to_string(),
+        "c".to_string(),
+        "d".to_string(),
+    ];
+    let w: MultiChild = column! {
+        for s in &items { vexo::Text::new(s) },
+    };
+    assert_eq!(w.children().len(), 4);
+}
+
+#[test]
+fn for_loop_empty_renders_nothing() {
+    let items: Vec<String> = vec![];
+    let w: MultiChild = column! {
+        for s in &items { vexo::Text::new(s) },
+    };
+    assert_eq!(w.children().len(), 0);
+}
+
+#[test]
+fn for_loop_interleaved_with_plain() {
+    let items = vec!["x".to_string(), "y".to_string()];
+    let w: MultiChild = column! {
+        vexo::Text::new("header"),
+        for s in &items { vexo::Text::new(s) },
+    };
+    assert_eq!(w.children().len(), 3);
+}

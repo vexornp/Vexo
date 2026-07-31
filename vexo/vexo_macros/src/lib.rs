@@ -150,6 +150,23 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
                 })
             }
         }
+        syn::Expr::ForLoop(for_expr) => {
+            let pat = &for_expr.pat;
+            let expr_iter = &for_expr.expr;
+            let body = &for_expr.body;
+            // for x in xs { body } -> build_array(xs.into_iter().map(|x| body.boxed()).collect())
+            Ok(quote! {
+                ::vexo::widgets::ChildPush::push_into(
+                    ::vexo::view_builder::build_array(
+                        (#expr_iter).into_iter().map(|#pat| {
+                            let __vexo_w = #body;
+                            ::vexo::widgets::Widget::boxed(__vexo_w)
+                        }).collect::<::std::vec::Vec<_>>()
+                    ),
+                    &mut __vexo_children,
+                );
+            })
+        }
         _ => {
             // Plain widget expression.
             Ok(quote! {
