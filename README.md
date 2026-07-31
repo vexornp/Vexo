@@ -1,4 +1,8 @@
-# Vexo
+<p align="center">
+  <img src="assets/logo.png" width="200" alt="Vexo logo">
+</p>
+
+<h1 align="center">Vexo</h1>
 
 A cross-platform UI framework in Rust.
 
