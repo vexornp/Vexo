@@ -167,6 +167,34 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
                 );
             })
         }
+        syn::Expr::Match(match_expr) => {
+            let scrutinee = &match_expr.expr;
+            let mut new_arms = Vec::new();
+            for arm in &match_expr.arms {
+                let pat = &arm.pat;
+                let guard = &arm.guard;
+                let body = &arm.body;
+                let guard_tokens = match guard {
+                    Some((if_token, cond)) => quote! { #if_token #cond },
+                    None => quote! {},
+                };
+                new_arms.push(quote! {
+                    #pat #guard_tokens => {
+                        let __vexo_w = #body;
+                        ::vexo::widgets::Widget::boxed(__vexo_w)
+                    },
+                });
+            }
+            // match e { arms } -> push_into(match e { arms => body.boxed() })
+            Ok(quote! {
+                ::vexo::widgets::ChildPush::push_into(
+                    match #scrutinee {
+                        #(#new_arms)*
+                    },
+                    &mut __vexo_children,
+                );
+            })
+        }
         _ => {
             // Plain widget expression.
             Ok(quote! {

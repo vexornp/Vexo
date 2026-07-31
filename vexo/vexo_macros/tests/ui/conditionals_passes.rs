@@ -55,4 +55,32 @@ fn for_loop_interleaved() {
     };
 }
 
+fn match_expr() {
+    #[derive(PartialEq)]
+    enum S {
+        Loading,
+        Error,
+    }
+    let s = S::Loading;
+    column! {
+        match s {
+            S::Loading => Text::new("loading"),
+            S::Error => Text::new("error"),
+        },
+    };
+}
+
+fn match_with_block_body() {
+    let n = 2;
+    column! {
+        match n {
+            1 => { Text::new("one") },
+            _ => {
+                let s = "other";
+                Text::new(s)
+            },
+        },
+    };
+}
+
 fn main() {}

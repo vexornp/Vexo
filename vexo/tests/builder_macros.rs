@@ -134,3 +134,40 @@ fn for_loop_interleaved_with_plain() {
     };
     assert_eq!(w.children().len(), 3);
 }
+
+#[test]
+fn match_renders_taken_arm() {
+    #[derive(PartialEq)]
+    enum S {
+        A,
+        B,
+        C,
+    }
+    let s = S::B;
+    let w: MultiChild = column! {
+        match s {
+            S::A => vexo::Text::new("a"),
+            S::B => row! { vexo::Text::new("b") },
+            S::C => vexo::Text::new("c"),
+        },
+    };
+    assert_eq!(w.children().len(), 1);
+}
+
+#[test]
+fn match_with_guard() {
+    #[derive(PartialEq)]
+    enum S {
+        Loading,
+        Error(String),
+    }
+    let s = S::Error("oops".into());
+    let w: MultiChild = column! {
+        match s {
+            S::Loading => vexo::Text::new("loading"),
+            S::Error(msg) if msg.is_empty() => row! { vexo::Text::new("empty error") },
+            S::Error(_) => vexo::Text::new("error"),
+        },
+    };
+    assert_eq!(w.children().len(), 1);
+}
