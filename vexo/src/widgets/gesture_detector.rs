@@ -722,4 +722,45 @@ mod tests {
             "GestureDetector's render object must be pass-through"
         );
     }
+
+    #[test]
+    fn test_gesture_detector_layout_returns_child_node() {
+        use crate::layout::TaffyLayoutEngine;
+        let mut ro = GestureDetectorRenderObject::new();
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        // Create a child Taffy node the way the pipeline would: by calling
+        // engine.create_leaf and passing the key as a child_nodes entry.
+        let child_node = ctx
+            .engine()
+            .create_leaf(&Layout::default().width(50.0).height(50.0));
+        let result = ro.layout(&mut ctx, &[child_node]);
+
+        assert_eq!(
+            result.node, child_node,
+            "layout() must return the child's node (pass-through)"
+        );
+        assert_eq!(
+            ro.layout_node(),
+            Some(child_node),
+            "layout_node() must return the child's node after layout()"
+        );
+    }
+
+    #[test]
+    fn test_gesture_detector_layout_no_child_creates_throwaway_node() {
+        use crate::layout::TaffyLayoutEngine;
+        let mut ro = GestureDetectorRenderObject::new();
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        let result = ro.layout(&mut ctx, &[]);
+
+        // Should not panic; should return some node and store it.
+        assert!(ro.layout_node().is_some());
+        assert_eq!(ro.layout_node(), Some(result.node));
+    }
 }
