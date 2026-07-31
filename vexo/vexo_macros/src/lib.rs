@@ -90,15 +90,13 @@ fn split_statements(
 
 /// Classify a single statement and emit the corresponding `ChildPush::push_into` call.
 ///
-/// In this task (Task 3), only the "plain widget" case is implemented. The
-/// `if` / `for` / `match` / `let` cases are added in Tasks 4-7.
+/// Handles `if` (with and without `else`) by routing through the `view_builder`
+/// helpers. Plain widget expressions go straight through `ChildPush::push_into`.
+/// `for` / `match` / `let` are added in later tasks.
 fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2::TokenStream> {
-    // Try to parse as an expression. If it fails, check for `let` (statement,
-    // not expression) and emit a clear error; otherwise reparse-error.
     let expr: syn::Expr = match syn::parse2::<syn::Expr>(stmt.clone()) {
         Ok(e) => e,
         Err(_) => {
-            // Check for `let` binding.
             let first_token = stmt.clone().into_iter().next();
             if let Some(TokenTree::Ident(ident)) = first_token {
                 if ident == "let" {
@@ -115,10 +113,56 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
         }
     };
 
-    // Plain widget expression.
-    Ok(quote! {
-        ::vexo::widgets::ChildPush::push_into(#expr, &mut __vexo_children);
-    })
+    match &expr {
+        syn::Expr::If(if_expr) => {
+            let cond = &if_expr.cond;
+            let then_body = &if_expr.then_branch;
+            if let Some((_, else_body)) = &if_expr.else_branch {
+                // if cond { a } else { b } -> build_either(if c { a.boxed() } else { b.boxed() })
+                //
+                // `Widget::boxed` is fully-qualified so the macro is self-contained
+                // (works regardless of what's in scope at the call site), matching the
+                // spec's "Absolute paths" invariant. A `let` binding evaluates the
+                // block before boxing: this avoids `unused_braces` warnings that would
+                // arise from placing the block directly in function-argument position.
+                Ok(quote! {
+                    ::vexo::widgets::ChildPush::push_into(
+                        ::vexo::view_builder::build_either(
+                            if #cond {
+                                let __vexo_w = #then_body;
+                                ::vexo::widgets::Widget::boxed(__vexo_w)
+                            } else {
+                                let __vexo_w = #else_body;
+                                ::vexo::widgets::Widget::boxed(__vexo_w)
+                            }
+                        ),
+                        &mut __vexo_children,
+                    );
+                })
+            } else {
+                // if cond { body } (no else) -> build_optional(if c { Some(body.boxed()) } else { None })
+                Ok(quote! {
+                    ::vexo::widgets::ChildPush::push_into(
+                        ::vexo::view_builder::build_optional(
+                            if #cond {
+                                let __vexo_w = #then_body;
+                                ::std::option::Option::Some(::vexo::widgets::Widget::boxed(__vexo_w))
+                            } else {
+                                ::std::option::Option::None
+                            }
+                        ),
+                        &mut __vexo_children,
+                    );
+                })
+            }
+        }
+        _ => {
+            // Plain widget expression.
+            Ok(quote! {
+                ::vexo::widgets::ChildPush::push_into(#expr, &mut __vexo_children);
+            })
+        }
+    }
 }
 
 /// Build a `MultiChild` with `Layout::column()`. See spec § Macro Syntax.

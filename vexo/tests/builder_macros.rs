@@ -65,3 +65,39 @@ fn nested_builders_produce_correct_child_count() {
     let inner = &w.children()[0];
     assert_eq!(inner.children().len(), 2);
 }
+
+#[test]
+fn if_without_else_false_renders_nothing() {
+    let cond = false;
+    let w: MultiChild = column! {
+        vexo::Text::new("always"),
+        if cond { vexo::Text::new("maybe") },
+    };
+    assert_eq!(w.children().len(), 1);
+}
+
+#[test]
+fn if_without_else_true_renders_one() {
+    let cond = true;
+    let w: MultiChild = column! {
+        vexo::Text::new("always"),
+        if cond { vexo::Text::new("maybe") },
+    };
+    assert_eq!(w.children().len(), 2);
+}
+
+#[test]
+fn if_with_else_renders_exactly_one() {
+    let w: MultiChild = column! {
+        if true { vexo::Text::new("a") } else { vexo::Text::new("b") },
+    };
+    assert_eq!(w.children().len(), 1);
+}
+
+#[test]
+fn if_with_else_false_takes_else_branch() {
+    let w: MultiChild = column! {
+        if false { vexo::Text::new("a") } else { vexo::Text::new("b") },
+    };
+    assert_eq!(w.children().len(), 1);
+}
