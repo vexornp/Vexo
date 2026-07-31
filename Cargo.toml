@@ -8,6 +8,9 @@ members = [
     # 2. Proc-macro crate for #[derive(ComponentState)]
     "vexo/component_state_derive",
 
+    # 2b. Proc-macro crate for column!/row! result-builder macros
+    "vexo/vexo_macros",
+
     # 3. The platform-agnostic application logic (for desktop and mobile exports)
     "shared_app",
 

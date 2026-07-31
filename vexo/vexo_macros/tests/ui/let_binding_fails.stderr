@@ -1,0 +1,13 @@
+error: let bindings are not allowed inside a builder block; compute outside
+ --> tests/ui/let_binding_fails.rs:6:9
+  |
+6 |         let x = 42;
+  |         ^^^
+
+warning: unused import: `vexo::Text`
+ --> tests/ui/let_binding_fails.rs:2:5
+  |
+2 | use vexo::Text;
+  |     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

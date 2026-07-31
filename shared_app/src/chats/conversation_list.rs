@@ -15,9 +15,9 @@ use std::rc::Rc;
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, AlignSelf, Component, DecoratedBox, ImageData, Layout, MultiChild,
-    Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text, Theme,
-    ThemeData, Widget, WithLayout,
+    children, column, AlignItems, AlignSelf, Component, DecoratedBox, ImageData, Layout,
+    MultiChild, Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text,
+    Theme, ThemeData, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{self, NavColors};
 
@@ -50,25 +50,25 @@ impl Component for ConversationList {
         let nav_colors = navigation::colors(&theme);
         let messages = ctx.signal_value(&self.messages);
 
-        let mut list = MultiChild::empty(Layout::column());
-        for conv in &self.conversations {
-            let is_selected = self.selected == Some(conv.id.clone());
-            let on_select = Rc::clone(&self.on_select);
-            let id = conv.id.clone();
-            let (preview, timestamp) = latest_preview(conv, &messages);
-            let row = build_conversation_row(
-                conv,
-                &preview,
-                timestamp,
-                is_selected,
-                &nav_colors,
-                &theme,
-                move || {
-                    on_select(id.clone());
-                },
-            );
-            list = list.push(row);
-        }
+        let list = column! {
+            for conv in &self.conversations {
+                let is_selected = self.selected == Some(conv.id.clone());
+                let on_select = Rc::clone(&self.on_select);
+                let id = conv.id.clone();
+                let (preview, timestamp) = latest_preview(conv, &messages);
+                build_conversation_row(
+                    conv,
+                    &preview,
+                    timestamp,
+                    is_selected,
+                    &nav_colors,
+                    &theme,
+                    move || {
+                        on_select(id.clone());
+                    },
+                )
+            }
+        };
         // Paint a themed background behind the list so the pane isn't left
         // showing the window's white clear in dark mode. Rows are transparent
         // when unselected, so this background is what the user sees between rows.
