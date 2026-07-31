@@ -7,7 +7,7 @@ A cross-platform UI framework in Rust.
 [![Platforms](https://img.shields.io/badge/platforms-iOS%20%C2%B7%20Android%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-blue.svg)](#platform-support)
 [![Status](https://img.shields.io/badge/status-early--stage-orange.svg)](#status)
 
-Vexo brings Flutter's three-tree architecture to pure Rust — one codebase,
+Vexo brings [Flutter's](https://github.com/flutter/flutter) three-tree architecture to pure Rust — one codebase,
 GPU-rendered, running natively on five platforms. Early-stage but real:
 apps run today, gaps are tracked in the ROADMAP.
 
@@ -190,6 +190,32 @@ Then open `VexoDemoAndroid/` in Android Studio and press Run. See
 Vexo is early and the roadmap is public. If you'd like to contribute,
 start by reading [`CLAUDE.md`](./CLAUDE.md) (architecture) and
 [`ROADMAP.md`](./ROADMAP.md) (where help is needed most).
+
+## Acknowledgments
+
+### Inspiration
+
+Vexo's architecture — the three-tree model, reactive widget composition,
+element reconciliation, and rendering pipeline — is deeply inspired by
+[Flutter](https://github.com/flutter/flutter). Many core concepts and
+design patterns are referenced directly from the Flutter framework.
+We're grateful to the Flutter team for the foundational ideas that made
+Vexo possible.
+
+### Built With
+
+Vexo is built on these open-source projects — thanks to their authors
+and maintainers.
+
+- [wgpu](https://github.com/gfx-rs/wgpu) — GPU rendering backend (Metal/Vulkan/DX12/OpenGL)
+- [winit](https://github.com/rust-windowing/winit) — cross-platform windowing & event loop
+- [taffy](https://github.com/DioxusLabs/taffy) — flexbox & grid layout engine
+- [glyphon](https://github.com/grovesnl/glyphon) — text layout & rendering (Vexo uses a [fork](https://github.com/vexorsis/glyphon) with per-textarea depth)
+- [uniffi](https://github.com/mozilla/uniffi-rs) — Rust-to-Swift FFI for iOS
+
+- [android-activity](https://github.com/rust-mobile/android-activity) — Android activity glue
+- [objc2](https://github.com/madsmtm/objc2) — iOS UIKit/Foundation bindings
+- [image](https://github.com/image-rs/image) — image decoding
 
 ## License
 
