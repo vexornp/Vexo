@@ -40,6 +40,8 @@ pub mod reactive;
 pub mod resource;
 pub use component_state_derive::ComponentState;
 pub use vexo_macros::{column, row};
+pub mod view_builder;
+pub use view_builder::{build_array, build_block, build_either, build_optional};
 pub use reactive::Signal;
 mod macros;
 pub mod state;
