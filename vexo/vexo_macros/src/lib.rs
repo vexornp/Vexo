@@ -13,7 +13,7 @@ use quote::quote;
 /// `Layout::column` or `Layout::row`.
 fn build_container(input: TokenStream, layout_ctor: &str) -> TokenStream {
     let tokens: proc_macro2::TokenStream = input.into();
-    let statements = match split_statements(tokens.clone()) {
+    let statements = match split_statements(tokens) {
         Ok(s) => s,
         Err(e) => return e.to_compile_error().into(),
     };
