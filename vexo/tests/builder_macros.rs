@@ -138,6 +138,7 @@ fn for_loop_interleaved_with_plain() {
 #[test]
 fn match_renders_taken_arm() {
     #[derive(PartialEq)]
+    #[allow(dead_code)]
     enum S {
         A,
         B,
@@ -157,6 +158,7 @@ fn match_renders_taken_arm() {
 #[test]
 fn match_with_guard() {
     #[derive(PartialEq)]
+    #[allow(dead_code)]
     enum S {
         Loading,
         Error(String),

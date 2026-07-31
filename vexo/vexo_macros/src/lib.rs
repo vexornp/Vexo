@@ -106,8 +106,14 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
                     ));
                 }
             }
+            let span = stmt
+                .clone()
+                .into_iter()
+                .next()
+                .map(|t| t.span())
+                .unwrap_or_else(proc_macro2::Span::call_site);
             return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
+                span,
                 "could not parse statement in builder block",
             ));
         }
@@ -122,7 +128,6 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
             let cond = &if_expr.cond;
             let then_body = &if_expr.then_branch;
             if let Some((_, else_body)) = &if_expr.else_branch {
-                // if cond { a } else { b } -> build_either(if c { a.boxed() } else { b.boxed() })
                 Ok(quote! {
                     ::vexo::widgets::ChildPush::push_into(
                         ::vexo::view_builder::build_either(
@@ -138,7 +143,6 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
                     );
                 })
             } else {
-                // if cond { body } (no else) -> build_optional(if c { Some(body.boxed()) } else { None })
                 Ok(quote! {
                     ::vexo::widgets::ChildPush::push_into(
                         ::vexo::view_builder::build_optional(
@@ -158,7 +162,6 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
             let pat = &for_expr.pat;
             let expr_iter = &for_expr.expr;
             let body = &for_expr.body;
-            // for x in xs { body } -> build_array(xs.into_iter().map(|x| body.boxed()).collect())
             Ok(quote! {
                 ::vexo::widgets::ChildPush::push_into(
                     ::vexo::view_builder::build_array(
@@ -189,7 +192,6 @@ fn expand_statement(stmt: &proc_macro2::TokenStream) -> syn::Result<proc_macro2:
                     },
                 });
             }
-            // match e { arms } -> push_into(match e { arms => body.boxed() })
             Ok(quote! {
                 ::vexo::widgets::ChildPush::push_into(
                     match #scrutinee {
