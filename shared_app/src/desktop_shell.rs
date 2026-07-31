@@ -130,9 +130,9 @@ where
         let tab_clone = tab.clone();
         let content = (shell.sidebar_builder)(tab, is_selected, nav_colors);
 
-        let item = GestureDetector::new(content)
-            .on_press(move || ctrl.switch_to(tab_clone.clone()))
-            .with_layout(
+        let item = GestureDetector::new(
+            WithLayout::new(
+                content,
                 Layout::default()
                     .width_percent(1.0)
                     .height(48.0)
@@ -140,7 +140,10 @@ where
                     .align(AlignItems::Center)
                     .justify(JustifyContent::Center),
             )
-            .boxed();
+            .boxed(),
+        )
+        .on_press(move || ctrl.switch_to(tab_clone.clone()))
+        .boxed();
         items = items.push(item);
     }
 
