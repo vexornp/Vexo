@@ -484,5 +484,15 @@ mod tests {
             Some(crate::layout::EdgeInsets::all(20.0)),
             "with_layout must replace the layout wholesale"
         );
+        assert_eq!(
+            w.layout_ref().flex_direction,
+            None,
+            "with_layout must not inject Column"
+        );
+        assert_eq!(
+            w.layout_ref().align_items,
+            None,
+            "with_layout must not inject Stretch"
+        );
     }
 }
