@@ -65,6 +65,7 @@ pub mod navigation {
     /// Theme-aware navigation colors resolved from a `ThemeData`.
     pub struct NavColors {
         pub sidebar_bg: Color,
+        pub sidebar_selected_bg: Color,
         pub header_bg: Color,
         pub header_text: Color,
         pub row_bg: Color,
@@ -94,6 +95,16 @@ pub mod navigation {
         };
         NavColors {
             sidebar_bg: bar_bg,
+            // Soft-tint background for the selected sidebar item: a light wash
+            // of `primary` over `surface` (≈ 15% primary). Used by
+            // `DesktopShell` to paint a floating softened-rectangle pill behind
+            // the selected sidebar icon (icon color stays `theme.primary`, so
+            // the tint must stay readable underneath it — a full-saturation
+            // `selected_bg` would yield primary-on-primary). Kept distinct
+            // from `row_hover_bg` (same value today) so a future sidebar hover
+            // state can take a different color without repurposing the
+            // selected token.
+            sidebar_selected_bg: Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64),
             header_bg: bar_bg,
             header_text: t.on_surface,
             row_bg: Color::TRANSPARENT,
@@ -125,6 +136,22 @@ pub mod navigation {
     pub const SIDEBAR_WIDTH: f32 = 64.0;
     pub const COLLAPSED_WIDTH: f32 = 44.0;
     pub const CONVERSATION_LIST_WIDTH: f32 = 300.0;
+
+    /// Lerp ratio (0.0–1.0) used to derive `NavColors.sidebar_selected_bg`
+    /// from `(primary, surface)`. 0.85 yields a pale primary tint that reads
+    /// as a soft wash behind a same-hue `theme.primary` icon, not a saturated
+    /// block. Mirrors `row_hover_bg`'s value today; split into its own const
+    /// so the sidebar selected tint can be tuned independently of any future
+    /// sidebar hover color.
+    pub const SIDEBAR_SELECTED_TINT: f32 = 0.85;
+
+    /// Inset (logical px) of the selected sidebar pill from the item slot
+    /// edges, applied on all four sides. The sidebar item slot is 64×48
+    /// (`SIDEBAR_WIDTH` × 48.0), so a 4px inset yields a 56×40 floating
+    /// rounded rectangle — the macOS Finder/Mail sidebar selection pattern.
+    /// Distinct from `ROW_INSET` (which is horizontal-only and row-scoped)
+    /// because the sidebar pill is four-sided and may diverge.
+    pub const SIDEBAR_ITEM_INSET: f32 = 4.0;
 
     pub const HEADER_PADDING: f32 = 12.0;
     pub const HEADER_FONT_SIZE: f32 = 16.0;
@@ -270,13 +297,19 @@ mod tests {
         };
     }
 
-    use super::navigation::{colors as nav_colors, NavColors, DIVIDER_ALPHA};
+    use super::navigation::{
+        colors as nav_colors, NavColors, DIVIDER_ALPHA, SIDEBAR_SELECTED_TINT,
+    };
 
     #[test]
     fn nav_colors_light_maps_roles() {
         let t = ThemeData::light();
         let n = nav_colors(&t);
         assert_eq!(n.sidebar_bg, t.surface);
+        assert_eq!(
+            n.sidebar_selected_bg,
+            Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64)
+        );
         assert_eq!(n.header_bg, t.surface);
         assert_eq!(n.header_text, t.on_surface);
         assert_eq!(n.row_bg, Color::TRANSPARENT);
@@ -306,6 +339,10 @@ mod tests {
         assert_eq!(n.header_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.selected_bg, t.primary);
         assert_eq!(
+            n.sidebar_selected_bg,
+            Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64)
+        );
+        assert_eq!(
             n.divider,
             Color::lerp(t.outline, t.surface, 1.0 - DIVIDER_ALPHA as f64)
         );
@@ -315,6 +352,7 @@ mod tests {
     fn nav_colors_is_a_struct() {
         let _ = NavColors {
             sidebar_bg: Color::WHITE,
+            sidebar_selected_bg: Color::WHITE,
             header_bg: Color::WHITE,
             header_text: Color::WHITE,
             row_bg: Color::WHITE,

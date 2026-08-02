@@ -18,17 +18,22 @@ use vexo::{
     IndexedStack, JustifyContent, Layout, LifecycleContext, RenderContext, Style, Theme, Widget,
     WithLayout,
 };
-use vexo_uikit::theme::tokens::navigation::{self, NavColors, HAIRLINE_THICKNESS, SIDEBAR_WIDTH};
+use vexo_uikit::theme::tokens::navigation::{
+    self, NavColors, HAIRLINE_THICKNESS, ROW_PILL_RADIUS, SIDEBAR_ITEM_INSET, SIDEBAR_WIDTH,
+};
 use vexo_uikit::TabController;
 
 // ============================================================================
 // TYPE ALIASES FOR BUILDERS
 // ============================================================================
 
-/// Builder for sidebar items: receives the tab, selection state, and resolved
-/// navigation colors. Returns the item's content (icon + label). The shell
-/// wraps this in a `GestureDetector` and applies the `selected_bg` background.
-pub(crate) type SidebarBuilder<D> = Arc<dyn Fn(&D, bool, &NavColors) -> Box<dyn Widget>>;
+/// Builder for sidebar items: receives the tab and its selection state.
+/// Returns the item's content (typically an `Icon`). The shell wraps this in
+/// a `GestureDetector`, applies a 4px inset on all sides, and — when
+/// selected — paints a soft-tint rounded-rectangle pill
+/// (`NavColors.sidebar_selected_bg` + `ROW_PILL_RADIUS`) behind it. The
+/// builder therefore does not need to know about selection visuals.
+pub(crate) type SidebarBuilder<D> = Arc<dyn Fn(&D, bool) -> Box<dyn Widget>>;
 
 /// Builder for page content. Called once per tab per render.
 pub(crate) type PageBuilder<D> = Arc<dyn Fn(&D) -> Box<dyn Widget>>;
@@ -130,17 +135,50 @@ where
             let is_selected = *tab == shell.controller.current();
             let ctrl = shell.controller.clone();
             let tab_clone = tab.clone();
-            let content = (shell.sidebar_builder)(tab, is_selected, nav_colors);
+            let content = (shell.sidebar_builder)(tab, is_selected);
 
+            // Center the icon inside the pill's content box (the 56×40 area
+            // left after the 4px inset below).
+            let centered = WithLayout::new(
+                content,
+                Layout::default()
+                    .flex_grow(1.0)
+                    .align(AlignItems::Center)
+                    .justify(JustifyContent::Center),
+            );
+
+            // Selected: paint the soft-tint rounded-rectangle pill behind
+            // the centered icon. Unselected: skip the DecoratedBox entirely
+            // (no-op render object in the common case, matching
+            // conversation_list's pill pattern). The pill's corner radius
+            // reuses ROW_PILL_RADIUS so sidebar and conversation-row pills
+            // share the "softened rectangle, not a card" visual intent.
+            let pill: Box<dyn Widget> = if is_selected {
+                DecoratedBox::with_style(
+                    centered,
+                    Style::default()
+                        .background(nav_colors.sidebar_selected_bg)
+                        .corner_radius(ROW_PILL_RADIUS),
+                )
+                .boxed()
+            } else {
+                centered.boxed()
+            };
+
+            // Outer slot: full 64×48 item area, with a 4px inset on all sides
+            // so the pill floats as a 56×40 rounded rectangle (macOS
+            // Finder/Mail sidebar selection pattern). The inset lives *outside*
+            // the DecoratedBox so the pill box itself is 56×40 — putting the
+            // inset inside the DecoratedBox would yield a full-bleed bar, not
+            // a floating pill.
             GestureDetector::new(
                 WithLayout::new(
-                    content,
+                    pill,
                     Layout::default()
                         .width_percent(1.0)
                         .height(48.0)
-                        .flex_shrink(0.0)
-                        .align(AlignItems::Center)
-                        .justify(JustifyContent::Center),
+                        .padding(SIDEBAR_ITEM_INSET)
+                        .flex_shrink(0.0),
                 )
                 .boxed(),
             )

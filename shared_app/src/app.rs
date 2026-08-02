@@ -128,7 +128,7 @@ impl Application for ImState {
                             is_dark_signal.clone(),
                         ),
                     }),
-                    sidebar_builder: std::sync::Arc::new(move |tab, is_selected, _nav_colors| {
+                    sidebar_builder: std::sync::Arc::new(move |tab, is_selected| {
                         let icon = match tab {
                             ImTab::Chats => Icons::Comment,
                             ImTab::Contacts => Icons::AddressBook,
