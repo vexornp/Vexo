@@ -9,8 +9,8 @@
 use vexo::layout::JustifyContent;
 use vexo::{
     column, row, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, ImageData,
-    Layout, MultiChild, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData,
-    Widget, WithLayout,
+    Layout, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget,
+    WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
@@ -167,16 +167,16 @@ fn section_header(label: &str, theme: &vexo::ThemeData) -> Box<dyn Widget> {
 /// Wrap a list of rows in a rounded card on `theme.surface`, inserting a
 /// hairline divider between each pair of rows (none after the last).
 fn build_card(rows: Vec<Box<dyn Widget>>, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let mut col = MultiChild::empty(Layout::column());
     let last = rows.len();
+    let mut kids: Vec<Box<dyn Widget>> = Vec::with_capacity(rows.len() * 2);
     for (i, row) in rows.into_iter().enumerate() {
-        col = col.push(row);
+        kids.push(row);
         if i + 1 < last {
-            col = col.push(divider(theme));
+            kids.push(divider(theme));
         }
     }
     DecoratedBox::with_style(
-        col,
+        column! { kids },
         Style::default()
             .background(theme.surface)
             .corner_radius(CARD_RADIUS),
