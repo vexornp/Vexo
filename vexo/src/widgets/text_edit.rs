@@ -552,6 +552,9 @@ impl ComponentState for TextEditState {
 pub struct TextEdit {
     controller: TextEditingController,
     key: Option<WidgetKey>,
+    background: Option<crate::core::Color>,
+    text_color: Option<crate::core::Color>,
+    border_color: Option<crate::core::Color>,
 }
 
 impl TextEdit {
@@ -560,12 +563,34 @@ impl TextEdit {
         Self {
             controller,
             key: None,
+            background: None,
+            text_color: None,
+            border_color: None,
         }
     }
 
     /// Set the widget key.
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
+        self
+    }
+
+    /// Set the background color of the text field box. Defaults to WHITE.
+    pub fn with_background(mut self, color: crate::core::Color) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    /// Set the text glyph color. Defaults to BLACK.
+    pub fn with_text_color(mut self, color: crate::core::Color) -> Self {
+        self.text_color = Some(color);
+        self
+    }
+
+    /// Set the border color (applies to both focused and unfocused states;
+    /// only the border WIDTH changes on focus). Defaults to gray.
+    pub fn with_border_color(mut self, color: crate::core::Color) -> Self {
+        self.border_color = Some(color);
         self
     }
 
@@ -581,23 +606,26 @@ impl Component for TextEdit {
     fn render(&self, _state: &mut TextEditState, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let is_focused = ctx.is_focused();
 
-        let border_color = if is_focused {
-            crate::core::Color::rgb(0.2, 0.4, 0.8)
-        } else {
-            crate::core::Color::rgb(0.6, 0.6, 0.6)
-        };
+        let border_color = self
+            .border_color
+            .unwrap_or_else(|| crate::core::Color::rgb(0.6, 0.6, 0.6));
 
         let border_width = if is_focused { 2.0 } else { 1.0 };
 
+        let text_color = self.text_color.unwrap_or(crate::core::Color::BLACK);
+
         let content = super::TextEditContent::new(self.controller.text(), self.controller.editor())
             .with_font_size(self.controller.font_size())
+            .with_color(text_color)
             .with_focused(is_focused)
             .with_cursor_blink_visible(false);
+
+        let background = self.background.unwrap_or(crate::core::Color::WHITE);
 
         let styled = crate::DecoratedBox::with_style(
             crate::WithLayout::new(content, crate::Layout::default().padding(8.0)),
             crate::Style::default()
-                .background(crate::core::Color::WHITE)
+                .background(background)
                 .border(border_color, border_width)
                 .corner_radius(4.0),
         );
@@ -832,6 +860,226 @@ mod tests {
         let text_edit = TextEdit::new(controller);
         let cloned = text_edit.clone();
         assert_eq!(cloned.controller().text(), "Hello");
+    }
+
+    use crate::core::Color;
+    use crate::render_objects::DecoratedBoxRenderObject;
+    use crate::{RenderObject, RenderObjectKey};
+
+    fn find_render_object_in_tree(
+        reg: &crate::RenderObjectRegistry,
+        key: RenderObjectKey,
+        predicate: &dyn Fn(&dyn RenderObject) -> bool,
+    ) -> Option<RenderObjectKey> {
+        let ro = reg.get(key)?;
+        if predicate(ro) {
+            return Some(key);
+        }
+        for &child in ro.children() {
+            if let Some(found) = find_render_object_in_tree(reg, child, predicate) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    fn build_text_edit_pipeline(text_edit: TextEdit) -> ThreeTreePipeline {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(text_edit));
+        let mut engine = TaffyLayoutEngine::new();
+        let mut fs = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
+        pipeline
+    }
+
+    #[test]
+    fn test_text_edit_default_colors_preserved() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let text_edit = TextEdit::new(controller);
+        let pipeline = build_text_edit_pipeline(text_edit);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        let decorated_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<DecoratedBoxRenderObject>()
+                .is_some()
+        })
+        .expect("should find a DecoratedBoxRenderObject");
+
+        let decorated_ro = ro_reg
+            .get(decorated_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<DecoratedBoxRenderObject>())
+            .expect("downcast DecoratedBoxRenderObject");
+        assert_eq!(
+            decorated_ro.style().background,
+            Some(Color::WHITE),
+            "default background should be WHITE"
+        );
+        let border = decorated_ro
+            .style()
+            .border
+            .as_ref()
+            .expect("default should have a border");
+        assert_eq!(
+            border.color,
+            Color::rgb(0.6, 0.6, 0.6),
+            "default unfocused border color should be the hardcoded gray"
+        );
+        assert_eq!(
+            border.width, 1.0,
+            "default unfocused border width should be 1.0"
+        );
+
+        let text_edit_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+                .is_some()
+        })
+        .expect("should find a TextEditRenderObject");
+        let text_edit_ro = ro_reg
+            .get(text_edit_key)
+            .and_then(|ro| {
+                ro.as_any()
+                    .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+            })
+            .expect("downcast TextEditRenderObject");
+        assert_eq!(
+            text_edit_ro.color(),
+            Color::BLACK,
+            "default glyph color should be BLACK"
+        );
+    }
+
+    #[test]
+    fn test_text_edit_with_colors_applied() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let bg = Color::rgb(0.1, 0.1, 0.1);
+        let text_color = Color::rgb(0.9, 0.9, 0.9);
+        let border_color = Color::rgb(0.5, 0.5, 0.5);
+        let text_edit = TextEdit::new(controller)
+            .with_background(bg)
+            .with_text_color(text_color)
+            .with_border_color(border_color);
+        let pipeline = build_text_edit_pipeline(text_edit);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        let decorated_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<DecoratedBoxRenderObject>()
+                .is_some()
+        })
+        .expect("should find a DecoratedBoxRenderObject");
+        let decorated_ro = ro_reg
+            .get(decorated_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<DecoratedBoxRenderObject>())
+            .expect("downcast DecoratedBoxRenderObject");
+        assert_eq!(decorated_ro.style().background, Some(bg));
+        let border = decorated_ro
+            .style()
+            .border
+            .as_ref()
+            .expect("should have a border");
+        assert_eq!(border.color, border_color);
+        assert_eq!(border.width, 1.0, "unfocused border width should be 1.0");
+
+        let text_edit_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+                .is_some()
+        })
+        .expect("should find a TextEditRenderObject");
+        let text_edit_ro = ro_reg
+            .get(text_edit_key)
+            .and_then(|ro| {
+                ro.as_any()
+                    .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+            })
+            .expect("downcast TextEditRenderObject");
+        assert_eq!(text_edit_ro.color(), text_color);
+    }
+
+    #[test]
+    fn test_text_edit_focus_keeps_border_color_changes_width() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("Hello", &mut fs);
+        let border_color = Color::rgb(0.3, 0.3, 0.3);
+        let text_edit = TextEdit::new(controller).with_border_color(border_color);
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(Box::new(text_edit));
+        let mut engine = TaffyLayoutEngine::new();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut fs);
+
+        let unfocused_border_width = {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            let decorated_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+                ro.as_any()
+                    .downcast_ref::<DecoratedBoxRenderObject>()
+                    .is_some()
+            })
+            .expect("find DecoratedBox unfocused");
+            let decorated_ro = ro_reg
+                .get(decorated_key)
+                .and_then(|ro| ro.as_any().downcast_ref::<DecoratedBoxRenderObject>())
+                .expect("downcast");
+            let border = decorated_ro.style().border.as_ref().expect("border");
+            assert_eq!(border.color, border_color, "unfocused color");
+            border.width
+        };
+        assert_eq!(unfocused_border_width, 1.0, "unfocused width should be 1.0");
+
+        use crate::core::{Logical, Point, ScaleSource};
+        use crate::input::{ButtonState, InputEvent, Modifiers, PointerButton};
+        let click = InputEvent::PointerButton {
+            position: Point::<Logical>::new(10.0, 10.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::<Logical>::new(10.0, 10.0),
+            &click,
+            Modifiers::default(),
+            &mut fs,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        pipeline.perform_rebuilds();
+
+        let focused_border = {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            let decorated_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+                ro.as_any()
+                    .downcast_ref::<DecoratedBoxRenderObject>()
+                    .is_some()
+            })
+            .expect("find DecoratedBox focused");
+            let decorated_ro = ro_reg
+                .get(decorated_key)
+                .and_then(|ro| ro.as_any().downcast_ref::<DecoratedBoxRenderObject>())
+                .expect("downcast");
+            decorated_ro
+                .style()
+                .border
+                .as_ref()
+                .expect("border")
+                .clone()
+        };
+        assert_eq!(
+            focused_border.color, border_color,
+            "focused border color must equal unfocused border color (Approach B)"
+        );
+        assert_eq!(
+            focused_border.width, 2.0,
+            "focused border width should bump to 2.0"
+        );
     }
 
     #[test]
