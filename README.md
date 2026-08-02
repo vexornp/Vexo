@@ -38,30 +38,33 @@ and [Building for Android](#building-for-android).)
 ## A minimal app
 
 ```rust
-use vexo::{Application, ComponentState, Layout, MultiChild, Text, Widget};
+use vexo::{column, Application, ComponentState, Signal, Text, Widget};
 
-#[derive(Default)]
-struct Hello;
+#[derive(ComponentState, Default)]
+struct CounterState {
+    count: Signal<u32>,
+}
 
-impl ComponentState for Hello {}
-
-impl Application for Hello {
+impl Application for CounterState {
     type State = Self;
 
-    fn new() -> Self {
-        Hello
+    fn new() -> Self::State {
+        CounterState::default()
     }
 
-    fn view(_state: &mut Self) -> Box<dyn Widget> {
-        Box::new(MultiChild::new(
-            vec![Box::new(Text::new("Hello, Vexo!"))],
-            Layout::column(),
-        ))
+    fn view(state: &mut Self::State) -> Box<dyn Widget> {
+        let count = state.count.get();
+        let sig = state.count.clone();
+        column! {
+            Text::new(format!("Count: {}", count)),
+            Text::new("+1").on_press(move || { sig.set(sig.get() + 1); }),
+        }
+        .boxed()
     }
 }
 
 fn main() {
-    vexo::run_desktop_demo::<Hello>().unwrap();
+    vexo::run_desktop_demo::<CounterState>().unwrap();
 }
 ```
 
