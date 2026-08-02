@@ -489,6 +489,39 @@ mod tests {
             None
         }
 
+        fn collect_matching(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            predicate: &dyn Fn(&dyn vexo::RenderObject) -> bool,
+            out: &mut Vec<RenderObjectKey>,
+        ) {
+            if let Some(ro) = reg.get(key) {
+                if predicate(ro) {
+                    out.push(key);
+                }
+                for &child in ro.children() {
+                    collect_matching(reg, child, predicate, out);
+                }
+            }
+        }
+
+        fn subtree_contains(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            target: RenderObjectKey,
+        ) -> bool {
+            if key == target {
+                return true;
+            }
+            match reg.get(key) {
+                Some(ro) => ro
+                    .children()
+                    .iter()
+                    .any(|&child| subtree_contains(reg, child, target)),
+                None => false,
+            }
+        }
+
         let text_edit_key = find_in_tree(ro_reg, root, &|ro| {
             ro.as_any()
                 .downcast_ref::<vexo::TextEditRenderObject>()
@@ -505,16 +538,30 @@ mod tests {
             "input bar text color should match dark theme on_surface"
         );
 
-        let decorated_key = find_in_tree(ro_reg, root, &|ro| {
-            ro.as_any()
-                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                .is_some()
-                && ro.as_any()
+        let mut all_decorated: Vec<RenderObjectKey> = Vec::new();
+        collect_matching(
+            ro_reg,
+            root,
+            &|ro| {
+                ro.as_any()
                     .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                    .map(|d| d.style().background == Some(dark_theme.surface))
-                    .unwrap_or(false)
-        })
-        .expect("should find the input bar's DecoratedBoxRenderObject (background == dark theme surface)");
+                    .is_some()
+            },
+            &mut all_decorated,
+        );
+        // `all_decorated` is in DFS pre-order, so ancestors appear before
+        // descendants. The ChatScreen root itself is a DecoratedBox (wrapping
+        // KeyboardAvoider) and is an ancestor of the input bar's TextEdit, so a
+        // forward search would return the root — which has no border. The
+        // input bar's own DecoratedBox (created inside TextEdit, carrying the
+        // border) is the INNERMOST enclosing DecoratedBox of the
+        // TextEditRenderObject. Iterate in reverse so the deepest match wins.
+        let decorated_key = all_decorated
+            .iter()
+            .rev()
+            .copied()
+            .find(|&k| subtree_contains(ro_reg, k, text_edit_key))
+            .expect("should find the DecoratedBox enclosing the input bar's TextEditRenderObject");
         let decorated_ro = ro_reg
             .get(decorated_key)
             .and_then(|ro| {
