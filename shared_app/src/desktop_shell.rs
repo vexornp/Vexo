@@ -19,7 +19,7 @@ use vexo::{
     WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{
-    self, NavColors, HAIRLINE_THICKNESS, ROW_PILL_RADIUS, SIDEBAR_ITEM_INSET, SIDEBAR_WIDTH,
+    self, NavColors, HAIRLINE_THICKNESS, ROW_PILL_RADIUS, SIDEBAR_WIDTH,
 };
 use vexo_uikit::TabController;
 
@@ -137,8 +137,8 @@ where
             let tab_clone = tab.clone();
             let content = (shell.sidebar_builder)(tab, is_selected);
 
-            // Center the icon inside the pill's content box (the 56×40 area
-            // left after the 4px inset below).
+            // Center the icon inside the pill's content box (the 40×40
+            // square left after the explicit square sizing below).
             let centered = WithLayout::new(
                 content,
                 Layout::default()
@@ -147,7 +147,7 @@ where
                     .justify(JustifyContent::Center),
             );
 
-            // Selected: paint the soft-tint rounded-rectangle pill behind
+            // Selected: paint the soft-tint rounded-rectangle square behind
             // the centered icon. Unselected: skip the DecoratedBox entirely
             // (no-op render object in the common case, matching
             // conversation_list's pill pattern). The pill's corner radius
@@ -165,19 +165,25 @@ where
                 centered.boxed()
             };
 
-            // Outer slot: full 64×48 item area, with a 4px inset on all sides
-            // so the pill floats as a 56×40 rounded rectangle (macOS
-            // Finder/Mail sidebar selection pattern). The inset lives *outside*
-            // the DecoratedBox so the pill box itself is 56×40 — putting the
-            // inset inside the DecoratedBox would yield a full-bleed bar, not
-            // a floating pill.
+            // Outer slot: full-width × 48px tappable area. The pill itself
+            // is a 40×40 square (matching the post-inset height) centered
+            // horizontally and vertically — a macOS Finder/Mail-style
+            // floating square selection rather than a full-bleed bar.
             GestureDetector::new(
                 WithLayout::new(
-                    pill,
+                    WithLayout::new(
+                        pill,
+                        Layout::default()
+                            .width(40.0)
+                            .height(40.0)
+                            .flex_shrink(0.0),
+                    )
+                    .boxed(),
                     Layout::default()
                         .width_percent(1.0)
                         .height(48.0)
-                        .padding(SIDEBAR_ITEM_INSET)
+                        .align(AlignItems::Center)
+                        .justify(JustifyContent::Center)
                         .flex_shrink(0.0),
                 )
                 .boxed(),
