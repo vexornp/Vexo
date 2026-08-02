@@ -4,7 +4,7 @@
 //! layout). Compile-pass/compile-fail cases live in `vexo_macros/tests/ui/`.
 
 use vexo::widgets::{MultiChild, Widget};
-use vexo::{column, row};
+use vexo::{column, row, FlexDirection};
 
 #[test]
 fn column_produces_multichild_with_two_children() {
@@ -172,4 +172,22 @@ fn match_with_guard() {
         },
     };
     assert_eq!(w.children().len(), 1);
+}
+
+#[test]
+fn column_macro_with_fluent_layout_chain() {
+    let mc: MultiChild = column! {
+        vexo::Text::new("a"),
+        vexo::Text::new("b"),
+    }
+    .gap(8.0)
+    .padding(12.0);
+
+    assert_eq!(mc.children().len(), 2);
+    assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Column));
+    assert_eq!(mc.layout_ref().gap, Some(vexo::Size::new(8.0, 8.0)));
+    assert!(mc.layout_ref().padding.is_some());
+    let p = mc.layout_ref().padding.unwrap();
+    assert_eq!(p.top, 12.0);
+    assert_eq!(p.bottom, 12.0);
 }
