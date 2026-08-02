@@ -145,26 +145,27 @@ impl Component for ChatScreen {
         // Build the content WITHOUT reading MediaQuery — ChatScreen is NOT a
         // MediaQuery dependent, so it does NOT rebuild on keyboard animation
         // frames. KeyboardAvoider (from vexo_uikit) is the MediaQuery
-        // dependent; it wraps the content in Memo<()> so its rebuild is O(1).
-        let content = DecoratedBox::with_style(
-            MultiChild::new(
-                children![
-                    WithLayout::new(
-                        ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
-                        Layout::flex_fill(),
-                    ),
-                    input_bar,
-                ],
-                Layout::column()
-                    .flex_grow(1.0)
-                    .flex_basis(0.0)
-                    .min_height(0.0),
-            ),
-            Style::default().background(theme.background),
+        // dependent; it wraps the content in Shared so its rebuild is O(1).
+        let content = MultiChild::new(
+            children![
+                WithLayout::new(
+                    ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
+                    Layout::flex_fill(),
+                ),
+                input_bar,
+            ],
+            Layout::column()
+                .flex_grow(1.0)
+                .flex_basis(0.0)
+                .min_height(0.0),
         )
         .boxed();
 
-        KeyboardAvoider::new(content).boxed()
+        DecoratedBox::with_style(
+            KeyboardAvoider::new(content),
+            Style::default().background(theme.background),
+        )
+        .boxed()
     }
 }
 
