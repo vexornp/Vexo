@@ -99,14 +99,14 @@ pub mod navigation {
             // softened-rectangle pill behind the selected sidebar icon (icon
             // color stays `theme.primary`, so the tint must stay readable
             // underneath it — a full-saturation `t.primary` would yield
-            // primary-on-primary). Kept distinct from `row_hover_bg` (same
-            // value today) so a future sidebar hover state can take a
-            // different color without repurposing the selected token.
+            // primary-on-primary). Distinct from `row_hover_bg` (a lighter
+            // wash of the same primary/surface pair) so selection reads
+            // stronger than hover.
             sidebar_selected_bg: Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64),
             header_bg: bar_bg,
             header_text: t.on_surface,
             row_bg: Color::TRANSPARENT,
-            row_hover_bg: Color::lerp(t.primary, t.surface, 0.85),
+            row_hover_bg: Color::lerp(t.primary, t.surface, ROW_HOVER_TINT as f64),
             row_text: t.on_surface,
             detail_bg: t.background,
             // Hairline separator color. Opaque (pre-composited) so it renders
@@ -136,10 +136,15 @@ pub mod navigation {
     /// Lerp ratio (0.0–1.0) used to derive `NavColors.sidebar_selected_bg`
     /// from `(primary, surface)`. 0.85 yields a pale primary tint that reads
     /// as a soft wash behind a same-hue `theme.primary` icon, not a saturated
-    /// block. Mirrors `row_hover_bg`'s value today; split into its own const
-    /// so the sidebar selected tint can be tuned independently of any future
-    /// sidebar hover color.
+    /// block. Stronger than `ROW_HOVER_TINT` so selection reads above hover.
     pub const SIDEBAR_SELECTED_TINT: f32 = 0.85;
+
+    /// Lerp ratio (0.0–1.0) used to derive `NavColors.row_hover_bg` from
+    /// `(primary, surface)`. 0.95 yields a minimal-but-visible primary wash
+    /// (≈ 5% primary) — lighter than the selected tint so hover reads as a
+    /// gentle hint beneath the stronger selection pill. Tunable independently
+    /// of `SIDEBAR_SELECTED_TINT`.
+    pub const ROW_HOVER_TINT: f32 = 0.95;
 
     /// Inset (logical px) of the selected sidebar pill from the item slot
     /// edges, applied on all four sides. The sidebar item slot is 64×48
@@ -294,7 +299,7 @@ mod tests {
     }
 
     use super::navigation::{
-        colors as nav_colors, NavColors, DIVIDER_ALPHA, SIDEBAR_SELECTED_TINT,
+        colors as nav_colors, NavColors, DIVIDER_ALPHA, ROW_HOVER_TINT, SIDEBAR_SELECTED_TINT,
     };
 
     #[test]
@@ -309,7 +314,10 @@ mod tests {
         assert_eq!(n.header_bg, t.surface);
         assert_eq!(n.header_text, t.on_surface);
         assert_eq!(n.row_bg, Color::TRANSPARENT);
-        assert_eq!(n.row_hover_bg, Color::lerp(t.primary, t.surface, 0.85));
+        assert_eq!(
+            n.row_hover_bg,
+            Color::lerp(t.primary, t.surface, ROW_HOVER_TINT as f64)
+        );
         assert_eq!(n.row_text, t.on_surface);
         assert_eq!(n.detail_bg, t.background);
         assert_eq!(
