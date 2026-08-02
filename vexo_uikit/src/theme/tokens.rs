@@ -132,6 +132,23 @@ pub mod navigation {
     pub const ROW_PADDING: f32 = 10.0;
     pub const ROW_FONT_SIZE: f32 = 16.0;
 
+    /// Horizontal inset (logical px) of the row selection/hover pill from the
+    /// list edges. Applied as an always-present horizontal margin on desktop
+    /// so content position is stable across selected/hovered/unselected states
+    /// (macOS Finder/Mail convention).
+    ///
+    /// Desktop-only today: mobile passes `selected = None` and has no hover,
+    /// so it never paints a pill. If mobile ever gains an edit-mode selection,
+    /// a future designer should decide whether mobile wants an inset pill or a
+    /// full-bleed highlight (iOS Messages edit mode uses full-bleed) —
+    /// deferred until then.
+    pub const ROW_INSET: f32 = 4.0;
+
+    /// Corner radius (logical px) of the row selection/hover pill. Small
+    /// radius proportionate to the 4px inset; the pill reads as a softened
+    /// rectangle, not a card.
+    pub const ROW_PILL_RADIUS: f32 = 6.0;
+
     pub const PLACEHOLDER_FONT_SIZE: f32 = 16.0;
 
     pub const MOBILE_HEADER_HEIGHT: f32 = 44.0;

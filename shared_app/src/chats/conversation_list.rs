@@ -27,7 +27,7 @@ use vexo::{
     Text, Theme, ThemeData, Widget, WithLayout,
 };
 use vexo_uikit::platform::Platform;
-use vexo_uikit::theme::tokens::navigation;
+use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
 use crate::data::{ConvId, Conversation, Message};
 use crate::widgets::avatar::avatar;
@@ -202,13 +202,40 @@ impl Component for ConversationRow {
             Layout::default().padding(12.0),
         );
 
+        // Pill geometry: a 4px horizontal margin (desktop-only) is applied
+        // unconditionally so content position is stable across
+        // selected/hovered/unselected states. The margin lives on the outer
+        // `WithLayout` (always present); the background+radius live on the
+        // inner `DecoratedBox` (only painted when `row_bg` is `Some`).
+        //
+        // Mobile skips the inset — it never paints a pill (no selection, no
+        // hover), so paying the layout cost there would shift content for no
+        // benefit. See `navigation::ROW_INSET` for the deferral rationale.
+        let pill_margin = if self.effective_platform() == Platform::Desktop {
+            ROW_INSET
+        } else {
+            0.0
+        };
+
+        let pill = WithLayout::new(
+            inner,
+            Layout::default().margin_each(pill_margin, pill_margin, 0.0, 0.0),
+        );
+
         // Conditionally wrap in DecoratedBox only when there's a background
         // to paint — avoids a no-op DecoratedBox render object per row in the
-        // common (unselected, unhovered) case.
+        // common (unselected, unhovered) case. The radius rides along with
+        // the background; both are conditional on the same `row_bg`.
         let root: Box<dyn Widget> = if let Some(bg) = row_bg {
-            DecoratedBox::with_style(inner, Style::default().background(bg)).boxed()
+            DecoratedBox::with_style(
+                pill,
+                Style::default()
+                    .background(bg)
+                    .corner_radius(ROW_PILL_RADIUS),
+            )
+            .boxed()
         } else {
-            inner.boxed()
+            pill.boxed()
         };
 
         let is_hovered_signal = state.is_hovered.clone();
