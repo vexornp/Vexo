@@ -534,4 +534,66 @@ mod global_key_tests {
             "ScrollView should be in the hit path for taps inside the viewport"
         );
     }
+
+    #[test]
+    fn test_mouse_region_cursor_resolution_through_pass_through() {
+        use crate::input::{MouseCursor, SystemCursorKind};
+        use crate::widgets::MouseRegion;
+        use crate::MouseTracker;
+
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+
+        // MouseRegion wrapping a sized WithLayout(Text) child. The child
+        // is 100x50 at the origin; MouseRegion is pass-through and shares
+        // those bounds (same Taffy node), so it's in the hit path for any
+        // point inside (50, 25).
+        let child = WithLayout::new(
+            Text::new("Hover me"),
+            Layout::default().width(100.0).height(50.0),
+        );
+        let widget = MouseRegion::new(child).cursor(MouseCursor::System(SystemCursorKind::Pointer));
+
+        pipeline.reconcile(Box::new(widget));
+        pipeline.layout(CoreSize::new(800.0, 600.0), &mut engine, &mut font_system);
+
+        // Hit-test the center of the child's bounds.
+        let hit_pos = Position::<Logical, Absolute>::new(50.0, 25.0);
+        let result = pipeline.hit_test(hit_pos);
+
+        // 1. The hit must land — sanity check the test setup.
+        assert!(
+            result.is_hit(),
+            "hit test at (50, 25) must hit the MouseRegion-wrapped child"
+        );
+
+        // 2. The MouseRegion's annotation must be in the collected
+        //    annotations (the pass-through layer must not have dropped it
+        //    from the hit path).
+        let has_pointer_annotation = result.annotations().iter().any(|(_, annotation)| {
+            annotation.cursor == MouseCursor::System(SystemCursorKind::Pointer)
+        });
+        assert!(
+            has_pointer_annotation,
+            "MouseRegion's Pointer cursor annotation must be in the hit-test \
+             annotations; got {} annotations: {:?}",
+            result.annotations().len(),
+            result
+                .annotations()
+                .iter()
+                .map(|(_, a)| a.cursor)
+                .collect::<Vec<_>>(),
+        );
+
+        // 3. Cursor resolution must return Pointer (the declared cursor),
+        //    proving the pass-through layer preserves the cursor pipeline.
+        let resolved = MouseTracker::resolve_cursor(result.annotations());
+        assert_eq!(
+            resolved,
+            SystemCursorKind::Pointer,
+            "resolve_cursor must return Pointer through the pass-through MouseRegion"
+        );
+    }
 }

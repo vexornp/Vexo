@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::input::{MouseCursor, MouseTrackerAnnotation};
-use crate::layout::{AlignItems, FlexDirection, Layout, LayoutNodeKey};
+use crate::layout::{Layout, LayoutNodeKey};
 
 use super::super::elements::RenderObjectElement;
 use super::super::focus::attachment::FocusAttachment;
@@ -404,9 +404,13 @@ impl Element for MouseRegionElement {
 
 /// Pass-through render object for MouseRegion - invisible.
 ///
-/// Same as GestureDetectorRenderObject: delegates layout to child,
-/// generates no paint commands, hit tests using computed bounds.
-/// The annotation lives on the registry, not on this render object.
+/// Mirrors `GestureDetectorRenderObject`: `layout()` returns the child's
+/// node directly (no intervening Taffy container), `apply_layout` adopts
+/// the shared node's computed bounds, `paint()` generates no commands,
+/// `hit_test()` uses the adopted bounds. The `MouseTrackerAnnotation`
+/// lives on the `RenderObjectRegistry` (keyed on this RO), not on the RO
+/// itself — it is registered by `MouseRegionElement::register_annotation`
+/// during mount and collected from the hit path during cursor resolution.
 pub struct MouseRegionRenderObject {
     child: Option<RenderObjectKey>,
     computed_bounds: Option<Bounds<Logical>>,
@@ -431,20 +435,19 @@ impl Default for MouseRegionRenderObject {
 
 impl RenderObject for MouseRegionRenderObject {
     fn layout(&mut self, ctx: &mut LayoutContext, child_nodes: &[LayoutNodeKey]) -> LayoutResult {
-        let layout = Layout::default()
-            .flex_direction(FlexDirection::Column)
-            .align(AlignItems::Stretch);
-        match self.layout_node {
-            Some(existing) => {
-                ctx.engine().set_style(existing, &layout);
-                ctx.engine().set_children(existing, child_nodes);
+        // Pass-through: return the child's node directly. No intervening
+        // container — the grandparent links the grandchild's Taffy node.
+        // Mirrors `GestureDetectorRenderObject::layout`.
+        match child_nodes.first() {
+            Some(&child_node) => {
+                self.layout_node = Some(child_node);
                 LayoutResult {
-                    node: existing,
+                    node: child_node,
                     size: Size::zero(),
                 }
             }
             None => {
-                let node = ctx.engine().create_container(&layout, child_nodes);
+                let node = ctx.engine().create_leaf(&Layout::default());
                 self.layout_node = Some(node);
                 LayoutResult {
                     node,
@@ -460,6 +463,10 @@ impl RenderObject for MouseRegionRenderObject {
                 self.computed_bounds = Some(computed.bounds);
             }
         }
+    }
+
+    fn is_pass_through(&self) -> bool {
+        true
     }
 
     fn paint(&self, _ctx: &mut PaintContext) -> Vec<crate::render::RenderCommand> {
@@ -504,5 +511,67 @@ impl RenderObject for MouseRegionRenderObject {
 
     fn computed_bounds(&self) -> Option<Bounds<Logical>> {
         self.computed_bounds
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::{Layout, TaffyLayoutEngine};
+    use crate::widgets::Text;
+
+    fn create_test_font_system() -> glyphon::FontSystem {
+        let font_data = crate::resource::file::FONT.to_vec();
+        let binary = glyphon::fontdb::Source::Binary(std::sync::Arc::new(font_data));
+        glyphon::FontSystem::new_with_fonts([binary])
+    }
+
+    #[test]
+    fn test_mouse_region_render_object_is_pass_through() {
+        let widget = MouseRegion::new(Text::new("Hello"));
+        let ro = widget.create_render_object();
+        assert!(
+            ro.is_pass_through(),
+            "MouseRegion's render object must be pass-through"
+        );
+    }
+
+    #[test]
+    fn test_mouse_region_layout_returns_child_node() {
+        let mut ro = MouseRegionRenderObject::new();
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        // Create a child Taffy node the way the pipeline would: by calling
+        // engine.create_leaf and passing the key as a child_nodes entry.
+        let child_node = ctx
+            .engine()
+            .create_leaf(&Layout::default().width(50.0).height(50.0));
+        let result = ro.layout(&mut ctx, &[child_node]);
+
+        assert_eq!(
+            result.node, child_node,
+            "layout() must return the child's node (pass-through)"
+        );
+        assert_eq!(
+            ro.layout_node(),
+            Some(child_node),
+            "layout_node() must return the child's node after layout()"
+        );
+    }
+
+    #[test]
+    fn test_mouse_region_layout_no_child_creates_throwaway_node() {
+        let mut ro = MouseRegionRenderObject::new();
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+
+        let result = ro.layout(&mut ctx, &[]);
+
+        // Should not panic; should return some node and store it.
+        assert!(ro.layout_node().is_some());
+        assert_eq!(ro.layout_node(), Some(result.node));
     }
 }
