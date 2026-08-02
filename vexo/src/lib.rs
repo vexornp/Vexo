@@ -6,6 +6,7 @@ use winit::event_loop::EventLoop;
 pub use core::AffineTransform;
 pub use core::Color;
 pub use core::{KeyboardAnimation, KeyboardAnimationSource, KeyboardInsetSource};
+pub use core::{Logical, Size};
 pub use glyphon;
 pub use image_data::{ImageData, ImageDataError};
 pub use uniffi;
@@ -56,8 +57,9 @@ pub use state::CursorBlinkState;
 pub use winit::dpi::PhysicalPosition;
 
 pub use layout::{
-    AlignItems, AlignSelf, Display, EdgeInsets, FlexDirection, GridAutoFlow, JustifyContent, Layout,
-    Overflow, DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
+    AlignContent, AlignItems, AlignSelf, Display, EdgeInsets, FlexDirection, FlexWrap,
+    GridAutoFlow, GridPlacement, JustifyContent, Layout, Overflow, Position, TrackSizing,
+    DEFAULT_LINE_HEIGHT_MULTIPLIER, LAYOUT_WIDTH_TOLERANCE,
 };
 
 /// Platform service abstractions (clipboard, etc.).

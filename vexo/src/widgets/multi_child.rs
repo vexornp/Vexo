@@ -18,8 +18,12 @@
 
 use super::container::ChildPush;
 use super::{Element, Widget};
+use crate::core::{Logical, Size};
 use crate::key::WidgetKey;
-use crate::layout::Layout;
+use crate::layout::{
+    AlignContent, AlignItems, AlignSelf, Display, FlexDirection, FlexWrap, GridAutoFlow,
+    GridPlacement, JustifyContent, Layout, Overflow, Position, TrackSizing,
+};
 use crate::render_objects::ContainerRenderObject;
 use crate::{RenderObject, UpdateResult};
 
@@ -33,6 +37,27 @@ pub struct MultiChild {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,
     layout: Layout,
+}
+
+/// Generate fluent `Layout` passthrough methods on `MultiChild`.
+///
+/// Each entry `$method($args)` becomes `pub fn $method(mut self, $args) -> Self`
+/// that delegates to `self.layout.$method($args)`, mutating `self.layout` in
+/// place. Names and signatures mirror `Layout`'s instance builders exactly
+/// (`vexo/src/layout/style.rs`), so the API reads identically to `Layout`'s.
+macro_rules! impl_layout_passthrough {
+    ($($method:ident($($arg:ident: $ty:ty),*)),* $(,)?) => {
+        $(
+            #[doc = concat!("Set [`Layout::", stringify!($method), "`] on this container's layout.")]
+            #[doc = ""]
+            #[doc = concat!("Mirrors `Layout::", stringify!($method), "`; modifies the existing layout in place,")]
+            #[doc = "preserving other fields (e.g. the `column`/`row` direction set by `column!`/`row!`)."]
+            pub fn $method(mut self, $($arg: $ty),*) -> Self {
+                self.layout = self.layout.$method($($arg),*);
+                self
+            }
+        )*
+    };
 }
 
 impl MultiChild {
@@ -82,6 +107,69 @@ impl MultiChild {
     /// Get the layout.
     pub fn layout_ref(&self) -> &Layout {
         &self.layout
+    }
+
+    impl_layout_passthrough! {
+        // Box model
+        padding(value: f32),
+        padding_each(left: f32, right: f32, top: f32, bottom: f32),
+        margin(value: f32),
+        margin_each(left: f32, right: f32, top: f32, bottom: f32),
+        width(value: f32),
+        height(value: f32),
+        width_percent(value: f32),
+        height_percent(value: f32),
+        min_width(value: f32),
+        min_height(value: f32),
+        max_width(value: f32),
+        max_height(value: f32),
+
+        // Flexbox
+        flex_direction(value: FlexDirection),
+        flex_wrap(),
+        flex_wrap_mode(value: FlexWrap),
+        flex_grow(value: f32),
+        flex_shrink(value: f32),
+        flex_basis(value: f32),
+        justify(value: JustifyContent),
+        align(value: AlignItems),
+        align_content(value: AlignContent),
+        gap(value: f32),
+        gap_size(size: Size<Logical>),
+        gap_each(width: f32, height: f32),
+
+        // Grid
+        columns(sizes: Vec<TrackSizing>),
+        rows(sizes: Vec<TrackSizing>),
+        grid_column(placement: GridPlacement),
+        grid_row(placement: GridPlacement),
+        grid_auto_flow(value: GridAutoFlow),
+        auto_rows(sizes: Vec<TrackSizing>),
+        auto_columns(sizes: Vec<TrackSizing>),
+
+        // Positioning
+        absolute(),
+        relative(),
+        position(value: Position),
+        inset(value: f32),
+        top(value: f32),
+        right(value: f32),
+        bottom(value: f32),
+        left(value: f32),
+
+        // Per-item alignment
+        align_self(value: AlignSelf),
+
+        // Display
+        display(value: Display),
+
+        // Sizing
+        aspect_ratio(value: f32),
+
+        // Overflow
+        overflow(value: Overflow),
+        overflow_x(value: Overflow),
+        overflow_y(value: Overflow),
     }
 }
 
@@ -147,7 +235,8 @@ impl Widget for MultiChild {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{FlexDirection, Layout};
+    use crate::core::Size;
+    use crate::layout::{FlexDirection, JustifyContent, Layout, Overflow, Position, TrackSizing};
     use crate::Text;
 
     #[test]
@@ -208,5 +297,81 @@ mod tests {
         assert!(mc2
             .update_render_object(&mut ro)
             .contains(UpdateResult::LAYOUT));
+    }
+
+    #[test]
+    fn fluent_gap_preserves_column_direction() {
+        let mc = MultiChild::empty(Layout::column()).gap(8.0);
+        assert_eq!(mc.layout_ref().gap, Some(Size::new(8.0, 8.0)));
+        assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Column));
+    }
+
+    #[test]
+    fn fluent_padding_preserves_row_direction() {
+        let mc = MultiChild::empty(Layout::row()).padding(12.0);
+        let p = mc.layout_ref().padding.unwrap();
+        assert_eq!(p.top, 12.0);
+        assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Row));
+    }
+
+    #[test]
+    fn fluent_flex_shrink_preserves_direction() {
+        let mc = MultiChild::empty(Layout::row()).flex_shrink(0.0);
+        assert_eq!(mc.layout_ref().flex_shrink, Some(0.0));
+        assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Row));
+    }
+
+    #[test]
+    fn fluent_justify_overrides_default() {
+        let mc = MultiChild::empty(Layout::column()).justify(JustifyContent::SpaceBetween);
+        assert_eq!(
+            mc.layout_ref().justify_content,
+            Some(JustifyContent::SpaceBetween)
+        );
+    }
+
+    #[test]
+    fn fluent_columns_sets_grid_template() {
+        let mc = MultiChild::empty(Layout::grid())
+            .columns(vec![TrackSizing::Fr(1.0), TrackSizing::Fr(2.0)]);
+        let cols = mc.layout_ref().grid_template_columns.as_ref().unwrap();
+        assert_eq!(cols.len(), 2);
+    }
+
+    #[test]
+    fn fluent_absolute_top_sets_position_and_inset() {
+        let mc = MultiChild::empty(Layout::default()).absolute().top(10.0);
+        assert_eq!(mc.layout_ref().position, Some(Position::Absolute));
+        assert_eq!(mc.layout_ref().inset.unwrap().top, Some(10.0));
+    }
+
+    #[test]
+    fn fluent_overflow_sets_both_axes() {
+        let mc = MultiChild::empty(Layout::default()).overflow(Overflow::Hidden);
+        assert_eq!(mc.layout_ref().overflow_x, Some(Overflow::Hidden));
+        assert_eq!(mc.layout_ref().overflow_y, Some(Overflow::Hidden));
+    }
+
+    #[test]
+    fn fluent_chaining_sets_all_three() {
+        let mc = MultiChild::empty(Layout::column())
+            .gap(8.0)
+            .padding(12.0)
+            .flex_shrink(0.0);
+        assert_eq!(mc.layout_ref().gap, Some(Size::new(8.0, 8.0)));
+        assert!(mc.layout_ref().padding.is_some());
+        assert_eq!(mc.layout_ref().flex_shrink, Some(0.0));
+        assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Column));
+    }
+
+    #[test]
+    fn fluent_flex_direction_overrides_column_default() {
+        // Start with Layout::column() (what column! would set); calling
+        // .flex_direction(Row) overrides it. No error — methods are low-level
+        // setters, user intent honored. Macro integration is covered by the
+        // integration test in vexo/tests/builder_macros.rs.
+        let mc = MultiChild::new(vec![Text::new("A").boxed()], Layout::column())
+            .flex_direction(FlexDirection::Row);
+        assert_eq!(mc.layout_ref().flex_direction, Some(FlexDirection::Row));
     }
 }
