@@ -9,17 +9,25 @@
 //! the latest message (with seed fallback). This state-driven rebuild
 //! bypasses `should_rebuild` gates (TabBarView, NavigationStackView) so the
 //! list refreshes on mobile even while the chat screen is pushed.
+//!
+//! Each row is itself a `Component` (`ConversationRow`) owning its own
+//! `is_hovered` Signal, so a hover toggle rebuilds only that row, not the
+//! whole list. Hover is gated to `Platform::Desktop` (mirrors `Button`):
+//! mobile has no hover input device, so the hover color is dead code there.
+//! When a row is selected, hover is suppressed — selection is authoritative
+//! (macOS Finder/Mail convention).
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, column, AlignItems, AlignSelf, Component, DecoratedBox, ImageData, Layout,
-    MultiChild, Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text,
-    Theme, ThemeData, Widget, WithLayout,
+    children, column, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, ImageData,
+    Layout, MultiChild, Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style,
+    Text, Theme, ThemeData, Widget, WithLayout,
 };
-use vexo_uikit::theme::tokens::navigation::{self, NavColors};
+use vexo_uikit::platform::Platform;
+use vexo_uikit::theme::tokens::navigation;
 
 use crate::data::{ConvId, Conversation, Message};
 use crate::widgets::avatar::avatar;
@@ -56,17 +64,16 @@ impl Component for ConversationList {
                 let on_select = Rc::clone(&self.on_select);
                 let id = conv.id.clone();
                 let (preview, timestamp) = latest_preview(conv, &messages);
-                build_conversation_row(
-                    conv,
-                    &preview,
+                ConversationRow {
+                    name: conv.name.clone(),
+                    avatar_bytes: Rc::clone(&conv.avatar_bytes),
+                    unread_count: conv.unread_count,
+                    preview,
                     timestamp,
                     is_selected,
-                    &nav_colors,
-                    &theme,
-                    move || {
-                        on_select(id.clone());
-                    },
-                )
+                    platform: None,
+                    on_tap: Rc::new(move || on_select(id.clone())),
+                }
             }
         };
         // Paint a themed background behind the list so the pane isn't left
@@ -80,6 +87,146 @@ impl Component for ConversationList {
     }
 }
 
+/// State for `ConversationRow`. Tracks hover via a reactive `Signal`; the
+/// `#[derive(ComponentState)]` auto-wires the signal so the element is marked
+/// dirty on `Signal::set`. Mirrors `ButtonState` (minus `is_pressed`, which
+/// the row doesn't need — selection already provides click feedback).
+#[derive(ComponentState, Default)]
+struct ConversationRowState {
+    is_hovered: Signal<bool>,
+}
+
+/// A single conversation row. Owns its hover state so hover toggles rebuild
+/// only this row, not the entire list.
+///
+/// Inputs are owned scalars (avatar bytes behind `Rc<[u8]>` to avoid cloning
+/// the PNG per row). `is_selected` is computed by the parent list and passed
+/// in — the row does not know its own `ConvId` for selection, only whether
+/// *this* row is currently selected. The tap callback is a pre-built
+/// `Rc<dyn Fn()>` (the list closes over `on_select` + `id`), so the row is
+/// decoupled from the selection contract.
+#[derive(Clone)]
+struct ConversationRow {
+    name: String,
+    avatar_bytes: Rc<[u8]>,
+    unread_count: u32,
+    preview: String,
+    timestamp: u64,
+    is_selected: bool,
+    platform: Option<Platform>,
+    on_tap: Rc<dyn Fn()>,
+}
+
+impl ConversationRow {
+    fn effective_platform(&self) -> Platform {
+        self.platform.unwrap_or_else(Platform::current)
+    }
+}
+
+impl Component for ConversationRow {
+    type State = ConversationRowState;
+
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let theme = Theme::of(ctx);
+        let nav_colors = navigation::colors(&theme);
+        let is_hovered = state.is_hovered.get();
+
+        let avatar = avatar(
+            ImageData::from_bytes(&self.avatar_bytes).expect("avatar bytes are valid PNG"),
+            40.0,
+        );
+
+        let name_color = if self.is_selected {
+            nav_colors.selected_text
+        } else {
+            nav_colors.row_text
+        };
+        let preview_color = if self.is_selected {
+            nav_colors.selected_text
+        } else {
+            nav_colors.placeholder_text
+        };
+
+        let name_text = Text::new(self.name.as_str())
+            .with_font_size(16.0)
+            .with_color(name_color);
+        let preview_text = Text::new(self.preview.as_str())
+            .with_font_size(13.0)
+            .with_color(preview_color)
+            .with_max_lines(1);
+
+        let info_col = MultiChild::new(
+            children![name_text, preview_text],
+            Layout::column().gap(2.0).flex_grow(1.0),
+        );
+
+        let time_text = Text::new(format_timestamp(self.timestamp).as_str())
+            .with_font_size(12.0)
+            .with_color(name_color);
+
+        let right_col = MultiChild::new(children![time_text], Layout::column().flex_shrink(0.0));
+
+        let badge: Option<Box<dyn Widget>> = if self.unread_count > 0 {
+            Some(
+                Positioned::new(unread_badge(self.unread_count, &theme))
+                    .top(-4.0)
+                    .right(-4.0)
+                    .boxed(),
+            )
+        } else {
+            None
+        };
+
+        let avatar_with_badge = Stack::new()
+            .with_layout(Layout::stack().width(40.0).height(40.0).flex_shrink(0.0))
+            .push(avatar)
+            .push(badge)
+            .boxed();
+
+        // Precedence: selected > hover (desktop only) > transparent.
+        // Hover is suppressed when selected so the selected row stays visually
+        // anchored (macOS Finder/Mail pattern).
+        let row_bg: Option<vexo::Color> = if self.is_selected {
+            Some(nav_colors.selected_bg)
+        } else if is_hovered && self.effective_platform() == Platform::Desktop {
+            Some(nav_colors.row_hover_bg)
+        } else {
+            None
+        };
+
+        let inner = WithLayout::new(
+            MultiChild::new(
+                children![avatar_with_badge, info_col, right_col],
+                Layout::row().gap(12.0),
+            ),
+            Layout::default().padding(12.0),
+        );
+
+        // Conditionally wrap in DecoratedBox only when there's a background
+        // to paint — avoids a no-op DecoratedBox render object per row in the
+        // common (unselected, unhovered) case.
+        let root: Box<dyn Widget> = if let Some(bg) = row_bg {
+            DecoratedBox::with_style(inner, Style::default().background(bg)).boxed()
+        } else {
+            inner.boxed()
+        };
+
+        let is_hovered_signal = state.is_hovered.clone();
+        let is_hovered_signal_exit = state.is_hovered.clone();
+        let on_tap_cb = Rc::clone(&self.on_tap);
+
+        root.on_enter(move || {
+            is_hovered_signal.set(true);
+        })
+        .on_exit(move || {
+            is_hovered_signal_exit.set(false);
+        })
+        .on_tap(move || {
+            on_tap_cb();
+        })
+    }
+}
+
 /// Derive the (preview, timestamp) for a conversation's row from the latest
 /// message in the map, falling back to the conversation's seed values when
 /// no messages exist (or the conversation is absent from the map).
@@ -89,88 +236,6 @@ fn latest_preview(conv: &Conversation, messages: &HashMap<ConvId, Vec<Message>>)
         .and_then(|v| v.last())
         .map(|m| (m.text.clone(), m.timestamp))
         .unwrap_or_else(|| (conv.last_preview.clone(), conv.last_timestamp))
-}
-
-fn build_conversation_row(
-    conv: &Conversation,
-    preview: &str,
-    timestamp: u64,
-    is_selected: bool,
-    nav_colors: &NavColors,
-    theme: &ThemeData,
-    on_press: impl FnMut() + 'static,
-) -> Box<dyn Widget> {
-    let avatar = avatar(
-        ImageData::from_bytes(&conv.avatar_bytes).expect("avatar bytes are valid PNG"),
-        40.0,
-    );
-
-    let name_color = if is_selected {
-        nav_colors.selected_text
-    } else {
-        nav_colors.row_text
-    };
-    let preview_color = if is_selected {
-        nav_colors.selected_text
-    } else {
-        nav_colors.placeholder_text
-    };
-
-    let name_text = Text::new(conv.name.as_str())
-        .with_font_size(16.0)
-        .with_color(name_color);
-    let preview_text = Text::new(preview)
-        .with_font_size(13.0)
-        .with_color(preview_color)
-        .with_max_lines(1);
-
-    let info_col = MultiChild::new(
-        children![name_text, preview_text],
-        Layout::column().gap(2.0).flex_grow(1.0),
-    );
-
-    let time_text = Text::new(format_timestamp(timestamp).as_str())
-        .with_font_size(12.0)
-        .with_color(name_color);
-
-    let right_col = MultiChild::new(children![time_text], Layout::column().flex_shrink(0.0));
-
-    let badge: Option<Box<dyn Widget>> = if conv.unread_count > 0 {
-        Some(
-            Positioned::new(unread_badge(conv.unread_count, theme))
-                .top(-4.0)
-                .right(-4.0)
-                .boxed(),
-        )
-    } else {
-        None
-    };
-
-    let avatar_with_badge = Stack::new()
-        .with_layout(Layout::stack().width(40.0).height(40.0).flex_shrink(0.0))
-        .push(avatar)
-        .push(badge)
-        .boxed();
-
-    let row_bg = if is_selected {
-        Some(nav_colors.selected_bg)
-    } else {
-        None
-    };
-
-    let inner = WithLayout::new(
-        MultiChild::new(
-            children![avatar_with_badge, info_col, right_col],
-            Layout::row().gap(12.0),
-        ),
-        Layout::default().padding(12.0),
-    );
-
-    if let Some(bg) = row_bg {
-        DecoratedBox::with_style(inner.on_tap(on_press), Style::default().background(bg)).boxed()
-    } else {
-        inner.on_tap(on_press).boxed()
-    }
 }
 
 fn unread_badge(count: u32, theme: &ThemeData) -> Box<dyn Widget> {

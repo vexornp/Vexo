@@ -68,6 +68,7 @@ pub mod navigation {
         pub header_bg: Color,
         pub header_text: Color,
         pub row_bg: Color,
+        pub row_hover_bg: Color,
         pub row_text: Color,
         pub selected_bg: Color,
         pub selected_text: Color,
@@ -96,6 +97,7 @@ pub mod navigation {
             header_bg: bar_bg,
             header_text: t.on_surface,
             row_bg: Color::TRANSPARENT,
+            row_hover_bg: Color::lerp(t.primary, t.surface, 0.85),
             row_text: t.on_surface,
             selected_bg: t.primary,
             selected_text: t.on_primary,
@@ -261,6 +263,7 @@ mod tests {
         assert_eq!(n.header_bg, t.surface);
         assert_eq!(n.header_text, t.on_surface);
         assert_eq!(n.row_bg, Color::TRANSPARENT);
+        assert_eq!(n.row_hover_bg, Color::lerp(t.primary, t.surface, 0.85));
         assert_eq!(n.row_text, t.on_surface);
         assert_eq!(n.selected_bg, t.primary);
         assert_eq!(n.selected_text, t.on_primary);
@@ -298,6 +301,7 @@ mod tests {
             header_bg: Color::WHITE,
             header_text: Color::WHITE,
             row_bg: Color::WHITE,
+            row_hover_bg: Color::WHITE,
             row_text: Color::WHITE,
             selected_bg: Color::WHITE,
             selected_text: Color::WHITE,
