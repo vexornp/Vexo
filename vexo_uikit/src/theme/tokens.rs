@@ -71,8 +71,6 @@ pub mod navigation {
         pub row_bg: Color,
         pub row_hover_bg: Color,
         pub row_text: Color,
-        pub selected_bg: Color,
-        pub selected_text: Color,
         pub detail_bg: Color,
         pub divider: Color,
         pub placeholder_text: Color,
@@ -95,23 +93,21 @@ pub mod navigation {
         };
         NavColors {
             sidebar_bg: bar_bg,
-            // Soft-tint background for the selected sidebar item: a light wash
-            // of `primary` over `surface` (≈ 15% primary). Used by
-            // `DesktopShell` to paint a floating softened-rectangle pill behind
-            // the selected sidebar icon (icon color stays `theme.primary`, so
-            // the tint must stay readable underneath it — a full-saturation
-            // `selected_bg` would yield primary-on-primary). Kept distinct
-            // from `row_hover_bg` (same value today) so a future sidebar hover
-            // state can take a different color without repurposing the
-            // selected token.
+            // Soft-tint background for selected sidebar items and selected
+            // conversation rows: a light wash of `primary` over `surface`
+            // (≈ 15% primary). Used by `DesktopShell` to paint a floating
+            // softened-rectangle pill behind the selected sidebar icon (icon
+            // color stays `theme.primary`, so the tint must stay readable
+            // underneath it — a full-saturation `t.primary` would yield
+            // primary-on-primary). Kept distinct from `row_hover_bg` (same
+            // value today) so a future sidebar hover state can take a
+            // different color without repurposing the selected token.
             sidebar_selected_bg: Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64),
             header_bg: bar_bg,
             header_text: t.on_surface,
             row_bg: Color::TRANSPARENT,
             row_hover_bg: Color::lerp(t.primary, t.surface, 0.85),
             row_text: t.on_surface,
-            selected_bg: t.primary,
-            selected_text: t.on_primary,
             detail_bg: t.background,
             // Hairline separator color. Opaque (pre-composited) so it renders
             // identically regardless of the backdrop behind it — the Me page
@@ -315,8 +311,6 @@ mod tests {
         assert_eq!(n.row_bg, Color::TRANSPARENT);
         assert_eq!(n.row_hover_bg, Color::lerp(t.primary, t.surface, 0.85));
         assert_eq!(n.row_text, t.on_surface);
-        assert_eq!(n.selected_bg, t.primary);
-        assert_eq!(n.selected_text, t.on_primary);
         assert_eq!(n.detail_bg, t.background);
         assert_eq!(
             n.divider,
@@ -337,7 +331,6 @@ mod tests {
         assert_eq!(n.sidebar_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.mobile_header_bg, Color::from_hex(0x24282BFF));
         assert_eq!(n.header_bg, Color::from_hex(0x24282BFF));
-        assert_eq!(n.selected_bg, t.primary);
         assert_eq!(
             n.sidebar_selected_bg,
             Color::lerp(t.primary, t.surface, SIDEBAR_SELECTED_TINT as f64)
@@ -358,8 +351,6 @@ mod tests {
             row_bg: Color::WHITE,
             row_hover_bg: Color::WHITE,
             row_text: Color::WHITE,
-            selected_bg: Color::WHITE,
-            selected_text: Color::WHITE,
             detail_bg: Color::WHITE,
             divider: Color::WHITE,
             placeholder_text: Color::WHITE,

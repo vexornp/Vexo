@@ -144,16 +144,8 @@ impl Component for ConversationRow {
             40.0,
         );
 
-        let name_color = if self.is_selected {
-            nav_colors.selected_text
-        } else {
-            nav_colors.row_text
-        };
-        let preview_color = if self.is_selected {
-            nav_colors.selected_text
-        } else {
-            nav_colors.placeholder_text
-        };
+        let name_color = nav_colors.row_text;
+        let preview_color = nav_colors.placeholder_text;
 
         let name_text = Text::new(self.name.as_str())
             .with_font_size(16.0)
@@ -192,7 +184,7 @@ impl Component for ConversationRow {
         // Hover is suppressed when selected so the selected row stays visually
         // anchored (macOS Finder/Mail pattern).
         let row_bg: Option<vexo::Color> = if self.is_selected {
-            Some(nav_colors.selected_bg)
+            Some(nav_colors.sidebar_selected_bg)
         } else if is_hovered && self.effective_platform() == Platform::Desktop {
             Some(nav_colors.row_hover_bg)
         } else {
