@@ -216,7 +216,7 @@ and maintainers.
 - [winit](https://github.com/rust-windowing/winit) — cross-platform windowing & event loop
 - [taffy](https://github.com/DioxusLabs/taffy) — flexbox & grid layout engine
 - [glyphon](https://github.com/grovesnl/glyphon) — text layout & rendering (Vexo uses a [fork](https://github.com/vexorsis/glyphon) with per-textarea depth)
-- [uniffi](https://github.com/mozilla/uniffi-rs) — Rust-to-Swift FFI for iOS
+- [uniffi](https://github.com/mozilla/uniffi-rs) — Rust-to-Swift/Kotlin FFI for iOS & Android
 
 - [android-activity](https://github.com/rust-mobile/android-activity) — Android activity glue
 - [objc2](https://github.com/madsmtm/objc2) — iOS UIKit/Foundation bindings
