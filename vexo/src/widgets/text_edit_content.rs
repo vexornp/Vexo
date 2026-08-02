@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::core::Color;
 use crate::editor::Editor;
 use crate::elements::LeafRenderObjectElement;
 use crate::key::WidgetKey;
@@ -23,6 +24,7 @@ pub struct TextEditContent {
     key: Option<WidgetKey>,
     content: String,
     font_size: f32,
+    color: Color,
     editor: Rc<RefCell<Editor>>,
     is_focused: bool,
     cursor_blink_visible: bool,
@@ -35,6 +37,7 @@ impl TextEditContent {
             key: None,
             content: content.into(),
             font_size: 24.0,
+            color: Color::BLACK,
             editor,
             is_focused: false,
             cursor_blink_visible: false,
@@ -50,6 +53,12 @@ impl TextEditContent {
     /// Set the font size.
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    /// Set the text glyph color.
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
         self
     }
 
@@ -75,6 +84,11 @@ impl TextEditContent {
         self.font_size
     }
 
+    /// Get the text glyph color.
+    pub fn color(&self) -> Color {
+        self.color
+    }
+
     /// Get whether the widget is focused.
     pub fn is_focused(&self) -> bool {
         self.is_focused
@@ -92,6 +106,7 @@ impl Clone for TextEditContent {
             key: self.key.clone(),
             content: self.content.clone(),
             font_size: self.font_size,
+            color: self.color,
             editor: self.editor.clone(), // Rc shallow clone
             is_focused: self.is_focused,
             cursor_blink_visible: self.cursor_blink_visible,
@@ -112,7 +127,8 @@ impl Widget for TextEditContent {
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {
         let mut ro = TextEditRenderObject::new(&self.content, self.editor.clone())
-            .with_font_size(self.font_size);
+            .with_font_size(self.font_size)
+            .with_color(self.color);
         ro.set_focused(self.is_focused);
         ro.set_cursor_blink_visible(self.cursor_blink_visible);
         Box::new(ro)
@@ -134,6 +150,9 @@ impl Widget for TextEditContent {
             }
             if ro.set_font_size(self.font_size) {
                 result |= UpdateResult::LAYOUT;
+            }
+            if ro.set_color(self.color) {
+                result |= UpdateResult::PAINT;
             }
             if ro.set_focused(self.is_focused) {
                 result |= UpdateResult::PAINT;
@@ -212,6 +231,55 @@ mod tests {
         let editor = create_test_editor();
         let widget = TextEditContent::new("Hello", editor).with_cursor_blink_visible(true);
         assert!(widget.cursor_blink_visible());
+    }
+
+    #[test]
+    fn test_text_edit_content_default_color_is_black() {
+        let editor = create_test_editor();
+        let widget = TextEditContent::new("Hello", editor);
+        assert_eq!(widget.color(), Color::BLACK);
+    }
+
+    #[test]
+    fn test_text_edit_content_with_color() {
+        let editor = create_test_editor();
+        let widget = TextEditContent::new("Hello", editor).with_color(Color::rgb(0.9, 0.1, 0.1));
+        assert_eq!(widget.color(), Color::rgb(0.9, 0.1, 0.1));
+    }
+
+    #[test]
+    fn test_text_edit_content_clone_preserves_color() {
+        let editor = create_test_editor();
+        let widget = TextEditContent::new("Hello", editor).with_color(Color::WHITE);
+        let cloned = widget.clone();
+        assert_eq!(widget.color(), cloned.color());
+    }
+
+    #[test]
+    fn test_text_edit_content_create_render_object_carries_color() {
+        let editor = create_test_editor();
+        let widget = TextEditContent::new("Hello", editor).with_color(Color::rgb(0.9, 0.1, 0.1));
+        let ro = widget.create_render_object();
+        let any_ro = ro.as_any();
+        let te_ro = any_ro
+            .downcast_ref::<TextEditRenderObject>()
+            .expect("should be a TextEditRenderObject");
+        assert_eq!(te_ro.color(), Color::rgb(0.9, 0.1, 0.1));
+    }
+
+    #[test]
+    fn test_text_edit_content_update_render_object_color_change() {
+        let editor = create_test_editor();
+        let widget = TextEditContent::new("Hello", editor).with_color(Color::WHITE);
+        let mut ro = TextEditRenderObject::new("Hello", create_test_editor());
+        ro.set_font_size(24.0);
+
+        let result = widget.update_render_object(&mut ro);
+        assert!(
+            result.contains(UpdateResult::PAINT),
+            "color change should request paint"
+        );
+        assert_eq!(ro.color(), Color::WHITE);
     }
 
     #[test]
