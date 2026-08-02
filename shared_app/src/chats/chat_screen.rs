@@ -4,10 +4,10 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    children, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox, FlexDirection,
-    Image, ImageData, Key, Layout, LifecycleContext, MultiChild, RenderContext, ScrollController,
-    ScrollView, Signal, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey,
-    WithLayout,
+    column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
+    FlexDirection, Image, ImageData, Key, Layout, LifecycleContext, MultiChild, RenderContext,
+    ScrollController, ScrollView, Signal, Style, Text, TextEdit, TextEditingController, Theme,
+    Widget, WidgetKey, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
 
@@ -112,15 +112,18 @@ impl Component for ChatScreen {
 
         let messages = ctx.signal_value(&self.messages);
 
-        let mut list = MultiChild::empty(Layout::column().gap(8.0).padding(12.0));
-        for msg in &messages {
-            list = list.push(build_message_bubble(
-                msg,
-                state.them_avatar(&self.avatar_bytes).clone(),
-                state.me_avatar(&self.me_avatar_bytes).clone(),
-                &theme,
-            ));
+        let list = column! {
+            for msg in &messages {
+                build_message_bubble(
+                    msg,
+                    state.them_avatar(&self.avatar_bytes).clone(),
+                    state.me_avatar(&self.me_avatar_bytes).clone(),
+                    &theme,
+                )
+            }
         }
+        .gap(8.0)
+        .padding(12.0);
 
         let scroll_for_send = self.scroll_controller.clone();
         let on_send = Rc::clone(&self.on_send);
@@ -146,19 +149,16 @@ impl Component for ChatScreen {
         // MediaQuery dependent, so it does NOT rebuild on keyboard animation
         // frames. KeyboardAvoider (from vexo_uikit) is the MediaQuery
         // dependent; it wraps the content in Shared so its rebuild is O(1).
-        let content = MultiChild::new(
-            children![
-                WithLayout::new(
-                    ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
-                    Layout::flex_fill(),
-                ),
-                input_bar,
-            ],
-            Layout::column()
-                .flex_grow(1.0)
-                .flex_basis(0.0)
-                .min_height(0.0),
-        )
+        let content = column! {
+            WithLayout::new(
+                ScrollView::new(list.boxed()).controller(self.scroll_controller.clone()),
+                Layout::flex_fill(),
+            ),
+            input_bar,
+        }
+        .flex_grow(1.0)
+        .flex_basis(0.0)
+        .min_height(0.0)
         .boxed();
 
         DecoratedBox::with_style(
@@ -201,25 +201,21 @@ fn build_message_bubble(
 
     if is_me {
         let me_avatar = avatar(me_avatar_image, 32.0);
-        MultiChild::new(
-            children![
-                MultiChild::empty(Layout::default().flex_grow(1.0)),
-                bubble,
-                me_avatar,
-            ],
-            Layout::row().gap(8.0),
-        )
+        row! {
+            MultiChild::empty(Layout::default().flex_grow(1.0)),
+            bubble,
+            me_avatar,
+        }
+        .gap(8.0)
         .boxed()
     } else {
         let them_avatar = avatar(them_avatar_image, 32.0);
-        MultiChild::new(
-            children![
-                them_avatar,
-                bubble,
-                MultiChild::empty(Layout::default().flex_grow(1.0)),
-            ],
-            Layout::row().gap(8.0),
-        )
+        row! {
+            them_avatar,
+            bubble,
+            MultiChild::empty(Layout::default().flex_grow(1.0)),
+        }
+        .gap(8.0)
         .boxed()
     }
 }
@@ -229,20 +225,18 @@ fn build_input_bar(
     on_send: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
     WithLayout::new(
-        MultiChild::new(
-            children![
-                WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
-                Button::new("Send")
-                    .variant(ButtonVariant::Primary)
-                    .shadow(
-                        BoxShadow::new(Color::BLACK.with_alpha(0.25))
-                            .blur(6.0)
-                            .offset(0.0, 2.0),
-                    )
-                    .on_tap(on_send),
-            ],
-            Layout::row().gap(8.0),
-        ),
+        row! {
+            WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
+            Button::new("Send")
+                .variant(ButtonVariant::Primary)
+                .shadow(
+                    BoxShadow::new(Color::BLACK.with_alpha(0.25))
+                        .blur(6.0)
+                        .offset(0.0, 2.0),
+                )
+                .on_tap(on_send),
+        }
+        .gap(8.0),
         Layout::default().padding(8.0),
     )
     .boxed()
@@ -255,7 +249,8 @@ mod tests {
     use vexo::animation::AnimationTicker;
     use vexo::layout::TaffyLayoutEngine;
     use vexo::{
-        RenderObjectKey, RenderObjectRegistry, Signal, TextRenderObject, ThreeTreePipeline,
+        column, row, RenderObjectKey, RenderObjectRegistry, Signal, TextRenderObject,
+        ThreeTreePipeline,
     };
 
     fn seed_messages_signal() -> Signal<std::collections::HashMap<ConvId, Vec<Message>>> {
@@ -385,7 +380,7 @@ mod tests {
             scroll_controller: ScrollController::new(),
         };
 
-        let view = MultiChild::new(children![chat], Layout::column().height(600.0)).boxed();
+        let view = column! { chat }.height(600.0).boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         pipeline.update(view);

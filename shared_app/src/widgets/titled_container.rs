@@ -1,7 +1,7 @@
 //! TitledContainer — a desktop panel with a header (title + hairline) above
 //! its content. Used by the desktop Chats columns 2/3 nav bars.
 
-use vexo::{children, DecoratedBox, Layout, MultiChild, Style, Text, Widget, WithLayout};
+use vexo::{column, row, DecoratedBox, Layout, Style, Text, Widget, WithLayout};
 use vexo_uikit::theme::tokens::navigation::{
     NavColors, HAIRLINE_THICKNESS, HEADER_FONT_SIZE, HEADER_PADDING, MOBILE_HEADER_HEIGHT,
 };
@@ -28,17 +28,16 @@ pub(crate) fn titled_container(
     );
 
     let hairline = DecoratedBox::with_style(
-        MultiChild::empty(Layout::row().height(HAIRLINE_THICKNESS).flex_shrink(0.0)),
+        row! {}.height(HAIRLINE_THICKNESS).flex_shrink(0.0),
         Style::default().background(colors.divider),
     );
 
-    MultiChild::new(
-        children![
-            header,
-            hairline,
-            WithLayout::new(child, Layout::flex_fill()),
-        ],
-        Layout::column().width_percent(1.0).height_percent(1.0),
-    )
+    column! {
+        header,
+        hairline,
+        WithLayout::new(child, Layout::flex_fill()),
+    }
+    .width_percent(1.0)
+    .height_percent(1.0)
     .boxed()
 }

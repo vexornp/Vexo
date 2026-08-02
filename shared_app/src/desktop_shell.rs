@@ -14,8 +14,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use vexo::{
-    children, AlignItems, Component, ComponentState, DecoratedBox, GestureDetector, IndexedStack,
-    JustifyContent, Layout, LifecycleContext, MultiChild, RenderContext, Style, Theme, Widget,
+    column, row, AlignItems, Component, ComponentState, DecoratedBox, GestureDetector,
+    IndexedStack, JustifyContent, Layout, LifecycleContext, RenderContext, Style, Theme, Widget,
     WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{self, NavColors, HAIRLINE_THICKNESS, SIDEBAR_WIDTH};
@@ -105,10 +105,12 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for DesktopShell<D> {
             stack = stack.push((self.page_builder)(tab));
         }
 
-        MultiChild::new(
-            children![sidebar, WithLayout::new(stack, Layout::flex_fill()),],
-            Layout::row().width_percent(1.0).height_percent(1.0),
-        )
+        row! {
+            sidebar,
+            WithLayout::new(stack, Layout::flex_fill()),
+        }
+        .width_percent(1.0)
+        .height_percent(1.0)
         .boxed()
     }
 }
@@ -123,29 +125,29 @@ where
     D: Any,
 {
     // Build sidebar items (top-aligned column).
-    let mut items = MultiChild::empty(Layout::column());
-    for tab in &shell.tabs {
-        let is_selected = *tab == shell.controller.current();
-        let ctrl = shell.controller.clone();
-        let tab_clone = tab.clone();
-        let content = (shell.sidebar_builder)(tab, is_selected, nav_colors);
+    let items = column! {
+        for tab in &shell.tabs {
+            let is_selected = *tab == shell.controller.current();
+            let ctrl = shell.controller.clone();
+            let tab_clone = tab.clone();
+            let content = (shell.sidebar_builder)(tab, is_selected, nav_colors);
 
-        let item = GestureDetector::new(
-            WithLayout::new(
-                content,
-                Layout::default()
-                    .width_percent(1.0)
-                    .height(48.0)
-                    .flex_shrink(0.0)
-                    .align(AlignItems::Center)
-                    .justify(JustifyContent::Center),
+            GestureDetector::new(
+                WithLayout::new(
+                    content,
+                    Layout::default()
+                        .width_percent(1.0)
+                        .height(48.0)
+                        .flex_shrink(0.0)
+                        .align(AlignItems::Center)
+                        .justify(JustifyContent::Center),
+                )
+                .boxed(),
             )
-            .boxed(),
-        )
-        .on_press(move || ctrl.switch_to(tab_clone.clone()))
-        .boxed();
-        items = items.push(item);
-    }
+            .on_press(move || ctrl.switch_to(tab_clone.clone()))
+            .boxed()
+        }
+    };
 
     // Sidebar content on sidebar_bg, filling the width minus the hairline.
     let sidebar_content = DecoratedBox::with_style(
@@ -155,23 +157,18 @@ where
 
     // Right-edge hairline (1px).
     let hairline = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::column()
-                .width(HAIRLINE_THICKNESS)
-                .height_percent(1.0)
-                .flex_shrink(0.0),
-        ),
+        column! {}
+            .width(HAIRLINE_THICKNESS)
+            .height_percent(1.0)
+            .flex_shrink(0.0),
         Style::default().background(nav_colors.divider),
     );
 
     WithLayout::new(
-        MultiChild::new(
-            children![sidebar_content, hairline],
-            Layout::row()
-                .width(SIDEBAR_WIDTH)
-                .height_percent(1.0)
-                .flex_shrink(0.0),
-        ),
+        row! { sidebar_content, hairline }
+            .width(SIDEBAR_WIDTH)
+            .height_percent(1.0)
+            .flex_shrink(0.0),
         Layout::default(),
     )
     .boxed()

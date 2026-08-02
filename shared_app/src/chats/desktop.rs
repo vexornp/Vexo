@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{
-    children, AlignItems, Component, DecoratedBox, JustifyContent, Layout, MultiChild,
-    RenderContext, ScrollController, Signal, SimpleState, Style, Text, Theme, Widget, WithLayout,
+    column, row, AlignItems, Component, DecoratedBox, JustifyContent, Layout, RenderContext,
+    ScrollController, Signal, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
@@ -108,10 +108,12 @@ impl Component for DesktopChatsPage {
             None => build_empty_placeholder(&nav_colors),
         };
 
-        MultiChild::new(
-            children![col2, WithLayout::new(col3, Layout::flex_fill()),],
-            Layout::row().width_percent(1.0).height_percent(1.0),
-        )
+        row! {
+            col2,
+            WithLayout::new(col3, Layout::flex_fill()),
+        }
+        .width_percent(1.0)
+        .height_percent(1.0)
         .boxed()
     }
 }
@@ -124,23 +126,21 @@ fn build_column_with_right_hairline(
     nav_colors: &NavColors,
 ) -> Box<dyn Widget> {
     let hairline = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::column()
-                .width(HAIRLINE_THICKNESS)
-                .height_percent(1.0)
-                .flex_shrink(0.0),
-        ),
+        column! {}
+            .width(HAIRLINE_THICKNESS)
+            .height_percent(1.0)
+            .flex_shrink(0.0),
         Style::default().background(nav_colors.divider),
     );
 
     WithLayout::new(
-        MultiChild::new(
-            children![WithLayout::new(content, Layout::flex_fill()), hairline,],
-            Layout::row()
-                .width(width)
-                .height_percent(1.0)
-                .flex_shrink(0.0),
-        ),
+        row! {
+            WithLayout::new(content, Layout::flex_fill()),
+            hairline,
+        }
+        .width(width)
+        .height_percent(1.0)
+        .flex_shrink(0.0),
         Layout::default(),
     )
     .boxed()

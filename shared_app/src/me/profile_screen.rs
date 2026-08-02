@@ -8,7 +8,7 @@
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, ImageData,
+    column, row, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, ImageData,
     Layout, MultiChild, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData,
     Widget, WithLayout,
 };
@@ -97,50 +97,44 @@ impl Component for ProfileScreen {
         // The content column carries the side margins (16pt L/R) and the
         // top/bottom section gaps so cards and section headers all align to
         // the same left edge.
-        let mut content = MultiChild::empty(Layout::column().padding_each(
-            CARD_SIDE_MARGIN,
-            CARD_SIDE_MARGIN,
-            SECTION_GAP,
-            SECTION_GAP,
-        ));
-
-        // Header card: avatar-left horizontal cell (no chevron, not tappable).
-        content = content.push(build_card(
-            vec![build_header_row(&self.profile, &theme)],
-            &theme,
-        ));
-
-        // Section "Appearance": iOS-style light/dark picker.
-        content = content.push(spacer(SECTION_GAP));
-        content = content.push(section_header("Appearance", &theme));
-        content = content.push(spacer(HEADER_TO_CARD_GAP));
-        content = content.push(build_card(
-            vec![AppearancePicker::new(self.is_dark.clone()).boxed()],
-            &theme,
-        ));
-
-        // Section "General": three navigation rows (chevrons, no-op tap).
-        content = content.push(spacer(SECTION_GAP));
-        content = content.push(section_header("General", &theme));
-        content = content.push(spacer(HEADER_TO_CARD_GAP));
-        content = content.push(build_card(
-            vec![
-                build_nav_row(Icons::Gear, Color::from_hex(0x8E8E93FF), "Settings", &theme),
-                build_nav_row(
-                    Icons::Bell,
-                    Color::from_hex(0xFF3B30FF),
-                    "Notifications",
-                    &theme,
-                ),
-                build_nav_row(
-                    Icons::CircleInfo,
-                    Color::from_hex(0x007AFFFF),
-                    "About",
-                    &theme,
-                ),
-            ],
-            &theme,
-        ));
+        let content = column! {
+            // Header card: avatar-left horizontal cell (no chevron, not tappable).
+            build_card(
+                vec![build_header_row(&self.profile, &theme)],
+                &theme,
+            ),
+            // Section "Appearance": iOS-style light/dark picker.
+            spacer(SECTION_GAP),
+            section_header("Appearance", &theme),
+            spacer(HEADER_TO_CARD_GAP),
+            build_card(
+                vec![AppearancePicker::new(self.is_dark.clone()).boxed()],
+                &theme,
+            ),
+            // Section "General": three navigation rows (chevrons, no-op tap).
+            spacer(SECTION_GAP),
+            section_header("General", &theme),
+            spacer(HEADER_TO_CARD_GAP),
+            build_card(
+                vec![
+                    build_nav_row(Icons::Gear, Color::from_hex(0x8E8E93FF), "Settings", &theme),
+                    build_nav_row(
+                        Icons::Bell,
+                        Color::from_hex(0xFF3B30FF),
+                        "Notifications",
+                        &theme,
+                    ),
+                    build_nav_row(
+                        Icons::CircleInfo,
+                        Color::from_hex(0x007AFFFF),
+                        "About",
+                        &theme,
+                    ),
+                ],
+                &theme,
+            ),
+        }
+        .padding_each(CARD_SIDE_MARGIN, CARD_SIDE_MARGIN, SECTION_GAP, SECTION_GAP);
 
         // Wrap the scroll content in a themed grouped backdrop so both the
         // viewport and the content share the gray — overscroll never flashes
@@ -156,11 +150,7 @@ impl Component for ProfileScreen {
 
 /// A fixed-height empty spacer (used for inter-section / header-to-card gaps).
 fn spacer(height: f32) -> Box<dyn Widget> {
-    WithLayout::new(
-        MultiChild::empty(Layout::row()),
-        Layout::default().height(height).flex_shrink(0.0),
-    )
-    .boxed()
+    WithLayout::new(row! {}, Layout::default().height(height).flex_shrink(0.0)).boxed()
 }
 
 /// A small muted section header label, sentence-case (iOS UIKit default).
@@ -204,7 +194,7 @@ fn divider(theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let nav_colors = navigation::colors(theme);
     WithLayout::new(
         DecoratedBox::with_style(
-            MultiChild::empty(Layout::row().height(DIVIDER_THICKNESS).flex_shrink(0.0)),
+            row! {}.height(DIVIDER_THICKNESS).flex_shrink(0.0),
             Style::default().background(nav_colors.divider),
         ),
         Layout::default()
@@ -243,72 +233,60 @@ fn build_swatch_preview(mode_theme: ThemeData) -> Box<dyn Widget> {
     let border_color = mode_theme.outline;
 
     let header_band = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::row()
-                .width_percent(1.0)
-                .height(SWATCH_BAND_HEIGHT)
-                .flex_shrink(0.0),
-        ),
+        row! {}
+            .width_percent(1.0)
+            .height(SWATCH_BAND_HEIGHT)
+            .flex_shrink(0.0),
         Style::default().background(band_bg),
     );
 
     let accent_rect = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::row()
-                .width(ACCENT_RECT_WIDTH)
-                .height(ACCENT_RECT_HEIGHT)
-                .flex_shrink(0.0),
-        ),
+        row! {}
+            .width(ACCENT_RECT_WIDTH)
+            .height(ACCENT_RECT_HEIGHT)
+            .flex_shrink(0.0),
         Style::default().background(accent),
     );
 
     let content_divider = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::row()
-                .width_percent(1.0)
-                .height(SWATCH_DIVIDER_THICKNESS)
-                .flex_shrink(0.0),
-        ),
+        row! {}
+            .width_percent(1.0)
+            .height(SWATCH_DIVIDER_THICKNESS)
+            .flex_shrink(0.0),
         Style::default().background(divider_color),
     );
 
     let content_band = DecoratedBox::with_style(
-        MultiChild::new(
-            children![
-                WithLayout::new(
-                    accent_rect,
-                    Layout::default()
-                        .padding_each(ACCENT_RECT_LEFT_INSET, 0.0, 0.0, 0.0)
-                        .flex_grow(1.0)
-                        .justify(JustifyContent::Center),
-                ),
-                content_divider,
-            ],
-            Layout::column().width_percent(1.0).flex_grow(1.0),
-        ),
+        column! {
+            WithLayout::new(
+                accent_rect,
+                Layout::default()
+                    .padding_each(ACCENT_RECT_LEFT_INSET, 0.0, 0.0, 0.0)
+                    .flex_grow(1.0)
+                    .justify(JustifyContent::Center),
+            ),
+            content_divider,
+        }
+        .width_percent(1.0)
+        .flex_grow(1.0),
         Style::default().background(content_bg),
     );
 
     let bottom_band = DecoratedBox::with_style(
-        MultiChild::empty(
-            Layout::row()
-                .width_percent(1.0)
-                .height(SWATCH_BAND_HEIGHT)
-                .flex_shrink(0.0),
-        ),
+        row! {}
+            .width_percent(1.0)
+            .height(SWATCH_BAND_HEIGHT)
+            .flex_shrink(0.0),
         Style::default().background(band_bg),
     );
 
     let swatch_stack = DecoratedBox::with_style(
         ClipRRect::new(
             PREVIEW_RADIUS,
-            MultiChild::new(
-                children![header_band, content_band, bottom_band],
-                Layout::column()
-                    .width(PREVIEW_WIDTH)
-                    .height(PREVIEW_HEIGHT)
-                    .flex_shrink(0.0),
-            ),
+            column! { header_band, content_band, bottom_band }
+                .width(PREVIEW_WIDTH)
+                .height(PREVIEW_HEIGHT)
+                .flex_shrink(0.0),
         ),
         Style::default()
             .border(border_color, PREVIEW_BORDER_WIDTH)
@@ -365,13 +343,10 @@ fn build_picker_cell(
     );
     let checkbox = build_checkbox(current_is_dark == target_is_dark, ambient);
 
-    let content = MultiChild::new(
-        children![preview, label_widget, checkbox],
-        Layout::column()
-            .gap(CELL_GAP)
-            .align(AlignItems::Center)
-            .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD),
-    );
+    let content = column! { preview, label_widget, checkbox }
+        .gap(CELL_GAP)
+        .align(AlignItems::Center)
+        .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD);
 
     GestureDetector::new(WithLayout::new(content, Layout::default().flex_shrink(0.0)).boxed())
         .on_tap(move || {
@@ -417,14 +392,11 @@ impl Component for AppearancePicker {
             &ambient,
         );
 
-        MultiChild::new(
-            children![light_cell, dark_cell],
-            Layout::row()
-                .justify(JustifyContent::SpaceEvenly)
-                .align(AlignItems::Center)
-                .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD),
-        )
-        .boxed()
+        row! { light_cell, dark_cell }
+            .justify(JustifyContent::SpaceEvenly)
+            .align(AlignItems::Center)
+            .padding_each(0.0, 0.0, CELL_PAD, CELL_PAD)
+            .boxed()
     }
 }
 
@@ -441,15 +413,11 @@ fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widge
     let email = Text::new(profile.email.as_str())
         .with_font_size(13.0)
         .with_color(theme.on_surface_variant);
-    let text_col = MultiChild::new(
-        children![name, email],
-        Layout::column().gap(2.0).flex_grow(1.0),
-    );
+    let text_col = column! { name, email }.gap(2.0).flex_grow(1.0);
     WithLayout::new(
-        MultiChild::new(
-            children![avatar_widget, text_col],
-            Layout::row().gap(12.0).align(AlignItems::Center),
-        ),
+        row! { avatar_widget, text_col }
+            .gap(12.0)
+            .align(AlignItems::Center),
         Layout::default().padding_each(ROW_PAD_H, ROW_PAD_H, ROW_PAD_V, ROW_PAD_V),
     )
     .boxed()
@@ -474,10 +442,9 @@ fn build_nav_row(
         .with_size(13.0)
         .with_color(theme.on_surface_variant);
     WithLayout::new(
-        MultiChild::new(
-            children![tile, label, chevron],
-            Layout::row().gap(TILE_LABEL_GAP).align(AlignItems::Center),
-        ),
+        row! { tile, label, chevron }
+            .gap(TILE_LABEL_GAP)
+            .align(AlignItems::Center),
         Layout::default().padding_each(ROW_PAD_H, ROW_PAD_H, ROW_PAD_V, ROW_PAD_V),
     )
     .boxed()

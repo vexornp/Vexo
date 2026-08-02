@@ -22,9 +22,9 @@ use std::rc::Rc;
 
 use vexo::layout::JustifyContent;
 use vexo::{
-    children, column, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, ImageData,
-    Layout, MultiChild, Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style,
-    Text, Theme, ThemeData, Widget, WithLayout,
+    column, row, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, ImageData, Layout,
+    Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text, Theme,
+    ThemeData, Widget, WithLayout,
 };
 use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
@@ -163,16 +163,13 @@ impl Component for ConversationRow {
             .with_color(preview_color)
             .with_max_lines(1);
 
-        let info_col = MultiChild::new(
-            children![name_text, preview_text],
-            Layout::column().gap(2.0).flex_grow(1.0),
-        );
+        let info_col = column! { name_text, preview_text }.gap(2.0).flex_grow(1.0);
 
         let time_text = Text::new(format_timestamp(self.timestamp).as_str())
             .with_font_size(12.0)
             .with_color(name_color);
 
-        let right_col = MultiChild::new(children![time_text], Layout::column().flex_shrink(0.0));
+        let right_col = column! { time_text }.flex_shrink(0.0);
 
         let badge: Option<Box<dyn Widget>> = if self.unread_count > 0 {
             Some(
@@ -203,10 +200,7 @@ impl Component for ConversationRow {
         };
 
         let inner = WithLayout::new(
-            MultiChild::new(
-                children![avatar_with_badge, info_col, right_col],
-                Layout::row().gap(12.0),
-            ),
+            row! { avatar_with_badge, info_col, right_col }.gap(12.0),
             Layout::default().padding(12.0),
         );
 

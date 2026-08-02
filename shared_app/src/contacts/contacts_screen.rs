@@ -1,7 +1,7 @@
 //! Contacts list screen.
 
 use vexo::{
-    children, Component, DecoratedBox, ImageData, Layout, MultiChild, RenderContext, ScrollView,
+    column, row, Component, DecoratedBox, ImageData, Layout, RenderContext, ScrollView,
     SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 
@@ -24,10 +24,11 @@ impl Component for ContactsScreen {
 
     fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
-        let mut list = MultiChild::empty(Layout::column());
-        for c in &self.contacts {
-            list = list.push(build_contact_row(c, &theme));
-        }
+        let list = column! {
+            for c in &self.contacts {
+                build_contact_row(c, &theme)
+            }
+        };
         // Paint a themed background behind the list so the pane isn't left
         // showing the window's white clear in dark mode.
         DecoratedBox::with_style(
@@ -52,16 +53,11 @@ fn build_contact_row(c: &Contact, theme: &vexo::ThemeData) -> Box<dyn Widget> {
         .with_color(theme.on_surface_variant);
 
     WithLayout::new(
-        MultiChild::new(
-            children![
-                avatar,
-                MultiChild::new(
-                    children![name, status],
-                    Layout::column().gap(2.0).flex_grow(1.0),
-                ),
-            ],
-            Layout::row().gap(12.0),
-        ),
+        row! {
+            avatar,
+            column! { name, status }.gap(2.0).flex_grow(1.0),
+        }
+        .gap(12.0),
         Layout::default().padding(12.0),
     )
     .boxed()
