@@ -76,7 +76,7 @@ impl Application for ImState {
                     move |tab, is_selected| {
                         let (icon, label) = match tab {
                             ImTab::Chats => (Icons::Comment, "Chats"),
-                            ImTab::Contacts => (Icons::User, "Contacts"),
+                            ImTab::Contacts => (Icons::AddressBook, "Contacts"),
                             ImTab::Me => (Icons::Gear, "Me"),
                         };
                         let color = if is_selected {
@@ -131,7 +131,7 @@ impl Application for ImState {
                     sidebar_builder: std::sync::Arc::new(move |tab, is_selected, _nav_colors| {
                         let icon = match tab {
                             ImTab::Chats => Icons::Comment,
-                            ImTab::Contacts => Icons::User,
+                            ImTab::Contacts => Icons::AddressBook,
                             ImTab::Me => Icons::Gear,
                         };
                         let color = if is_selected {
