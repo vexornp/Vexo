@@ -77,7 +77,7 @@ impl Application for ImState {
                         let (icon, label) = match tab {
                             ImTab::Chats => (Icons::Comment, "Chats"),
                             ImTab::Contacts => (Icons::AddressBook, "Contacts"),
-                            ImTab::Me => (Icons::Gear, "Me"),
+                            ImTab::Me => (Icons::User, "Me"),
                         };
                         let color = if is_selected {
                             tab_selected_color
@@ -132,7 +132,7 @@ impl Application for ImState {
                         let icon = match tab {
                             ImTab::Chats => Icons::Comment,
                             ImTab::Contacts => Icons::AddressBook,
-                            ImTab::Me => Icons::Gear,
+                            ImTab::Me => Icons::User,
                         };
                         let color = if is_selected {
                             tab_selected_color

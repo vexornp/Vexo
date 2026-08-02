@@ -147,7 +147,7 @@ mod tests {
         let mut fs = vexo::resource::new_font_system();
         register_fonts(&mut fs);
 
-        for icon in [Icons::Comment, Icons::AddressBook, Icons::Gear] {
+        for icon in [Icons::Comment, Icons::AddressBook, Icons::User] {
             let cp = icon.codepoint();
             let mut buf = Buffer::new(&mut fs, Metrics::new(22.0, 22.0 * 1.2));
             let attrs = glyphon::Attrs::new().family(Family::Name(FONT_FAMILY));
