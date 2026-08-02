@@ -224,21 +224,19 @@ fn build_input_bar(
     controller: TextEditingController,
     on_send: impl FnMut() + 'static,
 ) -> Box<dyn Widget> {
-    WithLayout::new(
-        row! {
-            WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
-            Button::new("Send")
-                .variant(ButtonVariant::Primary)
-                .shadow(
-                    BoxShadow::new(Color::BLACK.with_alpha(0.25))
-                        .blur(6.0)
-                        .offset(0.0, 2.0),
-                )
-                .on_tap(on_send),
-        }
-        .gap(8.0),
-        Layout::default().padding(8.0),
-    )
+    row! {
+        WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
+        Button::new("Send")
+            .variant(ButtonVariant::Primary)
+            .shadow(
+                BoxShadow::new(Color::BLACK.with_alpha(0.25))
+                    .blur(6.0)
+                    .offset(0.0, 2.0),
+            )
+            .on_tap(on_send),
+    }
+    .gap(8.0)
+    .padding(8.0)
     .boxed()
 }
 
