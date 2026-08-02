@@ -60,20 +60,7 @@ impl Component for ConversationList {
 
         let list = column! {
             for conv in &self.conversations {
-                let is_selected = self.selected == Some(conv.id.clone());
-                let on_select = Rc::clone(&self.on_select);
-                let id = conv.id.clone();
-                let (preview, timestamp) = latest_preview(conv, &messages);
-                ConversationRow {
-                    name: conv.name.clone(),
-                    avatar_bytes: Rc::clone(&conv.avatar_bytes),
-                    unread_count: conv.unread_count,
-                    preview,
-                    timestamp,
-                    is_selected,
-                    platform: None,
-                    on_tap: Rc::new(move || on_select(id.clone())),
-                }
+                ConversationRow::from_conv(conv, &self.selected, &self.on_select, &messages)
             }
         };
         // Paint a themed background behind the list so the pane isn't left
@@ -118,6 +105,27 @@ struct ConversationRow {
 }
 
 impl ConversationRow {
+    fn from_conv(
+        conv: &Conversation,
+        selected: &Option<ConvId>,
+        on_select: &Rc<dyn Fn(ConvId)>,
+        messages: &HashMap<ConvId, Vec<Message>>,
+    ) -> Self {
+        let on_select = Rc::clone(on_select);
+        let id = conv.id.clone();
+        let (preview, timestamp) = latest_preview(conv, messages);
+        Self {
+            name: conv.name.clone(),
+            avatar_bytes: Rc::clone(&conv.avatar_bytes),
+            unread_count: conv.unread_count,
+            preview,
+            timestamp,
+            is_selected: *selected == Some(conv.id.clone()),
+            platform: None,
+            on_tap: Rc::new(move || on_select(id.clone())),
+        }
+    }
+
     fn effective_platform(&self) -> Platform {
         self.platform.unwrap_or_else(Platform::current)
     }
