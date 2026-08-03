@@ -315,7 +315,7 @@ impl RenderObject for TextEditRenderObject {
                         range_opt = Some((0, buffer_width));
                     }
 
-                    if let Some((mut min, mut max)) = range_opt.take() {
+                    if let Some((min, mut max)) = range_opt.take() {
                         // If the selection continues past this line, extend the
                         // highlight to the end of the line. (RTL special-casing
                         // is skipped for v1 — we always extend `max`.)

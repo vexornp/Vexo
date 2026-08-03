@@ -7,7 +7,6 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::id::ElementKey;
 

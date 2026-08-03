@@ -7,15 +7,16 @@
 
 use std::any::Any;
 
-use crate::core::{Bounds, Logical, Size};
+#[cfg(test)]
+use crate::core::Bounds;
 use crate::elements::RenderObjectElement;
 use crate::focus::attachment::FocusAttachment;
 use crate::input::InputEvent;
 use crate::layout::{AlignItems, FlexDirection, Layout};
 use crate::render_objects::ContainerRenderObject;
 use crate::{
-    Element, ElementContext, ElementKey, EventContext, HitTestContext, LayoutContext, LayoutResult,
-    PaintContext, RenderObject, RenderObjectKey, UpdateResult, Widget, WidgetKey,
+    Element, ElementContext, ElementKey, EventContext, RenderObject, RenderObjectKey, UpdateResult,
+    Widget, WidgetKey,
 };
 
 // ============================================================================
@@ -350,7 +351,7 @@ impl Widget for WithLayout {
 mod tests {
     use super::*;
     use crate::layout::{AlignItems, AlignSelf, FlexDirection};
-    use crate::{GlobalKey, Key, Text};
+    use crate::{GlobalKey, Key, PaintContext, Text};
 
     #[test]
     fn test_with_layout_creation() {

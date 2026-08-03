@@ -12,6 +12,7 @@
 /// - `alpha`: the shadow color's alpha channel (0.0 to 1.0).
 ///
 /// Returns the final alpha (0.0 to 1.0).
+#[allow(dead_code)]
 pub fn shadow_alpha(distance_from_silhouette: f32, blur_px: f32, alpha: f32) -> f32 {
     let sigma = (blur_px * 0.5).max(0.5);
     let d = distance_from_silhouette.max(0.0);

@@ -253,6 +253,7 @@ impl ThreeTreePipeline {
     /// // Updated widget tree (reconciliation preserves state for matching elements)
     /// pipeline.reconcile(Box::new(Text::new("Hello World")));
     /// ```
+    #[allow(dead_code)]
     pub(crate) fn reconcile(&mut self, root_widget: Box<dyn Widget>) {
         self.sync_focus_to_build_owner();
         Reconciler::reconcile(

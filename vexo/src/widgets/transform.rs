@@ -64,6 +64,7 @@ impl TransformRenderObject {
     }
 
     /// Get the current transform.
+    #[allow(dead_code)]
     pub fn transform(&self) -> &AffineTransform {
         &self.transform
     }

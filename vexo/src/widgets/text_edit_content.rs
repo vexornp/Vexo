@@ -45,6 +45,7 @@ impl TextEditContent {
     }
 
     /// Set the key for this widget.
+    #[allow(dead_code)]
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
@@ -75,26 +76,31 @@ impl TextEditContent {
     }
 
     /// Get the text content.
+    #[allow(dead_code)]
     pub fn content(&self) -> &str {
         &self.content
     }
 
     /// Get the font size.
+    #[allow(dead_code)]
     pub fn font_size(&self) -> f32 {
         self.font_size
     }
 
     /// Get the text glyph color.
+    #[allow(dead_code)]
     pub fn color(&self) -> Color {
         self.color
     }
 
     /// Get whether the widget is focused.
+    #[allow(dead_code)]
     pub fn is_focused(&self) -> bool {
         self.is_focused
     }
 
     /// Get whether the cursor blink is visible.
+    #[allow(dead_code)]
     pub fn cursor_blink_visible(&self) -> bool {
         self.cursor_blink_visible
     }

@@ -53,8 +53,8 @@ pub struct MediaQueryData {
     pub size: Size<Logical>,
     pub device_pixel_ratio: f32,
     pub padding: EdgeInsets,
-    pub viewInsets: EdgeInsets,
-    pub viewPadding: EdgeInsets,
+    pub view_insets: EdgeInsets,
+    pub view_padding: EdgeInsets,
     pub platform_brightness: Brightness,
     pub orientation: Orientation,
 }
@@ -65,8 +65,8 @@ impl MediaQueryData {
             size: Size::new(0.0, 0.0),
             device_pixel_ratio: 1.0,
             padding: EdgeInsets::ZERO,
-            viewInsets: EdgeInsets::ZERO,
-            viewPadding: EdgeInsets::ZERO,
+            view_insets: EdgeInsets::ZERO,
+            view_padding: EdgeInsets::ZERO,
             platform_brightness: Brightness::Light,
             orientation: Orientation::Portrait,
         }
@@ -78,15 +78,15 @@ impl MediaQueryData {
         clone
     }
 
-    pub fn copy_with_view_insets(&self, viewInsets: EdgeInsets) -> Self {
+    pub fn copy_with_view_insets(&self, view_insets: EdgeInsets) -> Self {
         let mut clone = self.clone();
-        clone.viewInsets = viewInsets;
+        clone.view_insets = view_insets;
         clone
     }
 
-    pub fn copy_with_view_padding(&self, viewPadding: EdgeInsets) -> Self {
+    pub fn copy_with_view_padding(&self, view_padding: EdgeInsets) -> Self {
         let mut clone = self.clone();
-        clone.viewPadding = viewPadding;
+        clone.view_padding = view_padding;
         clone
     }
 }
@@ -158,7 +158,7 @@ impl MediaQuery {
         edges: RemoveEdges,
     ) -> MediaQueryMutator {
         MediaQueryMutator::new(Box::new(child), move |parent: &MediaQueryData| {
-            let mut v = parent.viewInsets;
+            let mut v = parent.view_insets;
             if edges.top {
                 v.top = 0.0;
             }
@@ -180,7 +180,7 @@ impl MediaQuery {
         edges: RemoveEdges,
     ) -> MediaQueryMutator {
         MediaQueryMutator::new(Box::new(child), move |parent: &MediaQueryData| {
-            let mut v = parent.viewPadding;
+            let mut v = parent.view_padding;
             if edges.top {
                 v.top = 0.0;
             }
@@ -202,7 +202,7 @@ impl MediaQuery {
         amount: f32,
     ) -> MediaQueryMutator {
         MediaQueryMutator::new(Box::new(child), move |parent: &MediaQueryData| {
-            let mut v = parent.viewInsets;
+            let mut v = parent.view_insets;
             v.bottom = (v.bottom - amount).max(0.0);
             parent.copy_with_view_insets(v)
         })
@@ -317,18 +317,18 @@ impl Component for RootMediaQuery {
 
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let sources = ctx.media_query_sources();
-        let viewPadding = sources.safe_area;
-        let viewInsets = EdgeInsets {
+        let view_padding = sources.safe_area;
+        let view_insets = EdgeInsets {
             left: 0.0,
             right: 0.0,
             top: 0.0,
             bottom: sources.keyboard_current_height,
         };
         let padding = EdgeInsets {
-            top: (viewPadding.top - viewInsets.top).max(0.0),
-            bottom: (viewPadding.bottom - viewInsets.bottom).max(0.0),
-            left: (viewPadding.left - viewInsets.left).max(0.0),
-            right: (viewPadding.right - viewInsets.right).max(0.0),
+            top: (view_padding.top - view_insets.top).max(0.0),
+            bottom: (view_padding.bottom - view_insets.bottom).max(0.0),
+            left: (view_padding.left - view_insets.left).max(0.0),
+            right: (view_padding.right - view_insets.right).max(0.0),
         };
         let orientation = if sources.media_query.size.width >= sources.media_query.size.height {
             Orientation::Landscape
@@ -344,8 +344,8 @@ impl Component for RootMediaQuery {
             size: sources.media_query.size,
             device_pixel_ratio: sources.media_query.device_pixel_ratio,
             padding,
-            viewInsets,
-            viewPadding,
+            view_insets,
+            view_padding,
             platform_brightness: brightness,
             orientation,
         };
@@ -363,8 +363,8 @@ mod tests {
         assert_eq!(z.size, Size::<Logical>::new(0.0, 0.0));
         assert_eq!(z.device_pixel_ratio, 1.0);
         assert_eq!(z.padding, EdgeInsets::ZERO);
-        assert_eq!(z.viewInsets, EdgeInsets::ZERO);
-        assert_eq!(z.viewPadding, EdgeInsets::ZERO);
+        assert_eq!(z.view_insets, EdgeInsets::ZERO);
+        assert_eq!(z.view_padding, EdgeInsets::ZERO);
         assert_eq!(z.platform_brightness, Brightness::Light);
         assert_eq!(z.orientation, Orientation::Portrait);
     }
@@ -393,8 +393,12 @@ mod tests {
             bottom: 300.0,
         };
         let updated = z.copy_with_view_insets(new_vi);
-        assert_eq!(updated.viewInsets, new_vi);
-        assert_eq!(z.viewInsets, EdgeInsets::ZERO, "original must be unchanged");
+        assert_eq!(updated.view_insets, new_vi);
+        assert_eq!(
+            z.view_insets,
+            EdgeInsets::ZERO,
+            "original must be unchanged"
+        );
     }
 
     #[test]
@@ -407,9 +411,9 @@ mod tests {
             bottom: 4.0,
         };
         let updated = z.copy_with_view_padding(new_vp);
-        assert_eq!(updated.viewPadding, new_vp);
+        assert_eq!(updated.view_padding, new_vp);
         assert_eq!(
-            z.viewPadding,
+            z.view_padding,
             EdgeInsets::ZERO,
             "original must be unchanged"
         );
@@ -465,20 +469,20 @@ mod tests {
             bottom: 300.0,
         });
         let compute = |p: &MediaQueryData| {
-            let mut v = p.viewInsets;
+            let mut v = p.view_insets;
             v.bottom = (v.bottom - 49.0).max(0.0);
             p.copy_with_view_insets(v)
         };
         let child = compute(&parent);
-        assert_eq!(child.viewInsets.bottom, 251.0);
+        assert_eq!(child.view_insets.bottom, 251.0);
 
         // Clamp test: subtract more than available.
         let compute2 = |p: &MediaQueryData| {
-            let mut v = p.viewInsets;
+            let mut v = p.view_insets;
             v.bottom = (v.bottom - 500.0).max(0.0);
             p.copy_with_view_insets(v)
         };
         let clamped = compute2(&parent);
-        assert_eq!(clamped.viewInsets.bottom, 0.0);
+        assert_eq!(clamped.view_insets.bottom, 0.0);
     }
 }

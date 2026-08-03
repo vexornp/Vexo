@@ -128,7 +128,7 @@ pub struct KeyboardAvoider {
 
 impl Component for KeyboardAvoider {
     fn render(&self, _state, ctx) -> Box<dyn Widget> {
-        let bottom = MediaQuery::of(ctx).viewInsets.bottom;
+        let bottom = MediaQuery::of(ctx).view_insets.bottom;
         let child = Rc::clone(&self.child);   // O(1), same pointer
         WithLayout::new(
             Shared::new(child),

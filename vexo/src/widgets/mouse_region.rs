@@ -70,6 +70,7 @@ impl MouseRegion {
     }
 
     /// Set the key for this widget.
+    #[allow(dead_code)]
     pub fn with_key(mut self, key: impl Into<WidgetKey>) -> Self {
         self.key = Some(key.into());
         self
@@ -95,17 +96,20 @@ impl MouseRegion {
 
     /// Set whether this region is opaque in hit testing (default: true).
     /// When opaque, it absorbs cursor resolution from descendants behind it.
+    #[allow(dead_code)]
     pub fn opaque(mut self, opaque: bool) -> Self {
         self.opaque = opaque;
         self
     }
 
     /// Get the child widget.
+    #[allow(dead_code)]
     pub fn child(&self) -> &dyn Widget {
         self.child.as_ref()
     }
 
     /// Build the annotation from current configuration.
+    #[allow(dead_code)]
     fn build_annotation(&self) -> MouseTrackerAnnotation {
         MouseTrackerAnnotation::new(self.cursor)
             .with_on_enter(

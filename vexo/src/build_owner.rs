@@ -311,7 +311,7 @@ impl BuildOwner {
     /// keyboard height written by the render-loop interpolation driver. Used
     /// by
     /// [`RenderContext::media_query_sources()`](crate::stateful_widget::RenderContext::media_query_sources)
-    /// so the root `MediaQuery` can resolve `viewInsets.bottom` during render.
+    /// so the root `MediaQuery` can resolve `view_insets.bottom` during render.
     pub fn keyboard_inset_source(&self) -> KeyboardInsetSource {
         self.keyboard_inset_source.clone()
     }

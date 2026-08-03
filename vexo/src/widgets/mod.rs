@@ -58,7 +58,6 @@ pub use text_edit::{TextEdit, TextEditState, TextEditingController};
 pub use theme::{Brightness, Theme, ThemeData};
 
 // Crate-internal modifier widgets (not part of public API)
-use crate::core::Color;
 use crate::input::MouseCursor;
 pub use clip_rrect::ClipRRect;
 pub use decorated_box::DecoratedBox;
@@ -316,6 +315,7 @@ impl Widget for Box<dyn Widget> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Color;
     use crate::core::Logical;
     use crate::element::Element;
     use crate::input::SystemCursorKind;

@@ -896,7 +896,7 @@ pub struct MediaQueryDataSourceSnapshot {
 /// that have no existing source. Updated by `WindowState` each frame; read by
 /// the root `MediaQuery` component.
 ///
-/// `padding` / `viewInsets` / `viewPadding` stay on the existing
+/// `padding` / `view_insets` / `view_padding` stay on the existing
 /// `SafeAreaSource` / `KeyboardInsetSource` cells (they already propagate
 /// correctly); this cell carries only the new fields.
 #[derive(Clone)]

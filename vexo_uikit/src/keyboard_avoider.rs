@@ -23,14 +23,14 @@
 //! - Does not scroll. If the child content is taller than the area above
 //!   the keyboard, the child is responsible for its own scrolling (e.g.,
 //!   wrap in `ScrollView`).
-//! - Does not resize on desktop. On desktop, `MediaQuery.viewInsets.bottom`
+//! - Does not resize on desktop. On desktop, `MediaQuery.view_insets.bottom`
 //!   is always 0 (no software keyboard), so this component is a no-op.
 
 use std::rc::Rc;
 
 use vexo::{Component, Layout, MediaQuery, RenderContext, Shared, SimpleState, Widget, WithLayout};
 
-/// Wraps a child subtree and applies `MediaQuery.viewInsets.bottom` as bottom
+/// Wraps a child subtree and applies `MediaQuery.view_insets.bottom` as bottom
 /// padding, so the child sits above the software keyboard.
 ///
 /// This component is the ONLY `MediaQuery` dependent in the subtree — the
@@ -71,7 +71,7 @@ impl Component for KeyboardAvoider {
     type State = SimpleState<()>;
 
     fn render(&self, _state: &mut SimpleState<()>, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let bottom = MediaQuery::of(ctx).viewInsets.bottom;
+        let bottom = MediaQuery::of(ctx).view_insets.bottom;
         // `Rc::clone` (not `Rc::new`) so the pointer matches across
         // `rebuild_from_state` calls on the same widget instance (keyboard
         // frames → `SharedElement` skips), but differs when the parent

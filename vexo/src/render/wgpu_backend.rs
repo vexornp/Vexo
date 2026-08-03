@@ -163,6 +163,7 @@ pub struct WgpuBackend {
     current_op_clips: Vec<Option<crate::core::Bounds<crate::core::Logical>>>,
     // Per-op rounded-rect clip data
     rclip_uniform_buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     rclip_bind_group_layout: wgpu::BindGroupLayout,
     rclip_bind_group: wgpu::BindGroup,
     /// Per-op dynamic offsets into rclip_uniform_buffer. Index aligns

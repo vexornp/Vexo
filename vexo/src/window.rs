@@ -705,7 +705,7 @@ impl<A: Application + 'static> WindowState<A> {
         // animation is active, we interpolate the current height and write
         // it to `keyboard_inset_source`. The root MediaQuery reads
         // `keyboard_inset_source.get()` via `media_query_sources()`, so
-        // this drives `MediaQueryData.viewInsets.bottom` frame-by-frame.
+        // this drives `MediaQueryData.view_insets.bottom` frame-by-frame.
         //
         // On desktop the animation source is always `None` (no shim), so
         // this block is a no-op and `keyboard_inset_source` stays at 0.

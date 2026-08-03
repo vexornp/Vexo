@@ -136,7 +136,7 @@ impl EventHandler {
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale_source: &ScaleSource,
+        _scale_source: &ScaleSource,
         clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);
@@ -426,7 +426,7 @@ impl EventHandler {
         focus_manager: &mut FocusManager,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale_source: &ScaleSource,
+        _scale_source: &ScaleSource,
         clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         // Get focused element
@@ -476,11 +476,11 @@ impl EventHandler {
         font_system: &mut glyphon::FontSystem,
         build_owner: &BuildOwner,
         dirty_sender: &mpsc::Sender<ElementKey>,
-        focus_manager: &mut FocusManager,
+        _focus_manager: &mut FocusManager,
         position: Point<Logical>,
         event: &InputEvent,
         modifiers: Modifiers,
-        scale_source: &ScaleSource,
+        _scale_source: &ScaleSource,
         clipboard: &Arc<dyn Clipboard>,
     ) -> Option<Box<dyn Any>> {
         let absolute_position = Position::<Logical, Absolute>::new(position.x, position.y);

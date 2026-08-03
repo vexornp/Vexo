@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, Image, ImageData, Key, Layout, LifecycleContext, RenderContext,
-    ScrollController, ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController,
-    Theme, Widget, WidgetKey, WithLayout,
+    FlexDirection, ImageData, Key, Layout, LifecycleContext, RenderContext, ScrollController,
+    ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
+    WidgetKey, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
 

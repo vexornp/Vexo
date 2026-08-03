@@ -21,6 +21,7 @@ pub(crate) enum ImTab {
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub(crate) enum ChatsRoute {
+    #[allow(dead_code)]
     List,
     Chat(ConvId),
 }
@@ -50,6 +51,7 @@ pub(crate) struct Conversation {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Contact {
+    #[allow(dead_code)]
     pub id: u32,
     pub name: String,
     pub avatar_bytes: Rc<[u8]>,

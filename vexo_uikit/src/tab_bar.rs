@@ -202,7 +202,7 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
                 SafeArea::new(bar.boxed()).top(false).boxed(),
                 |parent: &MediaQueryData| {
                     let mut p = parent.padding;
-                    p.bottom = parent.viewPadding.bottom;
+                    p.bottom = parent.view_padding.bottom;
                     parent.copy_with_padding(p)
                 },
             )
@@ -227,8 +227,8 @@ impl<D: Hash + Eq + Clone + 'static + Any> Component for TabBarView<D> {
         // the MediaQueryMutator closure, which reads the parent MediaQuery
         // during its own render(). TabBar itself is NOT a dependent.
         let page = MediaQueryMutator::new(stack.boxed(), |parent: &MediaQueryData| {
-            let tab_bar_height = TAB_BAR_HEIGHT + parent.viewPadding.bottom;
-            let mut v = parent.viewInsets;
+            let tab_bar_height = TAB_BAR_HEIGHT + parent.view_padding.bottom;
+            let mut v = parent.view_insets;
             v.bottom = (v.bottom - tab_bar_height).max(0.0);
             parent.copy_with_view_insets(v)
         });
@@ -655,8 +655,8 @@ mod tests {
             let mut mq = MediaQueryData::all_zero();
             mq.size = vexo::core::Size::new(390.0, 600.0);
             mq.padding.bottom = (34.0 - kh).max(0.0);
-            mq.viewInsets.bottom = kh;
-            mq.viewPadding.bottom = 34.0;
+            mq.view_insets.bottom = kh;
+            mq.view_padding.bottom = 34.0;
             mq
         }
 
@@ -725,7 +725,7 @@ mod tests {
     }
 
     /// A tiny Component that captures the `MediaQueryData` its subtree receives.
-    /// Used to verify what `viewInsets.bottom` the page child sees after
+    /// Used to verify what `view_insets.bottom` the page child sees after
     /// `TabBarView`'s `MediaQueryMutator` chain transforms the parent MQ.
     #[derive(Clone)]
     struct MqCapture {
@@ -746,12 +746,12 @@ mod tests {
         use vexo::ThreeTreePipeline;
         // Simulate mid-keyboard-dismiss: keyboard_height=150, safe_bottom=34.
         // RootMediaQuery would produce: padding.bottom = max(34-150,0) = 0,
-        // viewInsets.bottom = 150, viewPadding.bottom = 34.
+        // view_insets.bottom = 150, view_padding.bottom = 34.
         let mut mq = MediaQueryData::all_zero();
         mq.size = vexo::core::Size::new(390.0, 600.0);
         mq.padding.bottom = 0.0; // clamped (34 - 150 < 0)
-        mq.viewInsets.bottom = 150.0;
-        mq.viewPadding.bottom = 34.0;
+        mq.view_insets.bottom = 150.0;
+        mq.view_padding.bottom = 34.0;
 
         let captured = Rc::new(RefCell::new(None));
         let captured_for_page = Rc::clone(&captured);
@@ -777,17 +777,17 @@ mod tests {
             .clone()
             .expect("MqCapture::render should have been called");
 
-        // After Change 2: tab_bar_height = 49 + viewPadding.bottom = 83.
-        // Page child sees viewInsets.bottom = max(150 - 83, 0) = 67.
+        // After Change 2: tab_bar_height = 49 + view_padding.bottom = 83.
+        // Page child sees view_insets.bottom = max(150 - 83, 0) = 67.
         //
         // Before Change 2: tab_bar_height = 49 + padding.bottom = 49 + 0 = 49
-        // (clamped!), so page child sees viewInsets.bottom = max(150 - 49, 0) = 101.
+        // (clamped!), so page child sees view_insets.bottom = max(150 - 49, 0) = 101.
         // The 34pt gap means chat content would overlap the bar by 34pt.
         assert!(
-            (captured_mq.viewInsets.bottom - 67.0).abs() < 1.0,
-            "page child viewInsets.bottom should be ~67 (150 - 83), got {} — \
-             tab_bar_height is using clamped padding.bottom instead of viewPadding.bottom",
-            captured_mq.viewInsets.bottom
+            (captured_mq.view_insets.bottom - 67.0).abs() < 1.0,
+            "page child view_insets.bottom should be ~67 (150 - 83), got {} — \
+             tab_bar_height is using clamped padding.bottom instead of view_padding.bottom",
+            captured_mq.view_insets.bottom
         );
     }
 }

@@ -78,6 +78,7 @@ impl FractionalTranslationRenderObject {
     }
 
     /// Get the current fractional offset.
+    #[allow(dead_code)]
     pub fn offset(&self) -> (f32, f32) {
         self.offset
     }
