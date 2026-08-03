@@ -12,7 +12,7 @@
 #[cfg(target_os = "android")]
 mod android {
     use android_activity::AndroidApp;
-    use shared_app::State;
+    use shared_app::ImState;
 
     /// Entry point invoked by `android-activity`'s GameActivity glue.
     ///
@@ -22,7 +22,7 @@ mod android {
     /// same `VexoApp` / three-tree pipeline used on desktop and iOS.
     #[no_mangle]
     fn android_main(app: AndroidApp) {
-        if let Err(e) = vexo::run_android_demo::<State>(app) {
+        if let Err(e) = vexo::run_android_demo::<ImState>(app) {
             log::error!("vexo android demo exited with error: {e:?}");
         }
     }
