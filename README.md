@@ -10,7 +10,7 @@ A cross-platform UI framework in Rust.
 [![Status](https://img.shields.io/badge/status-early--stage-orange.svg)](#status)
 
 Vexo brings [Flutter's](https://github.com/flutter/flutter) three-tree architecture to pure Rust — one codebase,
-GPU-rendered, running natively on five platforms. Early-stage but real:
+GPU-rendered, running natively on multiple platforms. Early-stage but real:
 apps run today, gaps are tracked in the ROADMAP.
 
 ### Desktop
@@ -84,7 +84,7 @@ architecture to Rust:
 - **Pure Rust, GPU-rendered** — wgpu backend, no webview, no JS/HTML/CSS,
   no system widget bridge. The same Rust code renders via Metal, Vulkan,
   DX12, or OpenGL.
-- **One codebase, five platforms** — iOS, Android, macOS, Windows, and
+- **One codebase, multiple platforms** — iOS, Android, macOS, Windows, and
   Linux from a single `Application::view()` implementation.
 - **Reactive state** — `Signal<T>` primitives drive targeted rebuilds. No
   virtual DOM, no diffing, no re-render storms.
@@ -147,13 +147,13 @@ Desktop builds need only Rust; mobile builds require the platform SDK
 
 ## Status
 
-Vexo is **early-stage but real**. Apps run on all five platforms today, with
+Vexo is **early-stage but real**. Apps run on all supported platforms today, with
 a working widget set, navigation, theming, scrolling, and animations.
 
 - ✅ Three-tree architecture, flexbox/grid layout, text & text editing with
   selection, reactive state, focus tree, scroll physics (rubber-band, fling,
   spring), image decoding, theming & dark mode, navigation, animations,
-  shadows, desktop + mobile rendering on 5 platforms
+  shadows, desktop + mobile rendering on multiple platforms
 - 🚧 Accessibility, IME composition (CJK), tab traversal, common widgets
   (Checkbox/Switch/Slider/Dialog/...), RepaintBoundary, ListView
   virtualization, rich text, gradients, widget test framework
