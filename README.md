@@ -23,7 +23,7 @@ apps run today, gaps are tracked in the ROADMAP.
 
 | iOS | Android |
 |-----|---------|
-| ![iOS](IOS_GIF_URL) | ![Android](ANDROID_GIF_URL) |
+| ![iOS](assets/ios.gif) | ![Android](ANDROID_GIF_URL) |
 
 ## Quickstart
 
