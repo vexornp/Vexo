@@ -44,6 +44,7 @@ pub struct TextEditRenderObject {
     // Text fields (same as TextRenderObject)
     content: String,
     font_size: f32,
+    color: Color,
     computed_bounds: Option<Bounds<Logical>>,
     layout_node: Option<LayoutNodeKey>,
 
@@ -59,6 +60,7 @@ impl TextEditRenderObject {
         Self {
             content: content.to_string(),
             font_size: 16.0,
+            color: Color::BLACK,
             computed_bounds: None,
             layout_node: None,
             editor,
@@ -73,6 +75,12 @@ impl TextEditRenderObject {
         self
     }
 
+    /// Set the text glyph color (builder pattern).
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
     /// Get the text content.
     pub fn content(&self) -> &str {
         &self.content
@@ -81,6 +89,11 @@ impl TextEditRenderObject {
     /// Get the font size.
     pub fn font_size(&self) -> f32 {
         self.font_size
+    }
+
+    /// Get the text glyph color.
+    pub fn color(&self) -> Color {
+        self.color
     }
 
     /// Get the computed bounds.
@@ -119,6 +132,17 @@ impl TextEditRenderObject {
         } else {
             false
         }
+    }
+
+    /// Set the text glyph color.
+    ///
+    /// Returns true if the color changed.
+    pub fn set_color(&mut self, color: Color) -> bool {
+        let changed = self.color != color;
+        if changed {
+            self.color = color;
+        }
+        changed
     }
 
     /// Set whether the widget is focused.
@@ -318,7 +342,7 @@ impl RenderObject for TextEditRenderObject {
             content: self.content.clone(),
             position: text_pos,
             font_size: self.font_size,
-            color: Color::BLACK,
+            color: self.color,
             font_family: None,
             max_width: Some(bounds.width()),
         });
@@ -481,6 +505,64 @@ mod tests {
         assert!(!obj.set_cursor_blink_visible(true)); // No change
         assert!(obj.set_cursor_blink_visible(false));
         assert!(!obj.cursor_blink_visible());
+    }
+
+    #[test]
+    fn test_text_edit_render_object_default_color_is_black() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Hello", editor);
+        assert_eq!(obj.color(), Color::BLACK);
+    }
+
+    #[test]
+    fn test_text_edit_render_object_with_color_builder() {
+        let editor = create_test_editor();
+        let obj = TextEditRenderObject::new("Hello", editor).with_color(Color::rgb(0.9, 0.1, 0.1));
+        assert_eq!(obj.color(), Color::rgb(0.9, 0.1, 0.1));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_set_color_returns_changed() {
+        let editor = create_test_editor();
+        let mut obj = TextEditRenderObject::new("Hello", editor);
+        assert!(obj.set_color(Color::WHITE));
+        assert_eq!(obj.color(), Color::WHITE);
+        assert!(!obj.set_color(Color::WHITE));
+    }
+
+    #[test]
+    fn test_text_edit_render_object_paint_uses_color_field() {
+        let editor = create_test_editor();
+        let mut obj =
+            TextEditRenderObject::new("Hello", editor).with_color(Color::rgb(0.9, 0.1, 0.1));
+        obj.set_focused(false);
+        obj.set_cursor_blink_visible(false);
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        {
+            let mut layout_ctx = LayoutContext::new(&mut engine, &mut font_system);
+            let _ = obj.layout(&mut layout_ctx, &[]);
+        }
+        let root = engine.create_leaf(&Layout::default());
+        engine.compute(root, Size::new(200.0, 50.0), &mut font_system);
+        {
+            let mut ctx = LayoutContext::new(&mut engine, &mut font_system);
+            obj.apply_layout(&mut ctx);
+        }
+
+        let mut commands = Vec::new();
+        let mut ctx = PaintContext::new(&mut commands);
+        let result = obj.paint(&mut ctx);
+
+        let text_cmd = result
+            .iter()
+            .find_map(|c| match c {
+                RenderCommand::Text { color, .. } => Some(*color),
+                _ => None,
+            })
+            .expect("should emit a Text command");
+        assert_eq!(text_cmd, Color::rgb(0.9, 0.1, 0.1));
     }
 
     #[test]

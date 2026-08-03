@@ -55,6 +55,11 @@ impl DecoratedBoxRenderObject {
             false
         }
     }
+
+    /// Get the style (read accessor, used by tests).
+    pub fn style(&self) -> &Style {
+        &self.style
+    }
 }
 
 impl Default for DecoratedBoxRenderObject {

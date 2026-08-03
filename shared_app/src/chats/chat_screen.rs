@@ -143,7 +143,7 @@ impl Component for ChatScreen {
             }
         };
 
-        let input_bar = build_input_bar(tc, on_send_closure);
+        let input_bar = build_input_bar(tc, on_send_closure, &theme);
 
         // Build the content WITHOUT reading MediaQuery — ChatScreen is NOT a
         // MediaQuery dependent, so it does NOT rebuild on keyboard animation
@@ -223,9 +223,16 @@ fn build_message_bubble(
 fn build_input_bar(
     controller: TextEditingController,
     on_send: impl FnMut() + 'static,
+    theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
     row! {
-        WithLayout::new(TextEdit::new(controller), Layout::default().flex_grow(1.0)),
+        WithLayout::new(
+            TextEdit::new(controller)
+                .with_background(theme.surface)
+                .with_text_color(theme.on_surface)
+                .with_border_color(theme.outline),
+            Layout::default().flex_grow(1.0),
+        ),
         Button::new("Send")
             .variant(ButtonVariant::Primary)
             .shadow(
@@ -432,6 +439,144 @@ mod tests {
             input_bottom,
             input_bounds.top,
             input_bounds.height()
+        );
+    }
+
+    #[test]
+    fn test_chat_screen_input_bar_uses_theme_colors() {
+        let messages_signal = seed_messages_signal();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: Signal::derive(messages_signal, |map| {
+                map.get(&ConvId(1)).cloned().unwrap_or_default()
+            }),
+            avatar_bytes: seed_avatar(ConvId(1)),
+            me_avatar_bytes: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            scroll_controller: ScrollController::new(),
+        };
+        let dark_theme = vexo::ThemeData::dark();
+        let themed = vexo::Theme::new(dark_theme.clone(), view);
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(themed.boxed());
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        fn find_in_tree(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            predicate: &dyn Fn(&dyn vexo::RenderObject) -> bool,
+        ) -> Option<RenderObjectKey> {
+            let ro = reg.get(key)?;
+            if predicate(ro) {
+                return Some(key);
+            }
+            for &child in ro.children() {
+                if let Some(found) = find_in_tree(reg, child, predicate) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        fn collect_matching(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            predicate: &dyn Fn(&dyn vexo::RenderObject) -> bool,
+            out: &mut Vec<RenderObjectKey>,
+        ) {
+            if let Some(ro) = reg.get(key) {
+                if predicate(ro) {
+                    out.push(key);
+                }
+                for &child in ro.children() {
+                    collect_matching(reg, child, predicate, out);
+                }
+            }
+        }
+
+        fn subtree_contains(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+            target: RenderObjectKey,
+        ) -> bool {
+            if key == target {
+                return true;
+            }
+            match reg.get(key) {
+                Some(ro) => ro
+                    .children()
+                    .iter()
+                    .any(|&child| subtree_contains(reg, child, target)),
+                None => false,
+            }
+        }
+
+        let text_edit_key = find_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<vexo::TextEditRenderObject>()
+                .is_some()
+        })
+        .expect("should find a TextEditRenderObject in the input bar");
+        let text_edit_ro = ro_reg
+            .get(text_edit_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<vexo::TextEditRenderObject>())
+            .expect("downcast TextEditRenderObject");
+        assert_eq!(
+            text_edit_ro.color(),
+            dark_theme.on_surface,
+            "input bar text color should match dark theme on_surface"
+        );
+
+        let mut all_decorated: Vec<RenderObjectKey> = Vec::new();
+        collect_matching(
+            ro_reg,
+            root,
+            &|ro| {
+                ro.as_any()
+                    .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+                    .is_some()
+            },
+            &mut all_decorated,
+        );
+        // `all_decorated` is in DFS pre-order, so ancestors appear before
+        // descendants. The ChatScreen root itself is a DecoratedBox (wrapping
+        // KeyboardAvoider) and is an ancestor of the input bar's TextEdit, so a
+        // forward search would return the root — which has no border. The
+        // input bar's own DecoratedBox (created inside TextEdit, carrying the
+        // border) is the INNERMOST enclosing DecoratedBox of the
+        // TextEditRenderObject. Iterate in reverse so the deepest match wins.
+        let decorated_key = all_decorated
+            .iter()
+            .rev()
+            .copied()
+            .find(|&k| subtree_contains(ro_reg, k, text_edit_key))
+            .expect("should find the DecoratedBox enclosing the input bar's TextEditRenderObject");
+        let decorated_ro = ro_reg
+            .get(decorated_key)
+            .and_then(|ro| {
+                ro.as_any()
+                    .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+            })
+            .expect("downcast DecoratedBoxRenderObject");
+        let border = decorated_ro
+            .style()
+            .border
+            .as_ref()
+            .expect("input bar DecoratedBox should have a border");
+        assert_eq!(
+            border.color, dark_theme.outline,
+            "input bar border color should match dark theme outline"
         );
     }
 }
