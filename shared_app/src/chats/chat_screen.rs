@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, Image, ImageData, Key, Layout, LifecycleContext, MultiChild, RenderContext,
-    ScrollController, ScrollView, Signal, Style, Text, TextEdit, TextEditingController, Theme,
-    Widget, WidgetKey, WithLayout,
+    FlexDirection, Image, ImageData, Key, Layout, LifecycleContext, RenderContext,
+    ScrollController, ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController,
+    Theme, Widget, WidgetKey, WithLayout,
 };
 use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
 
@@ -202,7 +202,7 @@ fn build_message_bubble(
     if is_me {
         let me_avatar = avatar(me_avatar_image, 32.0);
         row! {
-            MultiChild::empty(Layout::default().flex_grow(1.0)),
+            Spacer::new(),
             bubble,
             me_avatar,
         }
@@ -213,7 +213,7 @@ fn build_message_bubble(
         row! {
             them_avatar,
             bubble,
-            MultiChild::empty(Layout::default().flex_grow(1.0)),
+            Spacer::new(),
         }
         .gap(8.0)
         .boxed()

@@ -19,6 +19,7 @@ mod opacity;
 mod positioned;
 mod proxy;
 mod scroll_view;
+mod spacer;
 mod text;
 mod text_edit;
 
@@ -32,5 +33,6 @@ pub use opacity::OpacityRenderObject;
 pub use positioned::{PositionedInsets, PositionedRenderObject};
 pub use proxy::ProxyRenderObject;
 pub use scroll_view::ScrollViewRenderObject;
+pub use spacer::SpacerRenderObject;
 pub use text::TextRenderObject;
 pub use text_edit::TextEditRenderObject;

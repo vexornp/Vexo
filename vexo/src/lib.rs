@@ -214,7 +214,7 @@ pub use widgets::{
     Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
     GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
     MultiChild, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
-    ScrollView, Shared, SlideDirection, SlideTransition, Stack, Text, TextEdit, TextEditState,
+    ScrollView, Shared, SlideDirection, SlideTransition, Spacer, Stack, Text, TextEdit, TextEditState,
     TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
 
