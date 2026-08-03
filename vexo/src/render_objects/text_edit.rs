@@ -438,7 +438,7 @@ mod tests {
 
     fn create_test_editor() -> Rc<RefCell<Editor>> {
         let mut font_system = create_test_font_system();
-        let metrics = glyphon::Metrics::new(16.0, 20.0);
+        let metrics = glyphon::Metrics::new(16.0, 16.0 * DEFAULT_LINE_HEIGHT_MULTIPLIER);
         let mut raw_editor = glyphon::Editor::new(glyphon::Buffer::new_empty(metrics));
         raw_editor.with_buffer_mut(|buffer| {
             buffer.set_text("Hello", &Attrs::new(), Shaping::Advanced, None);

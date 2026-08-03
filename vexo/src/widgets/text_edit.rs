@@ -46,7 +46,19 @@ pub struct TextEditingController {
 impl TextEditingController {
     /// Create a new controller with initial text content.
     pub fn new(initial_text: &str, font_system: &mut glyphon::FontSystem) -> Self {
-        let metrics = Metrics::new(16.0, 20.0);
+        // Line height MUST match the layout measure function
+        // (`font_size * DEFAULT_LINE_HEIGHT_MULTIPLIER`) and the GPU text
+        // renderer (text_cache uses the same multiplier). A mismatch (e.g.
+        // hardcoding 20.0 here while layout/render use 16.0 * 1.2 = 19.2)
+        // causes the content box to be sized shorter than the actual text:
+        // the caret, whose Y is derived from this buffer's line height,
+        // drifts below the border by (mismatch * num_wrapped_lines) — visibly
+        // outside the input bar as more text is entered.
+        let font_size = 16.0;
+        let metrics = Metrics::new(
+            font_size,
+            font_size * crate::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER,
+        );
         let mut raw_editor = glyphon::Editor::new(Buffer::new_empty(metrics));
         raw_editor.with_buffer_mut(|buffer| {
             buffer.set_text(initial_text, &Attrs::new(), Shaping::Advanced, None);
@@ -58,7 +70,7 @@ impl TextEditingController {
         Self {
             editor: Rc::new(RefCell::new(Editor::new(raw_editor))),
             dirty_callback: Rc::new(RefCell::new(None)),
-            font_size: 16.0,
+            font_size,
         }
     }
 
@@ -1489,6 +1501,126 @@ mod tests {
             controller.text(),
             "Hello",
             "cut() with no selection should not modify text"
+        );
+    }
+
+    // ========================================================================
+    // Multi-line / wrapping regression: cursor must stay inside the border
+    // ========================================================================
+
+    /// Regression for "cursor renders vertically outside the input bar border,
+    /// the more text you input the more offset the cursor moves."
+    ///
+    /// Reproduces the chat input bar layout: a `TextEdit` with `flex_grow(1.0)`
+    /// in a row next to a single-line sibling. Mounts with EMPTY text, lays
+    /// out, THEN pastes a lot of text and re-layouts — exactly what a user
+    /// does. The caret is painted at `pos.y + vertical_offset + cursor_y`; for
+    /// it to stay inside the border, the content box height must be at least
+    /// `cursor_y + line_height`.
+    ///
+    /// This catches the line-height mismatch root cause: the layout measure
+    /// uses `font_size * DEFAULT_LINE_HEIGHT_MULTIPLIER` (19.2 at 16px) while
+    /// the editor buffer must use the SAME line height. If the editor buffer
+    /// uses a different line height (e.g. a hardcoded 20.0), the content box
+    /// is sized shorter than the actual text and the caret — whose Y comes
+    /// from the editor buffer — drifts below the border by
+    /// `(mismatch * num_wrapped_lines)`.
+    #[test]
+    fn test_text_edit_in_row_grows_to_fit_wrapped_cursor() {
+        let mut fs = create_test_font_system();
+        let controller = TextEditingController::new("", &mut fs);
+
+        let view = crate::MultiChild::new(
+            crate::children![
+                crate::WithLayout::new(
+                    TextEdit::new(controller.clone()),
+                    crate::Layout::default().flex_grow(1.0),
+                ),
+                crate::WithLayout::new(
+                    crate::Text::new("Send"),
+                    crate::Layout::default().padding(8.0),
+                ),
+            ],
+            crate::Layout::row(),
+        )
+        .gap(8.0)
+        .padding(8.0)
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.reconcile(view);
+        let mut engine = TaffyLayoutEngine::new();
+        // First layout: empty text, single line.
+        pipeline.layout(Size::new(200.0, 600.0), &mut engine, &mut fs);
+
+        // Paste long text after mount — the reported trigger. Pasting leaves
+        // the caret at the end of the inserted text, i.e. on the last wrapped
+        // line, so cursor_y grows with the number of wrapped lines.
+        let long_text = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+        controller.paste(&long_text, &mut fs);
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(200.0, 600.0), &mut engine, &mut fs);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        let te_key = find_render_object_in_tree(ro_reg, root, &|ro| {
+            ro.as_any()
+                .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+                .is_some()
+        })
+        .expect("should find TextEditRenderObject");
+        let te_ro = ro_reg
+            .get(te_key)
+            .and_then(|ro| {
+                ro.as_any()
+                    .downcast_ref::<crate::render_objects::TextEditRenderObject>()
+            })
+            .expect("downcast TextEditRenderObject");
+        let content_height = te_ro
+            .computed_bounds()
+            .expect("TextEditRenderObject should have computed bounds")
+            .height();
+
+        // After layout the editor buffer has been wrapped to the computed
+        // width (apply_layout calls set_layout_width), so cursor_position()
+        // reflects the wrapped line the caret sits on.
+        let (_cursor_x, cursor_y) = controller
+            .cursor_position()
+            .expect("cursor should be positioned after layout");
+        let line_height = controller.line_height();
+        let cursor_bottom = cursor_y as f32 + line_height;
+
+        // Sanity: the text must actually have wrapped.
+        let text_height: f32 = {
+            let editor = controller.editor();
+            let editor = editor.borrow();
+            let mut h = 0.0f32;
+            for run in editor.buffer().layout_runs() {
+                h = h.max(run.line_top + run.line_height);
+            }
+            h
+        };
+        let one_line = controller.font_size() * crate::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER;
+        assert!(
+            text_height > one_line * 1.5,
+            "test setup failure: pasted text should wrap to multiple lines, but \
+             text_height={} vs one_line={}",
+            text_height,
+            one_line
+        );
+
+        assert!(
+            content_height + 0.5 >= cursor_bottom,
+            "TextEdit content height ({}) must fit the wrapped cursor bottom \
+             ({}). cursor_y={}, line_height={}, text_height={}. If \
+             content_height < cursor_bottom, the caret renders outside the \
+             input bar border (the bug).",
+            content_height,
+            cursor_bottom,
+            cursor_y,
+            line_height,
+            text_height
         );
     }
 }

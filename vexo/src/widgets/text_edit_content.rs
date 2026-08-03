@@ -188,7 +188,7 @@ mod tests {
         // Create an editor with an empty buffer - sufficient for widget-level tests.
         // Render-object-level tests that need actual text content are in
         // render_objects/text_edit.rs.
-        let metrics = Metrics::new(16.0, 20.0);
+        let metrics = Metrics::new(16.0, 16.0 * crate::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER);
         let raw_editor = glyphon::Editor::new(glyphon::Buffer::new_empty(metrics));
         Rc::new(RefCell::new(Editor::new(raw_editor)))
     }

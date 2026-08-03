@@ -579,4 +579,242 @@ mod tests {
             "input bar border color should match dark theme outline"
         );
     }
+
+    /// Regression for "paste a lot of text into the input bar → cursor renders
+    /// vertically outside its border, the more text the more offset."
+    ///
+    /// Reproduces the real chat screen structure: `build_input_bar` (with the
+    /// real `Button`) inside the column + `KeyboardAvoider` + `DecoratedBox`
+    /// exactly as `ChatScreen::render` builds it. Then mirrors the exact caret
+    /// math from `TextEditRenderObject::paint`:
+    ///
+    ///   vertical_offset = max(0, (content_height - text_height) / 2)
+    ///   caret_bottom    = vertical_offset + cursor_y + line_height
+    ///
+    /// and asserts the caret bottom stays within the TextEdit content box
+    /// (i.e. inside the border). If the layout fails to grow the content box
+    /// to fit wrapped text, `content_height` stays at ~1 line while `cursor_y`
+    /// grows to N*line_height, so `caret_bottom` exceeds `content_height`.
+    #[test]
+    fn test_input_bar_cursor_stays_inside_border_with_wrapped_text() {
+        let mut fs = vexo::resource::new_font_system();
+        // Long single-line text (no newlines) so wrapping is driven purely by
+        // the computed layout width — exactly the "paste a lot of text" case.
+        let long_text = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+        let controller = vexo::TextEditingController::new(&long_text, &mut fs);
+        let theme = vexo::ThemeData::light();
+
+        let input_bar = build_input_bar(controller.clone(), || {}, &theme);
+
+        // Mirror ChatScreen::render's structure faithfully.
+        let content = column! {
+            WithLayout::new(
+                ScrollView::new(column! {}.boxed()),
+                Layout::flex_fill(),
+            ),
+            input_bar,
+        }
+        .flex_grow(1.0)
+        .flex_basis(0.0)
+        .min_height(0.0)
+        .boxed();
+
+        let view = DecoratedBox::with_style(
+            vexo_uikit::KeyboardAvoider::new(content),
+            Style::default().background(theme.background),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        pipeline.layout(vexo::core::Size::new(400.0, 600.0), &mut engine, &mut fs);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        // Walk the render tree to find the TextEditRenderObject.
+        fn find_te(reg: &RenderObjectRegistry, key: RenderObjectKey) -> Option<RenderObjectKey> {
+            let ro = reg.get(key)?;
+            if ro
+                .as_any()
+                .downcast_ref::<vexo::TextEditRenderObject>()
+                .is_some()
+            {
+                return Some(key);
+            }
+            for &child in ro.children() {
+                if let Some(found) = find_te(reg, child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let te_key = find_te(ro_reg, root).expect("should find TextEditRenderObject");
+        let te_ro = ro_reg
+            .get(te_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<vexo::TextEditRenderObject>())
+            .expect("downcast TextEditRenderObject");
+        let content_bounds = te_ro
+            .computed_bounds()
+            .expect("TextEditRenderObject should have computed bounds");
+        let content_height = content_bounds.height();
+
+        // Buffer state after layout (apply_layout called set_layout_width).
+        let (_cursor_x, cursor_y) = controller
+            .cursor_position()
+            .expect("cursor should be positioned after layout");
+        let line_height = controller.line_height();
+        let text_height: f32 = {
+            let editor = controller.editor();
+            let editor = editor.borrow();
+            let mut h = 0.0f32;
+            for run in editor.buffer().layout_runs() {
+                h = h.max(run.line_top + run.line_height);
+            }
+            h
+        };
+
+        // Sanity: the text must actually have wrapped.
+        let one_line = controller.font_size() * vexo::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER;
+        assert!(
+            text_height > one_line * 1.5,
+            "test setup failure: text should wrap to multiple lines, but \
+             text_height={} vs one_line={}",
+            text_height,
+            one_line
+        );
+
+        // Mirror TextEditRenderObject::paint's caret math.
+        let vertical_offset = ((content_height - text_height) / 2.0).max(0.0);
+        let caret_bottom_rel = vertical_offset + cursor_y as f32 + line_height;
+
+        assert!(
+            caret_bottom_rel <= content_height + 0.5,
+            "caret would render outside the input bar border. \
+             content_height={}, text_height={}, cursor_y={}, line_height={}, \
+             vertical_offset={}, caret_bottom_rel={}. \
+             If content_height ~= one line while cursor_y spans many wrapped \
+             lines, the caret drifts below the border (the reported bug).",
+            content_height,
+            text_height,
+            cursor_y,
+            line_height,
+            vertical_offset,
+            caret_bottom_rel
+        );
+    }
+
+    /// Same as above but exercises the INCREMENTAL path: mount the input bar
+    /// with EMPTY text, lay out, THEN paste a lot of text and re-layout —
+    /// exactly what a user does. This is the path that triggers the reported
+    /// "cursor drifts outside the border" bug.
+    #[test]
+    fn test_input_bar_cursor_stays_inside_border_after_paste() {
+        let mut fs = vexo::resource::new_font_system();
+        let controller = vexo::TextEditingController::new("", &mut fs);
+        let theme = vexo::ThemeData::light();
+
+        let input_bar = build_input_bar(controller.clone(), || {}, &theme);
+
+        let content = column! {
+            WithLayout::new(
+                ScrollView::new(column! {}.boxed()),
+                Layout::flex_fill(),
+            ),
+            input_bar,
+        }
+        .flex_grow(1.0)
+        .flex_basis(0.0)
+        .min_height(0.0)
+        .boxed();
+
+        let view = DecoratedBox::with_style(
+            vexo_uikit::KeyboardAvoider::new(content),
+            Style::default().background(theme.background),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        // First layout: empty text, single-line input bar.
+        pipeline.layout(vexo::core::Size::new(400.0, 600.0), &mut engine, &mut fs);
+
+        // Now paste a lot of text (the reported trigger).
+        let long_text = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+        controller.paste(&long_text, &mut fs);
+        // Drive the rebuild queued by the controller's dirty callback, then
+        // re-layout — mirrors the event loop's rebuild+layout cycle.
+        pipeline.perform_rebuilds();
+        pipeline.layout(vexo::core::Size::new(400.0, 600.0), &mut engine, &mut fs);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        fn find_te(reg: &RenderObjectRegistry, key: RenderObjectKey) -> Option<RenderObjectKey> {
+            let ro = reg.get(key)?;
+            if ro
+                .as_any()
+                .downcast_ref::<vexo::TextEditRenderObject>()
+                .is_some()
+            {
+                return Some(key);
+            }
+            for &child in ro.children() {
+                if let Some(found) = find_te(reg, child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let te_key = find_te(ro_reg, root).expect("should find TextEditRenderObject");
+        let te_ro = ro_reg
+            .get(te_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<vexo::TextEditRenderObject>())
+            .expect("downcast TextEditRenderObject");
+        let content_height = te_ro
+            .computed_bounds()
+            .expect("TextEditRenderObject should have computed bounds")
+            .height();
+
+        let (_cursor_x, cursor_y) = controller
+            .cursor_position()
+            .expect("cursor should be positioned after layout");
+        let line_height = controller.line_height();
+        let text_height: f32 = {
+            let editor = controller.editor();
+            let editor = editor.borrow();
+            let mut h = 0.0f32;
+            for run in editor.buffer().layout_runs() {
+                h = h.max(run.line_top + run.line_height);
+            }
+            h
+        };
+
+        let one_line = controller.font_size() * vexo::layout::DEFAULT_LINE_HEIGHT_MULTIPLIER;
+        assert!(
+            text_height > one_line * 1.5,
+            "test setup failure: pasted text should wrap to multiple lines, but \
+             text_height={} vs one_line={}",
+            text_height,
+            one_line
+        );
+
+        let vertical_offset = ((content_height - text_height) / 2.0).max(0.0);
+        let caret_bottom_rel = vertical_offset + cursor_y as f32 + line_height;
+
+        assert!(
+            caret_bottom_rel <= content_height + 0.5,
+            "caret renders outside the input bar border after paste. \
+             content_height={}, text_height={}, cursor_y={}, line_height={}, \
+             vertical_offset={}, caret_bottom_rel={}.",
+            content_height,
+            text_height,
+            cursor_y,
+            line_height,
+            vertical_offset,
+            caret_bottom_rel
+        );
+    }
 }
