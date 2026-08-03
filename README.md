@@ -17,7 +17,7 @@ apps run today, gaps are tracked in the ROADMAP.
 
 | macOS | Windows | Linux |
 |-------|---------|-------|
-| ![macOS](MACOS_GIF_URL) | ![Windows](WINDOWS_GIF_URL) | ![Linux](LINUX_GIF_URL) |
+| ![macOS](assets/macos.gif) | ![Windows](WINDOWS_GIF_URL) | ![Linux](LINUX_GIF_URL) |
 
 ### Mobile
 
