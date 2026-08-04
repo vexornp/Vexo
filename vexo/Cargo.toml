@@ -2,6 +2,9 @@
 name = "vexo"
 version = "0.1.0"
 edition = "2021"
+description = "A cross-platform UI framework in Rust with Flutter's three-tree architecture"
+license = "MIT"
+repository = "https://github.com/vexornp/Vexo"
 
 [dependencies]
 wgpu = { workspace = true }
@@ -18,8 +21,8 @@ uniffi = { workspace = true }
 bitflags = { workspace = true }
 futures-signals = { workspace = true }
 image = { workspace = true }
-component_state_derive = { path = "component_state_derive" }
-vexo_macros = { path = "vexo_macros" }
+component_state_derive = { version = "0.1.0", path = "component_state_derive" }
+vexo_macros = { version = "0.1.0", path = "vexo_macros" }
 
 # Clipboard backend for desktop platforms (macOS/Linux/Windows).
 # iOS uses UIPasteboard (objc2); Android uses a stub for now (see

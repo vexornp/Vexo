@@ -2,6 +2,9 @@
 name = "vexo_macros"
 version = "0.1.0"
 edition = "2021"
+description = "Proc-macros for vexo's column!/row! widget-builder macros"
+license = "MIT"
+repository = "https://github.com/vexornp/Vexo"
 
 [lib]
 proc-macro = true
@@ -13,4 +16,4 @@ proc-macro2 = "1"
 
 [dev-dependencies]
 trybuild = "1"
-vexo = { path = ".." }
+vexo = { version = "0.1.0", path = ".." }

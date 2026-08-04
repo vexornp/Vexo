@@ -2,10 +2,13 @@
 name = "vexo_uikit"
 version = "0.1.0"
 edition = "2021"
+description = "Rich UI component library built on the Vexo framework"
+license = "MIT"
+repository = "https://github.com/vexornp/Vexo"
 
 [dependencies]
-vexo = { path = "../vexo" }
-vexo_fontawesome = { path = "../vexo_fontawesome" }
+vexo = { version = "0.1.0", path = "../vexo" }
+vexo_fontawesome = { version = "0.1.0", path = "../vexo_fontawesome" }
 
 [dev-dependencies]
 slotmap = { workspace = true }

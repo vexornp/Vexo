@@ -2,6 +2,7 @@
 name = "android_demo"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # Android loads the library by name from the APK's `lib/<abi>/` folder.
 # `libmain.so` is the default that GameActivity looks for, so we name the

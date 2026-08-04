@@ -2,6 +2,9 @@
 name = "component_state_derive"
 version = "0.1.0"
 edition = "2021"
+description = "Proc-macro derive for #[derive(ComponentState)] in the Vexo framework"
+license = "MIT"
+repository = "https://github.com/vexornp/Vexo"
 
 [lib]
 proc-macro = true

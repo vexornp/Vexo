@@ -2,6 +2,7 @@
 name = "shared_app"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"] # staticlib for iOS, rlib for Desktop

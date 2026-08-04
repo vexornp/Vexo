@@ -1060,9 +1060,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "glyphon"
-version = "0.12.0"
-source = "git+https://github.com/vexorsis/glyphon?rev=30844e7c924bb51b6d89f5031e3d407bc8deeba1#30844e7c924bb51b6d89f5031e3d407bc8deeba1"
+name = "glyphon-vexo"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b9ecf6e48184a88158c287b9442d2fb1bebd975ef3ad2ac4fceb9f563b83794"
 dependencies = [
  "cosmic-text",
  "etagere",
@@ -2214,7 +2215,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam",
  "futures-signals",
- "glyphon",
+ "glyphon-vexo",
  "image",
  "log",
  "parking_lot",
@@ -2878,7 +2879,7 @@ dependencies = [
  "component_state_derive",
  "env_logger 0.10.2",
  "futures-signals",
- "glyphon",
+ "glyphon-vexo",
  "image",
  "log",
  "objc2",
@@ -2898,7 +2899,7 @@ dependencies = [
 name = "vexo_fontawesome"
 version = "0.1.0"
 dependencies = [
- "glyphon",
+ "glyphon-vexo",
  "serde",
  "serde_json",
  "vexo",
