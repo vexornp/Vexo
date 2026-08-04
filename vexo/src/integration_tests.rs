@@ -307,6 +307,92 @@ mod event_handling_tests {
     }
 
     #[test]
+    fn test_secondary_press_does_not_fire_on_tap() {
+        use crate::widgets::GestureDetector;
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let tap_count = Rc::new(Cell::new(0u32));
+        let tap_clone = tap_count.clone();
+
+        // A tappable widget: on_tap increments the counter.
+        let widget: Box<dyn crate::Widget> =
+            Box::new(GestureDetector::new(Text::new("Tap me")).on_tap(move || {
+                tap_clone.set(tap_clone.get() + 1);
+            }));
+
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(widget);
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(800.0, 600.0), &mut engine, &mut font_system);
+
+        // Primary press+release at (5, 5) — should fire on_tap.
+        let primary_press = InputEvent::PointerButton {
+            position: Point::new(5.0, 5.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let primary_release = InputEvent::PointerButton {
+            position: Point::new(5.0, 5.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(5.0, 5.0),
+            &primary_press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        pipeline.handle_event(
+            Point::new(5.0, 5.0),
+            &primary_release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(tap_count.get(), 1, "Primary tap should fire on_tap");
+
+        // Secondary press+release at (5, 5) — should NOT fire on_tap.
+        let secondary_press = InputEvent::PointerButton {
+            position: Point::new(5.0, 5.0),
+            button: PointerButton::Secondary,
+            state: ButtonState::Pressed,
+        };
+        let secondary_release = InputEvent::PointerButton {
+            position: Point::new(5.0, 5.0),
+            button: PointerButton::Secondary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(5.0, 5.0),
+            &secondary_press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        pipeline.handle_event(
+            Point::new(5.0, 5.0),
+            &secondary_release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        assert_eq!(
+            tap_count.get(),
+            1,
+            "Secondary press must NOT fire on_tap (arena should be gated on Primary)"
+        );
+    }
+
+    #[test]
     fn test_pipeline_focus_management() {
         let mut pipeline: ThreeTreePipeline =
             ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));

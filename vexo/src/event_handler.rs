@@ -249,8 +249,20 @@ impl EventHandler {
         );
         let is_move = matches!(event, InputEvent::PointerMoved { .. });
 
+        // Determine the button (if any) and whether this is a Primary-button
+        // event. The gesture arena is gated on Primary: Secondary (right-click)
+        // and other buttons must not create or resolve the arena, so on_tap
+        // and drag/scroll recognizers only fire for Primary. on_press /
+        // on_release (immediate, non-arena) still fire for all buttons via
+        // the bubble phase below.
+        let button = match event {
+            InputEvent::PointerButton { button, .. } => Some(*button),
+            _ => None,
+        };
+        let is_primary = button == Some(crate::input::PointerButton::Primary);
+
         // === PRESS: create arena, register gestures, feed Down, then bubble press ===
-        if is_press {
+        if is_press && is_primary {
             // Defensive: if a stale arena exists (e.g. window blurred mid-press),
             // drop it and start fresh.
             *current_arena = Some(GestureArena::new(position));
@@ -322,7 +334,7 @@ impl EventHandler {
 
         // === RELEASE: feed Up + sweep; if tap won, call winner + bubble release;
         //     if drag won, call winner (no bubble); drop arena ===
-        if is_release {
+        if is_release && is_primary {
             let mut drag_won = false;
             if let Some(arena) = current_arena.as_mut() {
                 arena.handle_event(ArenaEvent::Up { position });
