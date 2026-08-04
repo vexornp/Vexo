@@ -151,29 +151,31 @@ pub struct MenuItem {
 `Rc<dyn Fn()>` is `Clone`. Items are built at trigger-construction time (e.g.
 per message in the render loop), closing over whatever context the action needs.
 
-**`OpenMenu`** (private to the module, `Clone`):
-```rust
-struct OpenMenu {
-    position: Point<Logical>,
-    items: Vec<MenuItem>,
-}
-```
-Stored inside the controller; never escapes the module. `Clone` is required
-because `Signal<T>` requires `T: Clone`.
-
 **`ContextMenuController`** (public, `Clone`):
 ```rust
-pub struct ContextMenuController { state: Signal<Option<OpenMenu>> }
+pub struct ContextMenuController {
+    // Signal carries just the position (None = closed). Point<Logical> is
+    // Copy + Send + Sync, satisfying `signal_value<T: Send + Sync>`'s bound.
+    // Items are NOT in the Signal — Rc<dyn Fn()> is !Send + !Sync, which would
+    // violate the bound. Instead, items live in a separate Rc<RefCell<...>>.
+    position: Signal<Option<Point<Logical>>>,
+    // Items set at show() time, read by host during rebuild. Not reactive —
+    // items are immutable while the menu is open (set once, consumed on
+    // rebuild, cleared on close).
+    items: Rc<RefCell<Vec<MenuItem>>>,
+}
 impl ContextMenuController {
     pub fn new() -> Self;
-    pub fn show(&self, position: Point<Logical>, items: Vec<MenuItem>); // state.set(Some(...))
-    pub fn close(&self);                                              // state.set(None)
-    fn state_signal(&self) -> &Signal<Option<OpenMenu>>;              // host reads this
+    pub fn show(&self, position: Point<Logical>, items: Vec<MenuItem>); // items.borrow_mut() = items; position.set(Some(pos))
+    pub fn close(&self);                                                // position.set(None)
+    fn position_signal(&self) -> &Signal<Option<Point<Logical>>>;       // host reads this via signal_value
+    fn items_snapshot(&self) -> Vec<MenuItem>;                          // host clones items out of the RefCell
 }
 ```
 Mirrors `ScrollController` — created by the screen's caller, held as a field,
-`.clone()`d into triggers and the host. The `Signal` shares underlying state
-across clones, so widget-struct recreation on rebuild doesn't lose menu state.
+`.clone()`d into triggers and the host. The `Signal` and `Rc<RefCell>` share
+underlying state across clones, so widget-struct recreation on rebuild doesn't
+lose menu state.
 
 **`ContextMenu` host** (public) — a `Component`:
 ```rust
@@ -183,10 +185,13 @@ pub struct ContextMenu { controller: ContextMenuController, child: Box<dyn Widge
 host has no state of its own; it only reads the controller's signal).
 
 `render(&self, _state, ctx)`:
-1. `let open = ctx.signal_value(self.controller.state_signal());` — registers
-   the rebuild dependency (same pattern as `ChatScreen::render` reading
-   `self.messages`).
-2. Build the `Stack`:
+1. `let position = ctx.signal_value(self.controller.position_signal());` —
+   registers the rebuild dependency (same pattern as `ChatScreen::render`
+   reading `self.messages`). Returns `Option<Point<Logical>>`.
+2. If `position` is `Some(pos)`, snapshot the items:
+   `let items = self.controller.items_snapshot();` (clones the `Vec<MenuItem>`
+   out of the `Rc<RefCell>` so the borrow is released immediately).
+3. Build the `Stack`:
    - child 0: `self.child` (the screen content) — the only **non-positioned**
      child; it fills the Stack (it already carries `flex_grow(1.0)` from
      `chat_screen.rs`).
@@ -200,8 +205,8 @@ host has no state of its own; it only reads the controller's signal).
      a minimal widget that accepts tight constraints — e.g. `Text::new("")` —
      whose only purpose is to give the pass-through `GestureDetector` full-size
      `computed_bounds` for hit-testing.)
-   - child 2 (conditional, `Some` when open):
-     `Positioned::new(menu_view(&open, controller, theme)).left(open.position.x).top(open.position.y)`
+   - child 2 (conditional, `Some(pos)` when open):
+     `Positioned::new(menu_view(&items, controller.clone(), &theme)).left(pos.x).top(pos.y)`
      — only `left`+`top` set, so the menu takes its intrinsic size at the cursor.
 3. Return the `Stack`.
 
@@ -234,7 +239,7 @@ be tested independently.
 
 ### Menu view
 
-`menu_view(open: &OpenMenu, controller, theme) -> Box<dyn Widget>`: a single
+`menu_view(items: &[MenuItem], controller: ContextMenuController, theme: &ThemeData) -> Box<dyn Widget>`: a single
 `DecoratedBox` (background `theme.surface`, border `theme.outline` 1.0,
 `corner_radius` 8.0, drop shadow) wrapping a `column!` of item rows. `min_width`
 ~160px. Each item row:
@@ -275,7 +280,7 @@ Uses `theme.surface` / `theme.on_surface` / `theme.outline` (all already used in
 ```text
 right-click bubble
   → ContextMenuTrigger.on_secondary_press(global_pos)
-  → controller.show(pos, items)            [Signal::set]
+  → controller.show(pos, items)            [items cell ← items; Signal::set(Some(pos))]
   → host's signal_value dependency marked dirty
   → host rebuilds: barrier + Positioned(menu, pos) mount
   → user clicks item   →  item.on_select()  →  controller.close()
@@ -345,8 +350,8 @@ above use synthetic `InputEvent`s directly and don't depend on `from_winit`.)
 (new `vexo_uikit/src/context_menu.rs` `#[cfg(test)]` module, using
 `ThreeTreePipeline`)
 
-- `ContextMenuController::show` / `close`: assert signal state transitions
-  `None → Some → None`.
+- `ContextMenuController::show` / `close`: assert `position_signal` state
+  transitions `None → Some(pos) → None` and items cell is populated/cleared.
 - `ContextMenu` host, closed: mount with a trivial child; assert the `Stack` has
   exactly 1 child (content only) — no barrier/menu in the render tree.
 - `ContextMenu` host, open: `controller.show(pos, items)`; `perform_rebuilds`;
