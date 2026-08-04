@@ -1,3 +1,87 @@
+//! Vexo — a cross-platform UI framework in Rust with Flutter's three-tree architecture.
+//!
+//! Vexo brings [Flutter's](https://flutter.dev) battle-tested rendering model to
+//! pure Rust: one codebase, GPU-rendered via [`wgpu`], running natively on iOS,
+//! Android, macOS, Windows, and Linux. No webview, no JS/HTML/CSS, no system
+//! widget bridge — the same Rust code renders through Metal, Vulkan, DX12, or
+//! OpenGL.
+//!
+//! # Architecture
+//!
+//! Vexo uses a **retained-mode** three-tree architecture that separates
+//! *description* from *lifecycle* from *painting*:
+//!
+//! 1. **Widget tree** — immutable descriptions of UI (what to show)
+//! 2. **Element tree** — mutable lifecycle managers (state + children)
+//! 3. **Render object tree** — performs layout and painting (how to show it)
+//!
+//! Only what actually changed gets rebuilt, reconciled, and repainted — there
+//! is no virtual DOM and no global diffing. Reactive [`Signal<T>`] primitives
+//! drive targeted rebuilds.
+//!
+//! # Quickstart
+//!
+//! ```no_run
+//! use vexo::{column, Application, ComponentState, Signal, Text, Widget};
+//!
+//! #[derive(ComponentState, Default)]
+//! struct CounterState {
+//!     count: Signal<u32>,
+//! }
+//!
+//! impl Application for CounterState {
+//!     type State = Self;
+//!
+//!     fn new() -> Self::State {
+//!         CounterState::default()
+//!     }
+//!
+//!     fn view(state: &mut Self::State) -> Box<dyn Widget> {
+//!         let count = state.count.get();
+//!         let sig = state.count.clone();
+//!         column! {
+//!             Text::new(format!("Count: {}", count)),
+//!             Text::new("+1").on_press(move || { sig.set(sig.get() + 1); }),
+//!         }
+//!         .boxed()
+//!     }
+//! }
+//!
+//! # #[allow(dead_code)]
+//! fn main() {
+//!     vexo::run_desktop_demo::<CounterState>().unwrap();
+//! }
+//! ```
+//!
+//! The [`Application`] trait is the whole contract: `new()` gives you state,
+//! `view()` returns a widget tree. State changes propagate through `Signal`s
+//! and trigger only the affected subtrees to rebuild.
+//!
+//! # Key concepts
+//!
+//! - **Everything is a widget.** Padding is a widget, gestures are a widget,
+//!   cursors are a widget, focus is a widget. Composition over imperative APIs.
+//! - **Reactive state** — [`Signal<T>`] is the primitive. `set()` triggers
+//!   targeted rebuilds of subtrees that read the signal. No diffing.
+//! - **Declarative layout** — Taffy flexbox + grid via the [`layout`] module,
+//!   with proper text layout through `glyphon`.
+//! - **Cross-platform by construction** — one `Application::view()` impl, many
+//!   backends. Desktop runs on `winit`; iOS uses Metal via `wgpu`; Android
+//!   uses Vulkan via `wgpu`.
+//!
+//! # Companion crates
+//!
+//! - [`vexo_uikit`](https://docs.rs/vexo_uikit) — rich UI component library
+//!   (buttons, navigation, tab bars, scaffolding) built on `vexo`
+//! - [`vexo_fontawesome`](https://docs.rs/vexo_fontawesome) — Font Awesome 6
+//!   Free Solid icon widgets
+//!
+//! See the [project README](https://github.com/vexornp/Vexo) for build
+//! instructions, mobile setup, and the roadmap.
+//!
+//! [`Signal<T>`]: Signal
+//! [`wgpu`]: https://docs.rs/wgpu
+
 use std::error::Error;
 use std::sync::mpsc;
 
