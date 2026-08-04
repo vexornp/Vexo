@@ -1,7 +1,4 @@
-# Third-party downloads — see README.md for sources.
-# Do not commit these files.
-*.otf
-*.ttf
-*.woff
-*.woff2
-icons.json
+# Third-party Font Awesome 6 Free assets.
+# Licensed under CC BY 4.0 / MIT / OFL — bundled with the crate so that
+# `cargo add vexo_fontawesome` works without a manual download step.
+# See README.md for sources and license attribution.

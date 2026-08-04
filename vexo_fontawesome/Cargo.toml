@@ -3,8 +3,9 @@ name = "vexo_fontawesome"
 version = "0.1.0"
 edition = "2021"
 description = "FontAwesome (Free, Solid) icon widgets for the Vexo UI framework"
-license = "MIT"
+license = "MIT AND OFL-1.1 AND CC-BY-4.0"
 repository = "https://github.com/vexornp/Vexo"
+readme = "README.md"
 
 [dependencies]
 vexo = { version = "0.1.0", path = "../vexo" }

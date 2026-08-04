@@ -16,4 +16,3 @@ proc-macro2 = "1"
 
 [dev-dependencies]
 trybuild = "1"
-vexo = { version = "0.1.0", path = ".." }

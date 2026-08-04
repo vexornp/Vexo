@@ -18,35 +18,15 @@ Icon::new(Icons::House)
 
 ## Setup
 
-This crate embeds the FontAwesome font at compile time via `include_bytes!`,
-so two asset files **must** be present under `vexo_fontawesome/assets/` before
-the crate will build. Both are excluded from git (see `.gitignore`) because
-they are third-party downloads.
+The FontAwesome 6 Free Solid font (`fa-solid-900.otf`) and metadata
+(`icons.json`) are bundled with this crate, so `cargo add vexo_fontawesome`
+works with no manual asset download. Both are third-party assets from
+[Font Awesome 6 Free](https://fontawesome.com), licensed under
+[SIL OFL 1.1](https://scripts.sil.org/OFL) (font) and
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (icons) — see
+<https://fontawesome.com/license/free> for full attribution.
 
-### 1. Download `fa-solid-900.otf`
-
-> **Important:** You need the **OTF** format specifically. The "Free for Web"
-> zip only contains `.woff2` / `.woff` / `.ttf`, which **will not work** —
-> vexo's font stack (`fontdb` / `ttf-parser`) only parses `.ttf` / `.otf` /
-> `.ttc` / `.otc`.
-
-1. Go to <https://fontawesome.com/download>.
-2. Download the **Free for Desktop** zip (contains `.otf` files).
-3. Copy `otfs/Font Awesome 6 Free-Solid-900.otf` to
-   `vexo_fontawesome/assets/fa-solid-900.otf`.
-
-   (The desktop zip names the file `Font Awesome 6 Free-Solid-900.otf` with
-   spaces; rename it to `fa-solid-900.otf` so the `include_bytes!` path in
-   `src/lib.rs` matches.)
-
-### 2. Download `icons.json`
-
-1. Go to <https://github.com/FortAwesome/Font-Awesome>.
-2. Copy `metadata/icons.json` to `vexo_fontawesome/assets/icons.json`.
-
-(Or, from a checkout of the FA repo: `cp metadata/icons.json path/to/vexo_fontawesome/assets/`.)
-
-### 3. Register the font with your app
+### Register the font with your app
 
 Implement `Application::register_fonts` and forward to this crate:
 
@@ -62,7 +42,7 @@ impl vexo::Application for MyApp {
 }
 ```
 
-### 4. Use icons
+### Use icons
 
 ```rust
 use vexo_fontawesome::{Icon, Icons};
