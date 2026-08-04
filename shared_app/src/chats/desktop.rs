@@ -11,6 +11,7 @@ use vexo::{
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
 };
+use vexo_uikit::ContextMenuController;
 
 use crate::chats::chat_screen::ChatScreen;
 use crate::chats::conversation_list::ConversationList;
@@ -101,6 +102,7 @@ impl Component for DesktopChatsPage {
                         msgs_for_send.set_from(&map);
                     }),
                     scroll_controller: ScrollController::new(),
+                    context_menu: ContextMenuController::new(),
                 };
 
                 titled_container(conv_name, chat.boxed(), &nav_colors)
