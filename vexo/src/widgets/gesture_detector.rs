@@ -959,4 +959,20 @@ mod tests {
         assert!(press_called.get(), "on_press should fire as fall-through");
         assert!(result.is_some());
     }
+
+    #[test]
+    fn test_widget_trait_on_secondary_press() {
+        use crate::core::Logical;
+        let called = Rc::new(Cell::new(false));
+        let called_clone = called.clone();
+
+        // Use the Widget trait method on a Text widget.
+        let widget: Box<dyn Widget> =
+            Text::new("Right-click me").on_secondary_press(move |_pos: Point<Logical>| {
+                called_clone.set(true);
+            });
+
+        // Verify it wrapped in a GestureDetector.
+        assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
+    }
 }
