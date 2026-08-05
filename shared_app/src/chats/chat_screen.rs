@@ -5,10 +5,11 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, ImageData, Key, Layout, LifecycleContext, RenderContext, ScrollController,
-    ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
-    WidgetKey, WithLayout,
+    FlexDirection, ImageData, JustifyContent, Key, Layout, LifecycleContext, MouseCursor,
+    RenderContext, ScrollController, ScrollView, Signal, Spacer, Style, SystemCursorKind, Text,
+    TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
 };
+use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
     context_menu_trigger, Button, ButtonVariant, ContextMenu, ContextMenuController,
     KeyboardAvoider, MenuBuilder,
@@ -296,6 +297,96 @@ fn placeholder_menu_builder() -> MenuBuilder {
         )
         .boxed()
     })
+}
+
+// ============================================================================
+// Context menu helpers (private) — assembled by `placeholder_menu_builder`.
+// ============================================================================
+
+/// Build the `on_tap` closure for a menu item: log `msg` and close the menu.
+/// Sugar so the `column!` in `placeholder_menu_builder` stays readable.
+fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
+    Rc::new(move || {
+        log::debug!("{}", msg);
+        ctrl.close();
+    })
+}
+
+/// State for `MenuRow` — tracks hover via a reactive `Signal<bool>`.
+/// Auto-wired by `#[derive(ComponentState)]` (mirrors `ButtonState` in
+/// `vexo_uikit/src/button.rs:37`).
+#[derive(ComponentState, Default)]
+struct MenuRowState {
+    hovered: Signal<bool>,
+}
+
+/// One context-menu item row: leading FontAwesome icon + label, with a
+/// hover-tint background and a tap handler that logs + closes the menu.
+///
+/// `destructive: true` renders icon + text in `theme.error` (used for Delete).
+/// `theme` is a snapshot taken in the builder at render time (the builder runs
+/// inside `ContextMenu::render`, so this is the live theme).
+#[derive(Clone)]
+struct MenuRow {
+    icon: Icons,
+    label: &'static str,
+    destructive: bool,
+    on_tap: Rc<dyn Fn()>,
+    theme: vexo::ThemeData,
+}
+
+impl Component for MenuRow {
+    type State = MenuRowState;
+
+    fn render(&self, state: &mut MenuRowState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let hovered = state.hovered.get();
+        // ~8% primary wash over surface — slightly stronger than nav's
+        // ROW_HOVER_TINT (0.95) so it reads inside the compact menu.
+        let row_hover_bg = Color::lerp(self.theme.primary, self.theme.surface, 0.92);
+        let bg = if hovered {
+            row_hover_bg
+        } else {
+            Color::TRANSPARENT
+        };
+        let (icon_color, text_color) = if self.destructive {
+            (self.theme.error, self.theme.error)
+        } else {
+            (self.theme.on_surface_variant, self.theme.on_surface)
+        };
+
+        let on_enter = state.hovered.clone();
+        let on_exit = state.hovered.clone();
+        let on_tap = self.on_tap.clone();
+
+        let content = WithLayout::new(
+            row! {
+                Icon::new(self.icon).with_size(14.0).with_color(icon_color),
+                Text::new(self.label).with_color(text_color),
+            }
+            .gap(10.0),
+            // padding_each(left, right, top, bottom) — 12h, 8v.
+            Layout::default()
+                .padding_each(12.0, 12.0, 8.0, 8.0)
+                .min_width(200.0),
+        );
+
+        let decorated =
+            DecoratedBox::with_style(content, Style::default().background(bg).corner_radius(6.0));
+
+        // Fluent .on_enter/.on_exit/.cursor wrap `decorated` in MouseRegion(s)
+        // (pub(crate) — callers use the fluent Widget trait methods, exactly
+        // like Button does at vexo_uikit/src/button.rs:291). Each returns
+        // Box<dyn Widget>, so chain them, then wrap the result in
+        // GestureDetector for the tap.
+        let hovered_area = decorated
+            .on_enter(move || on_enter.set(true))
+            .on_exit(move || on_exit.set(false))
+            .cursor(MouseCursor::System(SystemCursorKind::Pointer));
+
+        vexo::GestureDetector::new(hovered_area)
+            .on_tap(move || on_tap())
+            .boxed()
+    }
 }
 
 #[cfg(test)]
