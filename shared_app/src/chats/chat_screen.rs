@@ -260,39 +260,46 @@ fn build_input_bar(
 
 fn placeholder_menu_builder() -> MenuBuilder {
     MenuBuilder::new(|ctrl, theme| {
-        // (label, log message) pairs. Bound as a single `item` per iteration
-        // (not destructured) to stay within the `column!` macro's known
-        // `for x in iter` single-binding form.
-        let labels: [(&str, &str); 3] = [
-            ("Copy", "context menu: Copy"),
-            ("Reply", "context menu: Reply"),
-            ("Delete", "context menu: Delete"),
-        ];
-        let column = vexo::column! {
-            for item in labels {
-                let ctrl = ctrl.clone();
-                vexo::GestureDetector::new(
-                    vexo::WithLayout::new(
-                        vexo::Text::new(item.0).with_color(theme.on_surface),
-                        vexo::Layout::default().padding(8.0).width(160.0),
-                    ),
-                )
-                .on_tap(move || {
-                    log::debug!("{}", item.1);
-                    ctrl.close();
-                })
-            }
+        // Assemble: reaction row, hairline divider, three item rows.
+        // Each MenuRow carries a `theme.clone()` snapshot — the builder runs
+        // inside ContextMenu::render, so this is the live theme (and re-runs
+        // on theme toggle, per test_builder_reads_current_theme).
+        let column = column! {
+            reaction_row(ctrl.clone(), theme.clone()),
+            menu_divider(theme.clone()),
+            MenuRow {
+                icon: Icons::Copy,
+                label: "Copy",
+                destructive: false,
+                on_tap: close_after(ctrl.clone(), "context menu: Copy"),
+                theme: theme.clone(),
+            },
+            MenuRow {
+                icon: Icons::Reply,
+                label: "Reply",
+                destructive: false,
+                on_tap: close_after(ctrl.clone(), "context menu: Reply"),
+                theme: theme.clone(),
+            },
+            MenuRow {
+                icon: Icons::Trash,
+                label: "Delete",
+                destructive: true,
+                on_tap: close_after(ctrl.clone(), "context menu: Delete"),
+                theme: theme.clone(),
+            },
         };
-        vexo::DecoratedBox::with_style(
-            vexo::WithLayout::new(column, vexo::Layout::default().min_width(160.0)),
-            vexo::Style::default()
-                .corner_radius(8.0)
+
+        DecoratedBox::with_style(
+            WithLayout::new(column, Layout::default().min_width(200.0)),
+            Style::default()
+                .corner_radius(12.0)
                 .background(theme.surface)
                 .border(theme.outline, 1.0)
                 .shadow(
-                    vexo::BoxShadow::new(vexo::Color::BLACK.with_alpha(0.25))
-                        .blur(6.0)
-                        .offset(0.0, 2.0),
+                    BoxShadow::new(Color::BLACK.with_alpha(0.20))
+                        .blur(12.0)
+                        .offset(0.0, 4.0),
                 ),
         )
         .boxed()
