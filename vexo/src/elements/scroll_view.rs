@@ -4,7 +4,8 @@ use std::any::Any;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::animation::{AnimationTicker, MomentumSimulation, SpringSimulation};
+use crate::animation::simulation::{Simulation, SpringSimulation as SpringMath};
+use crate::animation::{AnimationTicker, FrictionSimulation, TickHandle};
 use crate::element::Element;
 use crate::element_context::ElementContext;
 use crate::element_state::StateStorage;
@@ -18,6 +19,7 @@ use crate::id::{ElementKey, RenderObjectKey};
 use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::key::WidgetKey;
 use crate::render_objects::ScrollViewRenderObject;
+use crate::widgets::scroll_view::ScrollPhysics;
 use crate::widgets::ScrollController;
 use crate::widgets::Widget;
 
@@ -59,6 +61,24 @@ fn wire_dirty_callback(ctrl: &ScrollController, context: &ElementContext) {
     }));
 }
 
+/// Active physics drive for scroll. One sim active at a time; starting one
+/// stops the other (preserves the old momentum/spring mutual-exclusion).
+enum ScrollDrive {
+    Idle,
+    Fling {
+        sim: FrictionSimulation,
+        start: Instant,
+    },
+    Bounce {
+        sim: SpringMath,
+        start: Instant,
+        /// Rest/target offset for snap-to-rest on settle. The new analytic
+        /// `SpringSimulation` doesn't expose its `to` field, so the element
+        /// stashes it here (mirrors the old `self.spring.rest()` accessor).
+        rest: f32,
+    },
+}
+
 pub struct ScrollViewElement {
     id: Option<ElementKey>,
     key: Option<WidgetKey>,
@@ -75,17 +95,22 @@ pub struct ScrollViewElement {
     /// Windowed least-squares pointer-velocity estimate. Sampled on every
     /// drag Move; read on Up to seed the momentum simulation's v0.
     velocity_tracker: VelocityTracker,
-    /// Exponential-decay fling simulation. Drives inertial scroll after the
-    /// pointer lifts. Stepped in `rebuild_from_state` while `is_active()`.
-    momentum: MomentumSimulation,
-    /// Critically-damped spring for bounce-back. Mutually exclusive with
-    /// `momentum` — starting one stops the other. Stepped in
-    /// `rebuild_from_state` while `is_active()`.
-    spring: SpringSimulation,
+    /// Active scroll physics drive. `Idle` when at rest. `Fling`/`Bounce`
+    /// source math from the new pure-math sims; the ticker/dirty plumbing
+    /// stays here (ScrollView can't use AnimationController::animate_with
+    /// because it operates in px and needs mid-flight velocity handoff).
+    drive: ScrollDrive,
+    /// Stashed physics config (from the widget). Replaces the old module-level
+    /// `const STIFFNESS`/`TAU`/etc.
+    physics: ScrollPhysics,
     /// Stashed copy of the pipeline's animation ticker. `EventContext` does
     /// not expose it, so we capture it in `mount` (which has ElementContext)
     /// for use in the Up arm when starting momentum.
     animation_ticker: Option<Arc<AnimationTicker>>,
+    /// Ticker registration handle for the currently-active drive. The old
+    /// `MomentumSimulation`/`SpringSimulation` each held their own handle;
+    /// now one shared handle lives on the element.
+    tick_handle: Option<TickHandle>,
     /// Timestamp of the most recent drag Move. Used to detect a stale lift
     /// (finger paused >100ms before release) — the VelocityTracker retains
     /// 2 samples across a pause, so without this guard a pause-then-lift
@@ -107,9 +132,10 @@ impl ScrollViewElement {
             controller: None,
             last_drag_y: 0.0,
             velocity_tracker: VelocityTracker::new(),
-            momentum: MomentumSimulation::new(),
-            spring: SpringSimulation::new(),
+            drive: ScrollDrive::Idle,
+            physics: ScrollPhysics::default(),
             animation_ticker: None,
+            tick_handle: None,
             last_move_time: None,
         }
     }
@@ -163,6 +189,31 @@ impl ScrollViewElement {
         true
     }
 
+    /// Register a ticker callback that sends this element's id through the
+    /// dirty channel. Returns the handle. Shared by the Fling/Bounce start
+    /// paths — replaces the old sims' built-in `start(...tx, element_id, ticker)`.
+    fn register_ticker(
+        &mut self,
+        tx: std::sync::mpsc::Sender<ElementKey>,
+        ticker: Arc<AnimationTicker>,
+    ) -> Option<TickHandle> {
+        let element_id = self.id?;
+        let cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = tx.send(element_id);
+        });
+        Some(ticker.register(cb))
+    }
+
+    /// Unregister the active ticker callback (if any). Mirrors the old
+    /// `MomentumSimulation::stop` / `SpringSimulation::stop` cleanup.
+    fn unregister_ticker(&mut self) {
+        if let (Some(ticker), Some(handle)) =
+            (self.animation_ticker.clone(), self.tick_handle.take())
+        {
+            ticker.unregister(handle);
+        }
+    }
+
     fn get_child_widget(&self) -> Option<&dyn Widget> {
         self.widget.as_ref()?.child()
     }
@@ -171,6 +222,18 @@ impl ScrollViewElement {
 impl Default for ScrollViewElement {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Safety net mirroring the retired `MomentumSimulation`/`SpringSimulation`
+/// `Drop` impls: if the element is dropped while a drive is still active
+/// (e.g. tree torn down mid-fling without `unmount`), unregister the ticker
+/// callback so it can't fire for a dead `element_id`. No-op when idle.
+impl Drop for ScrollViewElement {
+    fn drop(&mut self) {
+        if self.tick_handle.is_some() {
+            self.unregister_ticker();
+        }
     }
 }
 
@@ -185,6 +248,7 @@ impl RenderObjectElement for ScrollViewElement {
         {
             self.key = sv.key().clone();
             self.controller = sv.controller_ref().cloned();
+            self.physics = sv.physics_ref();
         }
         self.widget = Some(widget);
     }
@@ -260,8 +324,8 @@ impl Element for ScrollViewElement {
         // before the element (and its render object) goes away. Without
         // this, the ticker would keep firing the dirty callback for a
         // dead element_id.
-        self.momentum.stop();
-        self.spring.stop();
+        self.unregister_ticker();
+        self.drive = ScrollDrive::Idle;
         if let Some(ctrl) = self.controller.as_ref() {
             ctrl.clear_dirty_callback();
         }
@@ -296,16 +360,16 @@ impl Element for ScrollViewElement {
                 ..
             } => {
                 if context.bounds().contains(position) {
-                    self.momentum.stop();
-                    self.spring.stop();
+                    self.unregister_ticker();
+                    self.drive = ScrollDrive::Idle;
                     context.request_focus(context.element_id());
                     return Some(Box::new(()));
                 }
             }
 
             InputEvent::Scroll { delta, .. } => {
-                self.momentum.stop();
-                self.spring.stop();
+                self.unregister_ticker();
+                self.drive = ScrollDrive::Idle;
                 self.refresh_sizes(context);
                 let new_offset = (self.scroll_offset - delta.y).clamp(0.0, self.max_scroll());
                 self.apply_scroll_offset(new_offset, context);
@@ -317,8 +381,8 @@ impl Element for ScrollViewElement {
                 state: ButtonState::Pressed,
                 ..
             } => {
-                self.momentum.stop();
-                self.spring.stop();
+                self.unregister_ticker();
+                self.drive = ScrollDrive::Idle;
                 self.refresh_sizes(context);
                 let delta = match key {
                     Key::Named(NamedKey::ArrowUp) => Some(-LINE_HEIGHT),
@@ -349,8 +413,8 @@ impl Element for ScrollViewElement {
         // the ScrollView's on_event Pressed handler from firing. Without this,
         // the spring would keep advancing during drag — content bouncing back
         // while the finger is still down.
-        self.momentum.stop();
-        self.spring.stop();
+        self.unregister_ticker();
+        self.drive = ScrollDrive::Idle;
         arena.add(Box::new(VerticalDragRecognizer::new()), self_id);
     }
 
@@ -402,8 +466,8 @@ impl Element for ScrollViewElement {
                 // new drag's samples can't race with an old fling's dirty
                 // callback. This is one of the six termination conditions for
                 // momentum: a fresh touch-down cancels inertia.
-                self.momentum.stop();
-                self.spring.stop();
+                self.unregister_ticker();
+                self.drive = ScrollDrive::Idle;
                 self.velocity_tracker.clear();
                 self.last_move_time = None;
                 // Drag just won (on the move that crossed slop). Initialize
@@ -436,9 +500,21 @@ impl Element for ScrollViewElement {
                     let Some(ticker) = self.animation_ticker.clone() else {
                         return;
                     };
-                    self.momentum.stop();
-                    self.spring
-                        .start(self.scroll_offset, v, 0.0, now, tx, element_id, ticker);
+                    self.unregister_ticker();
+                    let sim = SpringMath::with_tolerance(
+                        self.physics.spring,
+                        self.scroll_offset as f64,
+                        0.0,
+                        v as f64,
+                        self.physics.settle,
+                    );
+                    self.drive = ScrollDrive::Bounce {
+                        sim,
+                        start: now,
+                        rest: 0.0,
+                    };
+                    self.tick_handle = self.register_ticker(tx.clone(), ticker);
+                    let _ = tx.send(element_id);
                     log::debug!(
                         "[scroll] release past top → spring: offset={}, v={}",
                         self.scroll_offset,
@@ -456,9 +532,21 @@ impl Element for ScrollViewElement {
                     let Some(ticker) = self.animation_ticker.clone() else {
                         return;
                     };
-                    self.momentum.stop();
-                    self.spring
-                        .start(self.scroll_offset, v, max, now, tx, element_id, ticker);
+                    self.unregister_ticker();
+                    let sim = SpringMath::with_tolerance(
+                        self.physics.spring,
+                        self.scroll_offset as f64,
+                        max as f64,
+                        v as f64,
+                        self.physics.settle,
+                    );
+                    self.drive = ScrollDrive::Bounce {
+                        sim,
+                        start: now,
+                        rest: max,
+                    };
+                    self.tick_handle = self.register_ticker(tx.clone(), ticker);
+                    let _ = tx.send(element_id);
                     log::debug!(
                         "[scroll] release past bottom → spring: offset={}, v={}, max={}",
                         self.scroll_offset,
@@ -491,14 +579,17 @@ impl Element for ScrollViewElement {
                     let Some(ticker) = self.animation_ticker.clone() else {
                         return;
                     };
-                    self.momentum.start(
-                        self.scroll_offset,
-                        v,
-                        Instant::now(),
-                        tx,
-                        element_id,
-                        ticker,
+                    self.unregister_ticker();
+                    let now = Instant::now();
+                    let sim = FrictionSimulation::with_tolerance(
+                        self.scroll_offset as f64,
+                        v as f64,
+                        self.physics.friction,
+                        self.physics.settle,
                     );
+                    self.drive = ScrollDrive::Fling { sim, start: now };
+                    self.tick_handle = self.register_ticker(tx.clone(), ticker);
+                    let _ = tx.send(element_id);
                 }
             }
             ArenaEvent::Cancel => {
@@ -555,10 +646,6 @@ impl Element for ScrollViewElement {
     }
 
     fn rebuild_from_state(&mut self, context: &mut ElementContext) {
-        debug_assert!(
-            !(self.momentum.is_active() && self.spring.is_active()),
-            "momentum and spring must not be active simultaneously"
-        );
         // Deferred-apply: consume any pending target offset from the controller
         // (set by jump_to_bottom / jump_to). The controller's dirty callback
         // sent this element's ID through the pipeline's mpsc channel, which
@@ -573,8 +660,8 @@ impl Element for ScrollViewElement {
         if let Some(target) = pending {
             // Programmatic jump (jump_to / jump_to_bottom) cancels any
             // in-flight fling — the user's intent overrides inertia.
-            self.momentum.stop();
-            self.spring.stop();
+            self.unregister_ticker();
+            self.drive = ScrollDrive::Idle;
             if let Some(ro_key) = self.render_object {
                 if let Some(svro) = context
                     .render_objects
@@ -598,37 +685,70 @@ impl Element for ScrollViewElement {
             }
         }
 
-        if self.momentum.is_active() {
-            let now = Instant::now();
-            match self.momentum.advance(now) {
-                Some(physics_offset) => {
+        // Single-drive dispatch (replaces the old two-block
+        // `if momentum.is_active()` / `if spring.is_active()` structure).
+        // The `ScrollDrive` enum enforces the old mutual-exclusion invariant
+        // structurally — only one sim is ever active — so the debug_assert
+        // guarding "both active" is no longer needed.
+        //
+        // `max_scroll` is captured BEFORE the match because the Fling arm
+        // mutably borrows `sim` from `&mut self.drive` (can't also borrow
+        // `&self` for `max_scroll()`). This matches the old code, which
+        // called `self.max_scroll()` before refreshing sizes from the render
+        // object — the possibly-stale value is the intended behavior.
+        let max_scroll = self.max_scroll();
+        match &mut self.drive {
+            ScrollDrive::Idle => {}
+            ScrollDrive::Fling { sim, start } => {
+                let now = Instant::now();
+                let t = now.saturating_duration_since(*start).as_secs_f64();
+                if sim.is_done(t) {
+                    self.unregister_ticker();
+                    self.drive = ScrollDrive::Idle;
+                } else {
+                    let physics_offset = sim.x(t) as f32;
                     // Clamp to scroll bounds; on edge hit, hand off remaining
                     // velocity to a spring (inlined from the removed clamp_offset method).
-                    let clamped = physics_offset.clamp(0.0, self.max_scroll());
+                    let clamped = physics_offset.clamp(0.0, max_scroll);
                     let hit_edge = (clamped - physics_offset).abs() > f32::EPSILON;
                     if hit_edge {
                         // Fling hit an edge — hand off remaining velocity to
                         // a spring for one bounded overshoot + settle.
-                        let v = self.momentum.velocity();
+                        let v = sim.dx(t) as f32;
                         let rest = if physics_offset < 0.0 {
                             0.0
                         } else {
-                            self.max_scroll()
+                            max_scroll
                         };
-                        self.momentum.stop();
+                        self.unregister_ticker();
                         if let (Some(element_id), Some(ticker)) =
                             (self.id, self.animation_ticker.clone())
                         {
                             let now = Instant::now();
                             let tx = context.dirty_sender.clone();
-                            self.spring
-                                .start(clamped, v, rest, now, tx, element_id, ticker);
+                            let new_sim = SpringMath::with_tolerance(
+                                self.physics.spring,
+                                clamped as f64,
+                                rest as f64,
+                                v as f64,
+                                self.physics.settle,
+                            );
+                            self.drive = ScrollDrive::Bounce {
+                                sim: new_sim,
+                                start: now,
+                                rest,
+                            };
+                            self.tick_handle = self.register_ticker(tx.clone(), ticker);
+                            let _ = tx.send(element_id);
                             log::debug!(
                                 "[scroll] fling hit edge → spring: clamped={}, v={}, rest={}",
                                 clamped,
                                 v,
                                 rest
                             );
+                        } else {
+                            // No id/ticker — can't start the spring handoff.
+                            self.drive = ScrollDrive::Idle;
                         }
                     }
                     if let Some(ro_key) = self.render_object {
@@ -647,41 +767,19 @@ impl Element for ScrollViewElement {
                         ctrl.set_current_offset(clamped);
                     }
                     // The next frame's tick fires the dirty callback (registered
-                    // in momentum.start), which sends element_id through the
-                    // mpsc channel, which drain_dirty_to_build_owner picks up
-                    // to schedule the next rebuild_from_state. No explicit
-                    // mark_needs_build here.
-                }
-                None => {
-                    self.momentum.stop();
+                    // above), which sends element_id through the mpsc channel,
+                    // which drain_dirty_to_build_owner picks up to schedule the
+                    // next rebuild_from_state. No explicit mark_needs_build here.
                 }
             }
-        }
-
-        if self.spring.is_active() {
-            let now = Instant::now();
-            match self.spring.advance(now) {
-                Some(physics_offset) => {
-                    if let Some(ro_key) = self.render_object {
-                        if let Some(svro) = context
-                            .render_objects
-                            .get(ro_key)
-                            .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
-                        {
-                            self.viewport_height = svro.viewport_size().height;
-                            self.content_height = svro.content_size().height;
-                            svro.set_scroll_offset(physics_offset);
-                        }
-                    }
-                    self.scroll_offset = physics_offset;
-                    if let Some(ctrl) = self.controller.as_ref() {
-                        ctrl.set_current_offset(physics_offset);
-                    }
-                }
-                None => {
+            ScrollDrive::Bounce { sim, start, rest } => {
+                let now = Instant::now();
+                let t = now.saturating_duration_since(*start).as_secs_f64();
+                if sim.is_done(t) {
                     // Settled — snap exactly to rest and stop.
-                    let rest = self.spring.rest();
-                    self.spring.stop();
+                    let rest = *rest;
+                    self.unregister_ticker();
+                    self.drive = ScrollDrive::Idle;
                     if let Some(ro_key) = self.render_object {
                         if let Some(svro) = context
                             .render_objects
@@ -696,6 +794,23 @@ impl Element for ScrollViewElement {
                     self.scroll_offset = rest;
                     if let Some(ctrl) = self.controller.as_ref() {
                         ctrl.set_current_offset(rest);
+                    }
+                } else {
+                    let physics_offset = sim.x(t) as f32;
+                    if let Some(ro_key) = self.render_object {
+                        if let Some(svro) = context
+                            .render_objects
+                            .get(ro_key)
+                            .and_then(|ro| ro.as_any().downcast_ref::<ScrollViewRenderObject>())
+                        {
+                            self.viewport_height = svro.viewport_size().height;
+                            self.content_height = svro.content_size().height;
+                            svro.set_scroll_offset(physics_offset);
+                        }
+                    }
+                    self.scroll_offset = physics_offset;
+                    if let Some(ctrl) = self.controller.as_ref() {
+                        ctrl.set_current_offset(physics_offset);
                     }
                 }
             }
@@ -1281,6 +1396,42 @@ mod tests {
             col = col.push(crate::Text::new("row"));
         }
         let sv = ScrollView::new(col.boxed()).controller(ctrl.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = crate::ThreeTreePipeline::new(ticker.clone());
+        pipeline.reconcile(Box::new(sv));
+        let mut engine = crate::layout::TaffyLayoutEngine::new();
+        let mut font_system = crate::resource::new_font_system();
+        pipeline.layout(
+            crate::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        (ticker, pipeline, font_system)
+    }
+
+    /// Like `setup_scroll_view` but injects custom `ScrollPhysics`. Used by
+    /// `stiffer_physics_settles_faster_than_default` to prove the config
+    /// surface drives the bounce-back sim (ROADMAP §9 ScrollPhysics gap).
+    fn setup_scroll_view_with_physics(
+        ctrl: &crate::widgets::ScrollController,
+        physics: crate::widgets::scroll_view::ScrollPhysics,
+    ) -> (
+        std::sync::Arc<crate::animation::AnimationTicker>,
+        crate::ThreeTreePipeline,
+        glyphon::FontSystem,
+    ) {
+        use crate::animation::AnimationTicker;
+        use crate::widgets::ScrollView;
+        use crate::{Layout, MultiChild};
+        use std::sync::Arc;
+
+        let mut col = MultiChild::empty(Layout::column());
+        for _ in 0..200 {
+            col = col.push(crate::Text::new("row"));
+        }
+        let sv = ScrollView::new(col.boxed())
+            .controller(ctrl.clone())
+            .physics(physics);
         let ticker = Arc::new(AnimationTicker::new());
         let mut pipeline = crate::ThreeTreePipeline::new(ticker.clone());
         pipeline.reconcile(Box::new(sv));
@@ -2791,6 +2942,88 @@ mod tests {
         assert!(
             !ticker.has_active(),
             "press should stop spring even when child GestureDetector blocks on_event propagation"
+        );
+    }
+
+    #[test]
+    fn stiffer_physics_settles_faster_than_default() {
+        // A stiffer spring (k=2000 vs default 340) should settle in fewer
+        // pumps. Proves the ScrollPhysics config surface actually drives the
+        // bounce-back sim (ROADMAP §9 ScrollPhysics gap).
+        use crate::animation::SpringDescription;
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::scroll_view::ScrollPhysics;
+        use crate::widgets::ScrollController;
+
+        // Drag past top edge + release, then count pumps until settled.
+        // Returns the pump count. Modeled on test_spring_settles_to_top_edge.
+        fn settle_pump_count(physics: ScrollPhysics) -> usize {
+            let ctrl = ScrollController::new();
+            let (ticker, mut pipeline, mut font_system) =
+                setup_scroll_view_with_physics(&ctrl, physics);
+
+            // Press + drag down past top (overscroll).
+            let press = InputEvent::PointerButton {
+                position: Point::new(200.0, 300.0),
+                button: PointerButton::Primary,
+                state: ButtonState::Pressed,
+            };
+            dispatch(
+                &mut pipeline,
+                &mut font_system,
+                Point::new(200.0, 300.0),
+                &press,
+            );
+            let mv = InputEvent::PointerMoved {
+                position: Point::new(200.0, 500.0),
+            };
+            dispatch(
+                &mut pipeline,
+                &mut font_system,
+                Point::new(200.0, 500.0),
+                &mv,
+            );
+            let release = InputEvent::PointerButton {
+                position: Point::new(200.0, 500.0),
+                button: PointerButton::Primary,
+                state: ButtonState::Released,
+            };
+            dispatch(
+                &mut pipeline,
+                &mut font_system,
+                Point::new(200.0, 500.0),
+                &release,
+            );
+
+            // Pump until spring settles. The 2ms sleep lets each pump's
+            // advance see ~2ms of elapsed wall-clock time (the sim uses
+            // Instant::now()), so the spring settles after ~200 pumps for
+            // the default k=340.
+            let mut pumps = 0;
+            for _ in 0..5000 {
+                pump(&ticker, &mut pipeline);
+                pumps += 1;
+                if !ticker.has_active() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            assert!(!ticker.has_active(), "spring should have settled");
+            pumps
+        }
+
+        let default_pumps = settle_pump_count(ScrollPhysics::default());
+        let stiff_pumps = settle_pump_count(ScrollPhysics {
+            spring: SpringDescription::ios(2000.0, 1.0), // ~6× stiffer
+            ..ScrollPhysics::default()
+        });
+        assert!(
+            stiff_pumps < default_pumps,
+            "stiffer spring (k=2000) should settle faster than default (k=340); \
+             got stiff={} pumps, default={} pumps",
+            stiff_pumps,
+            default_pumps
         );
     }
 }

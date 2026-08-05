@@ -2,6 +2,7 @@
 
 use std::any::Any;
 
+use crate::animation::{SpringDescription, Tolerance};
 use crate::element::Element;
 use crate::elements::RenderObjectElement;
 use crate::elements::ScrollViewElement;
@@ -12,10 +13,37 @@ use crate::widgets::scroll_controller::ScrollController;
 use crate::widgets::Widget;
 use crate::UpdateResult;
 
+/// Physics configuration for a `ScrollView`. Fixes ROADMAP §9
+/// "no ScrollPhysics abstraction" — physics was previously hardcoded
+/// inline in `ScrollViewElement` (`STIFFNESS=340`, `TAU=0.325`, etc.).
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollPhysics {
+    /// Spring for bounce-back / overscroll return.
+    pub spring: SpringDescription,
+    /// Drag time-constant `τ` for `FrictionSimulation` (fling decay).
+    pub friction: f64,
+    /// Minimum fling velocity (px/s) — below this, a pointer-up does not fling.
+    pub fling_min_velocity: f32,
+    /// Px-scale settle tolerance for scroll sims.
+    pub settle: Tolerance,
+}
+
+impl Default for ScrollPhysics {
+    fn default() -> Self {
+        Self {
+            spring: SpringDescription::ios(340.0, 1.0), // today's STIFFNESS/DAMPING_RATIO
+            friction: 0.325,                            // today's TAU
+            fling_min_velocity: 13.0,                   // today's V_STOP
+            settle: Tolerance::SCROLL,                  // today's X_SETTLE/V_SETTLE/MAX_DURATION
+        }
+    }
+}
+
 pub struct ScrollView {
     key: Option<WidgetKey>,
     child: Box<dyn Widget>,
     controller: Option<ScrollController>,
+    physics: ScrollPhysics,
 }
 
 impl ScrollView {
@@ -24,6 +52,7 @@ impl ScrollView {
             key: None,
             child: Box::new(child),
             controller: None,
+            physics: ScrollPhysics::default(),
         }
     }
 
@@ -40,6 +69,15 @@ impl ScrollView {
     pub fn controller_ref(&self) -> Option<&ScrollController> {
         self.controller.as_ref()
     }
+
+    pub fn physics(mut self, physics: ScrollPhysics) -> Self {
+        self.physics = physics;
+        self
+    }
+
+    pub fn physics_ref(&self) -> ScrollPhysics {
+        self.physics
+    }
 }
 
 impl Clone for ScrollView {
@@ -48,6 +86,7 @@ impl Clone for ScrollView {
             key: self.key.clone(),
             child: self.child.clone_boxed(),
             controller: self.controller.clone(),
+            physics: self.physics,
         }
     }
 }
