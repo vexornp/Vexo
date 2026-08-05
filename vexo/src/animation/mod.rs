@@ -1,6 +1,7 @@
 pub mod controller;
 pub mod curve;
 pub mod momentum;
+pub mod simulation;
 pub mod spring;
 pub mod ticker;
 pub mod tween;
@@ -11,6 +12,7 @@ pub use curve::{
     LinearCurve,
 };
 pub use momentum::MomentumSimulation;
+pub use simulation::{Simulation, Tolerance};
 pub use spring::SpringSimulation;
 pub use ticker::{AnimationTicker, TickHandle};
 pub use tween::{ColorTween, FloatTween, Tween};

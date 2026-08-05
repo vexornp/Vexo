@@ -103,7 +103,7 @@ pub mod animation;
 pub use animation::{
     AnimationController, AnimationDirection, AnimationTicker, ColorTween, CubicBezierCurve,
     CurvedAnimation, Curve, EaseInCurve, EaseInOutCurve, EaseOutCurve, FloatTween, LinearCurve,
-    TickHandle, Tween,
+    Simulation, TickHandle, Tolerance, Tween,
 };
 pub mod core;
 pub mod editor;
