@@ -454,7 +454,7 @@ impl Component for MenuRow {
             .on_exit(move || on_exit.set(false))
             .cursor(MouseCursor::System(SystemCursorKind::Pointer));
 
-        vexo::GestureDetector::new(hovered_area)
+        GestureDetector::new(hovered_area)
             .on_tap(move || on_tap())
             .boxed()
     }
