@@ -1,10 +1,16 @@
-//! Context menu widget trio: `MenuItem`, `ContextMenuController`, `ContextMenu` host.
+//! Context menu widget trio: `MenuBuilder`, `ContextMenuController`, `ContextMenu` host.
 //!
 //! Mirrors the `ScrollController` pattern: the screen owns a controller,
 //! wraps its root in `ContextMenu::new(child, controller)`, and wraps each
-//! right-clickable element in `context_menu_trigger(child, controller, items)`.
+//! right-clickable element in `context_menu_trigger(child, controller, builder)`.
+//!
+//! The menu's visual content is fully caller-supplied via `MenuBuilder`. The
+//! builder runs at render time (inside `ContextMenu::render`), so it always
+//! reads the current theme. Each trigger captures its own builder, so different
+//! bubbles can render different menu styles.
 
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 
 use vexo::core::{Logical, Point};
@@ -12,27 +18,36 @@ use vexo::Signal;
 use vexo::{Component, RenderContext, SimpleState, Widget};
 
 // ============================================================================
-// MenuItem
+// MenuBuilder
 // ============================================================================
 
-/// A single context menu entry.
+/// Caller-supplied factory that produces the menu's widget content.
 ///
-/// `on_select` is `Rc<dyn Fn()>` (not `FnMut`) — it is cloned into each
-/// `GestureDetector::on_tap` closure. `Rc` makes cloning cheap and avoids
-/// `Send + Sync` bounds that `Arc` would impose (the closures capture
-/// single-threaded `Rc`-based controllers).
+/// Wraps `Rc<dyn Fn(&ContextMenuController, &ThemeData) -> Box<dyn Widget>>`.
+/// `Rc<dyn Fn>` (not `FnMut`): the builder is cloned into the controller's
+/// cell and re-invoked on every rebuild; `Rc` keeps clones cheap and matches
+/// the single-threaded pattern used elsewhere in `vexo_uikit` (no `Send +
+/// Sync` bounds that `Arc` would impose).
+///
+/// The builder runs inside `ContextMenu::render`, so it always sees the live
+/// `ThemeData` — theme toggles re-render the menu correctly. It receives
+/// `&ContextMenuController` so its item rows can call `controller.close()` on
+/// tap.
 #[derive(Clone)]
-pub struct MenuItem {
-    pub label: String,
-    pub on_select: Rc<dyn Fn()>,
+pub struct MenuBuilder(Rc<dyn Fn(&ContextMenuController, &vexo::ThemeData) -> Box<dyn Widget>>);
+
+impl MenuBuilder {
+    pub fn new(
+        f: impl Fn(&ContextMenuController, &vexo::ThemeData) -> Box<dyn Widget> + 'static,
+    ) -> Self {
+        Self(Rc::new(f))
+    }
 }
 
-impl MenuItem {
-    pub fn new(label: impl Into<String>, on_select: Rc<dyn Fn()>) -> Self {
-        Self {
-            label: label.into(),
-            on_select,
-        }
+impl Deref for MenuBuilder {
+    type Target = dyn Fn(&ContextMenuController, &vexo::ThemeData) -> Box<dyn Widget>;
+    fn deref(&self) -> &Self::Target {
+        &*self.0
     }
 }
 
@@ -40,7 +55,7 @@ impl MenuItem {
 // ContextMenuController
 // ============================================================================
 
-/// Controller for a context menu — owns open/close state and the current items.
+/// Controller for a context menu — owns open/close state and the current builder.
 ///
 /// Created by the screen's caller (alongside `ScrollController::new()`), held
 /// as a field, `.clone()`d into triggers and the host. The `Signal` and
@@ -48,26 +63,27 @@ impl MenuItem {
 /// recreation on rebuild doesn't lose menu state.
 ///
 /// The `Signal` carries only `Option<Point<Logical>>` (position when open,
-/// `None` when closed) — not the items. This is because `MenuItem` contains
-/// `Rc<dyn Fn()>` which is `!Send + !Sync`, violating `signal_value`'s
-/// `T: Send + Sync` bound. Items are stored separately in `Rc<RefCell<...>>`.
+/// `None` when closed) — not the builder. This is because `MenuBuilder`
+/// contains `Rc<dyn Fn>` which is `!Send + !Sync`, violating `signal_value`'s
+/// `T: Send + Sync` bound. The builder is stored separately in
+/// `Rc<RefCell<Option<MenuBuilder>>>`.
 #[derive(Clone)]
 pub struct ContextMenuController {
     position: Signal<Option<Point<Logical>>>,
-    items: Rc<RefCell<Vec<MenuItem>>>,
+    builder: Rc<RefCell<Option<MenuBuilder>>>,
 }
 
 impl ContextMenuController {
     pub fn new() -> Self {
         Self {
             position: Signal::new(None),
-            items: Rc::new(RefCell::new(Vec::new())),
+            builder: Rc::new(RefCell::new(None)),
         }
     }
 
-    /// Open the menu at `position` with the given `items`.
-    pub fn show(&self, position: Point<Logical>, items: Vec<MenuItem>) {
-        *self.items.borrow_mut() = items;
+    /// Open the menu at `position` with the given `builder`.
+    pub fn show(&self, position: Point<Logical>, builder: MenuBuilder) {
+        *self.builder.borrow_mut() = Some(builder);
         self.position.set(Some(position));
     }
 
@@ -81,11 +97,12 @@ impl ContextMenuController {
         &self.position
     }
 
-    /// Snapshot the current items (clones the `Vec<MenuItem>` out of the
-    /// `RefCell` so the borrow is released immediately). Called by the host
-    /// during `render()`.
-    pub fn items_snapshot(&self) -> Vec<MenuItem> {
-        self.items.borrow().clone()
+    /// Snapshot the current builder (clones the `Option<MenuBuilder>` out of
+    /// the `RefCell` so the borrow is released immediately). Called by the
+    /// host during `render()` only when the position signal is `Some`.
+    /// Returns `None` if the menu is closed (no builder set).
+    pub fn builder_snapshot(&self) -> Option<MenuBuilder> {
+        self.builder.borrow().clone()
     }
 }
 
@@ -102,9 +119,10 @@ impl Default for ContextMenuController {
 /// A host widget that renders a context menu overlay on top of its child.
 ///
 /// Wrap the screen's root content in `ContextMenu::new(content, controller)`.
-/// When `controller.show(pos, items)` is called (e.g. by a
+/// When `controller.show(pos, builder)` is called (e.g. by a
 /// `context_menu_trigger` on right-click), the host rebuilds and shows a
-/// floating menu at `pos` with a full-size dismiss barrier behind it.
+/// floating menu at `pos` — the menu's content is whatever the caller's
+/// `builder` returns — with a full-size dismiss barrier behind it.
 ///
 /// The host must be OUTSIDE any `ScrollView` (which clips with `overflow:
 /// Hidden`). Place it at the screen root so the menu floats above all content.
@@ -142,43 +160,46 @@ impl Component for ContextMenu {
         let mut stack = vexo::Stack::new().push(self.child.clone_boxed());
 
         if let Some(pos) = position {
-            let items = self.controller.items_snapshot();
-            let ctrl_for_barrier = controller.clone();
-            let ctrl_for_menu = controller.clone();
+            let builder = self.controller.builder_snapshot();
+            if let Some(builder) = builder {
+                let ctrl_for_barrier = controller.clone();
 
-            // Child 1: dismiss barrier — full-size transparent press target.
-            // Positioned with all insets 0 so it overlaps the content (non-
-            // positioned children flow in the Stack's column, they don't
-            // overlap). Hit-tested AFTER the menu (reverse order) but BEFORE
-            // the content.
-            //
-            // The empty Text is wrapped in a WithLayout with
-            // width_percent(1.0).height_percent(1.0) so the GestureDetector
-            // (pass-through) fills the Positioned's content box. Without this,
-            // Text::new("") has zero intrinsic size, the GestureDetector's
-            // computed_bounds would be zero, and clicks inside the barrier
-            // would not hit the GestureDetector — they'd stop at the
-            // Positioned (whose on_event is a no-op) and never fire on_press.
-            let barrier = vexo::Positioned::new(
-                vexo::GestureDetector::new(vexo::WithLayout::new(
-                    vexo::Text::new(""),
-                    vexo::Layout::default()
-                        .width_percent(1.0)
-                        .height_percent(1.0),
-                ))
-                .on_press(move || ctrl_for_barrier.close()),
-            )
-            .left(0.0)
-            .top(0.0)
-            .right(0.0)
-            .bottom(0.0);
+                // Child 1: dismiss barrier — full-size transparent press target.
+                // Positioned with all insets 0 so it overlaps the content (non-
+                // positioned children flow in the Stack's column, they don't
+                // overlap). Hit-tested AFTER the menu (reverse order) but BEFORE
+                // the content.
+                //
+                // The empty Text is wrapped in a WithLayout with
+                // width_percent(1.0).height_percent(1.0) so the GestureDetector
+                // (pass-through) fills the Positioned's content box. Without this,
+                // Text::new("") has zero intrinsic size, the GestureDetector's
+                // computed_bounds would be zero, and clicks inside the barrier
+                // would not hit the GestureDetector — they'd stop at the
+                // Positioned (whose on_event is a no-op) and never fire on_press.
+                let barrier = vexo::Positioned::new(
+                    vexo::GestureDetector::new(vexo::WithLayout::new(
+                        vexo::Text::new(""),
+                        vexo::Layout::default()
+                            .width_percent(1.0)
+                            .height_percent(1.0),
+                    ))
+                    .on_press(move || ctrl_for_barrier.close()),
+                )
+                .left(0.0)
+                .top(0.0)
+                .right(0.0)
+                .bottom(0.0);
 
-            stack = stack.push(barrier);
+                stack = stack.push(barrier);
 
-            // Child 2: the menu itself, positioned at the click coordinates.
-            let menu = menu_view(&items, ctrl_for_menu, &theme);
-            let positioned_menu = vexo::Positioned::new(menu).left(pos.x).top(pos.y);
-            stack = stack.push(positioned_menu);
+                // Child 2: the menu itself — built by the caller's builder,
+                // positioned at the click coordinates. The builder runs here
+                // (inside render), so it reads the live theme.
+                let menu = builder(&controller, &theme);
+                let positioned_menu = vexo::Positioned::new(menu).left(pos.x).top(pos.y);
+                stack = stack.push(positioned_menu);
+            }
         }
 
         stack.boxed()
@@ -186,65 +207,24 @@ impl Component for ContextMenu {
 }
 
 // ============================================================================
-// menu_view — builds the visual menu from items
-// ============================================================================
-
-fn menu_view(
-    items: &[MenuItem],
-    controller: ContextMenuController,
-    theme: &vexo::ThemeData,
-) -> Box<dyn Widget> {
-    let column = vexo::column! {
-        for item in items {
-            let on_select = Rc::clone(&item.on_select);
-            let ctrl = controller.clone();
-            vexo::GestureDetector::new(
-                vexo::WithLayout::new(
-                    vexo::Text::new(item.label.as_str()).with_color(theme.on_surface),
-                    vexo::Layout::default().padding(8.0).width(160.0),
-                ),
-            )
-            .on_tap(move || {
-                on_select();
-                ctrl.close();
-            })
-        }
-    };
-
-    vexo::DecoratedBox::with_style(
-        vexo::WithLayout::new(column, vexo::Layout::default().min_width(160.0)),
-        vexo::Style::default()
-            .corner_radius(8.0)
-            .background(theme.surface)
-            .border(theme.outline, 1.0)
-            .shadow(
-                vexo::BoxShadow::new(vexo::Color::BLACK.with_alpha(0.25))
-                    .blur(6.0)
-                    .offset(0.0, 2.0),
-            ),
-    )
-    .boxed()
-}
-
-// ============================================================================
 // context_menu_trigger — sugar for wrapping a child with right-click detection
 // ============================================================================
 
 /// Wrap `child` with a right-click handler that opens the context menu at the
-/// cursor position with the given `items`.
+/// cursor position, rendering content from `builder`.
 ///
 /// Equivalent to:
 /// ```ignore
-/// child.on_secondary_press(move |pos| controller.show(pos, items))
+/// child.on_secondary_press(move |pos| controller.show(pos, builder))
 /// ```
 pub fn context_menu_trigger(
     child: impl Widget + 'static,
     controller: ContextMenuController,
-    items: Vec<MenuItem>,
+    builder: MenuBuilder,
 ) -> Box<dyn Widget> {
     let ctrl = controller.clone();
     child.on_secondary_press(move |pos| {
-        ctrl.show(pos, items.clone());
+        ctrl.show(pos, builder.clone());
     })
 }
 
@@ -271,6 +251,12 @@ mod tests {
         Arc::new(StubClipboard)
     }
 
+    /// A minimal builder that renders a single `Text` widget with the given
+    /// label. Ignores controller + theme — enough for layout/render assertions.
+    fn test_builder(label: &'static str) -> MenuBuilder {
+        MenuBuilder::new(move |_ctrl, _theme| vexo::Text::new(label).boxed())
+    }
+
     fn find_text_in_tree(reg: &RenderObjectRegistry, key: RenderObjectKey, needle: &str) -> bool {
         let ro = match reg.get(key) {
             Some(ro) => ro,
@@ -295,25 +281,20 @@ mod tests {
     fn test_controller_show_close() {
         let controller = ContextMenuController::new();
         assert_eq!(controller.position_signal().get(), None);
-        assert!(controller.items_snapshot().is_empty());
+        assert!(controller.builder_snapshot().is_none());
 
-        let items = vec![
-            MenuItem::new("Copy", Rc::new(|| {})),
-            MenuItem::new("Delete", Rc::new(|| {})),
-        ];
-        controller.show(Point::new(100.0, 200.0), items);
+        controller.show(Point::new(100.0, 200.0), test_builder("Copy"));
 
         assert_eq!(
             controller.position_signal().get(),
             Some(Point::new(100.0, 200.0))
         );
-        assert_eq!(controller.items_snapshot().len(), 2);
-        assert_eq!(controller.items_snapshot()[0].label, "Copy");
+        assert!(controller.builder_snapshot().is_some());
 
         controller.close();
         assert_eq!(controller.position_signal().get(), None);
-        // Items remain in the cell after close — host doesn't render them
-        // because position is None. They'll be overwritten on next show().
+        // The builder remains in the cell after close — host doesn't render it
+        // because position is None. It'll be overwritten on next show().
     }
 
     #[test]
@@ -321,14 +302,11 @@ mod tests {
         let controller = ContextMenuController::new();
         let cloned = controller.clone();
 
-        controller.show(
-            Point::new(50.0, 60.0),
-            vec![MenuItem::new("A", Rc::new(|| {}))],
-        );
+        controller.show(Point::new(50.0, 60.0), test_builder("A"));
 
         // The clone sees the same state (shared via Signal's Arc + Rc).
         assert_eq!(cloned.position_signal().get(), Some(Point::new(50.0, 60.0)));
-        assert_eq!(cloned.items_snapshot().len(), 1);
+        assert!(cloned.builder_snapshot().is_some());
     }
 
     #[test]
@@ -343,12 +321,12 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // When closed, the render tree should NOT contain the menu items.
+        // When closed, the render tree should NOT contain the menu content.
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
             !find_text_in_tree(ro_reg, root, "Copy"),
-            "menu item 'Copy' should not be rendered when menu is closed"
+            "menu content 'Copy' should not be rendered when menu is closed"
         );
     }
 
@@ -364,20 +342,17 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Open the menu at (100, 200).
-        controller.show(
-            Point::new(100.0, 200.0),
-            vec![MenuItem::new("Copy", Rc::new(|| {}))],
-        );
+        // Open the menu at (100, 200) with a builder that renders "Copy".
+        controller.show(Point::new(100.0, 200.0), test_builder("Copy"));
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // The menu item text should now appear in the render tree.
+        // The menu content should now appear in the render tree.
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
             find_text_in_tree(ro_reg, root, "Copy"),
-            "menu item 'Copy' should be rendered when menu is open"
+            "menu content 'Copy' should be rendered when menu is open"
         );
     }
 
@@ -385,6 +360,22 @@ mod tests {
     fn test_item_tap_fires_on_select_and_closes() {
         let selected = Rc::new(std::cell::Cell::new(false));
         let selected_clone = selected.clone();
+
+        // A builder that renders a single tappable row. on_tap flips the cell
+        // and closes the menu — mirrors a real menu item.
+        let builder = MenuBuilder::new(move |ctrl, _theme| {
+            let ctrl = ctrl.clone();
+            let selected = selected_clone.clone();
+            vexo::GestureDetector::new(vexo::WithLayout::new(
+                vexo::Text::new("Copy"),
+                vexo::Layout::default().padding(8.0).width(160.0),
+            ))
+            .on_tap(move || {
+                selected.set(true);
+                ctrl.close();
+            })
+            .boxed()
+        });
 
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(Text::new("content"), controller.clone());
@@ -396,25 +387,13 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        controller.show(
-            Point::new(10.0, 10.0),
-            vec![MenuItem::new(
-                "Copy",
-                Rc::new(move || {
-                    selected_clone.set(true);
-                }),
-            )],
-        );
+        controller.show(Point::new(10.0, 10.0), builder);
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Tap the menu item. The item text is at (10, 10) with padding 8 +
-        // text size. A click at (15, 15) should be inside the item row.
-        // We need to find the actual position via layout — but for a
-        // simple test, click at a position within the menu area.
         // The menu is Positioned at (10, 10), the item row starts at (10, 10)
         // in window coords. Text padding is 8px, so clicking at (15, 15)
-        // hits the first item row.
+        // hits the row.
         let primary_press = InputEvent::PointerButton {
             position: Point::new(15.0, 15.0),
             button: PointerButton::Primary,
@@ -442,7 +421,7 @@ mod tests {
             &test_clipboard(),
         );
 
-        assert!(selected.get(), "on_select should have fired");
+        assert!(selected.get(), "on_tap should have fired");
         // After the tap, the menu should close (controller.close() called
         // by the item's on_tap closure). The Signal::set triggers a rebuild;
         // perform_rebuilds processes it.
@@ -466,10 +445,7 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        controller.show(
-            Point::new(10.0, 10.0),
-            vec![MenuItem::new("Copy", Rc::new(|| {}))],
-        );
+        controller.show(Point::new(10.0, 10.0), test_builder("Copy"));
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
@@ -493,6 +469,77 @@ mod tests {
             controller.position_signal().get(),
             None,
             "menu should be closed after clicking outside (barrier dismiss)"
+        );
+    }
+
+    #[test]
+    fn test_builder_reads_current_theme() {
+        // A builder that encodes theme.surface.r into the rendered text label.
+        // The builder runs inside `ContextMenu::render`, so it must re-run with
+        // the *current* theme whenever the `Theme` InheritedWidget changes —
+        // this is the whole justification for running the builder at render
+        // time instead of pre-building the menu widget.
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(Text::new("content"), controller.clone());
+
+        // Two distinct themes so the assertion can tell them apart. We compute
+        // the expected labels from the themes themselves (rather than hardcoding
+        // float strings) so the test stays robust to color-preset tweaks.
+        let light_theme = vexo::ThemeData::light();
+        let dark_theme = vexo::ThemeData::dark();
+        let light_label = format!("surface-r-{}", light_theme.surface.r);
+        let dark_label = format!("surface-r-{}", dark_theme.surface.r);
+        assert_ne!(
+            light_label, dark_label,
+            "light and dark surface.r must differ for this test to be meaningful"
+        );
+
+        // Wrap the host in Theme(light) so the builder reads the light theme
+        // via Theme::of(ctx) during render.
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(vexo::Theme::new(light_theme.clone(), host.clone()).boxed());
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open the menu. The builder runs in render() and must read the light
+        // theme's surface.r.
+        let builder = MenuBuilder::new(|_ctrl, theme| {
+            let r = theme.surface.r;
+            vexo::Text::new(format!("surface-r-{}", r)).boxed()
+        });
+        controller.show(Point::new(10.0, 10.0), builder);
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, &light_label),
+            "builder should have rendered the light theme's surface.r ({:?})",
+            light_label
+        );
+
+        // Toggle: re-wrap the host in Theme(dark). The InheritedWidget change
+        // invalidates the ContextMenu element (a Theme::of dependent), forcing
+        // render() — and thus the builder — to re-run with the dark theme.
+        // The controller state (position + builder) is shared via Rc/Signal,
+        // so the menu stays open across the toggle.
+        pipeline.update(vexo::Theme::new(dark_theme.clone(), host.clone()).boxed());
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, &dark_label),
+            "builder should have re-run with the dark theme's surface.r ({:?}) after the toggle",
+            dark_label
+        );
+        assert!(
+            !find_text_in_tree(ro_reg, root, &light_label),
+            "light theme's label must be gone after toggling to dark — the builder re-ran"
         );
     }
 }
