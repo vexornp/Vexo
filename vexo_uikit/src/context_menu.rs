@@ -474,19 +474,37 @@ mod tests {
 
     #[test]
     fn test_builder_reads_current_theme() {
-        // A builder that encodes theme.surface into the rendered text label,
-        // so we can assert the builder saw the live theme at render time.
-        // theme.surface is a Color; we read its red channel into the label.
+        // A builder that encodes theme.surface.r into the rendered text label.
+        // The builder runs inside `ContextMenu::render`, so it must re-run with
+        // the *current* theme whenever the `Theme` InheritedWidget changes —
+        // this is the whole justification for running the builder at render
+        // time instead of pre-building the menu widget.
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(Text::new("content"), controller.clone());
 
+        // Two distinct themes so the assertion can tell them apart. We compute
+        // the expected labels from the themes themselves (rather than hardcoding
+        // float strings) so the test stays robust to color-preset tweaks.
+        let light_theme = vexo::ThemeData::light();
+        let dark_theme = vexo::ThemeData::dark();
+        let light_label = format!("surface-r-{}", light_theme.surface.r);
+        let dark_label = format!("surface-r-{}", dark_theme.surface.r);
+        assert_ne!(
+            light_label, dark_label,
+            "light and dark surface.r must differ for this test to be meaningful"
+        );
+
+        // Wrap the host in Theme(light) so the builder reads the light theme
+        // via Theme::of(ctx) during render.
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
+        pipeline.update(vexo::Theme::new(light_theme.clone(), host.clone()).boxed());
 
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
+        // Open the menu. The builder runs in render() and must read the light
+        // theme's surface.r.
         let builder = MenuBuilder::new(|_ctrl, theme| {
             let r = theme.surface.r;
             vexo::Text::new(format!("surface-r-{}", r)).boxed()
@@ -495,15 +513,33 @@ mod tests {
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // The builder ran during render, so the surface color's red channel
-        // must appear in the tree. We assert the *prefix* (proving the builder
-        // ran and read theme) rather than a specific value (which depends on
-        // the default theme's surface color).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
-            find_text_in_tree(ro_reg, root, "surface-r-"),
-            "builder output (derived from theme.surface) should be in the render tree"
+            find_text_in_tree(ro_reg, root, &light_label),
+            "builder should have rendered the light theme's surface.r ({:?})",
+            light_label
+        );
+
+        // Toggle: re-wrap the host in Theme(dark). The InheritedWidget change
+        // invalidates the ContextMenu element (a Theme::of dependent), forcing
+        // render() — and thus the builder — to re-run with the dark theme.
+        // The controller state (position + builder) is shared via Rc/Signal,
+        // so the menu stays open across the toggle.
+        pipeline.update(vexo::Theme::new(dark_theme.clone(), host.clone()).boxed());
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, &dark_label),
+            "builder should have re-run with the dark theme's surface.r ({:?}) after the toggle",
+            dark_label
+        );
+        assert!(
+            !find_text_in_tree(ro_reg, root, &light_label),
+            "light theme's label must be gone after toggling to dark — the builder re-ran"
         );
     }
 }
