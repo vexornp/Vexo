@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, ImageData, JustifyContent, Key, Layout, LifecycleContext, MouseCursor,
-    RenderContext, ScrollController, ScrollView, Signal, Spacer, Style, SystemCursorKind, Text,
-    TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
+    FlexDirection, GestureDetector, ImageData, JustifyContent, Key, Layout, LifecycleContext,
+    MouseCursor, RenderContext, ScrollController, ScrollView, Signal, Spacer, Style,
+    SystemCursorKind, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
@@ -325,6 +325,53 @@ fn menu_divider(theme: vexo::ThemeData) -> Box<dyn Widget> {
     WithLayout::new(
         DecoratedBox::with_style(Text::new(""), Style::default().background(color)),
         Layout::default().height(1.0).width_percent(1.0),
+    )
+    .boxed()
+}
+
+/// The top reaction strip: a centered row of 6 FontAwesome reaction icons
+/// (standing in for emoji — the text pipeline is monochrome-only and no emoji
+/// font is loaded). Each icon is tappable: logs a message and closes the menu.
+///
+/// Stateless (no hover background) — the cursor still flips to pointer via
+/// `.cursor(...)`. Matches the image's compact, low-affordance reaction strip.
+fn reaction_row(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
+    // (icon, log message) pairs. The log messages use emoji codepoints in the
+    // string literal for grep-ability — they're just log text, never rendered.
+    let reactions: [(Icons, &str); 6] = [
+        (Icons::ThumbsUp, "context menu: thumbsup"),
+        (Icons::Heart, "context menu: heart"),
+        (Icons::FaceLaugh, "context menu: laugh"),
+        (Icons::FaceSurprise, "context menu: surprise"),
+        (Icons::FaceSadTear, "context menu: sad"),
+        (Icons::FaceAngry, "context menu: angry"),
+    ];
+
+    let row = row! {
+        for (icon, msg) in reactions {
+            let ctrl = ctrl.clone();
+            GestureDetector::new(
+                WithLayout::new(
+                    Icon::new(icon)
+                        .with_size(16.0)
+                        .with_color(theme.on_surface_variant),
+                    Layout::default().padding(6.0),
+                )
+                .boxed()
+                .cursor(MouseCursor::System(SystemCursorKind::Pointer)),
+            )
+            .on_tap(move || {
+                log::debug!("{}", msg);
+                ctrl.close();
+            })
+        }
+    }
+    .gap(8.0)
+    .justify(JustifyContent::Center);
+
+    WithLayout::new(
+        row,
+        Layout::default().padding_each(8.0, 8.0, 4.0, 4.0), // 8h, 4v
     )
     .boxed()
 }
