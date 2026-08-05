@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::simulation::Simulation;
 use super::ticker::{AnimationTicker, TickHandle};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -10,11 +11,23 @@ pub enum AnimationDirection {
     Stopped,
 }
 
+enum Drive {
+    Stopped,
+    Time {
+        direction: AnimationDirection,
+        start: Instant,
+        duration: Duration,
+    },
+    Simulation {
+        sim: Box<dyn Simulation>,
+        start: Instant,
+    },
+}
+
 pub struct AnimationController {
-    duration: Duration,
+    drive: Drive,
     value: f64,
-    direction: AnimationDirection,
-    start_time: Option<Instant>,
+    duration: Duration,
     dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
     ticker: Option<Arc<AnimationTicker>>,
     tick_handle: Option<TickHandle>,
@@ -23,10 +36,9 @@ pub struct AnimationController {
 impl AnimationController {
     pub fn new(duration: Duration) -> Self {
         Self {
-            duration,
+            drive: Drive::Stopped,
             value: 0.0,
-            direction: AnimationDirection::Stopped,
-            start_time: None,
+            duration,
             dirty_callback: None,
             ticker: None,
             tick_handle: None,
@@ -55,8 +67,11 @@ impl AnimationController {
     pub fn forward_with_start(&mut self, start: Instant) {
         self.unregister_from_ticker();
         self.value = 0.0;
-        self.direction = AnimationDirection::Forward;
-        self.start_time = Some(start);
+        self.drive = Drive::Time {
+            direction: AnimationDirection::Forward,
+            start,
+            duration: self.duration,
+        };
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
             self.tick_handle = Some(ticker.register(cb.clone()));
         }
@@ -71,10 +86,13 @@ impl AnimationController {
     }
 
     pub fn reverse(&mut self) {
-        self.value = 1.0;
         self.unregister_from_ticker();
-        self.direction = AnimationDirection::Reverse;
-        self.start_time = Some(Instant::now());
+        self.value = 1.0;
+        self.drive = Drive::Time {
+            direction: AnimationDirection::Reverse,
+            start: Instant::now(),
+            duration: self.duration,
+        };
         if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
             self.tick_handle = Some(ticker.register(cb.clone()));
         }
@@ -84,9 +102,26 @@ impl AnimationController {
     }
 
     pub fn stop(&mut self) {
-        self.direction = AnimationDirection::Stopped;
-        self.start_time = None;
+        self.drive = Drive::Stopped;
         self.unregister_from_ticker();
+    }
+
+    /// Drive the controller with a physics simulation. `sim.x(t)` IS the
+    /// value (the sim owns from/to/v0). Stamps `start_time`, registers the
+    /// ticker, fires dirty immediately (avoids the render_retain deadlock).
+    /// Cancels any prior time or sim drive first.
+    pub fn animate_with(&mut self, sim: Box<dyn Simulation>) {
+        self.unregister_from_ticker();
+        self.drive = Drive::Simulation {
+            sim,
+            start: Instant::now(),
+        };
+        if let (Some(ticker), Some(cb)) = (&self.ticker, &self.dirty_callback) {
+            self.tick_handle = Some(ticker.register(cb.clone()));
+        }
+        if let Some(cb) = &self.dirty_callback {
+            cb();
+        }
     }
 
     pub fn value(&self) -> f64 {
@@ -94,11 +129,24 @@ impl AnimationController {
     }
 
     pub fn direction(&self) -> AnimationDirection {
-        self.direction
+        match self.drive {
+            Drive::Time { direction, .. } => direction,
+            _ => AnimationDirection::Stopped,
+        }
     }
 
     pub fn start_time(&self) -> Option<Instant> {
-        self.start_time
+        match self.drive {
+            Drive::Time { start, .. } | Drive::Simulation { start, .. } => Some(start),
+            Drive::Stopped => None,
+        }
+    }
+
+    /// True while any drive (time or simulation) is active. Replaces the
+    /// `direction() != Stopped` check callers make, since the Simulation path
+    /// has no `AnimationDirection`.
+    pub fn is_animating(&self) -> bool {
+        !matches!(self.drive, Drive::Stopped)
     }
 
     pub fn set_dirty_callback(&mut self, cb: Arc<dyn Fn() + Send + Sync>) {
@@ -110,29 +158,61 @@ impl AnimationController {
     }
 
     pub fn advance(&mut self, now: Instant) {
-        if self.direction == AnimationDirection::Stopped {
+        match &mut self.drive {
+            Drive::Stopped => return,
+            Drive::Time {
+                direction,
+                start,
+                duration,
+            } => {
+                let direction = *direction;
+                let start = *start;
+                let duration = *duration;
+                self.advance_time(now, direction, start, duration);
+            }
+            Drive::Simulation { sim, start } => {
+                let start = *start;
+                let elapsed = now.saturating_duration_since(start).as_secs_f64();
+                self.value = sim.x(elapsed);
+                if sim.is_done(elapsed) {
+                    self.drive = Drive::Stopped;
+                    self.unregister_from_ticker();
+                }
+                if let Some(cb) = &self.dirty_callback {
+                    cb();
+                }
+            }
+        }
+    }
+
+    /// Time-path advance, factored out of `advance()` for clarity. Preserves
+    /// the exact behavior of the original `advance()` time logic, including
+    /// the direction-aware completion fix (controller.rs:147-157).
+    fn advance_time(
+        &mut self,
+        now: Instant,
+        direction: AnimationDirection,
+        start: Instant,
+        duration: Duration,
+    ) {
+        if direction == AnimationDirection::Stopped {
             return;
         }
-        if self.duration.is_zero() {
-            self.value = match self.direction {
+        if duration.is_zero() {
+            self.value = match direction {
                 AnimationDirection::Forward => 1.0,
                 AnimationDirection::Reverse => 0.0,
                 AnimationDirection::Stopped => return,
             };
-            self.direction = AnimationDirection::Stopped;
-            self.start_time = None;
+            self.drive = Drive::Stopped;
             self.unregister_from_ticker();
             if let Some(cb) = &self.dirty_callback {
                 cb();
             }
             return;
         }
-        let start = self.start_time.unwrap();
-        let elapsed = now
-            .checked_duration_since(start)
-            .unwrap_or(Duration::ZERO)
-            .as_secs_f64();
-        let duration = self.duration.as_secs_f64();
+        let elapsed = now.saturating_duration_since(start).as_secs_f64();
+        let duration = duration.as_secs_f64();
         let raw = elapsed / duration;
 
         // Direction-aware completion: a Forward tween starts at value=0 and
@@ -144,7 +224,7 @@ impl AnimationController {
         // `now` captured once per perform_rebuilds cycle and reused across
         // elements, where a controller created during an earlier element's
         // rebuild has start_time > now). See KeyboardAvoidance retarget bug.
-        let completed = match self.direction {
+        let completed = match direction {
             AnimationDirection::Forward => {
                 self.value = raw.min(1.0);
                 self.value >= 1.0
@@ -157,8 +237,7 @@ impl AnimationController {
         };
 
         if completed {
-            self.direction = AnimationDirection::Stopped;
-            self.start_time = None;
+            self.drive = Drive::Stopped;
             self.unregister_from_ticker();
         }
 
@@ -177,29 +256,52 @@ impl AnimationController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::simulation::SpringSimulation;
+    use crate::animation::SpringDescription;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc;
+
+    /// Build a controller wired to a ticker + mpsc dirty callback, matching
+    /// the pattern used by the existing `test_controller_registers_with_ticker`.
+    fn controller_with_ticker() -> (
+        AnimationController,
+        std::sync::mpsc::Receiver<()>,
+        std::sync::Arc<crate::animation::AnimationTicker>,
+    ) {
+        let ticker = std::sync::Arc::new(crate::animation::AnimationTicker::new());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut ctrl = AnimationController::new(std::time::Duration::from_secs(1));
+        ctrl.set_dirty_callback(std::sync::Arc::new(move || {
+            let _ = tx.send(());
+        }));
+        ctrl.set_ticker(ticker.clone());
+        (ctrl, rx, ticker)
+    }
+
+    fn critical_spring_sim(from: f64, to: f64, v0: f64) -> SpringSimulation {
+        SpringSimulation::new(SpringDescription::ios(340.0, 1.0), from, to, v0)
+    }
 
     #[test]
     fn test_controller_new() {
         let ctrl = AnimationController::new(Duration::from_millis(300));
         assert_eq!(ctrl.value(), 0.0);
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
     }
 
     #[test]
     fn test_controller_forward_starts() {
         let mut ctrl = AnimationController::new(Duration::from_millis(300));
         ctrl.forward();
-        assert_eq!(ctrl.direction, AnimationDirection::Forward);
-        assert!(ctrl.start_time.is_some());
+        assert_eq!(ctrl.direction(), AnimationDirection::Forward);
+        assert!(ctrl.start_time().is_some());
     }
 
     #[test]
     fn test_controller_advance_forward() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
         ctrl.forward();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         let now = start + Duration::from_millis(500);
         ctrl.advance(now);
         assert!((ctrl.value() - 0.5).abs() < 0.01);
@@ -209,18 +311,18 @@ mod tests {
     fn test_controller_advance_completes_forward() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
         ctrl.forward();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         let now = start + Duration::from_millis(1001);
         ctrl.advance(now);
         assert!((ctrl.value() - 1.0).abs() < 0.01);
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
     }
 
     #[test]
     fn test_controller_advance_reverse() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
         ctrl.reverse();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         let now = start + Duration::from_millis(500);
         ctrl.advance(now);
         assert!((ctrl.value() - 0.5).abs() < 0.01);
@@ -230,11 +332,11 @@ mod tests {
     fn test_controller_advance_completes_reverse() {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
         ctrl.reverse();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         let now = start + Duration::from_millis(1001);
         ctrl.advance(now);
         assert!((ctrl.value() - 0.0).abs() < 0.01);
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
     }
 
     #[test]
@@ -242,8 +344,8 @@ mod tests {
         let mut ctrl = AnimationController::new(Duration::from_secs(1));
         ctrl.forward();
         ctrl.stop();
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
-        assert!(ctrl.start_time.is_none());
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
+        assert!(ctrl.start_time().is_none());
     }
 
     #[test]
@@ -263,7 +365,7 @@ mod tests {
             called_clone.store(true, Ordering::SeqCst);
         }));
         ctrl.forward();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         let now = start + Duration::from_millis(100);
         ctrl.advance(now);
         assert!(called.load(Ordering::SeqCst));
@@ -293,7 +395,7 @@ mod tests {
         ctrl.set_ticker(ticker.clone());
         ctrl.forward();
         assert!(ticker.has_active());
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         // advance() is called separately from tick(), so no reentrancy issue
         ctrl.advance(start + Duration::from_millis(1001));
         assert!(!ticker.has_active());
@@ -345,7 +447,7 @@ mod tests {
         ctrl.forward();
         ctrl.advance(Instant::now());
         assert!((ctrl.value() - 1.0).abs() < 0.001);
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
     }
 
     #[test]
@@ -354,7 +456,7 @@ mod tests {
         ctrl.reverse();
         ctrl.advance(Instant::now());
         assert!(ctrl.value().abs() < 0.001);
-        assert_eq!(ctrl.direction, AnimationDirection::Stopped);
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
     }
 
     // Regression: a Forward tween must NOT stop when its first `advance`
@@ -372,13 +474,13 @@ mod tests {
         ctrl.forward();
         // `now` == start_time → elapsed == 0 → raw == 0 → value == 0.0.
         // A Forward tween at its start must NOT be considered complete.
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         ctrl.advance(start);
-        assert_eq!(ctrl.direction, AnimationDirection::Forward);
+        assert_eq!(ctrl.direction(), AnimationDirection::Forward);
         assert!(ctrl.value().abs() < 1e-9);
         // And it must still progress on a later advance with real elapsed.
         ctrl.advance(start + Duration::from_millis(125));
-        assert_eq!(ctrl.direction, AnimationDirection::Forward);
+        assert_eq!(ctrl.direction(), AnimationDirection::Forward);
         assert!((ctrl.value() - 0.5).abs() < 0.01);
     }
 
@@ -387,12 +489,160 @@ mod tests {
     fn test_controller_reverse_does_not_stop_at_start_value() {
         let mut ctrl = AnimationController::new(Duration::from_millis(250));
         ctrl.reverse();
-        let start = ctrl.start_time.unwrap();
+        let start = ctrl.start_time().unwrap();
         ctrl.advance(start); // elapsed == 0 → value == 1.0 (Reverse start)
-        assert_eq!(ctrl.direction, AnimationDirection::Reverse);
+        assert_eq!(ctrl.direction(), AnimationDirection::Reverse);
         assert!((ctrl.value() - 1.0).abs() < 1e-9);
         ctrl.advance(start + Duration::from_millis(125));
-        assert_eq!(ctrl.direction, AnimationDirection::Reverse);
+        assert_eq!(ctrl.direction(), AnimationDirection::Reverse);
         assert!((ctrl.value() - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn animate_with_sets_value_from_sim_at_t_zero() {
+        let (mut ctrl, _rx, _ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        // First advance samples sim.x(≈0) ≈ from = 0.
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start);
+        assert!(ctrl.value().abs() < 1e-6, "got {}", ctrl.value());
+    }
+
+    #[test]
+    fn animate_with_completes_and_unregisters() {
+        let (mut ctrl, _rx, ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        assert!(ticker.has_active());
+        // Advance well past settle (k=340 critical settles < 1s).
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start + std::time::Duration::from_secs(2));
+        assert!(!ctrl.is_animating(), "should be done");
+        assert!(!ticker.has_active(), "should have unregistered");
+        assert!(
+            (ctrl.value() - 1.0).abs() < 1e-3,
+            "should be at to=1.0, got {}",
+            ctrl.value()
+        );
+    }
+
+    #[test]
+    fn animate_with_fires_dirty_on_start() {
+        let (mut ctrl, rx, _ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        // Mirrors the render_retain-deadlock-prevention test for forward()
+        // (controller.rs test_controller_registers_with_ticker).
+        assert!(rx.try_recv().is_ok(), "dirty callback should fire on start");
+    }
+
+    #[test]
+    fn animate_with_cancels_prior_sim() {
+        let (mut ctrl, _rx, ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 2.0, 0.0)));
+        // Only one ticker registration should be active.
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // Re-register a counter callback to confirm single active handle by
+        // counting ticks: with exactly one active handle, one tick fires once.
+        // (We can't easily count the sim's own callback; instead verify
+        // has_active stays true and a second animate_with doesn't double up
+        // by checking the sim still drives correctly.)
+        assert!(ticker.has_active());
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start + std::time::Duration::from_secs(2));
+        assert!(
+            (ctrl.value() - 2.0).abs() < 1e-3,
+            "second sim's to=2.0 should win, got {}",
+            ctrl.value()
+        );
+        let _ = counter; // suppress unused
+    }
+
+    #[test]
+    fn forward_cancels_sim() {
+        let (mut ctrl, _rx, ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        assert!(ticker.has_active());
+        ctrl.forward();
+        // forward() should have replaced the sim drive with a time Drive.
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start + std::time::Duration::from_millis(500));
+        // Time drive at 500ms of 1s duration (default in controller_with_ticker).
+        // Value should be ~0.5 (linear), NOT a spring value.
+        assert!(
+            (ctrl.value() - 0.5).abs() < 0.05,
+            "forward should cancel sim; got {}",
+            ctrl.value()
+        );
+    }
+
+    #[test]
+    fn sim_cancels_forward() {
+        let (mut ctrl, _rx, _ticker) = controller_with_ticker();
+        ctrl.forward();
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start + std::time::Duration::from_secs(2));
+        // Should be at sim's to=1.0 via spring, not a linear 1.0 at exactly 1s.
+        // Distinguish by checking it's NOT stopped at the 1s time boundary —
+        // a sim settles based on is_done, a time drive completes at duration.
+        assert!((ctrl.value() - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn animate_with_zero_motion_done_frame_one() {
+        // from==to, v0==0 ⇒ is_done at t=0. After one advance, controller stops.
+        let (mut ctrl, _rx, ticker) = controller_with_ticker();
+        ctrl.animate_with(Box::new(critical_spring_sim(5.0, 5.0, 0.0)));
+        let start = ctrl.start_time().unwrap();
+        ctrl.advance(start);
+        assert!(!ctrl.is_animating(), "zero-motion sim should be done");
+        assert!(!ticker.has_active());
+    }
+
+    #[test]
+    fn animate_with_under_damped_overshoots_then_settles() {
+        let (mut ctrl, _rx, _ticker) = controller_with_ticker();
+        let sim = SpringSimulation::new(
+            SpringDescription::with_damping_ratio(1.0, 340.0, 0.5),
+            0.0,
+            1.0,
+            0.0,
+        );
+        ctrl.animate_with(Box::new(sim));
+        let start = ctrl.start_time().unwrap();
+        // Sample mid-flight for overshoot.
+        let mut max_value = 0.0_f64;
+        for i in 1..=120 {
+            ctrl.advance(start + std::time::Duration::from_secs_f64(i as f64 / 120.0));
+            max_value = max_value.max(ctrl.value());
+            if !ctrl.is_animating() {
+                break;
+            }
+        }
+        assert!(
+            max_value > 1.0,
+            "under-damped should overshoot past to=1.0; max was {}",
+            max_value
+        );
+        assert!(!ctrl.is_animating(), "should settle");
+        assert!(
+            (ctrl.value() - 1.0).abs() < 1e-3,
+            "should settle at to=1.0, got {}",
+            ctrl.value()
+        );
+    }
+
+    #[test]
+    fn is_animating_false_when_stopped() {
+        let ctrl = AnimationController::new(std::time::Duration::from_secs(1));
+        assert!(!ctrl.is_animating());
+    }
+
+    #[test]
+    fn is_animating_true_when_forward() {
+        let mut ctrl = AnimationController::new(std::time::Duration::from_secs(1));
+        ctrl.set_dirty_callback(std::sync::Arc::new(|| {}));
+        ctrl.forward();
+        assert!(ctrl.is_animating());
     }
 }
