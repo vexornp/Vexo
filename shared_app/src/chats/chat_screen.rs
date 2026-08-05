@@ -1109,6 +1109,77 @@ mod tests {
     }
 
     #[test]
+    fn test_right_click_menu_contains_reactions_and_items() {
+        // Regression + presence net for the styled menu: after right-click,
+        // the render tree must contain all three item labels (Copy/Reply/Delete).
+        // Reaction icons are FA codepoints (not human-readable), so we don't
+        // assert them here — their presence is visually verified.
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Right-click at a position inside the first message bubble.
+        // (Same coordinates as test_right_click_bubble_opens_context_menu:
+        // first bubble starts at approx (52, 12) — avatar 32 + gap 8 + 12 pad.)
+        let secondary_press = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(60.0, 20.0),
+            button: vexo::input::PointerButton::Secondary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(60.0, 20.0),
+            &secondary_press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // All three item labels must appear in the render tree.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        for label in ["Copy", "Reply", "Delete"] {
+            assert!(
+                find_text_in_tree(ro_reg, root, label),
+                "menu item '{}' should appear in render tree after right-clicking a bubble",
+                label,
+            );
+        }
+    }
+
+    #[test]
     fn test_left_click_bubble_does_not_open_context_menu() {
         let messages_signal = seed_messages_signal();
         let controller = ContextMenuController::new();
