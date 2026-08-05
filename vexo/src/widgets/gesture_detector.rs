@@ -334,6 +334,11 @@ impl Element for GestureDetectorElement {
         context: &mut EventContext,
         _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
+        // Claim semantics: this method returns Some only when a callback
+        // actually fired. A callback-less GestureDetector (e.g. a future
+        // hit-test-only wrapper) returns None so the event bubbles to
+        // ancestors. Previously every in-bounds press/release returned Some
+        // unconditionally, swallowing events from parents.
         if let InputEvent::PointerButton {
             state,
             position,

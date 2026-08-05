@@ -249,7 +249,6 @@ pub fn context_menu_trigger(
 }
 
 #[cfg(test)]
-#[allow(unused_imports)]
 mod tests {
     use super::*;
 
@@ -261,15 +260,11 @@ mod tests {
     use vexo::layout::TaffyLayoutEngine;
     use vexo::platform::stub_clipboard::StubClipboard;
     use vexo::platform::Clipboard;
-    use vexo::render_objects::PositionedRenderObject;
     use vexo::render_objects::TextRenderObject;
     use vexo::resource::new_font_system;
-    use vexo::RenderObject;
     use vexo::RenderObjectKey;
     use vexo::RenderObjectRegistry;
-    use vexo::Stack;
     use vexo::Text;
-    use vexo::Theme;
     use vexo::ThreeTreePipeline;
 
     fn test_clipboard() -> Arc<dyn Clipboard> {
