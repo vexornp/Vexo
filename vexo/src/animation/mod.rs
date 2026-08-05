@@ -12,7 +12,7 @@ pub use curve::{
     LinearCurve,
 };
 pub use momentum::MomentumSimulation;
-pub use simulation::{Simulation, Tolerance};
+pub use simulation::{FrictionSimulation, Simulation, Tolerance};
 pub use spring::SpringSimulation;
 pub use ticker::{AnimationTicker, TickHandle};
 pub use tween::{ColorTween, FloatTween, Tween};
