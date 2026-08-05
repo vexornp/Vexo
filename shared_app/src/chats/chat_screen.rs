@@ -329,9 +329,9 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
 /// `HAIRLINE_THICKNESS` at tokens.rs:192).
 fn menu_divider(theme: vexo::ThemeData) -> Box<dyn Widget> {
     let color = Color::lerp(theme.outline, theme.surface, 1.0 - 0.35);
-    WithLayout::new(
-        DecoratedBox::with_style(Text::new(""), Style::default().background(color)),
-        Layout::default().height(1.0).width_percent(1.0),
+    DecoratedBox::with_style(
+        row! {}.height(1.0).flex_shrink(0.0),
+        Style::default().background(color),
     )
     .boxed()
 }
