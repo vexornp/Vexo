@@ -171,12 +171,11 @@ impl Component for ChatScreen {
         .min_height(0.0)
         .boxed();
 
-        let decorated = DecoratedBox::with_style(
+        DecoratedBox::with_style(
             KeyboardAvoider::new(content),
             Style::default().background(theme.background),
-        );
-
-        ContextMenu::new(decorated, self.context_menu.clone()).boxed()
+        )
+        .boxed()
     }
 }
 
@@ -845,17 +844,20 @@ mod tests {
     fn test_right_click_bubble_opens_context_menu() {
         let messages_signal = seed_messages_signal();
         let controller = ContextMenuController::new();
-        let view = ChatScreen {
-            conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal, |map| {
-                map.get(&ConvId(1)).cloned().unwrap_or_default()
-            }),
-            avatar_bytes: seed_avatar(ConvId(1)),
-            me_avatar_bytes: seed_me_avatar(),
-            on_send: Rc::new(|_| ()),
-            scroll_controller: ScrollController::new(),
-            context_menu: controller.clone(),
-        }
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -915,17 +917,20 @@ mod tests {
     fn test_left_click_bubble_does_not_open_context_menu() {
         let messages_signal = seed_messages_signal();
         let controller = ContextMenuController::new();
-        let view = ChatScreen {
-            conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal, |map| {
-                map.get(&ConvId(1)).cloned().unwrap_or_default()
-            }),
-            avatar_bytes: seed_avatar(ConvId(1)),
-            me_avatar_bytes: seed_me_avatar(),
-            on_send: Rc::new(|_| ()),
-            scroll_controller: ScrollController::new(),
-            context_menu: controller.clone(),
-        }
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));

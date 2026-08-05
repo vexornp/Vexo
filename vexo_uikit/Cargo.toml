@@ -9,6 +9,7 @@ repository = "https://github.com/vexornp/Vexo"
 [dependencies]
 vexo = { version = "0.1.0", path = "../vexo" }
 vexo_fontawesome = { version = "0.1.0", path = "../vexo_fontawesome" }
+log = { workspace = true }
 
 [dev-dependencies]
 slotmap = { workspace = true }
