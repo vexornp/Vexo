@@ -33,7 +33,7 @@ impl Default for ScrollPhysics {
         Self {
             spring: SpringDescription::ios(340.0, 1.0), // today's STIFFNESS/DAMPING_RATIO
             friction: 0.325,                            // today's TAU
-            fling_min_velocity: 13.0,                   // today's V_STOP
+            fling_min_velocity: 50.0,                   // today's V_MIN_FLING (fling start gate)
             settle: Tolerance::SCROLL,                  // today's X_SETTLE/V_SETTLE/MAX_DURATION
         }
     }

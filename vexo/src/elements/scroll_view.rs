@@ -566,8 +566,7 @@ impl Element for ScrollViewElement {
                     if is_stale {
                         return;
                     }
-                    const V_MIN_FLING: f32 = 50.0;
-                    if v.abs() < V_MIN_FLING {
+                    if v.abs() < self.physics.fling_min_velocity {
                         return;
                     }
                     let Some(element_id) = self.id else {
