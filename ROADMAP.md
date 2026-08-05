@@ -2,7 +2,7 @@
 
 > _Last updated: 2026-07-24. Status reflects the actual codebase, verified against
 > `vexo/`, `vexo_uikit/`, `vexo_fontawesome/`, `shared_app/`, and `desktop_demo/`.
-> Test suite: **~1164 passing** (`cargo test --workspace`), 60 ignored (iOS-gated)._
+> Test suite: **~1312 passing** (`cargo test --workspace`), 61 ignored (iOS-gated)._
 
 ## What's Already Strong
 
@@ -53,7 +53,7 @@ selection/clipboard have shipped (gaps tracked in the Detailed Gap Analysis belo
 
 | Was | Now | Remaining gaps |
 |-----|-----|----------------|
-| ScrollView (was #1) | **Shipped** — vertical ScrollView with momentum fling, spring-back, rubber-band, wheel/keyboard, `ScrollController` (`jump_to*`) | No `ScrollPhysics` abstraction, no scrollbar, no scroll notifications, no lazy loading/virtualization, no sliver protocol, vertical-only. See §9. |
+| ScrollView (was #1) | **Shipped** — vertical ScrollView with momentum fling, spring-back, rubber-band, wheel/keyboard, `ScrollController` (`jump_to*`) | No `ScrollPhysics` policy abstraction, no scrollbar, no scroll notifications, no lazy loading/virtualization, no sliver protocol, vertical-only. See §9. |
 | Image widget (was #2) | **Shipped** — `Image` widget, PNG/JPEG decode, wgpu texture atlas | No SVG/WebP/GIF, no asset bundle, no network loading, no decode cache. See §15. |
 | Text selection + clipboard (was #4) | **Shipped** — selection highlight, copy/cut/paste, select_all, hardware Cmd shortcuts | No drag-to-select, no double/triple-click word/line select, no iOS software-keyboard edit menu. See §8. |
 
@@ -80,7 +80,7 @@ selection/clipboard have shipped (gaps tracked in the Detailed Gap Analysis belo
 | Feature | Gap |
 |---------|-----|
 | Error boundaries | One widget panic crashes entire app. No `ErrorBoundary`, no fallback rendering, no debug red-error screen. See §11. |
-| Widget test framework | `MockBackend` + ~1164 inline/integration tests exist, but no `testWidgets()`/`WidgetTester`/finders/matchers/golden tests/a11y tests. See §12. |
+| Widget test framework | `MockBackend` + ~1312 inline/integration tests exist, but no `testWidgets()`/`WidgetTester`/finders/matchers/golden tests/a11y tests. See §12. |
 | Dev tools | No inspector, performance overlay, hot reload, layout bounds overlay, rebuild tracking. See §17. |
 | Shadows & gradients | **Shadows shipped** (`BoxShadow` in `Style`). Gradients still missing (no `LinearGradient`/`RadialGradient`, no gradient render command). |
 | ListView virtualization | No lazy loading for large lists. `ScrollView` paints its entire child subtree every frame. See §9/§13. |
@@ -234,12 +234,13 @@ duration-based linear progress, ticker registration),
 **`Curve` trait + `LinearCurve`/`EaseInCurve`/`EaseOutCurve`/`EaseInOutCurve`/`CubicBezierCurve`**
 (Newton-Raphson + bisection solver, `animation/curve.rs`),
 **`CurvedAnimation`** (wraps controller + curve, exposes eased `value()`),
-**`SpringSimulation`** (`animation/spring.rs` — critically-damped harmonic oscillator,
-stiffness=340, damping-ratio=1.0, semi-implicit Euler substepping, settle detection),
-**`MomentumSimulation`** (`animation/momentm.rs` — exponential-decay fling, used by ScrollView),
 **`SlideTransition` / `FadeTransition`** `Component`s (`widgets/transitions.rs`),
 navigation page transitions (mobile slide + desktop fade) via `NavigationStackView` +
-`TransitionCtx` builder, two-phase push/pop with deferred path mutation
+`TransitionCtx` builder, two-phase push/pop with deferred path mutation,
+**`Simulation` trait + `SpringSimulation` (analytic) + `FrictionSimulation`**
+(`animation/simulation.rs` — pure-math, stateless, configurable mass/stiffness/damping-ratio,
+iOS `UISpringTimingParameters` + Flutter `package:physics` model),
+**`AnimationController::animate_with(sim)`** (physics-driven third driving mode)
 
 **Missing:**
 - Implicit animations (`AnimatedContainer`, `AnimatedOpacity`, `AnimatedPositioned`)
@@ -299,7 +300,7 @@ accepted as follow-ups — all stem from winit 0.31's iOS backend implementing `
 | 4 | Dismissing the keyboard via the iPad "hide keyboard" key leaves Vexo focus on the `TextEdit` | winit's iOS backend does not emit an event when the system keyboard is dismissed externally (only `resignFirstResponder` from our own `set_ime_allowed(false)` is tracked). The `TextEdit` border stays blue until the user taps elsewhere. | Listen for `UIKeyboardWillHideNotification` (via `objc2-ui-kit` `NotificationCenter`) on the Rust side and call `pipeline.set_focus(None)` when the dismissal wasn't initiated by Vexo. Requires a small `objc2` listener registered at `WindowState::new` on iOS. |
 
 **Verification status:** MVP built and unit-tested on desktop + iOS targets (`cargo test -p vexo`
-now ~1011 passed in the core crate, ~1164 across the workspace; `cargo check --target
+now ~1169 passed in the core crate, ~1312 across the workspace; `cargo check --target
 aarch64-apple-ios` clean). On-device keyboard-appearance verification still pending — run
 `./build_for_ios.sh` and launch `VexoDemo` in the simulator.
 
@@ -309,16 +310,18 @@ aarch64-apple-ios` clean). On-device keyboard-appearance verification still pend
 `overflow_y(Scroll)` hardcoded), `ScrollController` (`current_offset()`, `jump_to(offset)`,
 `jump_to_bottom()`, deferred-apply pattern, `Rc`-shared, `Clone`), `ScrollViewElement` with
 **rubber-band overscroll** (`apply_rubber_band` — iOS-style asymptotic resistance, touch-only),
-**momentum fling** (`MomentumSimulation`, exponential decay, iOS `TAU=0.325`, staleness guard,
+**momentum fling** (`FrictionSimulation`, exponential decay, iOS `TAU=0.325`, staleness guard,
 min-velocity gate), **spring-back** (`SpringSimulation`, critically-damped, stiffness=340),
 fling-to-edge handoff to spring, wheel/keyboard (Arrow/Page/Home/End, hard-clamped),
 `InputEvent::Scroll` (wheel), scroll-offset dispatch in `event_handler.rs`, comprehensive
-test suite (37 element tests + 7 controller + 12 momentum + 11 spring)
+test suite (37 element tests + 7 controller + 32 physics-sim tests in `animation/simulation.rs`),
+**`ScrollPhysics` config struct** (`widgets/scroll_view.rs` — configurable spring/friction/
+settle-tolerance; default = today's hardcoded values; `ScrollView::physics(p)` builder)
 
 **Missing:**
-- `ScrollPhysics` abstraction (`Bouncing`/`Clamping`/`AlwaysScrollable`/`NeverScrollable`)
-  — physics is hardcoded inline in `ScrollViewElement` (touch → rubber-band, wheel/kbd → clamp)
-  with no caller-selectable policy
+- `ScrollPhysics` *policy* abstraction (`Bouncing`/`Clamping`/`AlwaysScrollable`/`NeverScrollable`
+  as selectable behaviors) — only the config-struct layer (`ScrollPhysics { spring, friction, ... }`)
+  ships; touch→rubber-band / wheel→clamp is still hardcoded inline
 - Horizontal scroll view (vertical-only)
 - Scrollbar widget
 - Scroll notification / `ScrollMetrics` (descendants can only poll `current_offset()`,
@@ -368,7 +371,7 @@ navigator in `vexo_uikit/src/navigation.rs`, LIFO stack with `push`/`pop`/`pop_t
 
 ### 12. Testing Infrastructure
 
-**Exists:** Inline unit tests (~1011 in `vexo` core crate, ~1164 across workspace), `e2e_test.rs`,
+**Exists:** Inline unit tests (~1169 in `vexo` core crate, ~1312 across workspace), `e2e_test.rs`,
 integration tests (61 in `shared_app`, 8 pass / 53 ignored — iOS-gated), `MockBackend`,
 `RenderCommand` equality, dedicated suites for scroll physics (momentum/spring/rubber-band),
 navigation, button, tokens, platform
