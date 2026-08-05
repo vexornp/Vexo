@@ -38,8 +38,12 @@ mkdir -p "$OUT_DIR"
 mkdir -p "$SIMULATOR_HEADERS_DIR"
 
 # 1. Build Rust library for iOS (device + simulator in parallel)
+# Pin to the rustup-managed stable toolchain, which has the iOS targets
+# installed (rustup target add aarch64-apple-ios aarch64-apple-ios-sim).
+# The default `stable-1.97.1` toolchain is a custom (non-rustup) install
+# that rustup cannot add components to.
 echo "Building Rust library for iOS device and simulator..."
-cargo build --target aarch64-apple-ios --target aarch64-apple-ios-sim --release
+cargo +stable-aarch64-apple-darwin build --target aarch64-apple-ios --target aarch64-apple-ios-sim --release
 
 # 2. Generate Swift bindings
 echo "Generating Swift bindings (shared_app.swift)..."

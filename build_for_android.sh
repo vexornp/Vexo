@@ -44,8 +44,12 @@ fi
 # and ensuring Vulkan symbols are available at link time. Note: capital `-P`
 # is cargo-ndk's platform flag; lowercase `-p` is cargo's `--package`.
 # Release mode keeps the .so small and matches how iOS ships.
+#
+# Pin to the rustup-managed stable toolchain, which has the Android targets
+# installed. The default `stable-1.97.1` toolchain is a custom (non-rustup)
+# install that rustup cannot add components to.
 echo "==> Building android_demo for aarch64-linux-android (release)…"
-cargo ndk -t arm64-v8a -P 24 build -p android_demo --release
+RUSTUP_TOOLCHAIN=stable-aarch64-apple-darwin cargo ndk -t arm64-v8a -P 24 build -p android_demo --release
 
 # ---- 3. Copy libmain.so into the Gradle project -----------------------------
 
