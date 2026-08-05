@@ -11,7 +11,7 @@ use vexo::{
 };
 use vexo_uikit::{
     context_menu_trigger, Button, ButtonVariant, ContextMenu, ContextMenuController,
-    KeyboardAvoider, MenuItem,
+    KeyboardAvoider, MenuBuilder,
 };
 
 use crate::data::{ConvId, Message, MessageAuthor};
@@ -128,7 +128,7 @@ impl Component for ChatScreen {
                         &theme,
                     ),
                     ctrl.clone(),
-                    placeholder_menu_items(),
+                    placeholder_menu_builder(),
                 )
             }
         }
@@ -257,12 +257,45 @@ fn build_input_bar(
     .boxed()
 }
 
-fn placeholder_menu_items() -> Vec<MenuItem> {
-    vec![
-        MenuItem::new("Copy", Rc::new(|| log::debug!("context menu: Copy"))),
-        MenuItem::new("Reply", Rc::new(|| log::debug!("context menu: Reply"))),
-        MenuItem::new("Delete", Rc::new(|| log::debug!("context menu: Delete"))),
-    ]
+fn placeholder_menu_builder() -> MenuBuilder {
+    MenuBuilder::new(|ctrl, theme| {
+        // (label, log message) pairs. Bound as a single `item` per iteration
+        // (not destructured) to stay within the `column!` macro's known
+        // `for x in iter` single-binding form.
+        let labels: [(&str, &str); 3] = [
+            ("Copy", "context menu: Copy"),
+            ("Reply", "context menu: Reply"),
+            ("Delete", "context menu: Delete"),
+        ];
+        let column = vexo::column! {
+            for item in labels {
+                let ctrl = ctrl.clone();
+                vexo::GestureDetector::new(
+                    vexo::WithLayout::new(
+                        vexo::Text::new(item.0).with_color(theme.on_surface),
+                        vexo::Layout::default().padding(8.0).width(160.0),
+                    ),
+                )
+                .on_tap(move || {
+                    log::debug!("{}", item.1);
+                    ctrl.close();
+                })
+            }
+        };
+        vexo::DecoratedBox::with_style(
+            vexo::WithLayout::new(column, vexo::Layout::default().min_width(160.0)),
+            vexo::Style::default()
+                .corner_radius(8.0)
+                .background(theme.surface)
+                .border(theme.outline, 1.0)
+                .shadow(
+                    vexo::BoxShadow::new(vexo::Color::BLACK.with_alpha(0.25))
+                        .blur(6.0)
+                        .offset(0.0, 2.0),
+                ),
+        )
+        .boxed()
+    })
 }
 
 #[cfg(test)]
