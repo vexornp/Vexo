@@ -312,6 +312,23 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
     })
 }
 
+/// A 1px hairline separator between menu sections. Full-width (100%).
+///
+/// Uses the same pre-composited outline formula as `NavColors::divider`
+/// (`vexo_uikit/src/theme/tokens.rs:122`): `Color::lerp(outline, surface,
+/// 1.0 - 0.35)` — outline at ~0.35 alpha, pre-composited over surface so it
+/// renders identically regardless of backdrop. Taffy floors sub-pixel heights
+/// to 0, so 1.0 is the smallest height that survives layout (see
+/// `HAIRLINE_THICKNESS` at tokens.rs:192).
+fn menu_divider(theme: vexo::ThemeData) -> Box<dyn Widget> {
+    let color = Color::lerp(theme.outline, theme.surface, 1.0 - 0.35);
+    WithLayout::new(
+        DecoratedBox::with_style(Text::new(""), Style::default().background(color)),
+        Layout::default().height(1.0).width_percent(1.0),
+    )
+    .boxed()
+}
+
 /// State for `MenuRow` — tracks hover via a reactive `Signal<bool>`.
 /// Auto-wired by `#[derive(ComponentState)]` (mirrors `ButtonState` in
 /// `vexo_uikit/src/button.rs:37`).
