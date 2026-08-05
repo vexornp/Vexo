@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{ComponentState, Signal};
-use vexo_uikit::{NavigationController, TabController};
+use vexo_uikit::{ContextMenuController, NavigationController, TabController};
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub(crate) struct ConvId(pub(crate) u32);
@@ -80,6 +80,11 @@ pub struct ImState {
     /// `view()` reads this to pick `ThemeData::dark()`/`light()` and wraps
     /// the tree in `Theme::new`.
     pub(crate) is_dark: Signal<bool>,
+    /// Shared context-menu controller. The host (`ContextMenu`) wraps the app
+    /// root so the menu floats above all content (full-window `Stack` →
+    /// Stack-local coords == window-logical coords). `ChatScreen` clones this
+    /// for its `context_menu_trigger` wrappers on each bubble.
+    pub(crate) context_menu: ContextMenuController,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -449,6 +454,7 @@ pub(crate) fn seed() -> ImState {
         me_nav: NavigationController::new(),
         selected_conv: Signal::new(None),
         is_dark: Signal::new(false),
+        context_menu: ContextMenuController::new(),
     }
 }
 

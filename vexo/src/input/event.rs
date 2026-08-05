@@ -271,22 +271,31 @@ impl InputEvent {
 
             WindowEvent::PointerButton {
                 state,
-                button: _,
+                button,
                 position,
                 ..
             } => {
                 let physical = Point::<Physical>::new(position.x as f32, position.y as f32);
                 let logical = physical.to_logical(scale);
 
-                // For now, treat all pointer button events as primary button
-                // The button field in winit 0.31 is a ButtonSource which is more complex
                 let button_state = match state {
                     ElementState::Pressed => ButtonState::Pressed,
                     ElementState::Released => ButtonState::Released,
                 };
+
+                let pointer_button = match button {
+                    winit::event::ButtonSource::Mouse(winit::event::MouseButton::Right) => {
+                        PointerButton::Secondary
+                    }
+                    winit::event::ButtonSource::Mouse(winit::event::MouseButton::Middle) => {
+                        PointerButton::Tertiary
+                    }
+                    _ => PointerButton::Primary,
+                };
+
                 Some(InputEvent::PointerButton {
                     position: logical,
-                    button: PointerButton::Primary,
+                    button: pointer_button,
                     state: button_state,
                 })
             }
@@ -437,6 +446,65 @@ use winit::event::WindowEvent;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use winit::dpi::PhysicalPosition;
+
+    fn make_pointer_button_event(button: winit::event::ButtonSource) -> winit::event::WindowEvent {
+        winit::event::WindowEvent::PointerButton {
+            device_id: Some(winit::event::DeviceId::from_raw(0)),
+            state: winit::event::ElementState::Pressed,
+            position: PhysicalPosition::new(100.0, 100.0),
+            primary: true,
+            button,
+        }
+    }
+
+    #[test]
+    fn from_winit_maps_right_click_to_secondary() {
+        let event = make_pointer_button_event(winit::event::ButtonSource::Mouse(
+            winit::event::MouseButton::Right,
+        ));
+        let scale = ScaleSource::default();
+        let pos = Point::<Logical>::new(0.0, 0.0);
+        let result = InputEvent::from_winit(&event, &scale, pos).unwrap();
+        match result {
+            InputEvent::PointerButton { button, .. } => {
+                assert_eq!(button, PointerButton::Secondary);
+            }
+            _ => panic!("expected PointerButton event"),
+        }
+    }
+
+    #[test]
+    fn from_winit_maps_middle_click_to_tertiary() {
+        let event = make_pointer_button_event(winit::event::ButtonSource::Mouse(
+            winit::event::MouseButton::Middle,
+        ));
+        let scale = ScaleSource::default();
+        let pos = Point::<Logical>::new(0.0, 0.0);
+        let result = InputEvent::from_winit(&event, &scale, pos).unwrap();
+        match result {
+            InputEvent::PointerButton { button, .. } => {
+                assert_eq!(button, PointerButton::Tertiary);
+            }
+            _ => panic!("expected PointerButton event"),
+        }
+    }
+
+    #[test]
+    fn from_winit_maps_left_click_to_primary() {
+        let event = make_pointer_button_event(winit::event::ButtonSource::Mouse(
+            winit::event::MouseButton::Left,
+        ));
+        let scale = ScaleSource::default();
+        let pos = Point::<Logical>::new(0.0, 0.0);
+        let result = InputEvent::from_winit(&event, &scale, pos).unwrap();
+        match result {
+            InputEvent::PointerButton { button, .. } => {
+                assert_eq!(button, PointerButton::Primary);
+            }
+            _ => panic!("expected PointerButton event"),
+        }
+    }
 
     #[test]
     fn test_button_state() {

@@ -217,6 +217,16 @@ pub trait Widget: Any {
         Box::new(GestureDetector::new(self).on_tap(callback))
     }
 
+    fn on_secondary_press(
+        self,
+        callback: impl FnMut(crate::core::Point<crate::core::Logical>) + 'static,
+    ) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(GestureDetector::new(self).on_secondary_press(callback))
+    }
+
     fn cursor(self, cursor: MouseCursor) -> Box<dyn Widget>
     where
         Self: Sized + 'static,

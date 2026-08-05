@@ -69,6 +69,9 @@ pub struct GestureDetector {
     /// Callback invoked when a tap is recognized (pointer up, having won the
     /// arena). Arena-mediated — does NOT fire if a drag wins instead.
     on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
+    /// Callback invoked when the secondary (right) mouse button is pressed
+    /// inside the child bounds. Receives the global cursor position.
+    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>)>>>,
 }
 
 impl GestureDetector {
@@ -80,6 +83,7 @@ impl GestureDetector {
             on_press: None,
             on_release: None,
             on_tap: None,
+            on_secondary_press: None,
         }
     }
 
@@ -109,6 +113,14 @@ impl GestureDetector {
         self
     }
 
+    /// Set the callback for secondary (right-click) button press events.
+    /// Receives the global cursor position (window-logical coordinates).
+    /// When set, this takes precedence over `on_press` for Secondary presses.
+    pub fn on_secondary_press(mut self, callback: impl FnMut(Point<Logical>) + 'static) -> Self {
+        self.on_secondary_press = Some(Rc::new(RefCell::new(callback)));
+        self
+    }
+
     /// Get the child widget.
     pub fn child(&self) -> &dyn Widget {
         self.child.as_ref()
@@ -123,6 +135,7 @@ impl Clone for GestureDetector {
             on_press: self.on_press.clone(),
             on_release: self.on_release.clone(),
             on_tap: self.on_tap.clone(),
+            on_secondary_press: self.on_secondary_press.clone(),
         }
     }
 }
@@ -174,6 +187,7 @@ pub struct GestureDetectorElement {
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
     on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
+    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>)>>>,
     focus_attachment: Option<FocusAttachment>,
 }
 
@@ -188,6 +202,7 @@ impl GestureDetectorElement {
             on_press: None,
             on_release: None,
             on_tap: None,
+            on_secondary_press: None,
             focus_attachment: None,
         }
     }
@@ -198,6 +213,7 @@ impl GestureDetectorElement {
         self.on_press = widget.on_press.clone();
         self.on_release = widget.on_release.clone();
         self.on_tap = widget.on_tap.clone();
+        self.on_secondary_press = widget.on_secondary_press.clone();
         self.widget = Some(widget.clone_boxed());
     }
 
@@ -226,6 +242,7 @@ impl RenderObjectElement for GestureDetectorElement {
             self.on_press = gd.on_press.clone();
             self.on_release = gd.on_release.clone();
             self.on_tap = gd.on_tap.clone();
+            self.on_secondary_press = gd.on_secondary_press.clone();
         }
         self.widget = Some(widget);
     }
@@ -317,23 +334,41 @@ impl Element for GestureDetectorElement {
         context: &mut EventContext,
         _state: &mut crate::element_state::StateStorage,
     ) -> Option<Box<dyn Any>> {
+        // Claim semantics: this method returns Some only when a callback
+        // actually fired. A callback-less GestureDetector (e.g. a future
+        // hit-test-only wrapper) returns None so the event bubbles to
+        // ancestors. Previously every in-bounds press/release returned Some
+        // unconditionally, swallowing events from parents.
         if let InputEvent::PointerButton {
-            state, position, ..
+            state,
+            position,
+            button,
         } = event
         {
             if context.bounds().contains(position) {
                 match state {
                     ButtonState::Pressed => {
+                        // Secondary (right-click) with on_secondary_press set:
+                        // fire it with position, claim the event, skip on_press.
+                        if *button == crate::input::PointerButton::Secondary {
+                            if let Some(callback) = &self.on_secondary_press {
+                                (callback.borrow_mut())(*position);
+                                return Some(Box::new(()));
+                            }
+                            // Fall through to on_press for Secondary when
+                            // on_secondary_press is not set (backward-compat:
+                            // dismiss barrier closes on any button).
+                        }
                         if let Some(callback) = &self.on_press {
                             (callback.borrow_mut())();
+                            return Some(Box::new(()));
                         }
-                        return Some(Box::new(()));
                     }
                     ButtonState::Released => {
                         if let Some(callback) = &self.on_release {
                             (callback.borrow_mut())();
+                            return Some(Box::new(()));
                         }
-                        return Some(Box::new(()));
                     }
                 }
             }
@@ -374,6 +409,7 @@ impl Element for GestureDetectorElement {
                 self.on_press = gd.on_press.clone();
                 self.on_release = gd.on_release.clone();
                 self.on_tap = gd.on_tap.clone();
+                self.on_secondary_press = gd.on_secondary_press.clone();
             }
             self.widget = Some(*widget);
 
@@ -762,5 +798,186 @@ mod tests {
         // Should not panic; should return some node and store it.
         assert!(ro.layout_node().is_some());
         assert_eq!(ro.layout_node(), Some(result.node));
+    }
+
+    #[test]
+    fn test_on_secondary_press_fires_with_position() {
+        let captured_pos = Rc::new(Cell::new(Point::<Logical>::new(-1.0, -1.0)));
+        let pos_clone = captured_pos.clone();
+
+        let mut elem = GestureDetectorElement::new();
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |pos| {
+            pos_clone.set(pos);
+        })));
+
+        let mut state = crate::StateStorage::new();
+        let mut font_system = create_test_font_system();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
+        let mut ctx = EventContext::new(
+            element_id,
+            Point::new(50.0, 25.0),
+            bounds,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            None,
+            test_clipboard(),
+        );
+
+        let event = InputEvent::PointerButton {
+            position: Point::new(42.0, 17.0),
+            button: crate::input::PointerButton::Secondary,
+            state: ButtonState::Pressed,
+        };
+
+        let result = elem.on_event(&event, &mut ctx, &mut state);
+        assert!(
+            result.is_some(),
+            "on_secondary_press should claim the event"
+        );
+        assert_eq!(captured_pos.get(), Point::new(42.0, 17.0));
+    }
+
+    #[test]
+    fn test_on_secondary_press_does_not_fire_on_primary() {
+        let called = Rc::new(Cell::new(false));
+        let called_clone = called.clone();
+
+        let mut elem = GestureDetectorElement::new();
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos| {
+            called_clone.set(true);
+        })));
+
+        let mut state = crate::StateStorage::new();
+        let mut font_system = create_test_font_system();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
+        let mut ctx = EventContext::new(
+            element_id,
+            Point::new(50.0, 25.0),
+            bounds,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            None,
+            test_clipboard(),
+        );
+
+        let event = InputEvent::PointerButton {
+            position: Point::new(50.0, 25.0),
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+
+        let result = elem.on_event(&event, &mut ctx, &mut state);
+        assert!(!called.get(), "on_secondary_press must not fire on Primary");
+        assert!(
+            result.is_none(),
+            "Primary with no on_press should not claim"
+        );
+    }
+
+    #[test]
+    fn test_secondary_press_skips_on_press_when_both_set() {
+        let secondary_called = Rc::new(Cell::new(false));
+        let press_called = Rc::new(Cell::new(false));
+        let sec_clone = secondary_called.clone();
+        let press_clone = press_called.clone();
+
+        let mut elem = GestureDetectorElement::new();
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos| {
+            sec_clone.set(true);
+        })));
+        elem.on_press = Some(Rc::new(RefCell::new(move || {
+            press_clone.set(true);
+        })));
+
+        let mut state = crate::StateStorage::new();
+        let mut font_system = create_test_font_system();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
+        let mut ctx = EventContext::new(
+            element_id,
+            Point::new(50.0, 25.0),
+            bounds,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            None,
+            test_clipboard(),
+        );
+
+        let event = InputEvent::PointerButton {
+            position: Point::new(50.0, 25.0),
+            button: crate::input::PointerButton::Secondary,
+            state: ButtonState::Pressed,
+        };
+
+        let result = elem.on_event(&event, &mut ctx, &mut state);
+        assert!(secondary_called.get(), "on_secondary_press should fire");
+        assert!(!press_called.get(), "on_press should be skipped");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_secondary_press_falls_through_to_on_press_when_not_set() {
+        let press_called = Rc::new(Cell::new(false));
+        let press_clone = press_called.clone();
+
+        let mut elem = GestureDetectorElement::new();
+        // No on_secondary_press set — only on_press.
+        elem.on_press = Some(Rc::new(RefCell::new(move || {
+            press_clone.set(true);
+        })));
+
+        let mut state = crate::StateStorage::new();
+        let mut font_system = create_test_font_system();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let element_id = {
+            let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
+            sm.insert(())
+        };
+        let mut ctx = EventContext::new(
+            element_id,
+            Point::new(50.0, 25.0),
+            bounds,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            None,
+            test_clipboard(),
+        );
+
+        let event = InputEvent::PointerButton {
+            position: Point::new(50.0, 25.0),
+            button: crate::input::PointerButton::Secondary,
+            state: ButtonState::Pressed,
+        };
+
+        let result = elem.on_event(&event, &mut ctx, &mut state);
+        assert!(press_called.get(), "on_press should fire as fall-through");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_widget_trait_on_secondary_press() {
+        use crate::core::Logical;
+        let called = Rc::new(Cell::new(false));
+        let called_clone = called.clone();
+
+        // Use the Widget trait method on a Text widget.
+        let widget: Box<dyn Widget> =
+            Text::new("Right-click me").on_secondary_press(move |_pos: Point<Logical>| {
+                called_clone.set(true);
+            });
+
+        // Verify it wrapped in a GestureDetector.
+        assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
     }
 }

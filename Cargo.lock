@@ -2920,6 +2920,7 @@ dependencies = [
 name = "vexo_uikit"
 version = "0.1.0"
 dependencies = [
+ "log",
  "slotmap",
  "vexo",
  "vexo_fontawesome",

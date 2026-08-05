@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{Component, RenderContext, Signal, SimpleState, Text, Widget};
-use vexo_uikit::{NavigationController, NavigationStackView};
+use vexo_uikit::{ContextMenuController, NavigationController, NavigationStackView};
 
 use crate::chats::conversation_list::ConversationList;
 use crate::data::{ChatsRoute, ConvId, Conversation, Message, MessageAuthor};
@@ -92,6 +92,7 @@ impl Component for MobileChatsPage {
                             msgs_for_send.set_from(&map);
                         }),
                         scroll_controller: vexo::ScrollController::new(),
+                        context_menu: ContextMenuController::new(),
                     }
                     .boxed()
                 }

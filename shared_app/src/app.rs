@@ -2,7 +2,7 @@
 
 use vexo::{column, AlignItems, Application, Text, Theme, ThemeData, Widget};
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{Platform, TabBarView};
+use vexo_uikit::{ContextMenu, Platform, TabBarView};
 
 use crate::chats::build_chats_tab;
 use crate::contacts::build_contacts_tab;
@@ -43,6 +43,7 @@ impl Application for ImState {
         let contacts_nav = state.contacts_nav.clone();
         let me_nav = state.me_nav.clone();
         let chats_nav = state.chats_nav.clone();
+        let context_menu = state.context_menu.clone();
 
         let is_dark = state.is_dark.get();
         let theme = if is_dark {
@@ -117,6 +118,7 @@ impl Application for ImState {
                             messages_for_chats.clone(),
                             me_avatar_for_chats.clone(),
                             selected_conv.clone(),
+                            context_menu.clone(),
                         ),
                         ImTab::Contacts => build_contacts_tab(
                             contacts_for_tab.clone(),
@@ -151,7 +153,14 @@ impl Application for ImState {
             Platform::Desktop => unreachable!("Desktop platform on mobile target"),
         };
 
-        Theme::new(theme, inner).boxed()
+        let themed = Theme::new(theme, inner).boxed();
+
+        // Wrap the entire app in `ContextMenu` so the menu's `Stack` fills the
+        // window. This makes Stack-local coords == window-logical coords, so
+        // `Positioned::left(click_x).top(click_y)` places the menu at the
+        // correct on-screen position regardless of which pane the right-clicked
+        // bubble lives in.
+        ContextMenu::new(themed, state.context_menu.clone()).boxed()
     }
 }
 

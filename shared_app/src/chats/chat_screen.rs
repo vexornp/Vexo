@@ -9,7 +9,10 @@ use vexo::{
     ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
     WidgetKey, WithLayout,
 };
-use vexo_uikit::{Button, ButtonVariant, KeyboardAvoider};
+use vexo_uikit::{
+    context_menu_trigger, Button, ButtonVariant, ContextMenu, ContextMenuController,
+    KeyboardAvoider, MenuItem,
+};
 
 use crate::data::{ConvId, Message, MessageAuthor};
 use crate::widgets::avatar::avatar;
@@ -21,6 +24,7 @@ pub(crate) struct ChatScreen {
     pub(crate) me_avatar_bytes: Rc<[u8]>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
     pub(crate) scroll_controller: ScrollController,
+    pub(crate) context_menu: ContextMenuController,
 }
 
 impl Clone for ChatScreen {
@@ -32,6 +36,7 @@ impl Clone for ChatScreen {
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             on_send: Rc::clone(&self.on_send),
             scroll_controller: self.scroll_controller.clone(),
+            context_menu: self.context_menu.clone(),
         }
     }
 }
@@ -112,13 +117,18 @@ impl Component for ChatScreen {
 
         let messages = ctx.signal_value(&self.messages);
 
+        let ctrl = self.context_menu.clone();
         let list = column! {
             for msg in &messages {
-                build_message_bubble(
-                    msg,
-                    state.them_avatar(&self.avatar_bytes).clone(),
-                    state.me_avatar(&self.me_avatar_bytes).clone(),
-                    &theme,
+                context_menu_trigger(
+                    build_message_bubble(
+                        msg,
+                        state.them_avatar(&self.avatar_bytes).clone(),
+                        state.me_avatar(&self.me_avatar_bytes).clone(),
+                        &theme,
+                    ),
+                    ctrl.clone(),
+                    placeholder_menu_items(),
                 )
             }
         }
@@ -247,6 +257,14 @@ fn build_input_bar(
     .boxed()
 }
 
+fn placeholder_menu_items() -> Vec<MenuItem> {
+    vec![
+        MenuItem::new("Copy", Rc::new(|| log::debug!("context menu: Copy"))),
+        MenuItem::new("Reply", Rc::new(|| log::debug!("context menu: Reply"))),
+        MenuItem::new("Delete", Rc::new(|| log::debug!("context menu: Delete"))),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +294,30 @@ mod tests {
         crate::data::seed().profile.avatar_bytes.clone()
     }
 
+    /// Walk the render tree and return true if any `TextRenderObject` contains
+    /// `needle`. `RenderObjectRegistry` exposes no `iter()`, so recurse from
+    /// `key` (same pattern as the `test_signal_value_registers_dependency_and_
+    /// rebuilds` test in `vexo/src/stateful_widget.rs`).
+    fn find_text_in_tree(reg: &RenderObjectRegistry, key: RenderObjectKey, needle: &str) -> bool {
+        let ro = match reg.get(key) {
+            Some(ro) => ro,
+            None => return false,
+        };
+        if ro
+            .as_any()
+            .downcast_ref::<TextRenderObject>()
+            .map_or(false, |t| t.content().contains(needle))
+        {
+            return true;
+        }
+        for &child in ro.children() {
+            if find_text_in_tree(reg, child, needle) {
+                return true;
+            }
+        }
+        false
+    }
+
     #[test]
     fn test_chat_screen_renders_messages() {
         let messages_signal = seed_messages_signal();
@@ -288,6 +330,7 @@ mod tests {
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -310,6 +353,7 @@ mod tests {
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -339,30 +383,6 @@ mod tests {
         // recurse from the root (same pattern as the
         // `test_signal_value_registers_dependency_and_rebuilds` test in
         // `vexo/src/stateful_widget.rs`).
-        fn find_text_in_tree(
-            reg: &RenderObjectRegistry,
-            key: RenderObjectKey,
-            needle: &str,
-        ) -> bool {
-            let ro = match reg.get(key) {
-                Some(ro) => ro,
-                None => return false,
-            };
-            if ro
-                .as_any()
-                .downcast_ref::<TextRenderObject>()
-                .map_or(false, |t| t.content().contains(needle))
-            {
-                return true;
-            }
-            for &child in ro.children() {
-                if find_text_in_tree(reg, child, needle) {
-                    return true;
-                }
-            }
-            false
-        }
-
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("render tree should have a root");
         assert!(
@@ -383,6 +403,7 @@ mod tests {
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
         };
 
         let view = column! { chat }.height(600.0).boxed();
@@ -454,6 +475,7 @@ mod tests {
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
         };
         let dark_theme = vexo::ThemeData::dark();
         let themed = vexo::Theme::new(dark_theme.clone(), view);
@@ -815,6 +837,147 @@ mod tests {
             line_height,
             vertical_offset,
             caret_bottom_rel
+        );
+    }
+
+    #[test]
+    fn test_right_click_bubble_opens_context_menu() {
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Before right-click: no "Copy" in the render tree.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            !find_text_in_tree(ro_reg, root, "Copy"),
+            "menu should not be visible before right-click"
+        );
+
+        // Right-click at a position inside the first message bubble.
+        // The message list is inside a ScrollView with 12px padding.
+        // The first bubble starts at approximately (12 + 32 + 8, 12) = (52, 12)
+        // (avatar 32px + gap 8px + 12px list padding). Click at (60, 20).
+        let secondary_press = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(60.0, 20.0),
+            button: vexo::input::PointerButton::Secondary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(60.0, 20.0),
+            &secondary_press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // After right-click: "Copy" should appear in the render tree.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, "Copy"),
+            "menu item 'Copy' should appear in render tree after right-clicking a bubble"
+        );
+    }
+
+    #[test]
+    fn test_left_click_bubble_does_not_open_context_menu() {
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Left-click at a position inside the first message bubble.
+        let primary_press = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(60.0, 20.0),
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let primary_release = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(60.0, 20.0),
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(60.0, 20.0),
+            &primary_press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            vexo::core::Point::new(60.0, 20.0),
+            &primary_release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            controller.position_signal().get(),
+            None,
+            "left-click should NOT open the context menu"
         );
     }
 }

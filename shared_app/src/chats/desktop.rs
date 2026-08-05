@@ -11,6 +11,7 @@ use vexo::{
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
 };
+use vexo_uikit::ContextMenuController;
 
 use crate::chats::chat_screen::ChatScreen;
 use crate::chats::conversation_list::ConversationList;
@@ -25,6 +26,7 @@ pub(crate) struct DesktopChatsPage {
     pub messages: vexo::Signal<HashMap<ConvId, Vec<Message>>>,
     pub me_avatar: Rc<[u8]>,
     pub selected_conv: vexo::Signal<Option<ConvId>>,
+    pub context_menu: ContextMenuController,
 }
 
 impl Clone for DesktopChatsPage {
@@ -34,6 +36,7 @@ impl Clone for DesktopChatsPage {
             messages: self.messages.clone(),
             me_avatar: Rc::clone(&self.me_avatar),
             selected_conv: self.selected_conv.clone(),
+            context_menu: self.context_menu.clone(),
         }
     }
 }
@@ -101,6 +104,7 @@ impl Component for DesktopChatsPage {
                         msgs_for_send.set_from(&map);
                     }),
                     scroll_controller: ScrollController::new(),
+                    context_menu: self.context_menu.clone(),
                 };
 
                 titled_container(conv_name, chat.boxed(), &nav_colors)
@@ -168,12 +172,14 @@ pub(crate) fn build_chats_tab_desktop(
     messages: vexo::Signal<HashMap<ConvId, Vec<Message>>>,
     me_avatar: Rc<[u8]>,
     selected_conv: vexo::Signal<Option<ConvId>>,
+    context_menu: ContextMenuController,
 ) -> Box<dyn Widget> {
     DesktopChatsPage {
         conversations,
         messages,
         me_avatar,
         selected_conv,
+        context_menu,
     }
     .boxed()
 }
