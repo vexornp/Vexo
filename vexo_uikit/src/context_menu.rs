@@ -17,11 +17,18 @@
 //! value, so early close / re-show produce no jump. The host's `on_tick`
 //! calls `controller.advance(now)`, which samples the spring and flips
 //! Opening→Open or Closing→Closed (the latter clears `open` → unmount) on
-//! settle. Task 4 added the dim barrier (full-screen 0.4 alpha black,
-//! tappable to dismiss) and the bright bubble copy (Positioned at
-//! bubble_bounds, full opacity, tappable to dismiss). The actions card is
-//! positioned below the bubble. The reactions pill and the spring-driven
-//! transforms (scale/lift/dim ramp) come in later tasks.
+//! settle.
+//!
+//! Task 6 wires the spring value `v = controller.animation_value()` (0→1 on
+//! open, 1→0 on close) into all three overlay layers: the dim barrier's alpha
+//! is `v*0.4` (was fixed 0.4), the bright bubble copy gets a subtle
+//! `scale(1+v*0.03)` + `translate_y(-v*4.0)` lift (opacity stays 1.0), and the
+//! actions card gets `scale(0.8+v*0.2)` + `opacity(v)`. Scale-about-center is
+//! achieved via the `scale_about_center` helper (a translate→scale→translate
+//! `Transform` chain). `Opacity` is paint-only (layout + hit-test
+//! pass-through), so the dim barrier stays tappable even at v≈0 — barrier
+//! dismiss works mid-open (test #5). The reactions pill is still not rendered
+//! (Task 7 adds it with positioning).
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -430,17 +437,22 @@ impl Component for ContextMenu {
     ) -> Box<dyn Widget> {
         let theme = vexo::Theme::of(ctx);
         let phase = self.controller.phase();
+        let v = self.controller.animation_value();
 
         let mut stack = vexo::Stack::new().push(self.child.clone_boxed());
 
         if phase != Phase::Closed {
             if let Some((bubble_bounds, bubble_widget, builder)) = self.controller.open_snapshot() {
                 let controller = self.controller.clone();
+                // Run the builder up-front so `metrics` is available for the
+                // card's scale-about-center anchor + gap positioning. The
+                // builder runs at render time (reads the live theme).
+                let content = builder(&controller, &theme);
+                let metrics = content.metrics;
 
-                // [2] Dim barrier — full-screen, fixed 0.4 alpha (Task 6
-                // animates this with the spring value). Structure:
-                // Positioned(0,0,0,0) → GestureDetector.on_press(→ close) →
-                // Opacity(0.4) → DecoratedBox(BLACK) →
+                // [2] Dim barrier — alpha = v * 0.4 (was fixed 0.4 in Task 4).
+                // Structure: Positioned(0,0,0,0) → GestureDetector.on_press(→
+                // close) → Opacity(v*0.4) → DecoratedBox(BLACK) →
                 // WithLayout(width_percent=1.0, height_percent=1.0) → Text("").
                 //
                 // CRITICAL: `DecoratedBox` is a pass-through render object —
@@ -450,21 +462,12 @@ impl Component for ContextMenu {
                 // full-screen bounds; `DecoratedBox` then inherits those
                 // full-screen bounds and paints the black.
                 //
-                // If `DecoratedBox` were inside `WithLayout`, its child would
-                // be `Text("")`. The Column's `align_items: Stretch` only
-                // affects the cross axis (width), not the main axis (height),
-                // so `Text("")` would stretch to full width but keep its
-                // intrinsic line height (~29px) on the main axis. The
-                // pass-through `DecoratedBox` would inherit those ~400x29
-                // bounds → the dim would paint only a 29px strip at the top of
-                // the screen instead of covering the full window. The
-                // GestureDetector reads the WithLayout's full-screen bounds
-                // (its own layout node), so tap-to-close still works either
-                // way — which is why the strip bug was invisible to existing
-                // tests. The empty `Text` is `WithLayout`'s required leaf; it
-                // has near-zero intrinsic size, so it doesn't affect the
-                // WithLayout's full-screen layout.
+                // Opacity is paint-only (layout + hit-test pass-through), so
+                // even at v≈0 (dim invisible) the GestureDetector still
+                // receives the press → barrier dismiss works mid-open. This
+                // is the property test #5 relies on.
                 let ctrl_for_barrier = controller.clone();
+                let dim_alpha = (v * 0.4) as f32;
                 let barrier = vexo::Positioned::new(
                     vexo::GestureDetector::new(vexo::Opacity::new(
                         vexo::DecoratedBox::with_style(
@@ -476,7 +479,7 @@ impl Component for ContextMenu {
                             ),
                             vexo::Style::default().background(vexo::Color::BLACK),
                         ),
-                        0.4,
+                        dim_alpha,
                     ))
                     .on_press(move || ctrl_for_barrier.close()),
                 )
@@ -486,35 +489,88 @@ impl Component for ContextMenu {
                 .bottom(0.0);
                 stack = stack.push(barrier);
 
-                // [3] Bright bubble copy — Positioned at bubble_bounds, full
-                // opacity, tappable to dismiss (matches iMessage: tapping the
-                // lifted bubble closes the menu). No transform yet (Task 6
-                // adds the scale+lift spring). The bubble_widget is the same
-                // widget the caller passed to `show()`; rendering it twice
-                // (once in-content under the dim, once here as the bright
-                // focal point) is the dual-render spike validated by test #7.
+                // [3] Bright bubble copy — scale 1+v*0.03 (subtle grow), lift
+                // -v*4.0px (rises as the menu opens), opacity 1.0 (always full
+                // bright — the focal point). The scale is applied about the
+                // bubble's center via scale_about_center; the lift is applied
+                // to the Positioned.top offset (so the bubble rises as it
+                // scales). Tappable to dismiss (matches iMessage: tapping the
+                // lifted bubble closes the menu).
                 let ctrl_for_bubble = controller.clone();
+                let bubble_scale = 1.0 + v * 0.03;
+                let bubble_lift = -(v * 4.0) as f32;
+                let bw = bubble_bounds.width();
+                let bh = bubble_bounds.height();
                 let bubble_copy = vexo::Positioned::new(
-                    vexo::GestureDetector::new(bubble_widget)
-                        .on_press(move || ctrl_for_bubble.close()),
+                    vexo::GestureDetector::new(scale_about_center(
+                        bubble_widget,
+                        bubble_scale as f32,
+                        bubble_scale as f32,
+                        bw,
+                        bh,
+                    ))
+                    .on_press(move || ctrl_for_bubble.close()),
                 )
                 .left(bubble_bounds.left)
-                .top(bubble_bounds.top);
+                .top(bubble_bounds.top + bubble_lift);
                 stack = stack.push(bubble_copy);
 
-                // [5] Actions card — Positioned below the bubble
-                // (top + height + 8px gap). Task 7 adds the reactions pill
+                // [5] Actions card — scale 0.8+v*0.2 (grows 80%→100%), opacity
+                // v (fades in), positioned below the bubble with `metrics.gap`
+                // (was hardcoded 8.0 in Task 4). Task 7 adds the reactions pill
                 // above the bubble and proper edge-aware positioning.
-                let content = builder(&controller, &theme);
-                let positioned_actions = vexo::Positioned::new(content.actions)
-                    .left(bubble_bounds.left)
-                    .top(bubble_bounds.top + bubble_bounds.height() + 8.0);
+                let card_scale = 0.8 + v * 0.2;
+                let card_opacity = v as f32;
+                let actions_x = bubble_bounds.left;
+                let actions_y = bubble_bounds.top + bubble_bounds.height() + metrics.gap;
+                let positioned_actions = vexo::Positioned::new(vexo::Opacity::new(
+                    scale_about_center(
+                        content.actions,
+                        card_scale as f32,
+                        card_scale as f32,
+                        metrics.actions_size.width,
+                        metrics.actions_size.height,
+                    ),
+                    card_opacity,
+                ))
+                .left(actions_x)
+                .top(actions_y);
                 stack = stack.push(positioned_actions);
             }
         }
 
         stack.boxed()
     }
+}
+
+/// Wrap `child` in a single `Transform` that scales about its center:
+/// `M = translate(w/2, h/2) ∘ scale(sx, sy) ∘ translate(-w/2, -h/2)`.
+///
+/// Composing the three-step chain into ONE `AffineTransform` (rather than
+/// three nested `Transform` widgets) is deliberate: the framework's
+/// hit-tester checks `is_inside` against the child's bounds at EACH
+/// `Transform` render object after applying that RO's inverse transform. With
+/// three nested ROs (translate → scale → translate), the outer translate's
+/// inverse shifts the point far from the origin (e.g. `(5,22)` → `(-95,-32)`),
+/// failing the per-level bounds check — even at v=1 where the scale is
+/// identity — so taps on the scaled card silently miss and fall through to
+/// the dim barrier. A single composed `Transform` applies the full inverse in
+/// one step, so `is_inside` is checked against the correctly-mapped point.
+///
+/// The composed matrix works out to `{ a: sx, d: sy, e: w/2*(1-sx),
+/// f: h/2*(1-sy) }`: scale `(sx, sy)` with a compensating translation so the
+/// center `(w/2, h/2)` stays fixed.
+///
+/// `TransformRenderObject` is a layout pass-through (`is_pass_through() ==
+/// true`): the child's laid-out bounds propagate up unchanged, and the
+/// transform is applied only at paint + hit-test time. So wrapping a widget
+/// in `scale_about_center` does NOT change its `computed_bounds` — only its
+/// painted appearance and hit region.
+fn scale_about_center(child: Box<dyn Widget>, sx: f32, sy: f32, w: f32, h: f32) -> Box<dyn Widget> {
+    let transform = vexo::AffineTransform::translation(w / 2.0, h / 2.0)
+        .mul(&vexo::AffineTransform::scale(sx, sy))
+        .mul(&vexo::AffineTransform::translation(-w / 2.0, -h / 2.0));
+    vexo::Transform::new(child, transform).boxed()
 }
 
 // ============================================================================
@@ -728,7 +784,8 @@ mod tests {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(Text::new("content"), controller.clone());
 
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
         pipeline.update(host.boxed());
 
         let mut engine = TaffyLayoutEngine::new();
@@ -740,13 +797,25 @@ mod tests {
         );
 
         // The actions card is Positioned below the bubble at
-        // (bubble_bounds.left, bubble_bounds.top + bubble_bounds.height() + 8)
+        // (bubble_bounds.left, bubble_bounds.top + bubble_bounds.height() + gap)
         // = (10, 10 + 40 + 8) = (10, 58). The item row has 8px padding, so
         // clicking at (15, 70) lands inside the row's padding area.
         let bubble_widget = vexo::Text::new("bubble").boxed();
         let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
         controller.show(bounds, bubble_widget, builder);
         pipeline.perform_rebuilds();
+        // Settle the open spring (v→1.0, phase→Open) before tapping. Task 6
+        // scales the card to 0.8+v*0.2 and fades it to opacity v; right after
+        // show() (v≈0) the card is at 80% scale + 0 opacity and its hit region
+        // is shifted by the scale-about-center transform, so (15, 70) no longer
+        // lands on the row. At v=1 the scale is 1.0 (identity) and opacity 1.0,
+        // so the hit-test works exactly as in Task 4. This mirrors real usage:
+        // the user taps an item after the menu has opened.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Open);
         pipeline.layout(
             vexo::core::Size::new(400.0, 600.0),
             &mut engine,
@@ -782,13 +851,25 @@ mod tests {
 
         assert!(selected.get(), "on_tap should have fired");
         // After the tap, the menu should close (controller.close() called by
-        // the item's on_tap closure). The dirty callback triggers a rebuild;
-        // perform_rebuilds processes it.
+        // the item's on_tap closure). Because the menu was fully open (v=1.0)
+        // when tapped, close() starts a reverse spring from 1.0→0.0 that is
+        // NOT instantly done (unlike the v≈0 case) — phase is `Closing` right
+        // after. Advance real time past settle so the spring finishes and the
+        // phase machine flips `Closing` → `Closed` (clearing `open`).
+        pipeline.perform_rebuilds();
+        assert_eq!(
+            controller.phase(),
+            Phase::Closing,
+            "menu should be mid-close right after the item tap fires close()"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(
             controller.phase(),
             Phase::Closed,
-            "menu should be closed after item tap"
+            "menu should be closed after the close spring settles"
         );
     }
 
@@ -1388,5 +1469,292 @@ mod tests {
         pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(controller.phase(), Phase::Open);
+    }
+
+    // ========================================================================
+    // Task 6: spring-driven transforms + barrier dismiss mid-animation
+    // ========================================================================
+
+    /// Test #5 — barrier dismiss during animation.
+    ///
+    /// Opens the menu, then clicks the dim barrier *mid-open* (before the
+    /// spring settles). The barrier's `on_press` fires `controller.close()`,
+    /// which starts the reverse spring → phase becomes `Closing` (the spring
+    /// is mid-reverse, not yet settled to `Closed`).
+    ///
+    /// To be genuinely "mid-animation", the spring value must be meaningfully
+    /// between 0 and 1 when the barrier is clicked. Immediately after
+    /// `show()` + one `perform_rebuilds()`, the spring has only advanced by
+    /// microseconds and `animation_value() ≈ 0` — so a `close()` from ≈0 to 0
+    /// would satisfy `is_done()` instantly (zero displacement), flipping phase
+    /// straight to `Closed`. That would make the `Phase::Closing` assertion
+    /// impossible. We therefore advance real time ~150ms (past the spring's
+    /// initial ramp, value ≈ 0.5) before clicking, so the reverse spring has
+    /// real distance to travel and `phase` is `Closing` when asserted.
+    #[test]
+    fn test_dim_barrier_dismiss_during_animation() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open — don't wait for settle (we want mid-animation).
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Advance real time ~150ms so the spring is genuinely mid-open
+        // (animation_value ≈ 0.5). Without this, the spring value would be
+        // ≈0 and a close() from ≈0→0 would settle instantly (phase=Closed),
+        // defeating the "during animation" intent of the test.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        let mid_value = controller.animation_value();
+        assert!(
+            mid_value > 0.0 && mid_value < 1.0,
+            "spring should be mid-open (0<v<1) when barrier is clicked, got {}",
+            mid_value
+        );
+
+        // Click far away (on the dim barrier) mid-open.
+        let primary_press = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(350.0, 550.0),
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(350.0, 550.0),
+            &primary_press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // close() should have fired — phase is Closing (not Closed yet, spring
+        // is mid-reverse).
+        assert_eq!(
+            controller.phase(),
+            Phase::Closing,
+            "barrier click mid-open should start close (phase=Closing)"
+        );
+    }
+
+    /// Walk the render tree and return true if the subtree rooted at `key`
+    /// contains a `DecoratedBoxRenderObject` whose `Style.background` is
+    /// `Some(BLACK)` (the dim barrier's black fill).
+    fn subtree_has_black_decorated_box(reg: &RenderObjectRegistry, key: RenderObjectKey) -> bool {
+        if let Some(ro) = reg.get(key) {
+            let is_black = ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .background
+                        .map_or(false, |c| c == vexo::Color::BLACK)
+                });
+            if is_black {
+                return true;
+            }
+            for &child in ro.children() {
+                if subtree_has_black_decorated_box(reg, child) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Walk the render tree and return the opacity of the
+    /// `OpacityRenderObject` whose subtree contains a BLACK-background
+    /// `DecoratedBox` (i.e. the dim barrier's `Opacity` wrapper). Returns
+    /// `None` when no such opacity node exists.
+    ///
+    /// This uniquely identifies the dim's opacity: the dim is the only
+    /// `Opacity` in the menu whose subtree contains a BLACK `DecoratedBox`.
+    /// (The actions card's `Opacity` subtree contains the card's text, not a
+    /// BLACK box.)
+    fn find_dim_opacity(reg: &RenderObjectRegistry, key: RenderObjectKey) -> Option<f32> {
+        let ro = reg.get(key)?;
+        if ro.opacity().is_some() && subtree_has_black_decorated_box(reg, key) {
+            return ro.opacity();
+        }
+        for &child in ro.children() {
+            if let Some(op) = find_dim_opacity(reg, child) {
+                return Some(op);
+            }
+        }
+        None
+    }
+
+    /// Walk the render tree and return the opacity of the
+    /// `OpacityRenderObject` whose subtree contains `needle` text but NO
+    /// BLACK-background `DecoratedBox` (i.e. the actions card's `Opacity`
+    /// wrapper). Returns `None` when no such opacity node exists.
+    ///
+    /// Before Task 6, the actions card has no `Opacity` wrapper (rendered at
+    /// full opacity directly) → returns `None`. After Task 6, the card is
+    /// wrapped in `Opacity(v)` → returns `Some(v)`.
+    fn find_card_opacity(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        needle: &str,
+    ) -> Option<f32> {
+        let ro = reg.get(key)?;
+        if ro.opacity().is_some()
+            && find_text_in_tree(reg, key, needle)
+            && !subtree_has_black_decorated_box(reg, key)
+        {
+            return ro.opacity();
+        }
+        for &child in ro.children() {
+            if let Some(op) = find_card_opacity(reg, child, needle) {
+                return Some(op);
+            }
+        }
+        None
+    }
+
+    /// RED→GREEN test for the spring-driven dim opacity.
+    ///
+    /// Before Task 6: the dim barrier's `Opacity` is fixed at `0.4` regardless
+    /// of the spring value. After Task 6: the dim opacity is `v * 0.4`, where
+    /// `v = controller.animation_value()`.
+    ///
+    /// We open the menu, advance real time ~150ms so the spring is genuinely
+    /// mid-open (`v ≈ 0.76`), then read the dim's `OpacityRenderObject` from
+    /// the render tree and assert its opacity ≈ `v * 0.4` (NOT the fixed
+    /// `0.4`). Before Task 6 this fails (dim=0.4, expected ≈0.30); after Task
+    /// 6 it passes (dim=v*0.4).
+    #[test]
+    fn test_dim_opacity_tracks_spring_value() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+
+        // Advance ~150ms so the spring is mid-open (0 < v < 1).
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let v = controller.animation_value();
+        assert!(
+            v > 0.05 && v < 0.99,
+            "spring should be mid-open for this test to be meaningful, got v={}",
+            v
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let dim_opacity = find_dim_opacity(ro_reg, root).expect(
+            "dim OpacityRenderObject should exist when menu is open (find_dim_opacity found none)",
+        );
+
+        let expected = (v * 0.4) as f32;
+        assert!(
+            (dim_opacity - expected).abs() < 0.01,
+            "dim opacity should track v*0.4 (v={:.4}, expected≈{:.4}, got {:.4}); \
+             if got 0.4 the dim is still fixed-alpha (pre-Task-6 behavior)",
+            v,
+            expected,
+            dim_opacity
+        );
+    }
+
+    /// RED→GREEN test for the spring-driven actions-card opacity.
+    ///
+    /// Before Task 6: the actions card is rendered at full opacity with no
+    /// `Opacity` wrapper. After Task 6: the card is wrapped in `Opacity(v)`.
+    ///
+    /// We open the menu, advance ~150ms (v ≈ 0.76), then assert the card has
+    /// an `OpacityRenderObject` with opacity ≈ `v`. Before Task 6: no such
+    /// opacity node exists → `find_card_opacity` returns `None` → `expect`
+    /// panics → RED. After Task 6: `Opacity(v)` is present → GREEN.
+    ///
+    /// (The card's scale-about-center transform can't be inspected here —
+    /// `TransformRenderObject` is `pub(crate)` in `vexo` and not re-exported.
+    /// The card opacity check plus the dim opacity check together prove the
+    /// spring value `v` is read and applied to multiple overlay layers. The
+    /// bubble's scale/lift transform is verified indirectly by the existing
+    /// `test_bright_bubble_copy_rendered_on_top` /
+    /// `test_bubble_copy_size_matches_original` tests, which confirm the
+    /// bubble copy still renders at the correct size after wrapping it in the
+    /// transform chain — `TransformRenderObject` is a layout pass-through, so
+    /// the Text's computed bounds are unchanged.)
+    #[test]
+    fn test_card_opacity_tracks_spring_value() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let v = controller.animation_value();
+        assert!(
+            v > 0.05 && v < 0.99,
+            "spring should be mid-open for this test to be meaningful, got v={}",
+            v
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let card_opacity = find_card_opacity(ro_reg, root, "Copy").expect(
+            "card OpacityRenderObject should exist when menu is open after Task 6 \
+             (find_card_opacity found none — card is not wrapped in Opacity yet)",
+        );
+        let expected = v as f32;
+        assert!(
+            (card_opacity - expected).abs() < 0.01,
+            "card opacity should track v (v={:.4}, expected≈{:.4}, got {:.4})",
+            v,
+            expected,
+            card_opacity
+        );
     }
 }
