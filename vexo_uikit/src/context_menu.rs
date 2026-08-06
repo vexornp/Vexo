@@ -12,9 +12,11 @@
 //! Task 2 state: the API is reshaped to its final form (`show(bubble_bounds,
 //! bubble_widget, builder)`, `phase()`, `animation_value()`,
 //! `MenuContent { reactions, actions, metrics }`) but open/close is still
-//! instant — no spring animation yet (Task 5 adds it). The host renders only
-//! the actions card at the bubble position; the reactions pill, dim layer,
-//! and bubble copy come in later tasks.
+//! instant — no spring animation yet (Task 5 adds it). Task 4 adds the dim
+//! barrier (full-screen 0.4 alpha black, tappable to dismiss) and the bright
+//! bubble copy (Positioned at bubble_bounds, full opacity, tappable to
+//! dismiss). The actions card is now positioned below the bubble. The
+//! reactions pill and spring animation come in later tasks.
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -311,27 +313,33 @@ impl Component for ContextMenu {
         let mut stack = vexo::Stack::new().push(self.child.clone_boxed());
 
         if phase != Phase::Closed {
-            if let Some((bubble_bounds, _bubble_widget, builder)) = self.controller.open_snapshot()
-            {
+            if let Some((bubble_bounds, bubble_widget, builder)) = self.controller.open_snapshot() {
                 let controller = self.controller.clone();
 
-                // Dismiss barrier — full-size transparent press target.
-                // Positioned with all insets 0 so it overlaps the content (non-
-                // positioned children flow in the Stack's column, they don't
-                // overlap). Hit-tested AFTER the menu (reverse order) but BEFORE
-                // the content.
+                // [2] Dim barrier — full-screen, fixed 0.4 alpha (Task 6
+                // animates this with the spring value). Structure (per the
+                // spec's render tree + the task's implementation note):
+                // Positioned(0,0,0,0) → GestureDetector.on_press(→ close) →
+                // WithLayout(width_percent=1.0, height_percent=1.0) →
+                // Opacity(0.4) → DecoratedBox(BLACK) → Text("").
                 //
-                // The empty Text is wrapped in a WithLayout with
-                // width_percent(1.0).height_percent(1.0) so the GestureDetector
-                // (pass-through) fills the Positioned's content box. Without this,
-                // Text::new("") has zero intrinsic size, the GestureDetector's
-                // computed_bounds would be zero, and clicks inside the barrier
-                // would not hit the GestureDetector — they'd stop at the
-                // Positioned (whose on_event is a no-op) and never fire on_press.
+                // The WithLayout makes the inner subtree fill the Stack's
+                // content box, so the GestureDetector's computed_bounds cover
+                // the full screen and any tap inside the window hits the
+                // barrier (→ close) unless a higher overlay (bubble copy,
+                // actions card) intercepts it first. The empty Text is the
+                // DecoratedBox's required child — it has zero intrinsic size,
+                // so it doesn't affect layout.
                 let ctrl_for_barrier = controller.clone();
                 let barrier = vexo::Positioned::new(
                     vexo::GestureDetector::new(vexo::WithLayout::new(
-                        vexo::Text::new(""),
+                        vexo::Opacity::new(
+                            vexo::DecoratedBox::with_style(
+                                vexo::Text::new(""),
+                                vexo::Style::default().background(vexo::Color::BLACK),
+                            ),
+                            0.4,
+                        ),
                         vexo::Layout::default()
                             .width_percent(1.0)
                             .height_percent(1.0),
@@ -344,14 +352,30 @@ impl Component for ContextMenu {
                 .bottom(0.0);
                 stack = stack.push(barrier);
 
-                // Menu content from the builder — render ONLY the actions card
-                // at the bubble position for now. Tasks 3-7 add the reactions
-                // pill, dim layer, bubble copy, and spring animation.
+                // [3] Bright bubble copy — Positioned at bubble_bounds, full
+                // opacity, tappable to dismiss (matches iMessage: tapping the
+                // lifted bubble closes the menu). No transform yet (Task 6
+                // adds the scale+lift spring). The bubble_widget is the same
+                // widget the caller passed to `show()`; rendering it twice
+                // (once in-content under the dim, once here as the bright
+                // focal point) is the dual-render spike validated by test #7.
+                let ctrl_for_bubble = controller.clone();
+                let bubble_copy = vexo::Positioned::new(
+                    vexo::GestureDetector::new(bubble_widget)
+                        .on_press(move || ctrl_for_bubble.close()),
+                )
+                .left(bubble_bounds.left)
+                .top(bubble_bounds.top);
+                stack = stack.push(bubble_copy);
+
+                // [5] Actions card — Positioned below the bubble
+                // (top + height + 8px gap). Task 7 adds the reactions pill
+                // above the bubble and proper edge-aware positioning.
                 let content = builder(&controller, &theme);
-                let positioned_menu = vexo::Positioned::new(content.actions)
+                let positioned_actions = vexo::Positioned::new(content.actions)
                     .left(bubble_bounds.left)
-                    .top(bubble_bounds.top);
-                stack = stack.push(positioned_menu);
+                    .top(bubble_bounds.top + bubble_bounds.height() + 8.0);
+                stack = stack.push(positioned_actions);
             }
         }
 
@@ -577,9 +601,10 @@ mod tests {
             &mut font_system,
         );
 
-        // The actions card is Positioned at (bubble_bounds.left,
-        // bubble_bounds.top) = (10, 10). The item row starts at (10, 10) in
-        // window coords. Text padding is 8px, so clicking at (15, 15) hits it.
+        // The actions card is Positioned below the bubble at
+        // (bubble_bounds.left, bubble_bounds.top + bubble_bounds.height() + 8)
+        // = (10, 10 + 40 + 8) = (10, 58). The item row has 8px padding, so
+        // clicking at (15, 70) lands inside the row's padding area.
         let bubble_widget = vexo::Text::new("bubble").boxed();
         let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
         controller.show(bounds, bubble_widget, builder);
@@ -591,17 +616,17 @@ mod tests {
         );
 
         let primary_press = InputEvent::PointerButton {
-            position: vexo::core::Point::new(15.0, 15.0),
+            position: vexo::core::Point::new(15.0, 70.0),
             button: PointerButton::Primary,
             state: ButtonState::Pressed,
         };
         let primary_release = InputEvent::PointerButton {
-            position: vexo::core::Point::new(15.0, 15.0),
+            position: vexo::core::Point::new(15.0, 70.0),
             button: PointerButton::Primary,
             state: ButtonState::Released,
         };
         pipeline.handle_event(
-            vexo::core::Point::new(15.0, 15.0),
+            vexo::core::Point::new(15.0, 70.0),
             &primary_press,
             Modifiers::default(),
             &mut font_system,
@@ -609,7 +634,7 @@ mod tests {
             &test_clipboard(),
         );
         pipeline.handle_event(
-            vexo::core::Point::new(15.0, 15.0),
+            vexo::core::Point::new(15.0, 70.0),
             &primary_release,
             Modifiers::default(),
             &mut font_system,
@@ -769,6 +794,124 @@ mod tests {
         assert!(
             !find_text_in_tree(ro_reg, root, &light_label),
             "light theme's label must be gone after toggling to dark — the builder re-ran"
+        );
+    }
+
+    /// Walk the render tree and collect the `computed_bounds` sizes of every
+    /// `TextRenderObject` whose content contains `needle`. Used by the
+    /// dual-render spike test (#7) to assert the in-content and bright-copy
+    /// Text render objects have identical laid-out sizes.
+    fn collect_text_sizes(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        needle: &str,
+        out: &mut Vec<vexo::core::Size<Logical>>,
+    ) {
+        if let Some(ro) = reg.get(key) {
+            if ro
+                .as_any()
+                .downcast_ref::<TextRenderObject>()
+                .map_or(false, |t| t.content().contains(needle))
+            {
+                if let Some(b) = ro.computed_bounds() {
+                    out.push(vexo::core::Size::new(b.width(), b.height()));
+                }
+            }
+            for &child in ro.children() {
+                collect_text_sizes(reg, child, needle, out);
+            }
+        }
+    }
+
+    #[test]
+    fn test_bright_bubble_copy_rendered_on_top() {
+        let controller = ContextMenuController::new();
+        let bubble_text = "BUBBLE_CONTENT marker";
+        let bubble_widget = vexo::Text::new(bubble_text).boxed();
+        let bounds = vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0);
+
+        let host = ContextMenu::new(vexo::Text::new("background content"), controller.clone());
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open the menu with the bubble widget. The host should render a
+        // bright copy of `bubble_widget` on top of the dim barrier.
+        controller.show(bounds, bubble_widget, test_content_builder("Actions"));
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // The bubble widget's text should appear in the render tree (as the
+        // bright copy on top of the dim). It does NOT appear in the host's
+        // background content ("background content") nor in the actions card
+        // ("Actions"), so a presence check is sufficient.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, bubble_text),
+            "bright bubble copy should be rendered when menu is open"
+        );
+    }
+
+    #[test]
+    fn test_bubble_copy_size_matches_original() {
+        let controller = ContextMenuController::new();
+        // A bubble widget with a known intrinsic size (pinned via WithLayout).
+        let bubble_widget = vexo::WithLayout::new(
+            vexo::Text::new("X"),
+            vexo::Layout::default().width(80.0).height(30.0),
+        )
+        .boxed();
+        // Bounds use (left, top, width, height) — `Bounds::from_xywh` produces
+        // valid (left, top, right, bottom) from x/y/w/h. The brief's literal
+        // `Bounds::new(50.0, 50.0, 80.0, 30.0)` would be (left=50, top=50,
+        // right=80, bottom=30) → negative width/height; using from_xywh keeps
+        // the intent (bubble at (50,50) sized 80x30) without malformed edges.
+        let bounds = vexo::core::Bounds::from_xywh(50.0, 50.0, 80.0, 30.0);
+
+        // Wrap the bubble widget in the content tree too, so it renders twice
+        // (once in-content, once as the bright copy on top of the dim).
+        let content = vexo::WithLayout::new(
+            bubble_widget.clone_boxed(),
+            vexo::Layout::default().width(80.0).height(30.0),
+        );
+
+        let host = ContextMenu::new(content, controller.clone());
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            bounds,
+            bubble_widget.clone_boxed(),
+            test_content_builder("A"),
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Find all TextRenderObjects with content "X" in the tree. There
+        // should be two (one in-content, one as the bright copy). Assert
+        // their computed_bounds sizes match — this is the dual-render spike
+        // gate: if sizes diverge, the dual-render assumption is wrong and the
+        // spec's cutout-frame fallback must be used.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let mut found_sizes: Vec<vexo::core::Size<Logical>> = Vec::new();
+        collect_text_sizes(ro_reg, root, "X", &mut found_sizes);
+        assert_eq!(
+            found_sizes.len(),
+            2,
+            "should find 2 'X' TextRenderObjects (in-content + bright copy)"
+        );
+        assert_eq!(
+            found_sizes[0], found_sizes[1],
+            "in-content and bright copy sizes must match (dual-render is deterministic)"
         );
     }
 }
