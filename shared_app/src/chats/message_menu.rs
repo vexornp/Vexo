@@ -15,14 +15,26 @@ use vexo_uikit::{ContextMenuController, MenuBuilder, MenuContent, MenuMetrics};
 /// pill (6 FA icons in an 18px-radius pill) above an actions card (3 MenuRows
 /// in a 12px-radius card). The host (`ContextMenu`) positions `actions` at
 /// the bubble bounds; `reactions` is rendered by a later task. `metrics`
-/// holds the placeholder sizes used for positioning — Task 8 tunes them.
+/// holds the laid-out sizes used for positioning + scale-about-center anchors
+/// — verified by `test_metrics_match_real_sizes` (Task 8).
 pub(super) fn builder() -> MenuBuilder {
     MenuBuilder::new(|ctrl, theme| MenuContent {
         reactions: reaction_pill(ctrl.clone(), theme.clone()),
         actions: actions_card(ctrl.clone(), theme.clone()),
         metrics: MenuMetrics {
-            reactions_size: vexo::core::Size::new(150.0, 28.0),
-            actions_size: vexo::core::Size::new(200.0, 108.0),
+            // Verified by `test_metrics_match_real_sizes`: the real laid-out
+            // sizes (read back from the DecoratedBox render objects after
+            // layout) are 222×44 for the pill and 200×134 for the card. The
+            // original estimates (150×28 / 200×108) were off by 72/16px and
+            // 0/26px respectively — beyond the 15px tolerance, so the
+            // constants were tuned to match the real sizes. The pill is wider
+            // than estimated because each 18px FA icon has 6px padding
+            // (→30px each) plus 6px gaps + 6px outer padding = 222px; taller
+            // because the icon's line height (~28px) exceeds its font size
+            // (18px). The card is taller because each row's text line height
+            // (~28px) plus 8px top/bottom padding → ~44px per row × 3 = 134px.
+            reactions_size: vexo::core::Size::new(222.0, 44.0),
+            actions_size: vexo::core::Size::new(200.0, 134.0),
             gap: 8.0,
         },
     })
@@ -207,4 +219,159 @@ fn actions_card(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn 
             ),
     )
     .boxed()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use vexo::animation::AnimationTicker;
+    use vexo::core::{Bounds, Logical, Size};
+    use vexo::layout::TaffyLayoutEngine;
+    use vexo::render_objects::DecoratedBoxRenderObject;
+    use vexo::resource::new_font_system;
+    use vexo::{RenderObjectKey, RenderObjectRegistry, ThreeTreePipeline};
+    use vexo_uikit::{ContextMenu, ContextMenuController};
+
+    /// Walk the render tree and return the `computed_bounds` of the first
+    /// `DecoratedBoxRenderObject` whose `Style.corner_radius` matches `radius`.
+    /// Used by `test_metrics_match_real_sizes` to locate the reactions pill
+    /// (radius 18) and actions card (radius 12) and read back their laid-out
+    /// sizes.
+    fn find_decorated_box_by_corner_radius(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        radius: f32,
+    ) -> Option<vexo::core::Bounds<Logical>> {
+        if let Some(ro) = reg.get(key) {
+            let matches = ro
+                .as_any()
+                .downcast_ref::<DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .corner_radius
+                        .as_ref()
+                        .map_or(false, |cr| (cr.radius - radius).abs() < 0.01)
+                });
+            if matches {
+                if let Some(b) = ro.computed_bounds() {
+                    return Some(b);
+                }
+            }
+            for &child in ro.children() {
+                if let Some(b) = find_decorated_box_by_corner_radius(reg, child, radius) {
+                    return Some(b);
+                }
+            }
+        }
+        None
+    }
+
+    /// Task 8 — metrics verification. Opens the menu with the REAL
+    /// `message_menu::builder()` (which produces the FA-icon reactions pill
+    /// and the 3-row actions card), settles the spring so the cards are at
+    /// full scale (v=1.0 → scale=0.8+v*0.2=1.0), lays out, then reads back
+    /// the actual laid-out sizes of the pill (DecoratedBox corner_radius=18)
+    /// and card (corner_radius=12) from the render tree.
+    ///
+    /// Asserts the real sizes match the `MenuMetrics` constants in `builder()`
+    /// within ~15px. If this test fails, update the constants in `builder()`
+    /// to match the real sizes printed in the assertion message.
+    #[test]
+    fn test_metrics_match_real_sizes() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+
+        // Wrap in MediaQuery (so edge-detection reads a real window size) and
+        // Theme (so the builder reads the live theme) — mirrors production.
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let host = vexo::Theme::new(vexo::ThemeData::light(), host);
+
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+
+        let mut engine = TaffyLayoutEngine::new();
+        // Register FontAwesome so the pill's FA icons shape with real glyphs
+        // (otherwise icons fall back to Roboto and the pill width is wrong).
+        let mut font_system = new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Bubble in the middle of the screen — plenty of room above + below
+        // so neither card flips (default layout: pill above, card below).
+        controller.show(
+            Bounds::from_xywh(150.0, 280.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            builder(),
+        );
+        pipeline.perform_rebuilds();
+
+        // Settle the open spring (v→1.0, phase→Open) so the cards are at full
+        // scale and their laid-out sizes reflect the real content sizes.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Read the MenuMetrics constants directly from `builder()` so this
+        // test always compares real sizes against the current constants (not
+        // a hardcoded copy that can drift).
+        let theme = vexo::ThemeData::light();
+        let content = builder()(&controller, &theme);
+        let expected_pill: Size<Logical> = content.metrics.reactions_size;
+        let expected_card: Size<Logical> = content.metrics.actions_size;
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        let pill_bounds = find_decorated_box_by_corner_radius(ro_reg, root, 18.0).expect(
+            "reactions pill DecoratedBox (corner_radius=18) should exist when menu is open",
+        );
+        let card_bounds = find_decorated_box_by_corner_radius(ro_reg, root, 12.0)
+            .expect("actions card DecoratedBox (corner_radius=12) should exist when menu is open");
+
+        let real_pill: Size<Logical> = Size::new(pill_bounds.width(), pill_bounds.height());
+        let real_card: Size<Logical> = Size::new(card_bounds.width(), card_bounds.height());
+
+        let tol = 15.0;
+        let pill_dx = (real_pill.width - expected_pill.width).abs();
+        let pill_dy = (real_pill.height - expected_pill.height).abs();
+        let card_dx = (real_card.width - expected_card.width).abs();
+        let card_dy = (real_card.height - expected_card.height).abs();
+
+        // Informational: print real sizes for tuning.
+        eprintln!(
+            "metrics: pill real={:?} expected={:?} (dx={:.1}, dy={:.1}); \
+             card real={:?} expected={:?} (dx={:.1}, dy={:.1})",
+            real_pill, expected_pill, pill_dx, pill_dy, real_card, expected_card, card_dx, card_dy,
+        );
+
+        assert!(
+            pill_dx <= tol && pill_dy <= tol,
+            "reactions pill size mismatch: real={:?} expected={:?} (dx={:.1}, dy={:.1}, tol={}); \
+             update MenuMetrics.reactions_size in builder() to match",
+            real_pill,
+            expected_pill,
+            pill_dx,
+            pill_dy,
+            tol,
+        );
+        assert!(
+            card_dx <= tol && card_dy <= tol,
+            "actions card size mismatch: real={:?} expected={:?} (dx={:.1}, dy={:.1}, tol={}); \
+             update MenuMetrics.actions_size in builder() to match",
+            real_card,
+            expected_card,
+            card_dx,
+            card_dy,
+            tol,
+        );
+    }
 }
