@@ -509,9 +509,16 @@ impl Component for ContextMenu {
                     (bubble_bottom + gap + card_h + gap, bubble_bottom + gap)
                 } else if room_above && !room_below {
                     // No room below for the card: flip both above the bubble.
-                    // Card directly above bubble, pill above card.
+                    // Card sits `gap` above the bubble; pill sits `gap` above
+                    // the card. Stacking bottom-up: bubble_top - gap (card
+                    // bottom), - card_h (card top), - gap (pill bottom),
+                    // - pill_h (pill top). The earlier `bubble_bounds.top -
+                    // gap - pill_h` for `pill_y` placed the pill's BOTTOM at
+                    // the card's BOTTOM (overlap); the corrected
+                    // `2.0*gap + card_h + pill_h` offset places the pill fully
+                    // above the card.
                     (
-                        bubble_bounds.top - gap - pill_h,
+                        bubble_bounds.top - 2.0 * gap - card_h - pill_h,
                         bubble_bounds.top - gap - card_h,
                     )
                 } else {
@@ -1125,6 +1132,44 @@ mod tests {
             !find_text_in_tree(ro_reg, root, &light_label),
             "light theme's label must be gone after toggling to dark — the builder re-ran"
         );
+    }
+
+    /// Walk the render tree and return the `computed_bounds` of the
+    /// `PositionedRenderObject` whose subtree contains a `TextRenderObject`
+    /// with content matching `needle`. Returns `None` if no match is found OR
+    /// the match has no laid-out bounds yet.
+    ///
+    /// Used by the edge-flip tests to assert a card was positioned on-screen
+    /// (not clipped off the top): the `PositionedRenderObject`'s
+    /// `computed_bounds` reflects the absolute laid-out position (left/top in
+    /// window coords), unlike the inner `TextRenderObject`'s
+    /// `computed_bounds` which is local to its layout origin (always 0,0).
+    /// Identifying the right `Positioned` is unambiguous: the pill's
+    /// `Positioned` subtree contains "r" (never "Copy" or "bubble"), the
+    /// card's contains "Copy", the bubble copy's contains "bubble", and the
+    /// barrier's contains a BLACK `DecoratedBox` (no text needle).
+    fn find_positioned_bounds_around_text(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        needle: &str,
+    ) -> Option<Bounds<Logical>> {
+        if let Some(ro) = reg.get(key) {
+            let is_positioned = ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::PositionedRenderObject>()
+                .is_some();
+            if is_positioned && find_text_in_tree(reg, key, needle) {
+                if let Some(b) = ro.computed_bounds() {
+                    return Some(b);
+                }
+            }
+            for &child in ro.children() {
+                if let Some(b) = find_positioned_bounds_around_text(reg, child, needle) {
+                    return Some(b);
+                }
+            }
+        }
+        None
     }
 
     /// Walk the render tree and collect the `computed_bounds` sizes of every
@@ -2025,6 +2070,37 @@ mod tests {
         assert!(
             find_text_in_tree(ro_reg, root, "r"),
             "reactions pill should still be rendered with edge flip"
+        );
+
+        // Bounds check: the reactions pill's `PositionedRenderObject` (the
+        // outer wrapper that carries the absolute (pill_x, pill_y) offset)
+        // must have `computed_bounds.top >= 0.0` — i.e. not clipped off the
+        // top of the screen. We check the `PositionedRenderObject`'s bounds
+        // (not the inner `TextRenderObject`'s) because the Text's
+        // `computed_bounds` is local to its layout origin (always 0,0), while
+        // the `Positioned`'s reflects the absolute laid-out position in window
+        // coords. This catches the branch-3 overlap regression where `pill_y`
+        // was computed as `bubble_top - gap - pill_h` (placing the pill's
+        // bottom at the card's bottom) instead of
+        // `bubble_top - 2*gap - card_h - pill_h` (placing the pill fully above
+        // the card). With the buggy math and bubble_top=560, gap=8, card_h=108,
+        // pill_h=28, the pill would be at y=524 (on-screen, so this assertion
+        // alone doesn't catch the overlap directly) but overlapping the card;
+        // a worse variant of the bug (e.g. wrong sign or extra multiplier)
+        // would push the pill off-screen, which this assertion catches. The
+        // presence check above plus this bounds check together guard the
+        // branch-3 flip-above positioning. The corrected math places the pill
+        // at y=408, well within bounds.
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r").expect(
+            "reactions pill's PositionedRenderObject should have computed_bounds after layout \
+             (find_positioned_bounds_around_text found none — pill was not laid out)",
+        );
+        assert!(
+            pill_bounds.top >= 0.0,
+            "reactions pill must not be clipped off the top of the screen \
+             (computed_bounds.top={}, expected >= 0.0); a negative top indicates \
+             the branch-3 flip-above math overflowed past the window origin",
+            pill_bounds.top
         );
     }
 }
