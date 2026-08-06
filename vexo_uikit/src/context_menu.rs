@@ -9,22 +9,28 @@
 //! reads the current theme. Each trigger captures its own builder, so different
 //! bubbles can render different menu styles.
 //!
-//! Task 2 state: the API is reshaped to its final form (`show(bubble_bounds,
-//! bubble_widget, builder)`, `phase()`, `animation_value()`,
-//! `MenuContent { reactions, actions, metrics }`) but open/close is still
-//! instant — no spring animation yet (Task 5 adds it). Task 4 adds the dim
-//! barrier (full-screen 0.4 alpha black, tappable to dismiss) and the bright
-//! bubble copy (Positioned at bubble_bounds, full opacity, tappable to
-//! dismiss). The actions card is now positioned below the bubble. The
-//! reactions pill and spring animation come in later tasks.
+//! Task 5 state: open/close is driven by a critical spring
+//! (`SpringDescription::ios(340.0, 1.0)`) through a 4-state phase machine
+//! (`Closed → Opening → Open → Closing → Closed`). `show()` starts a forward
+//! spring (current value → 1.0, phase=Opening); `close()` starts a reverse
+//! spring (current value → 0.0, phase=Closing). Both retarget from the live
+//! value, so early close / re-show produce no jump. The host's `on_tick`
+//! calls `controller.advance(now)`, which samples the spring and flips
+//! Opening→Open or Closing→Closed (the latter clears `open` → unmount) on
+//! settle. Task 4 added the dim barrier (full-screen 0.4 alpha black,
+//! tappable to dismiss) and the bright bubble copy (Positioned at
+//! bubble_bounds, full opacity, tappable to dismiss). The actions card is
+//! positioned below the bubble. The reactions pill and the spring-driven
+//! transforms (scale/lift/dim ramp) come in later tasks.
 
 use std::any::Any;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use vexo::animation::AnimationTicker;
+use vexo::animation::{AnimationController, AnimationTicker, SpringDescription, SpringSimulation};
 use vexo::core::{Bounds, Logical, Size};
 use vexo::{Component, ComponentState, LifecycleContext, RenderContext, Widget};
 
@@ -88,8 +94,9 @@ impl Deref for MenuBuilder {
 // Phase + OpenState + ContextMenuController
 // ============================================================================
 
-/// Lifecycle phase of the context menu. Task 2 only uses `Closed` and `Open`
-/// (instant transitions). Task 5 adds `Opening`/`Closing` for the spring.
+/// Lifecycle phase of the context menu. The 4-state phase machine is driven
+/// by a critical spring: `show()` → `Opening`, settle → `Open`; `close()` →
+/// `Closing`, settle → `Closed` (clears `open`, unmounting the menu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Closed,
@@ -110,11 +117,20 @@ struct OpenState {
 struct Shared {
     phase: Phase,
     open: Option<OpenState>,
-    animation_value: f64,
-    /// Stored for Task 5's spring; not yet driven by `on_tick`.
+    /// The critical spring driving `Opening`/`Closing`. Same spring as
+    /// KeyboardAvoidance/SlideTransition: `SpringDescription::ios(340.0, 1.0)`.
+    /// `show()`/`close()` start a forward/reverse spring from the current
+    /// value (smooth retarget — no jump on early close or re-show during
+    /// close). The host's `on_tick` calls `advance(now)` to sample the spring
+    /// and flip phases on settle.
+    animation: AnimationController,
+    /// Cached so `show()`/`close()` can (re-)wire the `AnimationController`
+    /// even if called before the host's `on_mount` (e.g. in tests). Set by
+    /// `set_animation_ticker` (called from `on_mount`/`on_update`).
     ticker: Option<Arc<AnimationTicker>>,
-    /// Wired by the host's `on_mount`/`on_update`. Invoked by `show()`/`close()`
-    /// so the host rebuilds and re-reads `phase()`/`open_snapshot()`. This
+    /// Wired by the host's `on_mount`/`on_update`. Invoked by the
+    /// `AnimationController` (via `animate_with` + per-tick registration) so
+    /// the host rebuilds and re-reads `phase()`/`open_snapshot()`. This
     /// replaces the old `Signal<Option<Point>>` + `signal_value` path — the
     /// builder is `!Send + !Sync` (`Rc<dyn Fn>`), so it can't travel through a
     /// `Signal`, and the controller now owns the open state directly.
@@ -139,7 +155,11 @@ impl ContextMenuController {
             shared: Rc::new(RefCell::new(Shared {
                 phase: Phase::Closed,
                 open: None,
-                animation_value: 0.0,
+                // Duration is unused for the spring path (`animate_with`
+                // ignores it — the sim owns the timeline), but the controller
+                // requires one for the time-tween path. 600ms matches the
+                // critical k=340 spring's perceptual settle.
+                animation: AnimationController::new(Duration::from_millis(600)),
                 ticker: None,
                 dirty_callback: None,
             })),
@@ -147,70 +167,145 @@ impl ContextMenuController {
     }
 
     /// Open the menu anchored to `bubble_bounds`, carrying a clone of the
-    /// bubble widget (Task 6 renders a lifted copy). Instant: sets phase to
-    /// `Open` and `animation_value` to `1.0`. Task 5 replaces this with a
-    /// forward spring that ramps `animation_value` 0→1 over a few frames.
+    /// bubble widget (Task 6 renders a lifted copy). Starts a forward spring
+    /// (current value → 1.0) and sets phase to `Opening`. The spring retargets
+    /// from the current value, so calling `show()` during a `Closing` spring
+    /// (re-show) produces no jump — the spring reverses direction smoothly.
+    /// `on_tick` flips `Opening` → `Open` when the spring settles.
     pub fn show(
         &self,
         bubble_bounds: Bounds<Logical>,
         bubble_widget: Box<dyn Widget>,
         builder: MenuBuilder,
     ) {
-        let dirty = {
-            let mut s = self.shared.borrow_mut();
-            s.open = Some(OpenState {
-                bubble_bounds,
-                bubble_widget,
-                builder,
-            });
-            s.phase = Phase::Open;
-            s.animation_value = 1.0;
-            s.dirty_callback.clone()
-        };
-        // Notify the host so it rebuilds and re-reads phase()/open_snapshot().
-        // Matches the framework pattern (AnimationController, TextEditingController,
-        // ScrollController all invoke the dirty callback on state change).
-        if let Some(cb) = dirty {
-            cb();
+        let mut s = self.shared.borrow_mut();
+        s.open = Some(OpenState {
+            bubble_bounds,
+            bubble_widget,
+            builder,
+        });
+        s.phase = Phase::Opening;
+        // (Re-)wire the ticker + dirty callback into the AnimationController.
+        // The host does this in on_mount/on_update, but show() may be called
+        // before on_mount (e.g. in tests) or with a stale wiring after a
+        // retarget, so we refresh here to be safe. Clone to locals first so
+        // the immutable borrow of `s.ticker`/`s.dirty_callback` ends before
+        // the mutable borrow of `s.animation`.
+        if let Some(ticker) = s.ticker.clone() {
+            s.animation.set_ticker(ticker);
         }
+        if let Some(cb) = s.dirty_callback.clone() {
+            s.animation.set_dirty_callback(cb);
+        }
+        // Forward spring from the *current* value (smooth retarget). v0=0
+        // because the user gesture that triggered show() has no carried
+        // velocity (unlike a scroll fling).
+        let from = s.animation.value();
+        s.animation.animate_with(Box::new(SpringSimulation::new(
+            SpringDescription::ios(340.0, 1.0),
+            from,
+            1.0,
+            0.0,
+        )));
+        // `animate_with` fires the dirty callback immediately (avoids the
+        // render_retain deadlock: without it, the callback only fires on the
+        // next tick(), which only runs inside render_retain(), which only
+        // runs when a frame is already requested). The callback is an mpsc
+        // send — no RefCell reentry — so holding borrow_mut here is safe.
     }
 
-    /// Close the menu. Instant: clears open state, sets phase to `Closed` and
-    /// `animation_value` to `0.0`. Task 5 replaces this with a reverse spring
-    /// that ramps `animation_value` 1→0, then clears `open` on completion.
+    /// Close the menu. Starts a reverse spring (current value → 0.0) and
+    /// sets phase to `Closing`. The spring retargets from the current value,
+    /// so calling `close()` during an `Opening` spring (early close) produces
+    /// no jump — the spring reverses direction smoothly. `on_tick` flips
+    /// `Closing` → `Closed` and clears `open` (unmount) when the spring
+    /// settles. No-op if already `Closed`.
     pub fn close(&self) {
-        let dirty = {
-            let mut s = self.shared.borrow_mut();
-            s.open = None;
-            s.phase = Phase::Closed;
-            s.animation_value = 0.0;
-            s.dirty_callback.clone()
-        };
-        if let Some(cb) = dirty {
-            cb();
+        let mut s = self.shared.borrow_mut();
+        if s.phase == Phase::Closed {
+            return;
         }
+        s.phase = Phase::Closing;
+        if let Some(ticker) = s.ticker.clone() {
+            s.animation.set_ticker(ticker);
+        }
+        if let Some(cb) = s.dirty_callback.clone() {
+            s.animation.set_dirty_callback(cb);
+        }
+        // Reverse spring from the current value (smooth retarget).
+        let from = s.animation.value();
+        s.animation.animate_with(Box::new(SpringSimulation::new(
+            SpringDescription::ios(340.0, 1.0),
+            from,
+            0.0,
+            0.0,
+        )));
     }
 
     pub fn phase(&self) -> Phase {
         self.shared.borrow().phase
     }
 
-    /// Placeholder: `1.0` when `Open`, `0.0` when `Closed`. Task 5 drives this
-    /// from the spring simulation.
+    /// The live spring value in `[0.0, 1.0]`. Drives the open/close transforms
+    /// (Task 6) and the dim opacity (Task 6). Read at render time.
     pub fn animation_value(&self) -> f64 {
-        self.shared.borrow().animation_value
+        self.shared.borrow().animation.value()
     }
 
-    /// Store the animation ticker for Task 5's spring. No-op beyond storing
-    /// (the ticker isn't registered for per-frame ticks yet).
+    /// Store the animation ticker and wire it into the `AnimationController`.
+    /// Called by the host's `on_mount`/`on_update`. The ticker is what lets
+    /// `on_tick` fire: `animate_with` registers the controller's dirty
+    /// callback with the ticker, so `ticker.tick()` marks the host element
+    /// dirty, and the next `perform_rebuilds()` calls `on_tick` → `advance`.
     pub fn set_animation_ticker(&self, t: Arc<AnimationTicker>) {
-        self.shared.borrow_mut().ticker = Some(t);
+        let mut s = self.shared.borrow_mut();
+        s.ticker = Some(t.clone());
+        s.animation.set_ticker(t);
     }
 
-    /// Store the host's dirty callback. Invoked by `show()`/`close()` to
-    /// trigger a host rebuild.
+    /// Store the host's dirty callback and wire it into the
+    /// `AnimationController`. Invoked by `animate_with` (on start) and on
+    /// every spring sample (inside `advance`) to trigger a host rebuild.
     pub fn set_dirty_callback(&self, cb: Arc<dyn Fn() + Send + Sync>) {
-        self.shared.borrow_mut().dirty_callback = Some(cb);
+        let mut s = self.shared.borrow_mut();
+        s.dirty_callback = Some(cb.clone());
+        s.animation.set_dirty_callback(cb);
+    }
+
+    /// Advance the spring and handle phase transitions. Called by the host's
+    /// `on_tick` (which fires every frame via `perform_rebuilds` →
+    /// `element.animate(now)` → `state.on_tick(now)`).
+    ///
+    /// On settle (`!is_animating()`):
+    /// - `Opening` → `Open` (menu fully shown; spring holds at 1.0).
+    /// - `Closing` → `Closed` + clear `open` (menu unmounts; spring holds at 0.0).
+    ///
+    /// No-op when `Closed` (no spring running, nothing to advance). This
+    /// guards against the host's `on_tick` firing after the menu has already
+    /// settled closed — without it, `advance` would re-sample a stopped
+    /// controller and potentially re-fire the dirty callback.
+    pub(crate) fn advance(&self, now: Instant) {
+        let mut s = self.shared.borrow_mut();
+        if s.phase == Phase::Closed {
+            return;
+        }
+        s.animation.advance(now);
+
+        // Check for settle. `advance` sets `drive = Stopped` and unregisters
+        // from the ticker when the sim reports `is_done`; `is_animating()`
+        // reflects that.
+        if !s.animation.is_animating() {
+            match s.phase {
+                Phase::Opening => {
+                    s.phase = Phase::Open;
+                }
+                Phase::Closing => {
+                    s.phase = Phase::Closed;
+                    s.open = None;
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Snapshot the current open state (clones bounds, clones the bubble
@@ -275,26 +370,52 @@ impl Clone for ContextMenu {
     }
 }
 
-/// Host state for `ContextMenu`. Wires the controller's dirty callback in
-/// `on_mount`/`on_update` so `show()`/`close()` (called from event handlers or
-/// programmatically) trigger a host rebuild. Task 5 also wires the animation
-/// ticker here for the spring `on_tick`.
-#[derive(Default)]
-pub struct ContextMenuHostState;
+/// Host state for `ContextMenu`. Wires the controller's dirty callback AND
+/// animation ticker in `on_mount`/`on_update` so `show()`/`close()` (called
+/// from event handlers or programmatically) trigger a host rebuild, and the
+/// spring is advanced each frame. Stores a clone of the controller so
+/// `on_tick` can call `controller.advance(now)` — the controller isn't
+/// reachable from `on_tick`'s signature (no `LifecycleContext`).
+pub struct ContextMenuHostState {
+    controller: Option<ContextMenuController>,
+}
+
+impl Default for ContextMenuHostState {
+    fn default() -> Self {
+        Self { controller: None }
+    }
+}
 
 impl ComponentState for ContextMenuHostState {
     fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         if let Some(menu) = ctx.widget().downcast_ref::<ContextMenu>() {
+            self.controller = Some(menu.controller.clone());
             menu.controller.set_dirty_callback(ctx.dirty_callback());
+            menu.controller
+                .set_animation_ticker(ctx.animation_ticker().clone());
         }
     }
     fn on_update(&mut self, _old: &dyn Any, ctx: &mut LifecycleContext) {
         // Re-wire on every parent-cascade update. The controller is shared via
         // Rc<RefCell>, so identity comparison (Rc::ptr_eq) isn't meaningful
         // here — the widget struct is recreated each rebuild but the shared
-        // cell persists. Just re-store the current dirty callback.
+        // cell persists. Just re-store the current dirty callback + ticker.
         if let Some(menu) = ctx.widget().downcast_ref::<ContextMenu>() {
+            self.controller = Some(menu.controller.clone());
             menu.controller.set_dirty_callback(ctx.dirty_callback());
+            menu.controller
+                .set_animation_ticker(ctx.animation_ticker().clone());
+        }
+    }
+    fn on_tick(&mut self, now: Instant) {
+        // Advance the spring and flip phases on settle (Opening→Open,
+        // Closing→Closed + clear open). The host element is marked dirty by
+        // the controller's dirty callback (fired by `animate_with` on start
+        // and by `advance` on each sample), so `perform_rebuilds` →
+        // `element.animate(now)` → `state.on_tick(now)` reaches here every
+        // frame while the spring is active.
+        if let Some(ctrl) = &self.controller {
+            ctrl.advance(now);
         }
     }
 }
@@ -484,15 +605,18 @@ mod tests {
         assert_eq!(controller.phase(), Phase::Closed);
         assert!((controller.animation_value() - 0.0).abs() < 1e-9);
 
+        // show() now starts a forward spring — phase is Opening, not Open.
+        // The spring starts from the current value (0.0), so animation_value
+        // is still ~0.0 immediately after show() (the first sample happens on
+        // the next on_tick/advance).
         let bubble_widget = vexo::Text::new("bubble").boxed();
         let bounds = vexo::core::Bounds::new(10.0, 20.0, 100.0, 50.0);
         controller.show(bounds, bubble_widget, test_content_builder("Copy"));
-        assert_eq!(controller.phase(), Phase::Open);
-        assert!((controller.animation_value() - 1.0).abs() < 1e-9);
+        assert_eq!(controller.phase(), Phase::Opening);
 
+        // close() starts a reverse spring — phase is Closing, not Closed.
         controller.close();
-        assert_eq!(controller.phase(), Phase::Closed);
-        assert!((controller.animation_value() - 0.0).abs() < 1e-9);
+        assert_eq!(controller.phase(), Phase::Closing);
     }
 
     #[test]
@@ -504,8 +628,9 @@ mod tests {
         let bounds = vexo::core::Bounds::new(50.0, 60.0, 150.0, 100.0);
         cloned.show(bounds, bubble_widget, test_content_builder("A"));
 
-        // The original sees the same state (shared via Rc<RefCell>).
-        assert_eq!(controller.phase(), Phase::Open);
+        // The original sees the same state (shared via Rc<RefCell>). show()
+        // starts a spring, so phase is Opening (not Open) immediately after.
+        assert_eq!(controller.phase(), Phase::Opening);
         assert!(controller.open_snapshot().is_some());
     }
 
@@ -1045,5 +1170,223 @@ mod tests {
             "dim barrier width must equal screen width ({})",
             screen.width
         );
+    }
+
+    // ========================================================================
+    // Task 5: spring-driven phase machine lifecycle tests
+    // ========================================================================
+    //
+    // These tests exercise the 4-state phase machine (Closed → Opening →
+    // Open → Closing → Closed) driven by a critical spring
+    // (`SpringDescription::ios(340.0, 1.0)`). They use the
+    // `pump(ticker, pipeline)` pattern: `std::thread::sleep` to advance real
+    // time past the spring's settle point (~0.6s for k=340 critical), then
+    // `ticker.tick()` (fires the controller's dirty callback registered via
+    // `animate_with`), `drain_dirty_to_build_owner()` (moves the dirty mark
+    // into the BuildOwner), and `perform_rebuilds()` (advances the spring via
+    // `on_tick` → `controller.advance(now)` and re-renders).
+
+    #[test]
+    fn test_show_starts_open_spring() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // show() starts the forward spring.
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+
+        assert_eq!(controller.phase(), Phase::Opening);
+        assert!(
+            controller.animation_value() < 1.0,
+            "spring should not be settled yet (value={})",
+            controller.animation_value()
+        );
+
+        // Advance real time past settle (~0.6s for critical spring k=340).
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        assert_eq!(controller.phase(), Phase::Open);
+        assert!(
+            (controller.animation_value() - 1.0).abs() < 0.01,
+            "spring should have settled to 1.0 (value={})",
+            controller.animation_value()
+        );
+    }
+
+    #[test]
+    fn test_close_starts_reverse_spring_not_immediate_unmount() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open and settle.
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Open);
+
+        // Close — should start reverse spring, NOT immediately clear.
+        controller.close();
+        pipeline.perform_rebuilds();
+
+        assert_eq!(controller.phase(), Phase::Closing);
+        assert!(
+            controller.animation_value() > 0.0,
+            "spring should still be mid-reverse (value={})",
+            controller.animation_value()
+        );
+
+        // Advance past settle.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        assert_eq!(controller.phase(), Phase::Closed);
+        assert!(
+            (controller.animation_value() - 0.0).abs() < 0.01,
+            "spring should have settled to 0.0 (value={})",
+            controller.animation_value()
+        );
+    }
+
+    #[test]
+    fn test_early_close_during_open_reverses_smoothly() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+
+        // Advance partway (value should be between 0 and 1).
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        let mid_value = controller.animation_value();
+        assert!(
+            mid_value > 0.0 && mid_value < 1.0,
+            "mid-value should be 0<v<1, got {}",
+            mid_value
+        );
+
+        // Close mid-open.
+        controller.close();
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Closing);
+
+        // The value right after close should NOT jump to 1.0 — it should be
+        // near mid_value (the spring starts from the current value).
+        let value_after_close = controller.animation_value();
+        assert!(
+            (value_after_close - mid_value).abs() < 0.15,
+            "value after close ({}) should be near mid_value ({}) — no jump to 1.0",
+            value_after_close,
+            mid_value
+        );
+
+        // Settle to Closed.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Closed);
+    }
+
+    #[test]
+    fn test_reshow_during_close_retargets_upward() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open and settle.
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        // Start close, advance partway down.
+        controller.close();
+        pipeline.perform_rebuilds();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        let mid_value = controller.animation_value();
+        assert!(mid_value > 0.0 && mid_value < 1.0);
+
+        // Re-show with new bounds — should retarget upward.
+        controller.show(
+            vexo::core::Bounds::new(20.0, 20.0, 100.0, 40.0),
+            vexo::Text::new("bubble2").boxed(),
+            test_content_builder("Reply"),
+        );
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Opening);
+
+        let value_after_reshow = controller.animation_value();
+        assert!(
+            (value_after_reshow - mid_value).abs() < 0.15,
+            "value after reshow ({}) should be near mid_value ({}) — no jump",
+            value_after_reshow,
+            mid_value
+        );
+
+        // Settle to Open.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        assert_eq!(controller.phase(), Phase::Open);
     }
 }
