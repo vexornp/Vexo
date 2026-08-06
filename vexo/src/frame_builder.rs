@@ -12,14 +12,24 @@ pub enum DrawOp {
 /// Where an op landed in the typed instance buffer, for draw iteration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpLocation {
-    Quad { index: u32 },
-    Image { index: u32 },
+    Quad {
+        index: u32,
+    },
+    /// Transparent quad (fill alpha < 1.0) — rendered with depth-write disabled
+    /// so it doesn't occlude text rendered in the later text pass.
+    TransparentQuad {
+        index: u32,
+    },
+    Image {
+        index: u32,
+    },
 }
 
 impl OpLocation {
     pub fn kind(&self) -> OpKind {
         match self {
             OpLocation::Quad { .. } => OpKind::Quad,
+            OpLocation::TransparentQuad { .. } => OpKind::TransparentQuad,
             OpLocation::Image { .. } => OpKind::Image,
         }
     }
@@ -28,6 +38,7 @@ impl OpLocation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpKind {
     Quad,
+    TransparentQuad,
     Image,
 }
 
@@ -426,10 +437,14 @@ impl FrameBuilder {
         self.ops
             .iter()
             .map(|(op, _, _)| match op {
-                DrawOp::Quad(_) => {
+                DrawOp::Quad(q) => {
                     let i = quad_idx;
                     quad_idx += 1;
-                    OpLocation::Quad { index: i }
+                    if q.color[3] < 1.0 {
+                        OpLocation::TransparentQuad { index: i }
+                    } else {
+                        OpLocation::Quad { index: i }
+                    }
                 }
                 DrawOp::Image(_) => {
                     let i = image_idx;

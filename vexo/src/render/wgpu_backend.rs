@@ -127,6 +127,7 @@ pub struct WgpuBackend {
 
     // Rendering pipeline
     render_pipeline: wgpu::RenderPipeline,
+    transparent_render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
@@ -353,6 +354,61 @@ impl WgpuBackend {
             multiview_mask: None,
             cache: None,
         });
+
+        // Transparent quad pipeline: identical to the opaque pipeline but with
+        // depth-write disabled. Semi-transparent quads (fill alpha < 1.0, e.g.
+        // the context-menu dim barrier) render and blend normally but do NOT
+        // write their depth to the depth buffer. This prevents them from
+        // occluding text that is rendered in the later glyphon text pass.
+        // Without this, a full-screen dim quad at z≈0.996 would write that
+        // depth to every pixel, causing background text at z≈0.997 to fail
+        // the LessEqual depth test and disappear.
+        let transparent_depth_stencil = wgpu::DepthStencilState {
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            ..depth_stencil_state.clone()
+        };
+        let transparent_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Transparent Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[
+                        Some(Vertex::desc()),
+                        Some(QuadInstance::desc()),
+                    ],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(transparent_depth_stencil),
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
 
         // Create buffers
         const QUAD_VERTICES: &[Vertex] = &[
@@ -610,6 +666,7 @@ impl WgpuBackend {
             config,
             is_configured,
             render_pipeline,
+            transparent_render_pipeline,
             vertex_buffer,
             index_buffer,
             instance_buffer,
@@ -1065,13 +1122,19 @@ impl WgpuBackend {
                 // 2. Pipeline: only switch when op kind changes.
                 let kind = loc.kind();
                 let rclip_slot_idx = match kind {
-                    OpKind::Quad => 0,
+                    OpKind::Quad | OpKind::TransparentQuad => 0,
                     OpKind::Image => 1,
                 };
                 if Some(kind) != prev_kind {
                     match kind {
                         OpKind::Quad => {
                             render_pass.set_pipeline(&self.render_pipeline);
+                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                        }
+                        OpKind::TransparentQuad => {
+                            render_pass.set_pipeline(&self.transparent_render_pipeline);
                             render_pass.set_bind_group(0, &self.global_bind_group, &[]);
                             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
@@ -1098,7 +1161,7 @@ impl WgpuBackend {
                 let rclip_offset = self.current_op_rclip_offsets[i];
                 if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
                     let rclip_group = match kind {
-                        OpKind::Quad => 1,
+                        OpKind::Quad | OpKind::TransparentQuad => 1,
                         OpKind::Image => 2,
                     };
                     render_pass.set_bind_group(
@@ -1111,7 +1174,7 @@ impl WgpuBackend {
 
                 // 4. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
                 match kind {
-                    OpKind::Quad => {
+                    OpKind::Quad | OpKind::TransparentQuad => {
                         render_pass.set_index_buffer(
                             self.index_buffer.slice(..),
                             wgpu::IndexFormat::Uint16,
@@ -1126,6 +1189,7 @@ impl WgpuBackend {
                 }
                 let idx = match loc {
                     crate::frame_builder::OpLocation::Quad { index } => *index,
+                    crate::frame_builder::OpLocation::TransparentQuad { index } => *index,
                     crate::frame_builder::OpLocation::Image { index } => *index,
                 };
                 render_pass.draw_indexed(0..6, 0, idx..idx + 1);
