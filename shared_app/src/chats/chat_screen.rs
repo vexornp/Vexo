@@ -1038,8 +1038,8 @@ mod tests {
         pipeline.perform_rebuilds();
 
         assert_eq!(
-            controller.position_signal().get(),
-            None,
+            controller.phase(),
+            vexo_uikit::Phase::Closed,
             "left-click should NOT open the context menu"
         );
     }

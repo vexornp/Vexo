@@ -9,17 +9,18 @@ use vexo::{
     Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{ContextMenuController, MenuBuilder};
+use vexo_uikit::{ContextMenuController, MenuBuilder, MenuContent, MenuMetrics};
 
+/// Temporary Task-2 builder: splits the previous single-card layout into
+/// `MenuContent { reactions, actions, metrics }` so the workspace compiles
+/// against the new controller API. Task 3 refines this into the real reactions
+/// pill + actions card styling. The `menu_divider` is dropped (per spec: no
+/// divider between two separate cards).
 pub(super) fn builder() -> MenuBuilder {
     MenuBuilder::new(|ctrl, theme| {
-        // Assemble: reaction row, hairline divider, three item rows.
-        // Each MenuRow carries a `theme.clone()` snapshot — the builder runs
-        // inside ContextMenu::render, so this is the live theme (and re-runs
-        // on theme toggle, per test_builder_reads_current_theme).
-        let column = column! {
-            reaction_row(ctrl.clone(), theme.clone()),
-            menu_divider(theme.clone()),
+        // Actions card: three item rows in a column, wrapped in the same
+        // decorated surface as before (corner radius + border + shadow).
+        let actions_column = column! {
             MenuRow {
                 theme: theme.clone(),
                 icon: Icons::Copy,
@@ -42,9 +43,8 @@ pub(super) fn builder() -> MenuBuilder {
                 on_tap: close_after(ctrl.clone(), "context menu: Delete"),
             },
         };
-
-        DecoratedBox::with_style(
-            WithLayout::new(column, Layout::default().min_width(200.0)),
+        let actions = DecoratedBox::with_style(
+            WithLayout::new(actions_column, Layout::default().min_width(200.0)),
             Style::default()
                 .corner_radius(12.0)
                 .background(theme.surface)
@@ -55,7 +55,17 @@ pub(super) fn builder() -> MenuBuilder {
                         .offset(0.0, 4.0),
                 ),
         )
-        .boxed()
+        .boxed();
+
+        MenuContent {
+            reactions: reaction_row(ctrl.clone(), theme.clone()),
+            actions,
+            metrics: MenuMetrics {
+                reactions_size: vexo::core::Size::new(150.0, 28.0),
+                actions_size: vexo::core::Size::new(200.0, 108.0),
+                gap: 8.0,
+            },
+        }
     })
 }
 
@@ -143,23 +153,6 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
         log::debug!("{}", msg);
         ctrl.close();
     })
-}
-
-/// A 1px hairline separator between menu sections. Full-width (100%).
-///
-/// Uses the same pre-composited outline formula as `NavColors::divider`
-/// in `vexo_uikit/src/theme/tokens.rs`: `Color::lerp(outline, surface,
-/// 1.0 - 0.35)` — outline at ~0.35 alpha, pre-composited over surface so it
-/// renders identically regardless of backdrop. Taffy floors sub-pixel heights
-/// to 0, so 1.0 is the smallest height that survives layout (see
-/// `HAIRLINE_THICKNESS` in `vexo_uikit/src/theme/tokens.rs`).
-fn menu_divider(theme: vexo::ThemeData) -> Box<dyn Widget> {
-    let color = Color::lerp(theme.outline, theme.surface, 1.0 - 0.35);
-    DecoratedBox::with_style(
-        row! {}.height(1.0).flex_shrink(0.0),
-        Style::default().background(color),
-    )
-    .boxed()
 }
 
 /// The top reaction strip: a centered row of 6 FontAwesome reaction icons

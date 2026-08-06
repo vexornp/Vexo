@@ -20,7 +20,10 @@ pub mod button;
 pub use button::{Button, ButtonState, ButtonVariant};
 
 pub mod context_menu;
-pub use context_menu::{context_menu_trigger, ContextMenu, ContextMenuController, MenuBuilder};
+pub use context_menu::{
+    context_menu_trigger, ContextMenu, ContextMenuController, MenuBuilder, MenuContent,
+    MenuMetrics, Phase,
+};
 
 pub mod keyboard_avoider;
 pub use keyboard_avoider::KeyboardAvoider;
