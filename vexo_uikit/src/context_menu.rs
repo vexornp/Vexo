@@ -317,32 +317,45 @@ impl Component for ContextMenu {
                 let controller = self.controller.clone();
 
                 // [2] Dim barrier — full-screen, fixed 0.4 alpha (Task 6
-                // animates this with the spring value). Structure (per the
-                // spec's render tree + the task's implementation note):
+                // animates this with the spring value). Structure:
                 // Positioned(0,0,0,0) → GestureDetector.on_press(→ close) →
-                // WithLayout(width_percent=1.0, height_percent=1.0) →
-                // Opacity(0.4) → DecoratedBox(BLACK) → Text("").
+                // Opacity(0.4) → DecoratedBox(BLACK) →
+                // WithLayout(width_percent=1.0, height_percent=1.0) → Text("").
                 //
-                // The WithLayout makes the inner subtree fill the Stack's
-                // content box, so the GestureDetector's computed_bounds cover
-                // the full screen and any tap inside the window hits the
-                // barrier (→ close) unless a higher overlay (bubble copy,
-                // actions card) intercepts it first. The empty Text is the
-                // DecoratedBox's required child — it has zero intrinsic size,
-                // so it doesn't affect layout.
+                // CRITICAL: `DecoratedBox` is a pass-through render object —
+                // it inherits its *child's* bounds, not its parent's. So
+                // `DecoratedBox` must WRAP `WithLayout` (not the other way
+                // around). `WithLayout`'s width_percent/height_percent give it
+                // full-screen bounds; `DecoratedBox` then inherits those
+                // full-screen bounds and paints the black.
+                //
+                // If `DecoratedBox` were inside `WithLayout`, its child would
+                // be `Text("")`. The Column's `align_items: Stretch` only
+                // affects the cross axis (width), not the main axis (height),
+                // so `Text("")` would stretch to full width but keep its
+                // intrinsic line height (~29px) on the main axis. The
+                // pass-through `DecoratedBox` would inherit those ~400x29
+                // bounds → the dim would paint only a 29px strip at the top of
+                // the screen instead of covering the full window. The
+                // GestureDetector reads the WithLayout's full-screen bounds
+                // (its own layout node), so tap-to-close still works either
+                // way — which is why the strip bug was invisible to existing
+                // tests. The empty `Text` is `WithLayout`'s required leaf; it
+                // has near-zero intrinsic size, so it doesn't affect the
+                // WithLayout's full-screen layout.
                 let ctrl_for_barrier = controller.clone();
                 let barrier = vexo::Positioned::new(
-                    vexo::GestureDetector::new(vexo::WithLayout::new(
-                        vexo::Opacity::new(
-                            vexo::DecoratedBox::with_style(
+                    vexo::GestureDetector::new(vexo::Opacity::new(
+                        vexo::DecoratedBox::with_style(
+                            vexo::WithLayout::new(
                                 vexo::Text::new(""),
-                                vexo::Style::default().background(vexo::Color::BLACK),
+                                vexo::Layout::default()
+                                    .width_percent(1.0)
+                                    .height_percent(1.0),
                             ),
-                            0.4,
+                            vexo::Style::default().background(vexo::Color::BLACK),
                         ),
-                        vexo::Layout::default()
-                            .width_percent(1.0)
-                            .height_percent(1.0),
+                        0.4,
                     ))
                     .on_press(move || ctrl_for_barrier.close()),
                 )
@@ -912,6 +925,125 @@ mod tests {
         assert_eq!(
             found_sizes[0], found_sizes[1],
             "in-content and bright copy sizes must match (dual-render is deterministic)"
+        );
+    }
+
+    /// Walk the render tree and collect the `RenderObjectKey`s of every
+    /// `DecoratedBoxRenderObject` whose `Style.background` is `Some(BLACK)`.
+    /// Used by the dim-barrier height regression test to locate the dim's
+    /// render object (the only BLACK-background DecoratedBox in the menu's
+    /// render tree when the menu is open).
+    fn collect_black_decorated_boxes(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        out: &mut Vec<RenderObjectKey>,
+    ) {
+        if let Some(ro) = reg.get(key) {
+            let is_black_bg = ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .background
+                        .map_or(false, |c| c == vexo::Color::BLACK)
+                });
+            if is_black_bg {
+                out.push(key);
+            }
+            for &child in ro.children() {
+                collect_black_decorated_boxes(reg, child, out);
+            }
+        }
+    }
+
+    /// Regression test for the dim-barrier sizing bug.
+    ///
+    /// Before the fix, the dim barrier's `DecoratedBox(BLACK)` was nested
+    /// INSIDE `WithLayout` — so its child was `Text("")`. `DecoratedBox` is a
+    /// pass-through render object, so it inherits its CHILD's bounds, not the
+    /// `WithLayout`'s full-screen bounds. The `WithLayout` Column's
+    /// `align_items: Stretch` only affects the cross axis (width), not the
+    /// main axis (height), so `Text("")` stretched to full width (400px) but
+    /// kept its intrinsic line height (~29px) on the main axis. The
+    /// pass-through `DecoratedBox` inherited those 400x29 bounds → the dim
+    /// painted only a 29px strip at the top of the screen instead of covering
+    /// the full window. Tap-to-close still worked because the
+    /// `GestureDetector` reads the `WithLayout`'s full-screen bounds (its own
+    /// layout node), not the `DecoratedBox`'s — masking the bug from existing
+    /// tests.
+    ///
+    /// After the fix, `DecoratedBox` WRAPS `WithLayout`, inheriting the
+    /// `WithLayout`'s full-screen bounds (from `width_percent(1.0)` +
+    /// `height_percent(1.0)`). This test walks the render tree when the menu
+    /// is open, finds the dim's `DecoratedBoxRenderObject` (the one with a
+    /// BLACK background), and asserts its `computed_bounds` cover the full
+    /// screen — both height > 0 (the literal regression guard) and height
+    /// equal to the screen height (the actual bug catcher: the buggy version
+    /// produced 29px, not 600px).
+    #[test]
+    fn test_dim_barrier_has_nonzero_height() {
+        let screen = vexo::core::Size::new(400.0, 600.0);
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(Text::new("content"), controller.clone());
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(host.boxed());
+
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(screen, &mut engine, &mut font_system);
+
+        // Open the menu — the dim barrier should be in the render tree.
+        let bubble_widget = vexo::Text::new("bubble").boxed();
+        let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
+        controller.show(bounds, bubble_widget, test_content_builder("Copy"));
+        pipeline.perform_rebuilds();
+        pipeline.layout(screen, &mut engine, &mut font_system);
+
+        // Find the dim's DecoratedBoxRenderObject (BLACK background).
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let mut black_boxes: Vec<RenderObjectKey> = Vec::new();
+        collect_black_decorated_boxes(ro_reg, root, &mut black_boxes);
+        assert_eq!(
+            black_boxes.len(),
+            1,
+            "exactly one BLACK-background DecoratedBox (the dim) should exist when menu is open"
+        );
+
+        let dim_ro = ro_reg
+            .get(black_boxes[0])
+            .expect("dim DecoratedBoxRenderObject should be registered");
+        let dim_bounds = dim_ro
+            .computed_bounds()
+            .expect("dim DecoratedBox should have computed_bounds after layout");
+
+        // Literal regression guard: height must be > 0.
+        assert!(
+            dim_bounds.height() > 0.0,
+            "dim barrier height must be > 0 (got {}); zero height means the dim paints nothing",
+            dim_bounds.height()
+        );
+
+        // Actual bug catcher: the dim must cover the FULL screen height. The
+        // buggy nesting (DecoratedBox inside WithLayout) produced a 29px-tall
+        // strip — non-zero, so the `> 0` check above passed, but the dim was
+        // visually broken (only the top 29px dimmed). The fixed nesting
+        // (DecoratedBox wraps WithLayout) yields full-screen coverage.
+        assert_eq!(
+            dim_bounds.height(),
+            screen.height,
+            "dim barrier height must equal screen height ({}); got {} — if this is a small \
+             value (~font line height), DecoratedBox is inside WithLayout and inheriting \
+             Text(\"\")'s intrinsic line height instead of WithLayout's full-screen bounds",
+            screen.height,
+            dim_bounds.height()
+        );
+        assert_eq!(
+            dim_bounds.width(),
+            screen.width,
+            "dim barrier width must equal screen width ({})",
+            screen.width
         );
     }
 }
