@@ -4,6 +4,7 @@ pub(crate) mod chat_screen;
 pub(crate) mod conversation_list;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) mod desktop;
+mod message_menu;
 
 use std::collections::HashMap;
 use std::rc::Rc;
