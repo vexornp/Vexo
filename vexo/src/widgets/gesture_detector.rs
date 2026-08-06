@@ -70,8 +70,9 @@ pub struct GestureDetector {
     /// arena). Arena-mediated — does NOT fire if a drag wins instead.
     on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
     /// Callback invoked when the secondary (right) mouse button is pressed
-    /// inside the child bounds. Receives the global cursor position.
-    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>)>>>,
+    /// inside the child bounds. Receives the global cursor position and the
+    /// element's global bounds (window-logical coordinates).
+    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
 }
 
 impl GestureDetector {
@@ -114,9 +115,13 @@ impl GestureDetector {
     }
 
     /// Set the callback for secondary (right-click) button press events.
-    /// Receives the global cursor position (window-logical coordinates).
+    /// Receives the global cursor position (window-logical coordinates) and
+    /// the element's global bounds (from `EventContext::bounds()`).
     /// When set, this takes precedence over `on_press` for Secondary presses.
-    pub fn on_secondary_press(mut self, callback: impl FnMut(Point<Logical>) + 'static) -> Self {
+    pub fn on_secondary_press(
+        mut self,
+        callback: impl FnMut(Point<Logical>, Bounds<Logical>) + 'static,
+    ) -> Self {
         self.on_secondary_press = Some(Rc::new(RefCell::new(callback)));
         self
     }
@@ -187,7 +192,7 @@ pub struct GestureDetectorElement {
     on_press: Option<Rc<RefCell<dyn FnMut()>>>,
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
     on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
-    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>)>>>,
+    on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
     focus_attachment: Option<FocusAttachment>,
 }
 
@@ -349,10 +354,11 @@ impl Element for GestureDetectorElement {
                 match state {
                     ButtonState::Pressed => {
                         // Secondary (right-click) with on_secondary_press set:
-                        // fire it with position, claim the event, skip on_press.
+                        // fire it with position + global bounds, claim the
+                        // event, skip on_press.
                         if *button == crate::input::PointerButton::Secondary {
                             if let Some(callback) = &self.on_secondary_press {
-                                (callback.borrow_mut())(*position);
+                                (callback.borrow_mut())(*position, context.bounds());
                                 return Some(Box::new(()));
                             }
                             // Fall through to on_press for Secondary when
@@ -803,16 +809,23 @@ mod tests {
     #[test]
     fn test_on_secondary_press_fires_with_position() {
         let captured_pos = Rc::new(Cell::new(Point::<Logical>::new(-1.0, -1.0)));
+        let captured_bounds = Rc::new(Cell::new(Bounds::<Logical>::new(0.0, 0.0, 0.0, 0.0)));
         let pos_clone = captured_pos.clone();
+        let bounds_clone = captured_bounds.clone();
 
         let mut elem = GestureDetectorElement::new();
-        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |pos| {
-            pos_clone.set(pos);
-        })));
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(
+            move |pos: Point<Logical>, bounds: Bounds<Logical>| {
+                pos_clone.set(pos);
+                bounds_clone.set(bounds);
+            },
+        )));
 
         let mut state = crate::StateStorage::new();
         let mut font_system = create_test_font_system();
-        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        // Non-zero origin so a mistakenly-defaulted bounds would fail the
+        // assertion. Event position (42, 17) is inside these bounds.
+        let test_bounds = Bounds::from_xywh(5.0, 5.0, 100.0, 50.0);
         let element_id = {
             let mut sm: slotmap::SlotMap<crate::id::ElementKey, ()> = slotmap::SlotMap::with_key();
             sm.insert(())
@@ -820,7 +833,7 @@ mod tests {
         let mut ctx = EventContext::new(
             element_id,
             Point::new(50.0, 25.0),
-            bounds,
+            test_bounds,
             crate::input::Modifiers::default(),
             &mut font_system,
             None,
@@ -839,6 +852,11 @@ mod tests {
             "on_secondary_press should claim the event"
         );
         assert_eq!(captured_pos.get(), Point::new(42.0, 17.0));
+        assert_eq!(
+            captured_bounds.get(),
+            test_bounds,
+            "callback should receive the element's global bounds from context.bounds()"
+        );
     }
 
     #[test]
@@ -847,7 +865,7 @@ mod tests {
         let called_clone = called.clone();
 
         let mut elem = GestureDetectorElement::new();
-        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos| {
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos, _bounds| {
             called_clone.set(true);
         })));
 
@@ -890,7 +908,7 @@ mod tests {
         let press_clone = press_called.clone();
 
         let mut elem = GestureDetectorElement::new();
-        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos| {
+        elem.on_secondary_press = Some(Rc::new(RefCell::new(move |_pos, _bounds| {
             sec_clone.set(true);
         })));
         elem.on_press = Some(Rc::new(RefCell::new(move || {
@@ -967,15 +985,16 @@ mod tests {
 
     #[test]
     fn test_widget_trait_on_secondary_press() {
-        use crate::core::Logical;
+        use crate::core::{Bounds, Logical};
         let called = Rc::new(Cell::new(false));
         let called_clone = called.clone();
 
         // Use the Widget trait method on a Text widget.
-        let widget: Box<dyn Widget> =
-            Text::new("Right-click me").on_secondary_press(move |_pos: Point<Logical>| {
+        let widget: Box<dyn Widget> = Text::new("Right-click me").on_secondary_press(
+            move |_pos: Point<Logical>, _bounds: Bounds<Logical>| {
                 called_clone.set(true);
-            });
+            },
+        );
 
         // Verify it wrapped in a GestureDetector.
         assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());

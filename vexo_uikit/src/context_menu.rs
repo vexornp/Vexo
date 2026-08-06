@@ -215,7 +215,7 @@ impl Component for ContextMenu {
 ///
 /// Equivalent to:
 /// ```ignore
-/// child.on_secondary_press(move |pos| controller.show(pos, builder))
+/// child.on_secondary_press(move |pos, _bounds| controller.show(pos, builder))
 /// ```
 pub fn context_menu_trigger(
     child: impl Widget + 'static,
@@ -223,7 +223,7 @@ pub fn context_menu_trigger(
     builder: MenuBuilder,
 ) -> Box<dyn Widget> {
     let ctrl = controller.clone();
-    child.on_secondary_press(move |pos| {
+    child.on_secondary_press(move |pos, _bounds| {
         ctrl.show(pos, builder.clone());
     })
 }

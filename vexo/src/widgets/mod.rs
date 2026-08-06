@@ -219,7 +219,10 @@ pub trait Widget: Any {
 
     fn on_secondary_press(
         self,
-        callback: impl FnMut(crate::core::Point<crate::core::Logical>) + 'static,
+        callback: impl FnMut(
+                crate::core::Point<crate::core::Logical>,
+                crate::core::Bounds<crate::core::Logical>,
+            ) + 'static,
     ) -> Box<dyn Widget>
     where
         Self: Sized + 'static,
