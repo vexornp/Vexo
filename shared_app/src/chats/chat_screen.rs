@@ -120,15 +120,18 @@ impl Component for ChatScreen {
         let ctrl = self.context_menu.clone();
         let list = column! {
             for msg in &messages {
-                context_menu_trigger(
-                    build_message_bubble(
-                        msg,
-                        state.them_avatar(&self.avatar_bytes).clone(),
-                        state.me_avatar(&self.me_avatar_bytes).clone(),
-                        &theme,
-                    ),
+                let is_me = msg.author == MessageAuthor::Me;
+                let bubble = build_bubble(msg, &theme);
+                let bubble_with_menu = context_menu_trigger(
+                    bubble,
                     ctrl.clone(),
                     message_menu::builder(),
+                );
+                assemble_row(
+                    bubble_with_menu,
+                    state.them_avatar(&self.avatar_bytes).clone(),
+                    state.me_avatar(&self.me_avatar_bytes).clone(),
+                    is_me,
                 )
             }
         }
@@ -179,14 +182,12 @@ impl Component for ChatScreen {
     }
 }
 
-fn build_message_bubble(
-    msg: &Message,
-    them_avatar_image: ImageData,
-    me_avatar_image: ImageData,
-    theme: &vexo::ThemeData,
-) -> Box<dyn Widget> {
+/// Build just the message bubble (DecoratedBox + text), without the avatar
+/// or row layout. This is what gets wrapped in `context_menu_trigger` so
+/// the trigger's bounds match the bubble, not the full-width row.
+fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let is_me = msg.author == MessageAuthor::Me;
-    let bubble = DecoratedBox::with_style(
+    DecoratedBox::with_style(
         WithLayout::new(
             Text::new(msg.text.as_str())
                 .with_font_size(15.0)
@@ -207,13 +208,23 @@ fn build_message_bubble(
             .background(if is_me { theme.primary } else { theme.surface })
             .border(theme.outline, 1.0),
     )
-    .boxed();
+    .boxed()
+}
 
+/// Assemble the full message row: avatar + bubble + spacer. The bubble is
+/// already wrapped in the context menu trigger by the caller — `assemble_row`
+/// only handles the row layout (avatar position + spacer for "me" alignment).
+fn assemble_row(
+    bubble_with_menu: Box<dyn Widget>,
+    them_avatar_image: ImageData,
+    me_avatar_image: ImageData,
+    is_me: bool,
+) -> Box<dyn Widget> {
     if is_me {
         let me_avatar = avatar(me_avatar_image, 32.0);
         row! {
             Spacer::new(),
-            bubble,
+            bubble_with_menu,
             me_avatar,
         }
         .gap(8.0)
@@ -222,7 +233,7 @@ fn build_message_bubble(
         let them_avatar = avatar(them_avatar_image, 32.0);
         row! {
             them_avatar,
-            bubble,
+            bubble_with_menu,
             Spacer::new(),
         }
         .gap(8.0)
@@ -974,6 +985,67 @@ mod tests {
                 label,
             );
         }
+    }
+
+    /// After the `build_message_bubble` → `build_bubble` + `assemble_row`
+    /// refactor, the trigger wraps ONLY the bubble (not the avatar). Right-
+    /// clicking the avatar area must NOT open the menu — the trigger's bounds
+    /// are the bubble's bounds, not the full-width row's.
+    #[test]
+    fn test_right_click_on_avatar_does_not_open_menu() {
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: Signal::derive(messages_signal, |map| {
+                    map.get(&ConvId(1)).cloned().unwrap_or_default()
+                }),
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller.clone(),
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Right-click at the avatar position (x=15, before the bubble at
+        // x≈52). The first row's layout is: 12px list padding | 32px avatar |
+        // 8px gap | bubble. So x=15 lands on the avatar, NOT the bubble.
+        let secondary_press = vexo::input::InputEvent::PointerButton {
+            position: vexo::core::Point::new(15.0, 20.0),
+            button: vexo::input::PointerButton::Secondary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            vexo::core::Point::new(15.0, 20.0),
+            &secondary_press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            controller.phase(),
+            vexo_uikit::Phase::Closed,
+            "right-click on avatar should NOT open the menu (trigger wraps bubble only)"
+        );
     }
 
     #[test]

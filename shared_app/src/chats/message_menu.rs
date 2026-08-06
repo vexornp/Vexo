@@ -1,5 +1,5 @@
-//! Message-bubble context menu: builder + reaction row + item rows,
-//! assembled by `builder`.
+//! Message-bubble context menu: builder + reactions pill + actions card,
+//! assembled by `builder` into a `MenuContent { reactions, actions, metrics }`.
 
 use std::rc::Rc;
 
@@ -11,61 +11,20 @@ use vexo::{
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{ContextMenuController, MenuBuilder, MenuContent, MenuMetrics};
 
-/// Temporary Task-2 builder: splits the previous single-card layout into
-/// `MenuContent { reactions, actions, metrics }` so the workspace compiles
-/// against the new controller API. Task 3 refines this into the real reactions
-/// pill + actions card styling. The `menu_divider` is dropped (per spec: no
-/// divider between two separate cards).
+/// Build the `MenuContent` for a message-bubble context menu: a reactions
+/// pill (6 FA icons in an 18px-radius pill) above an actions card (3 MenuRows
+/// in a 12px-radius card). The host (`ContextMenu`) positions `actions` at
+/// the bubble bounds; `reactions` is rendered by a later task. `metrics`
+/// holds the placeholder sizes used for positioning — Task 8 tunes them.
 pub(super) fn builder() -> MenuBuilder {
-    MenuBuilder::new(|ctrl, theme| {
-        // Actions card: three item rows in a column, wrapped in the same
-        // decorated surface as before (corner radius + border + shadow).
-        let actions_column = column! {
-            MenuRow {
-                theme: theme.clone(),
-                icon: Icons::Copy,
-                label: "Copy",
-                destructive: false,
-                on_tap: close_after(ctrl.clone(), "context menu: Copy"),
-            },
-            MenuRow {
-                theme: theme.clone(),
-                icon: Icons::Reply,
-                label: "Reply",
-                destructive: false,
-                on_tap: close_after(ctrl.clone(), "context menu: Reply"),
-            },
-            MenuRow {
-                theme: theme.clone(),
-                icon: Icons::Trash,
-                label: "Delete",
-                destructive: true,
-                on_tap: close_after(ctrl.clone(), "context menu: Delete"),
-            },
-        };
-        let actions = DecoratedBox::with_style(
-            WithLayout::new(actions_column, Layout::default().min_width(200.0)),
-            Style::default()
-                .corner_radius(12.0)
-                .background(theme.surface)
-                .border(theme.outline, 1.0)
-                .shadow(
-                    BoxShadow::new(Color::BLACK.with_alpha(0.20))
-                        .blur(12.0)
-                        .offset(0.0, 4.0),
-                ),
-        )
-        .boxed();
-
-        MenuContent {
-            reactions: reaction_row(ctrl.clone(), theme.clone()),
-            actions,
-            metrics: MenuMetrics {
-                reactions_size: vexo::core::Size::new(150.0, 28.0),
-                actions_size: vexo::core::Size::new(200.0, 108.0),
-                gap: 8.0,
-            },
-        }
+    MenuBuilder::new(|ctrl, theme| MenuContent {
+        reactions: reaction_pill(ctrl.clone(), theme.clone()),
+        actions: actions_card(ctrl.clone(), theme.clone()),
+        metrics: MenuMetrics {
+            reactions_size: vexo::core::Size::new(150.0, 28.0),
+            actions_size: vexo::core::Size::new(200.0, 108.0),
+            gap: 8.0,
+        },
     })
 }
 
@@ -147,7 +106,7 @@ impl Component for MenuRow {
 }
 
 /// Build the `on_tap` closure for a menu item: log `msg` and close the menu.
-/// Sugar so the `column!` in `builder` stays readable.
+/// Sugar so the `column!` in `actions_card` stays readable.
 fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
     Rc::new(move || {
         log::debug!("{}", msg);
@@ -155,13 +114,11 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
     })
 }
 
-/// The top reaction strip: a centered row of 6 FontAwesome reaction icons
-/// (standing in for emoji — the text pipeline is monochrome-only and no emoji
-/// font is loaded). Each icon is tappable: logs a message and closes the menu.
-///
-/// Stateless (no hover background) — the cursor still flips to pointer via
-/// `.cursor(...)`. Matches the image's compact, low-affordance reaction strip.
-fn reaction_row(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
+/// The reactions pill: a compact row of 6 FA icons in a pill-shaped
+/// (18px radius) DecoratedBox. Each icon is tappable: logs a message and
+/// closes the menu. Stateless (no hover background) — the cursor still flips
+/// to pointer via `.cursor(...)`.
+fn reaction_pill(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
     // (icon, log message) pairs. The log messages use emoji codepoints in the
     // string literal for grep-ability — they're just log text, never rendered.
     let reactions: [(Icons, &str); 6] = [
@@ -179,7 +136,7 @@ fn reaction_row(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn 
             GestureDetector::new(
                 WithLayout::new(
                     Icon::new(icon)
-                        .with_size(16.0)
+                        .with_size(18.0)
                         .with_color(theme.on_surface_variant),
                     Layout::default().padding(6.0),
                 )
@@ -192,12 +149,62 @@ fn reaction_row(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn 
             })
         }
     }
-    .gap(8.0)
+    .gap(6.0)
     .justify(JustifyContent::Center);
 
-    WithLayout::new(
-        row,
-        Layout::default().padding_each(8.0, 8.0, 4.0, 4.0), // 8h, 4v
+    DecoratedBox::with_style(
+        WithLayout::new(row, Layout::default().padding_each(6.0, 6.0, 5.0, 5.0)),
+        Style::default()
+            .corner_radius(18.0)
+            .background(theme.surface)
+            .border(theme.outline, 1.0)
+            .shadow(
+                BoxShadow::new(Color::BLACK.with_alpha(0.20))
+                    .blur(12.0)
+                    .offset(0.0, 4.0),
+            ),
+    )
+    .boxed()
+}
+
+/// The actions card: Copy/Reply/Delete rows in a 12px-radius DecoratedBox
+/// with the standard surface/outline/shadow styling.
+fn actions_card(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
+    let column = column! {
+        MenuRow {
+            theme: theme.clone(),
+            icon: Icons::Copy,
+            label: "Copy",
+            destructive: false,
+            on_tap: close_after(ctrl.clone(), "context menu: Copy"),
+        },
+        MenuRow {
+            theme: theme.clone(),
+            icon: Icons::Reply,
+            label: "Reply",
+            destructive: false,
+            on_tap: close_after(ctrl.clone(), "context menu: Reply"),
+        },
+        MenuRow {
+            theme: theme.clone(),
+            icon: Icons::Trash,
+            label: "Delete",
+            destructive: true,
+            on_tap: close_after(ctrl.clone(), "context menu: Delete"),
+        },
+    };
+
+    DecoratedBox::with_style(
+        WithLayout::new(column, Layout::default().min_width(200.0)),
+        Style::default()
+            .corner_radius(12.0)
+            .background(theme.surface)
+            .border(theme.outline, 1.0)
+            .shadow(
+                BoxShadow::new(Color::BLACK.with_alpha(0.20))
+                    .blur(12.0)
+                    .offset(0.0, 4.0),
+            ),
     )
     .boxed()
 }
