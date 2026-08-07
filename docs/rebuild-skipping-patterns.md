@@ -202,6 +202,78 @@ stable props (closures/controllers differ, data doesn't).
 
 ---
 
+## Signal field rule: root Signals only, derive in State
+
+**This rule is load-bearing for any component using Level 3
+(`should_rebuild() == false`). Violating it causes silent state-driven-rebuild
+failures.**
+
+### The rule
+
+**Signal widget fields must be root Signals (identity-stable for the element's
+lifetime). Never pass `Signal::derive(...)` created in parent `render()` as a
+child widget field.**
+
+### Why
+
+When `should_rebuild` returns `false`, the framework still replaces widget
+fields (`StatefulElement::update`, `stateful_widget.rs`) but skips `render()`.
+`signal_value` — which registers the dirty_callback as a weak subscriber on
+the Signal — is only called during `render()`. If a parent passes a fresh
+`Signal::derive(...)` each cascade, the new derived Signal never gets a
+subscriber, and state-driven rebuilds silently break.
+
+Root Signals don't have this problem: they're `Arc`-cloned (same identity), so
+the subscription registered on mount persists across render-skips.
+
+### The derived-in-State pattern
+
+When a child needs a derived view of a root Signal (e.g. filtering a
+`HashMap<ConvId, Vec<Message>>` to one conversation's slice), the derived
+Signal must live in **State**, not the Widget struct:
+
+```rust
+struct ChatScreen {
+    conv_id: ConvId,
+    messages: Signal<HashMap<ConvId, Vec<Message>>>,  // root, not derived
+}
+
+struct ChatScreenState {
+    derived_messages: Option<Signal<Vec<Message>>>,
+}
+
+impl ComponentState for ChatScreenState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        let widget = ctx.widget().downcast_ref::<ChatScreen>().unwrap();
+        let conv_id = widget.conv_id.clone();
+        let root = widget.messages.clone();
+        self.derived_messages = Some(Signal::derive(root, move |map| {
+            map.get(&conv_id).cloned().unwrap_or_default()
+        }));
+    }
+}
+
+impl Component for ChatScreen {
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let messages = ctx.signal_value(state.derived_messages.as_ref().unwrap());
+        // ...
+    }
+}
+```
+
+The derived's Arc identity is stable (created once in `on_mount`, owned by
+State which persists across widget replacements), so the weak subscription
+survives `should_rebuild == false`.
+
+### Why no `on_update` re-derivation
+
+Root Signals are created once and live for the app's lifetime. No existing
+code path swaps the root source for an already-mounted element. If a future
+feature needs that, `on_update` re-derivation with `Signal::ptr_eq` checks
+is the trigger — not pre-building it now.
+
+---
+
 ## When *not* to optimize
 
 - Don't override `should_rebuild()` for components that aren't in a
