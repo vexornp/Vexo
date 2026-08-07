@@ -9,15 +9,14 @@
 //! reads the current theme. Each trigger captures its own builder, so different
 //! bubbles can render different menu styles.
 //!
-//! Task 5 state: open/close is driven by a critical spring
-//! (`SpringDescription::ios(340.0, 1.0)`) through a 4-state phase machine
-//! (`Closed → Opening → Open → Closing → Closed`). `show()` starts a forward
-//! spring (current value → 1.0, phase=Opening); `close()` starts a reverse
-//! spring (current value → 0.0, phase=Closing). Both retarget from the live
-//! value, so early close / re-show produce no jump. The host's `on_tick`
-//! calls `controller.advance(now)`, which samples the spring and flips
-//! Opening→Open or Closing→Closed (the latter clears `open` → unmount) on
-//! settle.
+//! Task 5 state: open is driven by a critical spring
+//! (`SpringDescription::ios(340.0, 1.0)`) through a 3-state phase machine
+//! (`Closed → Opening → Open`). `show()` starts a forward spring (current
+//! value → 1.0, phase=Opening); `close()` instantly clears to `Closed`
+//! (clears `open` → unmount, no reverse spring). The spring retargets from
+//! the live value, so re-show after a close produces no jump. The host's
+//! `on_tick` calls `controller.advance(now)`, which samples the spring and
+//! flips Opening→Open on settle.
 //!
 //! Task 6 wires the spring value `v = controller.animation_value()` (0→1 on
 //! open, 1→0 on close) into all three overlay layers: the dim barrier's alpha
@@ -109,15 +108,14 @@ impl Deref for MenuBuilder {
 // Phase + OpenState + ContextMenuController
 // ============================================================================
 
-/// Lifecycle phase of the context menu. The 4-state phase machine is driven
+/// Lifecycle phase of the context menu. The 3-state phase machine is driven
 /// by a critical spring: `show()` → `Opening`, settle → `Open`; `close()` →
-/// `Closing`, settle → `Closed` (clears `open`, unmounting the menu).
+/// `Closed` (instant — clears `open`, unmounts the menu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Closed,
     Opening,
     Open,
-    Closing,
 }
 
 /// Snapshot of what `show()` was called with. Held in the controller's shared
@@ -132,12 +130,13 @@ struct OpenState {
 struct Shared {
     phase: Phase,
     open: Option<OpenState>,
-    /// The critical spring driving `Opening`/`Closing`. Same spring as
+    /// The critical spring driving `Opening`. Same spring as
     /// KeyboardAvoidance/SlideTransition: `SpringDescription::ios(340.0, 1.0)`.
-    /// `show()`/`close()` start a forward/reverse spring from the current
-    /// value (smooth retarget — no jump on early close or re-show during
-    /// close). The host's `on_tick` calls `advance(now)` to sample the spring
-    /// and flip phases on settle.
+    /// `show()` starts a forward spring from the current value (smooth
+    /// retarget on re-show after a close — no jump). `close()` does NOT touch
+    /// the spring; it instantly clears phase + open state. The host's `on_tick`
+    /// calls `advance(now)` to sample the spring and flip `Opening → Open` on
+    /// settle.
     animation: AnimationController,
     /// Cached so `show()`/`close()` can (re-)wire the `AnimationController`
     /// even if called before the host's `on_mount` (e.g. in tests). Set by
@@ -184,9 +183,9 @@ impl ContextMenuController {
     /// Open the menu anchored to `bubble_bounds`, carrying a clone of the
     /// bubble widget (Task 6 renders a lifted copy). Starts a forward spring
     /// (current value → 1.0) and sets phase to `Opening`. The spring retargets
-    /// from the current value, so calling `show()` during a `Closing` spring
-    /// (re-show) produces no jump — the spring reverses direction smoothly.
-    /// `on_tick` flips `Opening` → `Open` when the spring settles.
+    /// from the current value, so calling `show()` after a `close()` (re-show)
+    /// produces no jump — the forward spring resumes from wherever the value
+    /// was left. `on_tick` flips `Opening` → `Open` when the spring settles.
     pub fn show(
         &self,
         bubble_bounds: Bounds<Logical>,
@@ -229,32 +228,22 @@ impl ContextMenuController {
         // send — no RefCell reentry — so holding borrow_mut here is safe.
     }
 
-    /// Close the menu. Starts a reverse spring (current value → 0.0) and
-    /// sets phase to `Closing`. The spring retargets from the current value,
-    /// so calling `close()` during an `Opening` spring (early close) produces
-    /// no jump — the spring reverses direction smoothly. `on_tick` flips
-    /// `Closing` → `Closed` and clears `open` (unmount) when the spring
-    /// settles. No-op if already `Closed`.
+    /// Close the menu instantly. Sets phase to `Closed` and clears `open`
+    /// (unmount on next rebuild). No reverse spring, no animation. No-op if
+    /// already `Closed`.
     pub fn close(&self) {
         let mut s = self.shared.borrow_mut();
         if s.phase == Phase::Closed {
             return;
         }
-        s.phase = Phase::Closing;
-        if let Some(ticker) = s.ticker.clone() {
-            s.animation.set_ticker(ticker);
-        }
-        if let Some(cb) = s.dirty_callback.clone() {
-            s.animation.set_dirty_callback(cb);
-        }
-        // Reverse spring from the current value (smooth retarget).
-        let from = s.animation.value();
-        s.animation.animate_with(Box::new(SpringSimulation::new(
-            SpringDescription::ios(340.0, 1.0),
-            from,
-            0.0,
-            0.0,
-        )));
+        s.phase = Phase::Closed;
+        s.open = None;
+        // A forward spring may still be running (if close() is called mid-
+        // Opening). It will settle to 1.0 on its own and stop firing dirty
+        // callbacks; advance() guards on phase != Closed so it's a no-op.
+        // We do NOT stop the spring here — AnimationController has no stop()
+        // API, and leaving it is harmless (nothing reads the value once the
+        // overlay unmounts).
     }
 
     pub fn phase(&self) -> Phase {
@@ -293,7 +282,6 @@ impl ContextMenuController {
     ///
     /// On settle (`!is_animating()`):
     /// - `Opening` → `Open` (menu fully shown; spring holds at 1.0).
-    /// - `Closing` → `Closed` + clear `open` (menu unmounts; spring holds at 0.0).
     ///
     /// No-op when `Closed` (no spring running, nothing to advance). This
     /// guards against the host's `on_tick` firing after the menu has already
@@ -306,19 +294,9 @@ impl ContextMenuController {
         }
         s.animation.advance(now);
 
-        // Check for settle. `advance` sets `drive = Stopped` and unregisters
-        // from the ticker when the sim reports `is_done`; `is_animating()`
-        // reflects that.
         if !s.animation.is_animating() {
-            match s.phase {
-                Phase::Opening => {
-                    s.phase = Phase::Open;
-                }
-                Phase::Closing => {
-                    s.phase = Phase::Closed;
-                    s.open = None;
-                }
-                _ => {}
+            if s.phase == Phase::Opening {
+                s.phase = Phase::Open;
             }
         }
     }
@@ -423,12 +401,11 @@ impl ComponentState for ContextMenuHostState {
         }
     }
     fn on_tick(&mut self, now: Instant) {
-        // Advance the spring and flip phases on settle (Opening→Open,
-        // Closing→Closed + clear open). The host element is marked dirty by
-        // the controller's dirty callback (fired by `animate_with` on start
-        // and by `advance` on each sample), so `perform_rebuilds` →
-        // `element.animate(now)` → `state.on_tick(now)` reaches here every
-        // frame while the spring is active.
+        // Advance the spring and flip Opening→Open on settle. The host element
+        // is marked dirty by the controller's dirty callback (fired by
+        // `animate_with` on start and by `advance` on each sample), so
+        // `perform_rebuilds` → `element.animate(now)` → `state.on_tick(now)`
+        // reaches here every frame while the spring is active.
         if let Some(ctrl) = &self.controller {
             ctrl.advance(now);
         }
@@ -783,9 +760,9 @@ mod tests {
         controller.show(bounds, bubble_widget, test_content_builder("Copy"));
         assert_eq!(controller.phase(), Phase::Opening);
 
-        // close() starts a reverse spring — phase is Closing, not Closed.
+        // close() instantly clears to Closed — no Closing phase.
         controller.close();
-        assert_eq!(controller.phase(), Phase::Closing);
+        assert_eq!(controller.phase(), Phase::Closed);
     }
 
     #[test]
@@ -963,26 +940,11 @@ mod tests {
         );
 
         assert!(selected.get(), "on_tap should have fired");
-        // After the tap, the menu should close (controller.close() called by
-        // the item's on_tap closure). Because the menu was fully open (v=1.0)
-        // when tapped, close() starts a reverse spring from 1.0→0.0 that is
-        // NOT instantly done (unlike the v≈0 case) — phase is `Closing` right
-        // after. Advance real time past settle so the spring finishes and the
-        // phase machine flips `Closing` → `Closed` (clearing `open`).
-        pipeline.perform_rebuilds();
-        assert_eq!(
-            controller.phase(),
-            Phase::Closing,
-            "menu should be mid-close right after the item tap fires close()"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(
             controller.phase(),
             Phase::Closed,
-            "menu should be closed after the close spring settles"
+            "menu should be closed immediately after item tap (instant close)"
         );
     }
 
@@ -1408,8 +1370,8 @@ mod tests {
     // Task 5: spring-driven phase machine lifecycle tests
     // ========================================================================
     //
-    // These tests exercise the 4-state phase machine (Closed → Opening →
-    // Open → Closing → Closed) driven by a critical spring
+    // These tests exercise the 3-state phase machine (Closed → Opening →
+    // Open) driven by a critical spring
     // (`SpringDescription::ios(340.0, 1.0)`). They use the
     // `pump(ticker, pipeline)` pattern: `std::thread::sleep` to advance real
     // time past the spring's settle point (~0.6s for k=340 critical), then
@@ -1460,7 +1422,7 @@ mod tests {
     }
 
     #[test]
-    fn test_close_starts_reverse_spring_not_immediate_unmount() {
+    fn test_close_is_instant_no_reverse_spring() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1471,7 +1433,6 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Open and settle.
         controller.show(
             vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
             vexo::Text::new("bubble").boxed(),
@@ -1484,33 +1445,22 @@ mod tests {
         pipeline.perform_rebuilds();
         assert_eq!(controller.phase(), Phase::Open);
 
-        // Close — should start reverse spring, NOT immediately clear.
         controller.close();
         pipeline.perform_rebuilds();
 
-        assert_eq!(controller.phase(), Phase::Closing);
-        assert!(
-            controller.animation_value() > 0.0,
-            "spring should still be mid-reverse (value={})",
-            controller.animation_value()
+        assert_eq!(
+            controller.phase(),
+            Phase::Closed,
+            "close() should instantly clear to Closed — no Closing phase"
         );
-
-        // Advance past settle.
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-
-        assert_eq!(controller.phase(), Phase::Closed);
         assert!(
-            (controller.animation_value() - 0.0).abs() < 0.01,
-            "spring should have settled to 0.0 (value={})",
-            controller.animation_value()
+            controller.open_snapshot().is_none(),
+            "open state should be cleared immediately after close()"
         );
     }
 
     #[test]
-    fn test_early_close_during_open_reverses_smoothly() {
+    fn test_early_close_during_open_is_instant() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1528,7 +1478,47 @@ mod tests {
         );
         pipeline.perform_rebuilds();
 
-        // Advance partway (value should be between 0 and 1).
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        controller.close();
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            controller.phase(),
+            Phase::Closed,
+            "early close() should be instant — no Closing phase"
+        );
+        assert!(controller.open_snapshot().is_none());
+    }
+
+    #[test]
+    fn test_reshow_after_close_retargets_from_current_value() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open and advance partway so the spring is genuinely mid-open
+        // (0 < v < 1). We close mid-open (not after settle) because close()
+        // leaves the spring untouched — after a *settled* open the value is
+        // 1.0 and a reshow would spring 1.0→1.0 (instantly done). Closing
+        // mid-open freezes the value at ~0.5, so the reshow below has real
+        // distance to travel and exercises the "retarget from current value"
+        // path the test name claims.
+        controller.show(
+            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
+            vexo::Text::new("bubble").boxed(),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
         std::thread::sleep(std::time::Duration::from_millis(150));
         ticker.tick();
         pipeline.drain_dirty_to_build_owner();
@@ -1536,68 +1526,20 @@ mod tests {
         let mid_value = controller.animation_value();
         assert!(
             mid_value > 0.0 && mid_value < 1.0,
-            "mid-value should be 0<v<1, got {}",
+            "spring should be mid-open (0<v<1), got {}",
             mid_value
         );
 
-        // Close mid-open.
+        // Instant close mid-open: phase→Closed, open cleared. The forward
+        // spring is left running but advance() is a no-op while Closed, so
+        // the value is frozen at mid_value until the next show().
         controller.close();
-        pipeline.perform_rebuilds();
-        assert_eq!(controller.phase(), Phase::Closing);
-
-        // The value right after close should NOT jump to 1.0 — it should be
-        // near mid_value (the spring starts from the current value).
-        let value_after_close = controller.animation_value();
-        assert!(
-            (value_after_close - mid_value).abs() < 0.15,
-            "value after close ({}) should be near mid_value ({}) — no jump to 1.0",
-            value_after_close,
-            mid_value
-        );
-
-        // Settle to Closed.
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(controller.phase(), Phase::Closed);
-    }
 
-    #[test]
-    fn test_reshow_during_close_retargets_upward() {
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
-        let ticker = Arc::new(AnimationTicker::new());
-
-        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        // Open and settle.
-        controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
-            test_content_builder("Copy"),
-        );
-        pipeline.perform_rebuilds();
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-
-        // Start close, advance partway down.
-        controller.close();
-        pipeline.perform_rebuilds();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-        let mid_value = controller.animation_value();
-        assert!(mid_value > 0.0 && mid_value < 1.0);
-
-        // Re-show with new bounds — should retarget upward.
+        // Re-show immediately (no tick between close and show): the forward
+        // spring retargets from the frozen mid_value → 1.0. No jump — the
+        // spring resumes from wherever it was left.
         controller.show(
             vexo::core::Bounds::new(20.0, 20.0, 100.0, 40.0),
             vexo::Text::new("bubble2").boxed(),
@@ -1630,18 +1572,16 @@ mod tests {
     ///
     /// Opens the menu, then clicks the dim barrier *mid-open* (before the
     /// spring settles). The barrier's `on_press` fires `controller.close()`,
-    /// which starts the reverse spring → phase becomes `Closing` (the spring
-    /// is mid-reverse, not yet settled to `Closed`).
+    /// which instantly clears phase to `Closed` and unmounts the menu (no
+    /// `Closing` phase, no reverse spring).
     ///
     /// To be genuinely "mid-animation", the spring value must be meaningfully
     /// between 0 and 1 when the barrier is clicked. Immediately after
     /// `show()` + one `perform_rebuilds()`, the spring has only advanced by
-    /// microseconds and `animation_value() ≈ 0` — so a `close()` from ≈0 to 0
-    /// would satisfy `is_done()` instantly (zero displacement), flipping phase
-    /// straight to `Closed`. That would make the `Phase::Closing` assertion
-    /// impossible. We therefore advance real time ~150ms (past the spring's
-    /// initial ramp, value ≈ 0.5) before clicking, so the reverse spring has
-    /// real distance to travel and `phase` is `Closing` when asserted.
+    /// microseconds and `animation_value() ≈ 0`. We advance real time ~150ms
+    /// (past the spring's initial ramp, value ≈ 0.5) before clicking, so the
+    /// `mid_value` assertion (0 < v < 1) is meaningful — it confirms the
+    /// barrier was actually hit mid-open, not after settle.
     #[test]
     fn test_dim_barrier_dismiss_during_animation() {
         let controller = ContextMenuController::new();
@@ -1696,12 +1636,12 @@ mod tests {
         );
         pipeline.perform_rebuilds();
 
-        // close() should have fired — phase is Closing (not Closed yet, spring
-        // is mid-reverse).
+        // close() should have fired — phase is Closed (instant close, no
+        // Closing phase).
         assert_eq!(
             controller.phase(),
-            Phase::Closing,
-            "barrier click mid-open should start close (phase=Closing)"
+            Phase::Closed,
+            "barrier click mid-open should instantly close (phase=Closed)"
         );
     }
 
