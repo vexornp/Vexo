@@ -26,11 +26,45 @@ pub(crate) enum ChatsRoute {
     Chat(ConvId),
 }
 
+/// A reaction a user can apply to a message. Domain-semantic names decoupled
+/// from the FontAwesome glyph (the `Icons` mapping lives in `message_menu.rs`'s
+/// `reaction_visual`). Mirrors iMessage/Facebook vocabulary so the enum reads
+/// as intent, not as "which FA icon".
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
+pub(crate) enum ReactionType {
+    Like,
+    Love,
+    Haha,
+    Wow,
+    Sad,
+    Angry,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Message {
     pub author: MessageAuthor,
     pub text: String,
     pub timestamp: u64, // unix seconds (mocked)
+    /// `Me`'s reaction on this message, if any. One reaction per user per
+    /// message (iMessage/WhatsApp model). Toggle via `apply_reaction`.
+    pub reactions: Option<ReactionType>,
+}
+
+/// Toggle `Me`'s reaction on the message at `index` in `vec`:
+/// - `None` → `Some(rt)` (set)
+/// - `Some(rt)` → `None` (clear)
+/// - `Some(other)` → `Some(rt)` (replace)
+///
+/// Centralized so both wiring sites (`mod.rs`, `desktop.rs`) share one
+/// definition of toggle semantics — and so it's unit-testable in isolation.
+pub(crate) fn apply_reaction(vec: &mut [Message], index: usize, rt: ReactionType) {
+    if let Some(msg) = vec.get_mut(index) {
+        msg.reactions = if msg.reactions == Some(rt) {
+            None
+        } else {
+            Some(rt)
+        };
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -344,16 +378,19 @@ pub(crate) fn seed() -> ImState {
                 author: MessageAuthor::Them,
                 text: "Hey! Are we still on for tomorrow?".into(),
                 timestamp: 1732347000,
+                reactions: Some(ReactionType::Like),
             },
             Message {
                 author: MessageAuthor::Me,
                 text: "Yes, definitely!".into(),
                 timestamp: 1732347300,
+                reactions: None,
             },
             Message {
                 author: MessageAuthor::Them,
                 text: "See you tomorrow!".into(),
                 timestamp: 1732347520,
+                reactions: Some(ReactionType::Love),
             },
         ],
     );
@@ -364,11 +401,13 @@ pub(crate) fn seed() -> ImState {
                 author: MessageAuthor::Them,
                 text: "Did you get the file?".into(),
                 timestamp: 1732346800,
+                reactions: None,
             },
             Message {
                 author: MessageAuthor::Me,
                 text: "Got it, thanks".into(),
                 timestamp: 1732347050,
+                reactions: None,
             },
         ],
     );
@@ -378,6 +417,7 @@ pub(crate) fn seed() -> ImState {
             author: MessageAuthor::Them,
             text: "Charlie: sounds good".into(),
             timestamp: 1732346700,
+            reactions: None,
         }],
     );
     messages.insert(ConvId(4), vec![]);
@@ -494,5 +534,68 @@ mod tests {
     fn test_tab_controller_starts_on_chats() {
         let s = seed();
         assert_eq!(s.tab_controller.current(), ImTab::Chats);
+    }
+
+    /// `apply_reaction` toggle semantics: set (None→Some), replace
+    /// (Some(other)→Some(rt)), clear (Some(rt)→None). Also covers
+    /// out-of-bounds index (no-op).
+    #[test]
+    fn test_apply_reaction_toggle() {
+        let mut vec = vec![
+            Message {
+                author: MessageAuthor::Them,
+                text: "a".into(),
+                timestamp: 1,
+                reactions: None,
+            },
+            Message {
+                author: MessageAuthor::Me,
+                text: "b".into(),
+                timestamp: 2,
+                reactions: Some(ReactionType::Like),
+            },
+            Message {
+                author: MessageAuthor::Them,
+                text: "c".into(),
+                timestamp: 3,
+                reactions: Some(ReactionType::Love),
+            },
+        ];
+
+        // Set: None → Some(Like)
+        apply_reaction(&mut vec, 0, ReactionType::Like);
+        assert_eq!(vec[0].reactions, Some(ReactionType::Like));
+
+        // Replace: Some(Like) → Some(Love)
+        apply_reaction(&mut vec, 0, ReactionType::Love);
+        assert_eq!(vec[0].reactions, Some(ReactionType::Love));
+
+        // Clear: Some(Like) → None (same reaction toggles off)
+        apply_reaction(&mut vec, 1, ReactionType::Like);
+        assert_eq!(vec[1].reactions, None);
+
+        // No-op for different reaction: Some(Love) stays Some(Love) only if
+        // rt != Love; here we replace Love with Haha.
+        apply_reaction(&mut vec, 2, ReactionType::Haha);
+        assert_eq!(vec[2].reactions, Some(ReactionType::Haha));
+
+        // Clear via same-reaction toggle on the replaced value.
+        apply_reaction(&mut vec, 2, ReactionType::Haha);
+        assert_eq!(vec[2].reactions, None);
+
+        // Out-of-bounds index is a no-op (no panic).
+        apply_reaction(&mut vec, 999, ReactionType::Like);
+    }
+
+    /// Seed data has exactly 2 pre-populated reactions (Q10: demonstrate the
+    /// chip on first paint without reacting to every message).
+    #[test]
+    fn test_seed_has_two_reactions() {
+        let s = seed();
+        let map = s.messages.get_cloned();
+        let msgs = map.get(&ConvId(1)).expect("Alice has messages");
+        assert_eq!(msgs[0].reactions, Some(ReactionType::Like));
+        assert_eq!(msgs[1].reactions, None);
+        assert_eq!(msgs[2].reactions, Some(ReactionType::Love));
     }
 }

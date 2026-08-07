@@ -9,11 +9,44 @@ use std::time::{Duration, Instant};
 use vexo::{
     column, row, AlignItems, AnimationController, BoxShadow, Color, Component, ComponentState,
     DecoratedBox, GestureDetector, JustifyContent, Layout, LifecycleContext, MouseCursor,
-    RenderContext, Signal, SpringDescription, SpringSimulation, Style, SystemCursorKind, Text,
-    Widget, WithLayout,
+    RenderContext, Signal, SimpleState, SpringDescription, SpringSimulation, Style,
+    SystemCursorKind, Text, Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{ContextMenuController, MenuBuilder, MenuContent, MenuMetrics};
+
+use crate::data::ReactionType;
+
+/// The visual mapping for a reaction: `(FA icon, semantic color)`. The single
+/// translation point from domain `ReactionType` to UI glyph + color — so
+/// swapping a glyph (e.g. `Like` → a different thumbs-up variant) is a one-line
+/// change here, not a rename across the domain layer. Both the reactions pill
+/// (`reaction_pill`) and the bubble chip (`reaction_chip`) read from this so
+/// the pill and the chip always agree on what a reaction looks like.
+///
+/// Colors mirror the emoji-semantic palette the inline tuple array used before
+/// the `ReactionType` refactor (Q11): blue Like, red Love, yellow Haha, etc.
+pub(super) fn reaction_visual(rt: ReactionType) -> (Icons, Color) {
+    match rt {
+        ReactionType::Like => (Icons::ThumbsUp, Color::rgb(0.10, 0.46, 0.82)),
+        ReactionType::Love => (Icons::Heart, Color::rgb(0.91, 0.22, 0.21)),
+        ReactionType::Haha => (Icons::FaceLaugh, Color::rgb(0.98, 0.75, 0.18)),
+        ReactionType::Wow => (Icons::FaceSurprise, Color::rgb(0.98, 0.55, 0.11)),
+        ReactionType::Sad => (Icons::FaceSadTear, Color::rgb(0.36, 0.42, 0.75)),
+        ReactionType::Angry => (Icons::FaceAngry, Color::rgb(0.78, 0.16, 0.16)),
+    }
+}
+
+/// All reaction variants in pill order. The pill iterates this so the visual
+/// order lives next to the visual mapping (not in the builder loop).
+pub(super) const ALL_REACTIONS: &[ReactionType] = &[
+    ReactionType::Like,
+    ReactionType::Love,
+    ReactionType::Haha,
+    ReactionType::Wow,
+    ReactionType::Sad,
+    ReactionType::Angry,
+];
 
 /// Build the `MenuContent` for a message-bubble context menu: a reactions
 /// pill (6 FA icons in an 18px-radius pill) above an actions card (3 MenuRows
@@ -21,9 +54,15 @@ use vexo_uikit::{ContextMenuController, MenuBuilder, MenuContent, MenuMetrics};
 /// the bubble bounds; `reactions` is rendered by a later task. `metrics`
 /// holds the laid-out sizes used for positioning + scale-about-center anchors
 /// — verified by `test_metrics_match_real_sizes` (Task 8).
-pub(super) fn builder() -> MenuBuilder {
-    MenuBuilder::new(|ctrl, theme| MenuContent {
-        reactions: reaction_pill(ctrl.clone(), theme.clone()),
+///
+/// `index` is the message's position in the conversation's `Vec<Message>`,
+/// captured so each `ReactionIcon`'s `on_tap` can report *which* message was
+/// reacted via `on_react(index, rt)`. `on_react` is the host-provided toggle
+/// callback (wired in `mod.rs`/`desktop.rs`); the menu just forwards the tap
+/// and closes — toggle logic lives in `data::apply_reaction`.
+pub(super) fn builder(index: usize, on_react: Rc<dyn Fn(usize, ReactionType)>) -> MenuBuilder {
+    MenuBuilder::new(move |ctrl, theme| MenuContent {
+        reactions: reaction_pill(ctrl.clone(), theme.clone(), index, on_react.clone()),
         actions: actions_card(ctrl.clone(), theme.clone()),
         metrics: MenuMetrics {
             // Verified by `test_metrics_match_real_sizes`: the real laid-out
@@ -292,57 +331,98 @@ impl Component for ReactionIcon {
     }
 }
 
+/// A display-only reaction badge shown below a message bubble when the user
+/// has reacted. A 20px circle with a 12px FA icon — the same motif as
+/// `ReactionIcon` at badge scale, minus the spring/hover/tap (it's feedback,
+/// not an input — to remove a reaction the user re-opens the menu and toggles,
+/// per Q4/Q9).
+///
+/// Built by `reaction_chip` (which resolves the `ReactionType` → `(Icons, Color)`
+/// via `reaction_visual`) and placed below the bubble by `assemble_row` in
+/// `chat_screen.rs`. Stateless: `SimpleState<()>` — no `AnimationController`,
+/// no lifecycle hooks, no reconciliation overhead beyond the default.
+#[derive(Clone)]
+struct ReactionChip {
+    icon: Icons,
+    icon_color: Color,
+    bg_color: Color,
+}
+
+impl Component for ReactionChip {
+    type State = SimpleState<()>;
+
+    fn render(&self, _state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        DecoratedBox::with_style(
+            WithLayout::new(
+                Icon::new(self.icon)
+                    .with_size(12.0)
+                    .with_color(self.icon_color),
+                Layout::default()
+                    .width(20.0)
+                    .height(20.0)
+                    .justify(JustifyContent::Center)
+                    .align(AlignItems::Center)
+                    .flex_shrink(0.0),
+            ),
+            // Light tint of the semantic color over surface (15%) — a badge
+            // bg the full-strength icon reads against. Opaque (alpha=1.0) so
+            // it's classified as a Phase-1 quad (behind text) — same opacity
+            // strategy as `ReactionIcon`'s circle, avoiding the
+            // white-square-on-glyph artifact.
+            Style::default()
+                .background(self.bg_color)
+                .corner_radius(10.0),
+        )
+        .boxed()
+    }
+}
+
+/// Build the `ReactionChip` widget for `rt` against `theme`. Returns the
+/// chip ready to drop into the bubble column below the bubble. Called by
+/// `ChatScreen::render` per-message when `msg.reactions.is_some()`.
+///
+/// The bg is a 15% tint of the semantic color over `theme.surface` — light
+/// enough that the full-strength icon glyph reads clearly against it.
+pub(super) fn reaction_chip(rt: ReactionType, theme: &vexo::ThemeData) -> Box<dyn Widget> {
+    let (icon, color) = reaction_visual(rt);
+    let bg_color = Color::lerp(theme.surface, color, 0.15);
+    ReactionChip {
+        icon,
+        icon_color: color,
+        bg_color,
+    }
+    .boxed()
+}
+
 /// The reactions pill: a compact row of 6 FA icons in a pill-shaped
 /// (18px radius) DecoratedBox. Each icon is a `ReactionIcon` — tappable
-/// (logs + closes the menu) with a circled hover background and a spring
-/// scale-up animation. See `ReactionIcon` for the hover/scale mechanics.
-fn reaction_pill(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
-    // (icon, color, log message) pairs. Each icon gets a unique emoji-semantic
-    // color so the glyph reads at a glance. The log messages use emoji
-    // codepoints in the string literal for grep-ability — they're just log
-    // text, never rendered.
-    let reactions: [(Icons, Color, &str); 6] = [
-        (
-            Icons::ThumbsUp,
-            Color::rgb(0.10, 0.46, 0.82),
-            "context menu: thumbsup",
-        ),
-        (
-            Icons::Heart,
-            Color::rgb(0.91, 0.22, 0.21),
-            "context menu: heart",
-        ),
-        (
-            Icons::FaceLaugh,
-            Color::rgb(0.98, 0.75, 0.18),
-            "context menu: laugh",
-        ),
-        (
-            Icons::FaceSurprise,
-            Color::rgb(0.98, 0.55, 0.11),
-            "context menu: surprise",
-        ),
-        (
-            Icons::FaceSadTear,
-            Color::rgb(0.36, 0.42, 0.75),
-            "context menu: sad",
-        ),
-        (
-            Icons::FaceAngry,
-            Color::rgb(0.78, 0.16, 0.16),
-            "context menu: angry",
-        ),
-    ];
-
+/// (forwards to `on_react(index, rt)` + closes the menu) with a circled
+/// hover background and a spring scale-up animation. See `ReactionIcon` for
+/// the hover/scale mechanics.
+///
+/// `index` + `on_react` flow from `builder(index, on_react)` → each icon's
+/// `on_tap`, so a tap reports *which* message was reacted. The pill itself
+/// stays stateless w.r.t. the current reaction (no highlight — Q4); toggle
+/// semantics live in `data::apply_reaction`, invoked by the host's
+/// `on_react` closure.
+fn reaction_pill(
+    ctrl: ContextMenuController,
+    theme: vexo::ThemeData,
+    index: usize,
+    on_react: Rc<dyn Fn(usize, ReactionType)>,
+) -> Box<dyn Widget> {
     let row = row! {
-        for (icon, color, msg) in reactions {
+        for rt in ALL_REACTIONS {
+            let (icon, color) = reaction_visual(*rt);
             let ctrl = ctrl.clone();
+            let on_react = on_react.clone();
+            let rt = *rt;
             ReactionIcon {
                 theme: theme.clone(),
                 icon,
                 color,
                 on_tap: Rc::new(move || {
-                    log::debug!("{}", msg);
+                    on_react(index, rt);
                     ctrl.close();
                 }),
             }
@@ -494,7 +574,10 @@ mod tests {
         // so neither card flips (default layout: pill above, card below).
         // Click point in the middle of the screen — plenty of room above +
         // below so neither card flips (default layout: pill above, card below).
-        controller.show(vexo::core::Point::new(150.0, 280.0), builder());
+        controller.show(
+            vexo::core::Point::new(150.0, 280.0),
+            builder(0, Rc::new(|_, _| ())),
+        );
         pipeline.perform_rebuilds();
 
         // Settle the open spring (v→1.0, phase→Open) so the cards are at full
@@ -509,7 +592,7 @@ mod tests {
         // test always compares real sizes against the current constants (not
         // a hardcoded copy that can drift).
         let theme = vexo::ThemeData::light();
-        let content = builder()(&controller, &theme);
+        let content = builder(0, Rc::new(|_, _| ()))(&controller, &theme);
         let expected_pill: Size<Logical> = content.metrics.reactions_size;
         let expected_card: Size<Logical> = content.metrics.actions_size;
 

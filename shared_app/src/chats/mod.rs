@@ -13,7 +13,9 @@ use vexo::{Component, RenderContext, Signal, SimpleState, Text, Widget};
 use vexo_uikit::{ContextMenuController, NavigationController, NavigationStackView};
 
 use crate::chats::conversation_list::ConversationList;
-use crate::data::{ChatsRoute, ConvId, Conversation, Message, MessageAuthor};
+use crate::data::{
+    apply_reaction, ChatsRoute, ConvId, Conversation, Message, MessageAuthor, ReactionType,
+};
 
 /// Mobile Chats page. Renders the conversation list via the unified
 /// theme-token-aware builder, then wraps it in a `NavigationStackView` so
@@ -71,11 +73,11 @@ impl Component for MobileChatsPage {
                         .unwrap_or_else(|| Rc::from([0u8; 0]));
                     let msgs_for_send = msgs.clone();
                     let id_for_send = id.clone();
-                    let id_for_derive = id.clone();
-                    let msgs_for_derive = msgs.clone();
-                    let messages = Signal::derive(msgs_for_derive, move |map| {
-                        map.get(&id_for_derive).cloned().unwrap_or_default()
-                    });
+                    let msgs_for_react = msgs.clone();
+                    let id_for_react = id.clone();
+                    // Pass the ROOT Signal to ChatScreen (not a derived
+                    // per-conv Signal). See desktop.rs for why.
+                    let messages = msgs.clone();
                     chat_screen::ChatScreen {
                         conv_id: id_for_send.clone(),
                         messages,
@@ -88,9 +90,17 @@ impl Component for MobileChatsPage {
                                     author: MessageAuthor::Me,
                                     text: text.to_string(),
                                     timestamp: 1732348000,
+                                    reactions: None,
                                 });
                             }
                             msgs_for_send.set_from(&map);
+                        }),
+                        on_react: Rc::new(move |index: usize, rt: ReactionType| {
+                            let mut map = msgs_for_react.get_cloned();
+                            if let Some(vec) = map.get_mut(&id_for_react) {
+                                apply_reaction(vec, index, rt);
+                            }
+                            msgs_for_react.set_from(&map);
                         }),
                         scroll_controller: vexo::ScrollController::new(),
                         context_menu: ContextMenuController::new(),

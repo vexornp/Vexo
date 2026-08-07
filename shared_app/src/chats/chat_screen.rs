@@ -4,7 +4,7 @@ use std::any::Any;
 use std::rc::Rc;
 
 use vexo::{
-    column, row, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
+    column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
     FlexDirection, ImageData, Key, Layout, LifecycleContext, RenderContext, ScrollController,
     ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
     WidgetKey, WithLayout,
@@ -14,15 +14,29 @@ use vexo_uikit::{
 };
 
 use crate::chats::message_menu;
-use crate::data::{ConvId, Message, MessageAuthor};
+use crate::data::{ConvId, Message, MessageAuthor, ReactionType};
 use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
-    pub(crate) messages: Signal<Vec<Message>>,
+    /// Root messages Signal (NOT a derived per-conversation Signal). We filter
+    /// by `conv_id` in `render()`. This is critical: a derived Signal created
+    /// in `DesktopChatsPage::render` would be recreated on every parent
+    /// cascade, but `should_rebuild` returns false — so the new derived
+    /// Signal's dirty_callback would never be registered (render is skipped),
+    /// and state-driven rebuilds would silently break. By using the root
+    /// Signal directly, the dirty_callback is registered on a Signal that
+    /// persists across widget replacements.
+    pub(crate) messages: Signal<std::collections::HashMap<ConvId, Vec<Message>>>,
     pub(crate) avatar_bytes: Rc<[u8]>,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
+    /// Toggle-callback for reactions. `(index, rt)` where `index` is the
+    /// message's position in the conversation `Vec<Message>`. Wired in
+    /// `mod.rs`/`desktop.rs` to call `data::apply_reaction` against the root
+    /// messages Signal — mirrors `on_send`'s shape. The menu calls this on
+    /// tap (see `message_menu::builder(index, on_react)`).
+    pub(crate) on_react: Rc<dyn Fn(usize, ReactionType)>,
     pub(crate) scroll_controller: ScrollController,
     pub(crate) context_menu: ContextMenuController,
 }
@@ -35,6 +49,7 @@ impl Clone for ChatScreen {
             avatar_bytes: Rc::clone(&self.avatar_bytes),
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             on_send: Rc::clone(&self.on_send),
+            on_react: Rc::clone(&self.on_react),
             scroll_controller: self.scroll_controller.clone(),
             context_menu: self.context_menu.clone(),
         }
@@ -115,20 +130,33 @@ impl Component for ChatScreen {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
-        let messages = ctx.signal_value(&self.messages);
+        // Read the ROOT messages Signal (registers dirty_callback on the
+        // root, which persists across widget replacements — see the field
+        // comment). Filter by `conv_id` to get this conversation's messages.
+        let all_messages = ctx.signal_value(&self.messages);
+        let messages = all_messages.get(&self.conv_id).cloned().unwrap_or_default();
 
         let ctrl = self.context_menu.clone();
+        let on_react = Rc::clone(&self.on_react);
         let list = column! {
-            for msg in &messages {
+            for (index, msg) in messages.iter().enumerate() {
                 let is_me = msg.author == MessageAuthor::Me;
                 let bubble = build_bubble(msg, &theme);
                 let bubble_with_menu = context_menu_trigger(
                     bubble,
                     ctrl.clone(),
-                    message_menu::builder(),
+                    message_menu::builder(index, Rc::clone(&on_react)),
                 );
+                // Chip is the sole feedback for a set reaction (the pill has
+                // no highlight — Q4). Built at the call site (Q12) from
+                // `msg.reactions` + `theme`; `assemble_row` places it below
+                // the bubble, aligned to the author's side.
+                let chip = msg
+                    .reactions
+                    .map(|rt| message_menu::reaction_chip(rt, &theme));
                 assemble_row(
                     bubble_with_menu,
+                    chip,
                     state.them_avatar(&self.avatar_bytes).clone(),
                     state.me_avatar(&self.me_avatar_bytes).clone(),
                     is_me,
@@ -211,20 +239,42 @@ fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     .boxed()
 }
 
-/// Assemble the full message row: avatar + bubble + spacer. The bubble is
-/// already wrapped in the context menu trigger by the caller — `assemble_row`
-/// only handles the row layout (avatar position + spacer for "me" alignment).
+/// Assemble the full message row: avatar + (bubble + optional reaction chip)
+/// + spacer. The bubble is already wrapped in the context menu trigger by the
+/// caller — `assemble_row` only handles the row layout (avatar position +
+/// spacer for "me" alignment) and placing the `chip` below the bubble.
+///
+/// The chip is a sibling *below* the bubble, outside the `context_menu_trigger`
+/// (the trigger wraps only the bubble — the thing you right-click — so menu
+/// positioning keys off bubble bounds, not bubble+chip). The bubble+chip
+/// column aligns to the author's side: `End` for "me" (right), `Start` for
+/// "them" (left), so the chip sits under the bubble, not centered under the
+/// whole row.
 fn assemble_row(
     bubble_with_menu: Box<dyn Widget>,
+    chip: Option<Box<dyn Widget>>,
     them_avatar_image: ImageData,
     me_avatar_image: ImageData,
     is_me: bool,
 ) -> Box<dyn Widget> {
+    // Align the chip to the author's side — `End` for me (right), `Start` for
+    // them (left). Keeps the chip under the bubble, not drifting to row center.
+    let bubble_align = if is_me {
+        AlignItems::End
+    } else {
+        AlignItems::Start
+    };
+    let bubble_and_chip = column! {
+        bubble_with_menu,
+        chip,
+    }
+    .align(bubble_align);
+
     if is_me {
         let me_avatar = avatar(me_avatar_image, 32.0);
         row! {
             Spacer::new(),
-            bubble_with_menu,
+            bubble_and_chip,
             me_avatar,
         }
         .gap(8.0)
@@ -233,7 +283,7 @@ fn assemble_row(
         let them_avatar = avatar(them_avatar_image, 32.0);
         row! {
             them_avatar,
-            bubble_with_menu,
+            bubble_and_chip,
             Spacer::new(),
         }
         .gap(8.0)
@@ -326,12 +376,11 @@ mod tests {
         let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal, |map| {
-                map.get(&ConvId(1)).cloned().unwrap_or_default()
-            }),
+            messages: messages_signal,
             avatar_bytes: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
         }
@@ -349,12 +398,11 @@ mod tests {
         let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal.clone(), |map| {
-                map.get(&ConvId(1)).cloned().unwrap_or_default()
-            }),
+            messages: messages_signal.clone(),
             avatar_bytes: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
         }
@@ -377,6 +425,7 @@ mod tests {
             author: MessageAuthor::Me,
             text: new_message_text.to_string(),
             timestamp: 1732348000,
+            reactions: None,
         });
         messages_signal.set_from(&updated_map);
         pipeline.perform_rebuilds();
@@ -401,10 +450,11 @@ mod tests {
         let empty_signal = Signal::new(empty_map);
         let chat = ChatScreen {
             conv_id: ConvId(4),
-            messages: Signal::derive(empty_signal, |_| Vec::new()),
+            messages: empty_signal,
             avatar_bytes: seed_avatar(ConvId(4)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
         };
@@ -471,12 +521,11 @@ mod tests {
         let messages_signal = seed_messages_signal();
         let view = ChatScreen {
             conv_id: ConvId(1),
-            messages: Signal::derive(messages_signal, |map| {
-                map.get(&ConvId(1)).cloned().unwrap_or_default()
-            }),
+            messages: messages_signal,
             avatar_bytes: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
         };
@@ -850,12 +899,11 @@ mod tests {
         let view = ContextMenu::new(
             ChatScreen {
                 conv_id: ConvId(1),
-                messages: Signal::derive(messages_signal, |map| {
-                    map.get(&ConvId(1)).cloned().unwrap_or_default()
-                }),
+                messages: messages_signal,
                 avatar_bytes: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
+                on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
             },
@@ -927,12 +975,11 @@ mod tests {
         let view = ContextMenu::new(
             ChatScreen {
                 conv_id: ConvId(1),
-                messages: Signal::derive(messages_signal, |map| {
-                    map.get(&ConvId(1)).cloned().unwrap_or_default()
-                }),
+                messages: messages_signal,
                 avatar_bytes: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
+                on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
             },
@@ -998,12 +1045,11 @@ mod tests {
         let view = ContextMenu::new(
             ChatScreen {
                 conv_id: ConvId(1),
-                messages: Signal::derive(messages_signal, |map| {
-                    map.get(&ConvId(1)).cloned().unwrap_or_default()
-                }),
+                messages: messages_signal,
                 avatar_bytes: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
+                on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
             },
@@ -1055,12 +1101,11 @@ mod tests {
         let view = ContextMenu::new(
             ChatScreen {
                 conv_id: ConvId(1),
-                messages: Signal::derive(messages_signal, |map| {
-                    map.get(&ConvId(1)).cloned().unwrap_or_default()
-                }),
+                messages: messages_signal,
                 avatar_bytes: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
+                on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
             },
@@ -1113,6 +1158,173 @@ mod tests {
             controller.phase(),
             vexo_uikit::Phase::Closed,
             "left-click should NOT open the context menu"
+        );
+    }
+
+    /// Walk the render tree and count `DecoratedBoxRenderObject`s whose
+    /// `corner_radius` ≈ `radius`. Used by the reaction-chip tests to count
+    /// chips (corner_radius=10.0) — the chip's 20px circle uses
+    /// `corner_radius(10.0)`, distinct from the bubble (12.0) and the input
+    /// bar's TextEdit DecoratedBox (6.0).
+    fn count_decorated_by_corner_radius(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        radius: f32,
+    ) -> usize {
+        let mut count = 0;
+        if let Some(ro) = reg.get(key) {
+            let matches = ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .corner_radius
+                        .as_ref()
+                        .map_or(false, |cr| (cr.radius - radius).abs() < 0.01)
+                });
+            if matches {
+                count += 1;
+            }
+            for &child in ro.children() {
+                count += count_decorated_by_corner_radius(reg, child, radius);
+            }
+        }
+        count
+    }
+
+    /// Chip-presence test (Q13): seed data has 2 reactions on ConvId(1)
+    /// (messages 0 and 2 — `Like` and `Love`). After layout, the render tree
+    /// must contain exactly 2 chip circles (DecoratedBox corner_radius=10.0),
+    /// proving the chip renders for pre-seeded reactions without any user
+    /// interaction.
+    #[test]
+    fn test_reaction_chip_renders_for_seeded_reactions() {
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: messages_signal,
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                on_react: Rc::new(|_, _| ()),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller,
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let chip_count = count_decorated_by_corner_radius(ro_reg, root, 10.0);
+        assert_eq!(
+            chip_count, 2,
+            "seed data has 2 reactions on ConvId(1) → expected 2 chips (corner_radius=10); got {}",
+            chip_count,
+        );
+    }
+
+    /// End-to-end toggle test (Q13): seed state (2 chips) → invoke
+    /// `on_react(1, Like)` on the unreactioned message → rebuild → assert 3
+    /// chips → invoke `on_react(1, Like)` again → rebuild → assert back to 2
+    /// chips. Exercises the full Signal→derive→rebuild→render cycle for
+    /// reactions, mirroring the existing send-message test.
+    #[test]
+    fn test_reaction_toggle_end_to_end() {
+        let messages_signal = seed_messages_signal();
+        let controller = ContextMenuController::new();
+
+        // `on_react` mirrors the production wiring: get_cloned → apply_reaction
+        // → set_from. Captures the root signal so the mutation propagates to
+        // ChatScreen's derived signal.
+        let msgs_for_react = messages_signal.clone();
+        let on_react: Rc<dyn Fn(usize, ReactionType)> = Rc::new(move |index, rt| {
+            let mut map = msgs_for_react.get_cloned();
+            if let Some(vec) = map.get_mut(&ConvId(1)) {
+                crate::data::apply_reaction(vec, index, rt);
+            }
+            msgs_for_react.set_from(&map);
+        });
+
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: messages_signal,
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                on_react: on_react.clone(),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller,
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        // Baseline: 2 seeded chips (messages 0 and 2 have reactions).
+        assert_eq!(
+            count_decorated_by_corner_radius(ro_reg, root, 10.0),
+            2,
+            "baseline: 2 seeded reactions → 2 chips",
+        );
+
+        // Toggle ON: react with `Like` on message 1 (unreactioned in seed).
+        on_react(1, ReactionType::Like);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert_eq!(
+            count_decorated_by_corner_radius(ro_reg, root, 10.0),
+            3,
+            "after on_react(1, Like): 3 reactions → 3 chips",
+        );
+
+        // Toggle OFF: same reaction on same message clears it.
+        on_react(1, ReactionType::Like);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert_eq!(
+            count_decorated_by_corner_radius(ro_reg, root, 10.0),
+            2,
+            "after on_react(1, Like) again: toggle cleared → back to 2 chips",
         );
     }
 }

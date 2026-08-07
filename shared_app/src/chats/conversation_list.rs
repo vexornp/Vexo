@@ -325,6 +325,7 @@ mod tests {
             author: MessageAuthor::Me,
             text: "New latest message".into(),
             timestamp: 1732399999,
+            reactions: None,
         });
         let (preview, ts) = latest_preview(conv, &messages);
         assert_eq!(preview, "New latest message");

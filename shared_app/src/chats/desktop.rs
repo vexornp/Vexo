@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignItems, Component, DecoratedBox, JustifyContent, Layout, RenderContext,
-    ScrollController, Signal, SimpleState, Style, Text, Theme, Widget, WithLayout,
+    ScrollController, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::theme::tokens::navigation::{
     self, NavColors, CONVERSATION_LIST_WIDTH, HAIRLINE_THICKNESS, PLACEHOLDER_FONT_SIZE,
@@ -15,7 +15,7 @@ use vexo_uikit::ContextMenuController;
 
 use crate::chats::chat_screen::ChatScreen;
 use crate::chats::conversation_list::ConversationList;
-use crate::data::{ConvId, Conversation, Message, MessageAuthor};
+use crate::data::{apply_reaction, ConvId, Conversation, Message, MessageAuthor, ReactionType};
 use crate::widgets::titled_container::titled_container;
 
 /// Desktop Chats page: a two-column row with the conversation list (col 2)
@@ -82,11 +82,14 @@ impl Component for DesktopChatsPage {
 
                 let msgs_for_send = self.messages.clone();
                 let id_for_send = id.clone();
-                let id_for_derive = id.clone();
-                let msgs_for_derive = self.messages.clone();
-                let messages = Signal::derive(msgs_for_derive, move |map| {
-                    map.get(&id_for_derive).cloned().unwrap_or_default()
-                });
+                let msgs_for_react = self.messages.clone();
+                let id_for_react = id.clone();
+                // Pass the ROOT Signal to ChatScreen (not a derived per-conv
+                // Signal). ChatScreen filters by conv_id in render(). This
+                // ensures the dirty_callback is registered on the root Signal,
+                // which persists across widget replacements — critical for
+                // state-driven rebuilds when should_rebuild returns false.
+                let messages = self.messages.clone();
                 let chat = ChatScreen {
                     conv_id: id_for_send.clone(),
                     messages,
@@ -99,9 +102,17 @@ impl Component for DesktopChatsPage {
                                 author: MessageAuthor::Me,
                                 text: text.to_string(),
                                 timestamp: 1732348000,
+                                reactions: None,
                             });
                         }
                         msgs_for_send.set_from(&map);
+                    }),
+                    on_react: Rc::new(move |index: usize, rt: ReactionType| {
+                        let mut map = msgs_for_react.get_cloned();
+                        if let Some(vec) = map.get_mut(&id_for_react) {
+                            apply_reaction(vec, index, rt);
+                        }
+                        msgs_for_react.set_from(&map);
                     }),
                     scroll_controller: ScrollController::new(),
                     context_menu: self.context_menu.clone(),
