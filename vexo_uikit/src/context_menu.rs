@@ -232,14 +232,18 @@ impl ContextMenuController {
         s.phase = Phase::Closed;
         s.open = None;
         // A forward spring may still be running if close() was called mid-
-        // Opening. `advance()` early-returns on `phase == Closed`, so the
-        // spring would never be sampled → never settle → never unregister from
-        // the ticker → the dirty callback would fire every frame forever.
-        // `stop()` halts the spring AND unregisters from the ticker. It does
-        // NOT reset `value`; show() ignores the frozen value anyway (Amendment
-        // 2: show() always starts the spring from 0.0), so the frozen value is
-        // harmless — it's overwritten on the next show()+advance cycle.
+        // Opening. `stop()` halts the spring AND unregisters from the ticker
+        // (so the dirty callback stops firing on subsequent ticks). But
+        // `stop()` does NOT itself fire the dirty callback — so we must fire
+        // it explicitly here to trigger the host rebuild that unmounts the
+        // overlay. Without this, close() sets phase=Closed but the host never
+        // re-renders, so the menu stays visible forever.
         s.animation.stop();
+        let cb = s.dirty_callback.clone();
+        drop(s);
+        if let Some(cb) = cb {
+            cb();
+        }
     }
 
     pub fn phase(&self) -> Phase {
@@ -480,7 +484,9 @@ impl Component for ContextMenu {
                             .width_percent(1.0)
                             .height_percent(1.0),
                     ))
-                    .on_press(move || ctrl_for_barrier.close()),
+                    .on_press(move || {
+                        ctrl_for_barrier.close();
+                    }),
                 )
                 .left(0.0)
                 .top(0.0)
@@ -1765,5 +1771,58 @@ mod tests {
             "menu content should be unmounted immediately after close()"
         );
         assert_eq!(controller.phase(), Phase::Closed);
+    }
+
+    /// Regression test: `close()` must fire the dirty callback so the host
+    /// rebuilds and unmounts the overlay. Without this, `close()` sets
+    /// phase=Closed but the host never re-renders — the menu stays visible
+    /// forever (observed during Task 6 manual verification). The root cause:
+    /// `animation.stop()` unregisters from the ticker but does NOT itself fire
+    /// the dirty callback, so `close()` must fire it explicitly.
+    ///
+    /// This test uses a counting dirty callback (no pipeline) to isolate the
+    /// controller behavior from the host rebuild cycle — `perform_rebuilds`
+    /// masks the bug because it rebuilds unconditionally, bypassing the
+    /// dirty-callback gate that the real app relies on.
+    #[test]
+    fn test_close_fires_dirty_callback() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc as StdArc;
+
+        let controller = ContextMenuController::new();
+        let count = StdArc::new(AtomicU32::new(0));
+        let count_for_cb = count.clone();
+        controller.set_dirty_callback(Arc::new(move || {
+            count_for_cb.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Wire a ticker so show()'s animate_with registers + fires dirty.
+        let ticker = Arc::new(AnimationTicker::new());
+        controller.set_animation_ticker(ticker.clone());
+
+        // show() fires dirty once (animate_with fires immediately).
+        controller.show(
+            vexo::core::Point::new(10.0, 10.0),
+            test_content_builder("Copy"),
+        );
+        let after_show = count.load(Ordering::SeqCst);
+        assert!(
+            after_show >= 1,
+            "show() should fire the dirty callback at least once, got {}",
+            after_show
+        );
+
+        // close() must fire dirty so the host rebuilds to unmount the overlay.
+        // This is the regression guard: before the fix, close() set phase=Closed
+        // but never fired dirty, so the host never rebuilt.
+        controller.close();
+        let after_close = count.load(Ordering::SeqCst);
+        assert!(
+            after_close > after_show,
+            "close() should fire the dirty callback (count before={}, after={}); \
+             without it the host never rebuilds and the overlay stays mounted",
+            after_show,
+            after_close
+        );
     }
 }
