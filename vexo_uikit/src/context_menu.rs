@@ -49,9 +49,9 @@ use vexo::{Component, ComponentState, LifecycleContext, RenderContext, Widget};
 /// The two cards produced by a menu builder.
 ///
 /// `reactions` is the top pill (emoji/reaction strip); `actions` is the lower
-/// card (Copy / Reply / Delete rows). The host positions them relative to
-/// `bubble_bounds` using `metrics` for spacing. Task 2 renders only `actions`;
-/// Task 3 adds the reactions pill and proper styling.
+/// card (Copy / Reply / Delete rows). The host positions both relative to the
+/// click point using `metrics` for spacing (pill on top, card below, with
+/// `gap` between them).
 pub struct MenuContent {
     pub reactions: Box<dyn Widget>,
     pub actions: Box<dyn Widget>,
@@ -59,7 +59,7 @@ pub struct MenuContent {
 }
 
 /// Size hints for positioning + transform anchors. These are estimates used
-/// by the host to position cards and compute scale-about-center transforms
+/// by the host to position cards and compute scale-about-point transforms
 /// before layout runs. The actual laid-out sizes may differ slightly; these
 /// are tuned during implementation.
 pub struct MenuMetrics {
@@ -757,13 +757,13 @@ mod tests {
         let pos = vexo::core::Point::new(10.0, 10.0);
         controller.show(pos, builder);
         pipeline.perform_rebuilds();
-        // Settle the open spring (v→1.0, phase→Open) before tapping. Task 6
-        // scales the card to 0.8+v*0.2 and fades it to opacity v; right after
-        // show() (v≈0) the card is at 80% scale + 0 opacity and its hit region
-        // is shifted by the scale-about-center transform, so (15, 70) no longer
-        // lands on the row. At v=1 the scale is 1.0 (identity) and opacity 1.0,
-        // so the hit-test works exactly as in Task 4. This mirrors real usage:
-        // the user taps an item after the menu has opened.
+        // Settle the open spring (v→1.0, phase→Open) before tapping. The host
+        // scales the card `0.92 + v*0.08` about the click point; right after
+        // show() (v≈0) the card is at 92% scale and its hit region is shifted
+        // by the scale-about-point transform, so (15, 70) no longer lands on
+        // the row. At v=1 the scale is 1.0 (identity), so the hit-test works
+        // exactly as at rest. This mirrors real usage: the user taps an item
+        // after the menu has opened.
         std::thread::sleep(std::time::Duration::from_millis(700));
         ticker.tick();
         pipeline.drain_dirty_to_build_owner();
@@ -963,9 +963,9 @@ mod tests {
     /// window coords), unlike the inner `TextRenderObject`'s
     /// `computed_bounds` which is local to its layout origin (always 0,0).
     /// Identifying the right `Positioned` is unambiguous: the pill's
-    /// `Positioned` subtree contains "r" (never "Copy" or "bubble"), the
-    /// card's contains "Copy", the bubble copy's contains "bubble", and the
-    /// barrier's contains a BLACK `DecoratedBox` (no text needle).
+    /// `Positioned` subtree contains "r", the card's contains "Copy". (The
+    /// transparent dismiss barrier carries an empty `Text` — no needle — so
+    /// it is never matched by this helper.)
     fn find_positioned_bounds_around_text(
         reg: &RenderObjectRegistry,
         key: RenderObjectKey,
@@ -1197,7 +1197,7 @@ mod tests {
 
     /// Test #5 — barrier dismiss during animation.
     ///
-    /// Opens the menu, then clicks the dim barrier *mid-open* (before the
+    /// Opens the menu, then clicks the transparent barrier *mid-open* (before the
     /// spring settles). The barrier's `on_press` fires `controller.close()`,
     /// which instantly clears phase to `Closed` and unmounts the menu (no
     /// `Closing` phase, no reverse spring).
@@ -1244,7 +1244,7 @@ mod tests {
             mid_value
         );
 
-        // Click far away (on the dim barrier) mid-open.
+        // Click far away (on the transparent barrier) mid-open.
         let primary_press = vexo::input::InputEvent::PointerButton {
             position: vexo::core::Point::new(350.0, 550.0),
             button: vexo::input::PointerButton::Primary,
@@ -1376,16 +1376,11 @@ mod tests {
     // pill ("r") is missing → RED. After Task 7 adds the pill layer + edge
     // positioning, both appear → GREEN.
     //
-    // BOUNDS NOTE: `Bounds::new(l, t, r, b)` takes edge coordinates, but the
-    // brief's literal `Bounds::new(50.0, 560.0, 100.0, 40.0)` for test #9
-    // would produce `top=560, bottom=40, height=-520` (malformed). The
-    // bubble_bottom math (`top + height()`) then collapses to 40, making
-    // `room_below` true and the flip-above path never runs — defeating the
-    // test's stated intent ("Bubble near the bottom — no room below"). We use
-    // `Bounds::from_xywh` (matches the established pattern in
-    // `test_bubble_copy_size_matches_original`) to produce a valid
-    // 100×40 bubble at (50, 560) whose bottom edge sits at y=600 — genuinely
-    // leaving no room below in a 600px window.
+    // Test #9 clicks at (50, 560) in a 600px window. The cluster is
+    // pill_h(28) + gap(8) + card_h(108) = 144px tall, so it doesn't fit
+    // below the click point (560 + 144 = 704 > 592) but does fit above
+    // (560 - 144 = 416 ≥ 8) — exercising the host's flip-up branch
+    // (`cluster_y = click_pos.y - cluster_h`).
 
     /// Test #8 — edge flip when no room above for the reactions pill.
     ///
