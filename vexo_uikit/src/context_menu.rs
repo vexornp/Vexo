@@ -133,10 +133,11 @@ struct Shared {
     /// The critical spring driving `Opening`. Same spring as
     /// KeyboardAvoidance/SlideTransition: `SpringDescription::ios(340.0, 1.0)`.
     /// `show()` starts a forward spring from the current value (smooth
-    /// retarget on re-show after a close — no jump). `close()` does NOT touch
-    /// the spring; it instantly clears phase + open state. The host's `on_tick`
-    /// calls `advance(now)` to sample the spring and flip `Opening → Open` on
-    /// settle.
+    /// retarget on re-show after a close — no jump). `close()` stops the
+    /// spring (halts the sim + unregisters from the ticker) but does NOT
+    /// reset `value`, so the frozen value is the retarget origin for the next
+    /// `show()`. The host's `on_tick` calls `advance(now)` to sample the
+    /// spring and flip `Opening → Open` on settle.
     animation: AnimationController,
     /// Cached so `show()`/`close()` can (re-)wire the `AnimationController`
     /// even if called before the host's `on_mount` (e.g. in tests). Set by
@@ -238,12 +239,14 @@ impl ContextMenuController {
         }
         s.phase = Phase::Closed;
         s.open = None;
-        // A forward spring may still be running (if close() is called mid-
-        // Opening). It will settle to 1.0 on its own and stop firing dirty
-        // callbacks; advance() guards on phase != Closed so it's a no-op.
-        // We do NOT stop the spring here — AnimationController has no stop()
-        // API, and leaving it is harmless (nothing reads the value once the
-        // overlay unmounts).
+        // A forward spring may still be running if close() was called mid-
+        // Opening. `advance()` early-returns on `phase == Closed`, so the
+        // spring would never be sampled → never settle → never unregister from
+        // the ticker → the dirty callback would fire every frame forever.
+        // `stop()` halts the spring AND unregisters from the ticker. It does
+        // NOT reset `value`, so show()'s retarget-from-current-value
+        // (`let from = s.animation.value()`) still works for a smooth re-show.
+        s.animation.stop();
     }
 
     pub fn phase(&self) -> Phase {
@@ -1492,6 +1495,10 @@ mod tests {
             "early close() should be instant — no Closing phase"
         );
         assert!(controller.open_snapshot().is_none());
+        assert!(
+            !ticker.has_active(),
+            "spring should be unregistered from ticker after close() (stop() called)"
+        );
     }
 
     #[test]
@@ -1530,8 +1537,8 @@ mod tests {
             mid_value
         );
 
-        // Instant close mid-open: phase→Closed, open cleared. The forward
-        // spring is left running but advance() is a no-op while Closed, so
+        // Instant close mid-open: phase→Closed, open cleared. `close()` stops
+        // the spring (unregisters from ticker) but does NOT reset `value`, so
         // the value is frozen at mid_value until the next show().
         controller.close();
         pipeline.perform_rebuilds();
