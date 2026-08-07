@@ -993,8 +993,6 @@ mod tests {
     // ========================================================================
     // Task 5: spring-driven phase machine lifecycle tests
     // ========================================================================
-    // Task 5: spring-driven phase machine lifecycle tests
-    // ========================================================================
     //
     // These tests exercise the 3-state phase machine (Closed → Opening →
     // Open) driven by a critical spring
@@ -1212,7 +1210,7 @@ mod tests {
     /// `mid_value` assertion (0 < v < 1) is meaningful — it confirms the
     /// barrier was actually hit mid-open, not after settle.
     #[test]
-    fn test_dim_barrier_dismiss_during_animation() {
+    fn test_barrier_dismiss_during_animation() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1607,5 +1605,170 @@ mod tests {
             "card top should be click_y + pill_h + gap (236), got {}",
             card_bounds.top
         );
+    }
+
+    // ========================================================================
+    // Task 8: edge-case tests (vertical flip, horizontal clamp, instant dismiss)
+    // ========================================================================
+    //
+    // These tests cover the spec's required edge cases against the Task 3
+    // 3-layer Stack render. They use `test_content_builder` whose metrics are
+    // pill 150×28, card 200×108, gap 8 → cluster_w = max(150, 200) = 200,
+    // cluster_h = 28 + 8 + 108 = 144. (The real builder's metrics are larger
+    // — 222×44 / 200×134, cluster 222×186 — but these tests use the test
+    // builder, so assertions cite 200/144, not 222/186.)
+
+    /// Test — vertical flip: click near the bottom edge flips the cluster
+    /// above the click point so it doesn't overflow the window.
+    ///
+    /// `test_content_builder` metrics: pill_h=28, gap=8, card_h=108 →
+    /// cluster_h = 144. Click at y=590 in a 600px window:
+    ///   fits_below? 590 + 144 = 734 > 600 - 8 = 592 → false
+    ///   fits_above? 590 - 144 = 446 >= 8             → true
+    ///   → cluster_y = 590 - 144 = 446 (flipped above the click point)
+    /// The pill sits at the top of the cluster, so pill_top = cluster_y = 446.
+    #[test]
+    fn test_vertical_flip_when_no_room_below() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at y=590 (near bottom). cluster_h=144 (test_content_builder).
+        controller.show(
+            vexo::core::Point::new(100.0, 590.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        // Settle to Open so scale = 1.0 (Positioned offsets are unaffected by
+        // the scale transform — Transform is paint-only — but settle anyway
+        // for a clean state, mirroring test_click_point_anchor_default_placement).
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        // Pill should be ABOVE the click point after the flip.
+        assert!(
+            pill_bounds.top < 590.0,
+            "pill top ({}) should be above click_y (590) after flip",
+            pill_bounds.top
+        );
+        // cluster_y = click_y - cluster_h = 590 - 144 = 446.
+        assert!(
+            (pill_bounds.top - 446.0).abs() < 1.0,
+            "pill top should be cluster_y (446 = click_y - cluster_h = 590 - 144), got {}",
+            pill_bounds.top
+        );
+    }
+
+    /// Test — horizontal left-clamp: click near the right edge shifts the
+    /// cluster left so its right edge stays at window_w - 8.
+    ///
+    /// `test_content_builder` metrics: pill_w=150, card_w=200 → cluster_w =
+    /// max(150, 200) = 200. Click at x=390 in a 400px window:
+    ///   lo = 8.0
+    ///   hi = 400 - 200 - 8 = 192
+    ///   cluster_x = 390.max(8).min(192) = 192 (clamped left)
+    /// The pill sits at the cluster's left edge, so pill_left = cluster_x = 192.
+    #[test]
+    fn test_horizontal_clamp_when_near_right_edge() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at x=390 (near right edge). cluster_w=200 (test_content_builder).
+        controller.show(
+            vexo::core::Point::new(390.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        // cluster_x = window_w - 8 - cluster_w = 400 - 8 - 200 = 192.
+        assert!(
+            (pill_bounds.left - 192.0).abs() < 1.0,
+            "pill left should be clamped to 192 (window_w - 8 - cluster_w = 400 - 8 - 200), got {}",
+            pill_bounds.left
+        );
+    }
+
+    /// Test — instant dismiss: close() immediately sets phase=Closed and
+    /// the overlay layers unmount on the next rebuild (no Closing phase, no
+    /// reverse spring — Task 1 dropped the Closing phase).
+    #[test]
+    fn test_close_unmounts_overlay_immediately() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            vexo::core::Point::new(100.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Menu content is mounted while open.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, "Copy"),
+            "menu should be rendered when open"
+        );
+
+        // close() instantly clears to Closed — no Closing phase, no reverse
+        // spring. The overlay unmounts on the next rebuild.
+        controller.close();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            !find_text_in_tree(ro_reg, root, "Copy"),
+            "menu content should be unmounted immediately after close()"
+        );
+        assert_eq!(controller.phase(), Phase::Closed);
     }
 }
