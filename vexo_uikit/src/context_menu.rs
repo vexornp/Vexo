@@ -20,14 +20,21 @@
 //!
 //! `render()` builds a 3-layer `Stack`: (1) the child content, (2) a
 //! transparent full-screen dismiss barrier (`GestureDetector::on_press` →
-//! `close()`), (3) the menu cluster anchored at the click point — the
-//! reactions pill on top and the actions card below, separated by `gap`. The
-//! cluster scales `0.92 + v*0.08` about the click point on open (composed into
-//! a single `AffineTransform` via `scale_about_point` so the framework's
-//! per-level hit-tester maps taps correctly). No dim, no bubble copy.
+//! `close()`), (3) the menu cluster anchored at the click point — the actions
+//! card's top-left sits at the click point and the reactions pill sits
+//! directly above it (separated by `gap`). The cluster scales `0.85 + v*0.15`
+//! about the click point on open (each card wrapped via `scale_about_anchor`,
+//! which compensates for the painter's center-re-anchoring so the effective
+//! transform truly pivots at the click point) — the menu appears to grow out
+//! of the click position, with the card's top-left fixed. No dim, no bubble
+//! copy.
 //!
-//! Edge-aware positioning: the cluster flips above the click point when it
-//! doesn't fit below, and left-clamps to `[8, window_w - cluster_w - 8]` on
+//! Edge-aware positioning: the cluster's top-left defaults to
+//! (click_pos.x, click_pos.y - pill_h - gap) so the card's top-left lands on
+//! the click point. If the cluster would overflow the top or bottom of the
+//! window, the whole cluster (pill + card together) slides the minimum amount
+//! to stay on-screen — the pill-above-card stacking is never reordered.
+//! Horizontally the cluster left-clamps to `[8, window_w - cluster_w - 8]` on
 //! right overflow. Window size is read via `MediaQuery::of(ctx)` (an
 //! `InheritedWidget` dependency, so the host rebuilds on resize).
 
@@ -251,7 +258,7 @@ impl ContextMenuController {
     }
 
     /// The live spring value in `[0.0, 1.0]`. Drives the open scale
-    /// (`0.92 + v * 0.08`) applied to the menu cluster. Read at render time.
+    /// (`0.85 + v * 0.15`) applied to the menu cluster. Read at render time.
     pub fn animation_value(&self) -> f64 {
         self.shared.borrow().animation.value()
     }
@@ -427,6 +434,13 @@ impl Component for ContextMenu {
                 let window_h = mq.size.height;
 
                 // === Cluster geometry ===
+                // Layout: the actions card's top-left sits at the click point,
+                // and the reactions pill sits directly above it (pill bottom
+                // edge = card top edge, separated by `gap`). The whole cluster
+                // therefore straddles the click point vertically: pill above,
+                // card at+below. The cluster scales 0.85→1.0 about the click
+                // point (the card's top-left), so the menu appears to grow out
+                // of the click position.
                 let gap = metrics.gap;
                 let pill_w = metrics.reactions_size.width;
                 let pill_h = metrics.reactions_size.height;
@@ -436,6 +450,8 @@ impl Component for ContextMenu {
                 let cluster_h = pill_h + gap + card_h;
 
                 // === Horizontal: left-clamp ===
+                // Keep the cluster's right edge inside the window (8px margin).
+                // In the default (non-edge) case cluster_x = click_pos.x.
                 let cluster_x = if window_w > 0.0 {
                     let lo = 8.0;
                     let hi = (window_w - cluster_w - 8.0).max(lo);
@@ -444,30 +460,29 @@ impl Component for ContextMenu {
                     click_pos.x
                 };
 
-                // === Vertical: flip up if no room below ===
-                let fits_below = if window_h > 0.0 {
-                    click_pos.y + cluster_h <= window_h - 8.0
-                } else {
-                    true
-                };
-                let fits_above = if window_h > 0.0 {
-                    click_pos.y - cluster_h >= 8.0
-                } else {
-                    true
-                };
-                let cluster_y = if fits_below {
-                    click_pos.y
-                } else if fits_above {
-                    click_pos.y - cluster_h
-                } else {
-                    // Neither fits — pick the side with more room.
-                    let room_below = (window_h - 8.0 - click_pos.y).max(0.0);
-                    let room_above = (click_pos.y - 8.0).max(0.0);
-                    if room_below >= room_above {
-                        click_pos.y
+                // === Vertical: shift-to-fit ===
+                // Default placement: card top-left = click point, pill above it
+                //   → cluster_top (pill top) = click_pos.y - pill_h - gap
+                //   → cluster_bottom = click_pos.y + card_h
+                // If the cluster overflows the top (< 8) or bottom (> window_h
+                // - 8) edge, slide the whole cluster (pill + card together) the
+                // minimum amount to bring it back on-screen. This keeps the
+                // pill-above-card stacking intact at all times — no reordering.
+                let default_cluster_top = click_pos.y - pill_h - gap;
+                let cluster_y = if window_h > 0.0 {
+                    let top_min = 8.0;
+                    let bottom_max = (window_h - 8.0).max(top_min + cluster_h);
+                    if default_cluster_top < top_min {
+                        // Pill would clip off the top → slide down.
+                        top_min
+                    } else if default_cluster_top + cluster_h > bottom_max {
+                        // Card would clip off the bottom → slide up.
+                        (bottom_max - cluster_h).max(top_min)
                     } else {
-                        click_pos.y - cluster_h
+                        default_cluster_top
                     }
+                } else {
+                    default_cluster_top
                 };
 
                 let pill_x = cluster_x;
@@ -495,17 +510,41 @@ impl Component for ContextMenu {
                 stack = stack.push(barrier);
 
                 // === Layer [3]: menu cluster (pill + card), scaled about click point ===
-                let scale = (0.92 + v * 0.08) as f32;
-                let positioned_pill =
-                    vexo::Positioned::new(scale_about_point(content.reactions, scale, click_pos))
-                        .left(pill_x)
-                        .top(pill_y);
+                // The menu grows from the click point: scale 0.85→1.0 anchored at
+                // click_pos (the card's top-left in the default placement). Both
+                // cards share the same anchor so the whole cluster expands
+                // together from the click position. The anchor stays at click_pos
+                // even when the cluster is edge-shifted — the grow-from-click
+                // effect is preserved regardless of final placement.
+                //
+                // Each card needs its OWN transform matrix because the painter
+                // re-anchors every paint_transform to that object's bounds center
+                // (see `scale_about_anchor` for the compensation math). The pill
+                // and card have different centers, so each gets a matrix tuned to
+                // make the EFFECTIVE transform scale about click_pos.
+                let scale = (0.85 + v * 0.15) as f32;
+                let pill_center =
+                    vexo::core::Point::new(pill_x + pill_w * 0.5, pill_y + pill_h * 0.5);
+                let card_center =
+                    vexo::core::Point::new(card_x + card_w * 0.5, card_y + card_h * 0.5);
+                let positioned_pill = vexo::Positioned::new(scale_about_anchor(
+                    content.reactions,
+                    scale,
+                    click_pos,
+                    pill_center,
+                ))
+                .left(pill_x)
+                .top(pill_y);
                 stack = stack.push(positioned_pill);
 
-                let positioned_card =
-                    vexo::Positioned::new(scale_about_point(content.actions, scale, click_pos))
-                        .left(card_x)
-                        .top(card_y);
+                let positioned_card = vexo::Positioned::new(scale_about_anchor(
+                    content.actions,
+                    scale,
+                    click_pos,
+                    card_center,
+                ))
+                .left(card_x)
+                .top(card_y);
                 stack = stack.push(positioned_card);
             }
         }
@@ -514,28 +553,65 @@ impl Component for ContextMenu {
     }
 }
 
-/// Wrap `child` in a single `Transform` that scales about a fixed origin
-/// point: `M = translate(ox, oy) ∘ scale(s, s) ∘ translate(-ox, -oy)`.
+/// Wrap `child` in a `Transform` whose EFFECTIVE paint transform scales the
+/// child about `anchor` (e.g. the click point), keeping `anchor` fixed.
 ///
-/// Composing the three-step chain into ONE `AffineTransform` (rather than
-/// three nested `Transform` widgets) is deliberate: the framework's
-/// hit-tester checks `is_inside` against the child's bounds at EACH
-/// `Transform` render object after applying that RO's inverse transform. With
-/// three nested ROs (translate → scale → translate), the outer translate's
-/// inverse shifts the point far from the origin, failing the per-level bounds
-/// check — so taps on the scaled card silently miss. A single composed
-/// `Transform` applies the full inverse in one step.
+/// ## Why the matrix isn't a plain scale-about-anchor
 ///
-/// The composed matrix: scale `(s, s)` with a compensating translation so the
-/// origin `(ox, oy)` stays fixed.
+/// The painter (`vexo/src/painter.rs`) wraps every render object's
+/// `paint_transform()` matrix `M` as `T(center) ∘ M ∘ T(-center)` before
+/// applying it to child paint commands, where `center` is the render object's
+/// bounds center (= `absolute_position + size/2`). This re-anchors ANY matrix
+/// to the object's center — it's there so rotations/scales naturally pivot
+/// about the object's own center.
+///
+/// A naive `T(anchor) ∘ S(s) ∘ T(-anchor)` matrix (the old `scale_about_point`)
+/// gets double-anchored by this center-wrapping, producing an effective
+/// transform that scales about `anchor + center` rather than `anchor`. The
+/// visual symptom: the card's top-left (at `anchor`) drifts during the
+/// animation instead of staying fixed — the menu appears to grow from the
+/// card's far corner toward the click point.
+///
+/// ## The fix
+///
+/// Solve for the matrix `M` that makes the painter's wrapped form equal to a
+/// scale about `anchor`:
+///
+/// ```text
+/// want:  T(center) ∘ M ∘ T(-center) == T(anchor) ∘ S(s) ∘ T(-anchor)
+/// =>     M = S(s) ∘ T((1-s)*(anchor - center))
+/// ```
+///
+/// `M` is a scale by `s` plus a translation of `(1-s)*(anchor - center)`. The
+/// translation vanishes as `s → 1`, so at rest `M` is identity and the card
+/// paints at its natural laid-out position (top-left at the click point). At
+/// `s < 1` the effective transform scales every point about `anchor`, so the
+/// card's top-left (which sits at `anchor` in the default placement) stays
+/// fixed while the rest of the card grows outward from the click point.
+///
+/// ## Hit-test caveat
+///
+/// The framework's hit-tester (`vexo/src/hit_test.rs`) applies `inv(M)`
+/// directly to the pointer and is only consistent with the painter when `M` is
+/// center-anchored. Our `M` is center-anchored only when `anchor == center`,
+/// so taps at `s < 1` may land slightly off. This is acceptable: the menu is
+/// only interacted with at `s = 1` (fully open), where `M` is identity and
+/// hit-testing is exact. (The old `scale_about_point` matrix had the same
+/// property — this fix changes only the visual, not the hit-test behavior.)
 ///
 /// `TransformRenderObject` is a layout pass-through: the child's laid-out
 /// bounds propagate up unchanged, and the transform is applied only at paint
 /// + hit-test time.
-fn scale_about_point(child: Box<dyn Widget>, s: f32, origin: Point<Logical>) -> Box<dyn Widget> {
-    let transform = vexo::AffineTransform::translation(origin.x, origin.y)
-        .mul(&vexo::AffineTransform::scale(s, s))
-        .mul(&vexo::AffineTransform::translation(-origin.x, -origin.y));
+fn scale_about_anchor(
+    child: Box<dyn Widget>,
+    s: f32,
+    anchor: Point<Logical>,
+    obj_center: Point<Logical>,
+) -> Box<dyn Widget> {
+    let tx = (1.0 - s) * (anchor.x - obj_center.x);
+    let ty = (1.0 - s) * (anchor.y - obj_center.y);
+    let transform =
+        vexo::AffineTransform::translation(tx, ty).mul(&vexo::AffineTransform::scale(s, s));
     vexo::Transform::new(child, transform).boxed()
 }
 
@@ -757,16 +833,17 @@ mod tests {
             &mut font_system,
         );
 
-        // The actions card is Positioned at (click_x, click_y + pill_h + gap)
-        // = (10, 10 + 28 + 8) = (10, 46). The item row has 8px padding, so
-        // clicking at (15, 70) lands inside the row's padding area.
+        // This test has no MediaQuery wrapper, so the host reads window_h=0
+        // and skips edge shift-to-fit: the card's top-left lands exactly at
+        // the click point (10, 10). (With a real window, the pill above would
+        // clip the top and the cluster would shift down — but not here.)
         let pos = vexo::core::Point::new(10.0, 10.0);
         controller.show(pos, builder);
         pipeline.perform_rebuilds();
         // Settle the open spring (v→1.0, phase→Open) before tapping. The host
-        // scales the card `0.92 + v*0.08` about the click point; right after
-        // show() (v≈0) the card is at 92% scale and its hit region is shifted
-        // by the scale-about-point transform, so (15, 70) no longer lands on
+        // scales the card `0.85 + v*0.15` about the click point; right after
+        // show() (v≈0) the card is at 85% scale and its hit region is shifted
+        // by the scale-about-point transform, so (50, 30) no longer lands on
         // the row. At v=1 the scale is 1.0 (identity), so the hit-test works
         // exactly as at rest. This mirrors real usage: the user taps an item
         // after the menu has opened.
@@ -780,6 +857,59 @@ mod tests {
             &mut engine,
             &mut font_system,
         );
+
+        // This test has no MediaQuery wrapper, so the host reads window_h=0
+        // and skips edge shift-to-fit: the card's top-left lands exactly at
+        // the click point (10, 10), spanning (10,10)-(170,55). The item row
+        // has 8px padding, so clicking at (50, 30) lands inside the row.
+        let primary_press = InputEvent::PointerButton {
+            position: vexo::core::Point::new(50.0, 30.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let primary_release = InputEvent::PointerButton {
+            position: vexo::core::Point::new(50.0, 30.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            vexo::core::Point::new(50.0, 30.0),
+            &primary_press,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+        pipeline.handle_event(
+            vexo::core::Point::new(50.0, 30.0),
+            &primary_release,
+            Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &test_clipboard(),
+        );
+
+        // DEBUG: print the card's Positioned bounds + animation value.
+        {
+            let v = controller.animation_value();
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            if let Some(b) = find_positioned_bounds_around_text(ro_reg, root, "Copy") {
+                eprintln!(
+                    "DEBUG: animation_value={:.6}, scale={:.6}, card Positioned bounds={:?} \
+                     (left={}, top={}, w={}, h={})",
+                    v,
+                    0.85 + v * 0.15,
+                    b,
+                    b.left,
+                    b.top,
+                    b.width(),
+                    b.height()
+                );
+            } else {
+                eprintln!("DEBUG: could not find card Positioned bounds");
+            }
+        }
 
         let primary_press = InputEvent::PointerButton {
             position: vexo::core::Point::new(15.0, 70.0),
@@ -1357,40 +1487,199 @@ mod tests {
         );
     }
 
+    /// Walk the render tree and return the `paint_transform` matrix of the
+    /// render object whose subtree contains `needle` text. Returns `None` when
+    /// no such transform-bearing node exists. Used by
+    /// `test_scale_anchor_keeps_card_top_left_fixed` to inspect the card's
+    /// `Transform` matrix at mid-animation.
+    ///
+    /// `paint_transform()` is a `RenderObject` trait method (like `opacity()`),
+    /// so it's callable on `&dyn RenderObject` without downcasting — even
+    /// though `TransformRenderObject` itself is `pub(crate)` in `vexo`.
+    fn find_paint_transform_around_text(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        needle: &str,
+    ) -> Option<vexo::AffineTransform> {
+        let ro = reg.get(key)?;
+        if let Some(t) = ro.paint_transform() {
+            if find_text_in_tree(reg, key, needle) {
+                return Some(t);
+            }
+        }
+        for &child in ro.children() {
+            if let Some(t) = find_paint_transform_around_text(reg, child, needle) {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    /// Verifies the open scale truly anchors at the click point: at
+    /// mid-animation (0 < v < 1, scale < 1) the card's `paint_transform`
+    /// matrix equals `S(s) + T((1-s)*(click - card_center))`, and the
+    /// EFFECTIVE transform (after the painter's center re-anchoring) maps the
+    /// card's top-left corner — which sits at the click point — back to the
+    /// click point. I.e. the top-left stays fixed during the grow animation.
+    ///
+    /// This is the regression guard for the `scale_about_anchor` fix. The old
+    /// `scale_about_point` matrix (`T(click) ∘ S(s) ∘ T(-click)`) got double-
+    /// anchored by the painter's center-wrapping, producing an effective
+    /// transform that scaled about `click + center`; the card's top-left
+    /// drifted during the animation (visually: the menu grew from the card's
+    /// far corner toward the click point). This test would fail against the
+    /// old matrix because the effective transform would NOT map click_pos to
+    /// itself.
+    ///
+    /// No `MediaQuery` wrapper → the host reads `window_h = 0` and skips edge
+    /// shift-to-fit, so the card's top-left lands exactly at `click_pos`
+    /// (card_center = click_pos + (card_w/2, card_h/2)). `test_content_builder`
+    /// metrics: card 200×108.
+    #[test]
+    fn test_scale_anchor_keeps_card_top_left_fixed() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click in the middle of the screen — no edge shift, card top-left =
+        // click_pos. card metrics: 200×108 → card_center = click + (100, 54).
+        let click = vexo::core::Point::<Logical>::new(100.0, 300.0);
+        let card_w = 200.0_f32;
+        let card_h = 108.0_f32;
+        let card_center =
+            vexo::core::Point::<Logical>::new(click.x + card_w * 0.5, click.y + card_h * 0.5);
+        controller.show(click, test_content_builder("Copy"));
+        pipeline.perform_rebuilds();
+
+        // Advance to mid-open (0 < v < 1) so the scale is meaningfully < 1.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let v = controller.animation_value();
+        assert!(
+            v > 0.05 && v < 0.99,
+            "spring should be mid-open for this test to be meaningful, got v={}",
+            v
+        );
+
+        let s = 0.85 + v * 0.15;
+
+        // Expected matrix M = S(s) + T((1-s)*(click - card_center)).
+        let exp_tx = (1.0 - s) as f32 * (click.x - card_center.x);
+        let exp_ty = (1.0 - s) as f32 * (click.y - card_center.y);
+        let expected = vexo::AffineTransform::translation(exp_tx, exp_ty)
+            .mul(&vexo::AffineTransform::scale(s as f32, s as f32));
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let matrix = find_paint_transform_around_text(ro_reg, root, "Copy").expect(
+            "card's Transform render object should have a paint_transform at mid-animation",
+        );
+
+        let got = matrix.to_array();
+        let exp = expected.to_array();
+        let tol = 1e-3;
+        for i in 0..6 {
+            assert!(
+                (got[i] - exp[i]).abs() < tol,
+                "paint_transform[{}] = {} but expected {} (s={:.4}, v={:.4}); \
+                 the matrix must be S(s)+T((1-s)*(click-center)) so the painter's \
+                 center re-anchoring yields a scale about click_pos",
+                i,
+                got[i],
+                exp[i],
+                s,
+                v
+            );
+        }
+
+        // The real proof: the EFFECTIVE transform (painter applies
+        // T(center) ∘ M ∘ T(-center)) must map the card's top-left corner
+        // (which sits at click_pos) back to click_pos — i.e. the top-left
+        // stays fixed during the grow animation.
+        let effective = |p: vexo::core::Point<Logical>| -> vexo::core::Point<Logical> {
+            let rel = vexo::core::Point::new(p.x - card_center.x, p.y - card_center.y);
+            let m = matrix.transform_point(rel);
+            vexo::core::Point::new(m.x + card_center.x, m.y + card_center.y)
+        };
+        let mapped_top_left = effective(click);
+        assert!(
+            (mapped_top_left.x - click.x).abs() < tol && (mapped_top_left.y - click.y).abs() < tol,
+            "effective transform should map card top-left (click_pos {:?}) to itself, \
+             got {:?} (s={:.4}); a non-fixed top-left means the menu grows from the \
+             wrong anchor — the symptom of the old scale_about_point double-anchoring bug",
+            click,
+            mapped_top_left,
+            s
+        );
+
+        // Sanity: a non-anchor point (card bottom-right) should move TOWARD
+        // click_pos under the effective scale-about-click — proving the scale
+        // really pivots at click_pos, not just that top-left is (trivially)
+        // fixed by an identity matrix.
+        let card_br = vexo::core::Point::<Logical>::new(click.x + card_w, click.y + card_h);
+        let mapped_br = effective(card_br);
+        let expected_br = vexo::core::Point::<Logical>::new(
+            click.x + s as f32 * card_w,
+            click.y + s as f32 * card_h,
+        );
+        assert!(
+            (mapped_br.x - expected_br.x).abs() < tol && (mapped_br.y - expected_br.y).abs() < tol,
+            "effective transform should scale card bottom-right toward click_pos: \
+             got {:?}, expected {:?} (click + s*size, s={:.4})",
+            mapped_br,
+            expected_br,
+            s
+        );
+    }
+
     // ========================================================================
-    // Task 7: reactions pill + edge-aware flip/clamp positioning
+    // Task 7: reactions pill + edge-aware shift-to-fit positioning
     // ========================================================================
     //
     // These tests exercise the host's edge-aware positioning logic. The host
-    // anchors the cluster (pill on top, card below) at the click point and
-    // picks one of three vertical placements:
+    // places the actions card's top-left at the click point and the reactions
+    // pill directly above it (pill bottom = card top, separated by `gap`), so
+    // the cluster straddles the click point vertically. The cluster's
+    // top-left defaults to (click_x, click_y - pill_h - gap); if that would
+    // overflow the top (< 8) or bottom (> window_h - 8) edge, the whole
+    // cluster slides the minimum amount to stay on-screen:
     //
-    //   fits_below (click_y + cluster_h ≤ window_h - 8) → cluster_y = click_y
-    //   fits_above (click_y - cluster_h ≥ 8)            → cluster_y = click_y - cluster_h
-    //   neither fits                                    → pick the side with more room
+    //   pill clips top    → cluster_y = 8
+    //   card clips bottom → cluster_y = (window_h - 8) - cluster_h
+    //   otherwise         → cluster_y = click_y - pill_h - gap
     //
-    // The cluster's internal stacking (pill-on-top, card-below) is never
-    // reordered — only `cluster_y` shifts. The horizontal left-clamp
+    // The cluster's internal stacking (pill-above-card) is never reordered —
+    // only `cluster_y` shifts. The horizontal left-clamp
     // (`cluster_x = click_x.max(8).min(window_w - cluster_w - 8)`) is exercised
     // by `test_horizontal_clamp_when_near_right_edge`.
     //
     // Test #8 and #9 below are presence-guards: they assert both cards remain
     // in the render tree (not clipped off-screen) after the host picks a
-    // placement. The real flip-position assertions live in
+    // placement. The real shift-position assertions live in
     // `test_vertical_flip_when_no_room_below` (Task 8 tests).
     //
     // Test #9 clicks at (50, 560) in a 600px window. The cluster is
-    // pill_h(28) + gap(8) + card_h(108) = 144px tall, so it doesn't fit
-    // below the click point (560 + 144 = 704 > 592) but does fit above
-    // (560 - 144 = 416 ≥ 8) — exercising the host's flip-up branch
-    // (`cluster_y = click_pos.y - cluster_h`).
+    // pill_h(28) + gap(8) + card_h(108) = 144px tall; its default top
+    // (560 - 28 - 8 = 524) + cluster_h(144) = 668 > 592, so the card would
+    // clip the bottom edge — the host slides the cluster up to
+    // cluster_y = 592 - 144 = 448.
 
-    /// Test #8 — presence guard: click near the top edge. With click y=5 and
-    /// cluster_h=144, the cluster fits below (5 + 144 = 149 < 592), so no
-    /// flip occurs — both cards render at their default click-point positions.
-    /// This test guards that the top-edge placement doesn't clip cards
-    /// off-screen. (The real flip-up assertion is in
-    /// `test_vertical_flip_when_no_room_below`.)
+    /// Test #8 — presence guard: click near the top edge. With click y=5, the
+    /// pill (28px + 8px gap above the click) would clip the top
+    /// (5 - 28 - 8 = -31 < 8), so the host slides the cluster down to
+    /// cluster_y=8. Both cards render on-screen. This test guards that the
+    /// top-edge placement doesn't clip cards off-screen. (The real shift
+    /// assertion is in `test_vertical_flip_when_no_room_below`.)
     ///
     /// The host is wrapped in a `MediaQuery` with size=(400, 600) so
     /// `MediaQuery::of(ctx)` returns the real window size for edge detection.
@@ -1413,9 +1702,9 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Click point at the very top. Cluster fits below (5 + 144 = 149 <
-        // 592), so no flip — both cards render at default click-point
-        // positions. Presence guard: neither card should be clipped.
+        // Click point at the very top. The pill would clip the top edge
+        // (5 - 28 - 8 = -31 < 8), so the host slides the cluster down to
+        // cluster_y=8. Presence guard: neither card should be clipped.
         controller.show(
             vexo::core::Point::new(50.0, 5.0),
             test_content_builder("Copy"),
@@ -1443,13 +1732,14 @@ mod tests {
         );
     }
 
-    /// Test #9 — edge flip when no room below for the actions card.
+    /// Test #9 — edge shift when no room below for the actions card.
     ///
-    /// Bubble pinned to the bottom of a 600px window (top=560, bottom=600).
-    /// With card_h=108 and gap=8, the card needs 8+108=116px below the bubble
-    /// but only 0px is available → `room_below = false`. The host flips BOTH
-    /// cards above the bubble (card directly above bubble, pill above card).
-    /// Both cards must remain in the render tree (not clipped off-screen).
+    /// Click pinned near the bottom of a 600px window (y=560). The card's
+    /// top-left defaults to the click point, so the cluster's default top is
+    /// 560 - 28 - 8 = 524; the cluster bottom (524 + 144 = 668) overflows the
+    /// window (592), so the host slides the whole cluster up to
+    /// cluster_y = 592 - 144 = 448. Both cards must remain in the render tree
+    /// (not clipped off-screen).
     ///
     /// Wrapped in `MediaQuery` (see test #8 rationale).
     #[test]
@@ -1481,16 +1771,16 @@ mod tests {
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Both cards should be above the bubble (flipped).
+        // Both cards should be on-screen (cluster shifted up).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
             find_text_in_tree(ro_reg, root, "Copy"),
-            "actions card should still be rendered with edge flip"
+            "actions card should still be rendered with edge shift"
         );
         assert!(
             find_text_in_tree(ro_reg, root, "r"),
-            "reactions pill should still be rendered with edge flip"
+            "reactions pill should still be rendered with edge shift"
         );
 
         // Bounds check: the reactions pill's `PositionedRenderObject` (the
@@ -1500,12 +1790,12 @@ mod tests {
         // (not the inner `TextRenderObject`'s) because the Text's
         // `computed_bounds` is local to its layout origin (always 0,0), while
         // the `Positioned`'s reflects the absolute laid-out position in window
-        // coords. With click y=560 and cluster_h=144, the host flips up:
-        // `cluster_y = 560 - 144 = 416`, so pill_top should be 416 (well
-        // within bounds). A bug in the flip math (wrong sign, missing
+        // coords. With click y=560 and cluster_h=144, the host slides up:
+        // `cluster_y = (600 - 8) - 144 = 448`, so pill_top should be 448 (well
+        // within bounds). A bug in the shift math (wrong sign, missing
         // cluster_h term) could push pill_top negative, which this assertion
         // catches. The presence checks above plus this bounds check together
-        // guard the flip-up positioning.
+        // guard the shift-up positioning.
         let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r").expect(
             "reactions pill's PositionedRenderObject should have computed_bounds after layout \
              (find_positioned_bounds_around_text found none — pill was not laid out)",
@@ -1514,14 +1804,14 @@ mod tests {
             pill_bounds.top >= 0.0,
             "reactions pill must not be clipped off the top of the screen \
              (computed_bounds.top={}, expected >= 0.0); a negative top indicates \
-             the flip-up math overflowed past the window origin",
+             the shift-up math overflowed past the window origin",
             pill_bounds.top
         );
     }
 
     /// Test — click-point anchor: opening the menu at a known click_pos places
-    /// the pill's Positioned at (click_x, click_y) and the card's at
-    /// (click_x, click_y + pill_h + gap), when there's room (no flip/clamp).
+    /// the card's Positioned at (click_x, click_y) and the pill's at
+    /// (click_x, click_y - pill_h - gap), when there's room (no shift/clamp).
     #[test]
     fn test_click_point_anchor_default_placement() {
         let controller = ContextMenuController::new();
@@ -1540,9 +1830,10 @@ mod tests {
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
         // Click at (100, 200). test_content_builder's metrics: pill 150×28,
-        // card 200×108, gap 8 → cluster 150×144. Fits below
-        // (200 + 144 = 344 < 592). Cluster width = max(150, 200) = 200, fits
-        // right (100 + 200 = 300 < 392). No flip/clamp.
+        // card 200×108, gap 8 → cluster 200×144. Default cluster top =
+        // 200 - 28 - 8 = 164 (≥ 8 ✓); cluster bottom = 164 + 144 = 308
+        // (≤ 592 ✓). No shift. Cluster width = max(150, 200) = 200, fits
+        // right (100 + 200 = 300 < 392). No clamp.
         controller.show(
             vexo::core::Point::new(100.0, 200.0),
             test_content_builder("Copy"),
@@ -1560,7 +1851,7 @@ mod tests {
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
 
-        // Pill "r" Positioned should be at (100, 200).
+        // Pill "r" Positioned should be at (100, 200 - 28 - 8) = (100, 164).
         let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
             .expect("pill Positioned should have bounds");
         assert!(
@@ -1569,12 +1860,12 @@ mod tests {
             pill_bounds.left
         );
         assert!(
-            (pill_bounds.top - 200.0).abs() < 0.5,
-            "pill top should be click_y (200), got {}",
+            (pill_bounds.top - 164.0).abs() < 0.5,
+            "pill top should be click_y - pill_h - gap (164), got {}",
             pill_bounds.top
         );
 
-        // Card "Copy" Positioned should be at (100, 200 + 28 + 8) = (100, 236).
+        // Card "Copy" Positioned should be at (100, 200) — the click point.
         let card_bounds = find_positioned_bounds_around_text(ro_reg, root, "Copy")
             .expect("card Positioned should have bounds");
         assert!(
@@ -1583,14 +1874,14 @@ mod tests {
             card_bounds.left
         );
         assert!(
-            (card_bounds.top - 236.0).abs() < 0.5,
-            "card top should be click_y + pill_h + gap (236), got {}",
+            (card_bounds.top - 200.0).abs() < 0.5,
+            "card top should be click_y (200), got {}",
             card_bounds.top
         );
     }
 
     // ========================================================================
-    // Task 8: edge-case tests (vertical flip, horizontal clamp, instant dismiss)
+    // Task 8: edge-case tests (vertical shift, horizontal clamp, instant dismiss)
     // ========================================================================
     //
     // These tests cover the spec's required edge cases against the Task 3
@@ -1600,15 +1891,15 @@ mod tests {
     // — 222×44 / 200×134, cluster 222×186 — but these tests use the test
     // builder, so assertions cite 200/144, not 222/186.)
 
-    /// Test — vertical flip: click near the bottom edge flips the cluster
-    /// above the click point so it doesn't overflow the window.
+    /// Test — vertical shift: click near the bottom edge slides the cluster
+    /// up so it doesn't overflow the window.
     ///
     /// `test_content_builder` metrics: pill_h=28, gap=8, card_h=108 →
     /// cluster_h = 144. Click at y=590 in a 600px window:
-    ///   fits_below? 590 + 144 = 734 > 600 - 8 = 592 → false
-    ///   fits_above? 590 - 144 = 446 >= 8             → true
-    ///   → cluster_y = 590 - 144 = 446 (flipped above the click point)
-    /// The pill sits at the top of the cluster, so pill_top = cluster_y = 446.
+    ///   default cluster top = 590 - 28 - 8 = 554
+    ///   cluster bottom = 554 + 144 = 698 > 592 (window_h - 8) → clip
+    ///   → cluster_y = 592 - 144 = 448 (slid up)
+    /// The pill sits at the top of the cluster, so pill_top = cluster_y = 448.
     #[test]
     fn test_vertical_flip_when_no_room_below() {
         let controller = ContextMenuController::new();
@@ -1645,16 +1936,16 @@ mod tests {
         let root = ro_reg.root().expect("root");
         let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
             .expect("pill Positioned should have bounds");
-        // Pill should be ABOVE the click point after the flip.
+        // Pill should be ABOVE the click point after the shift.
         assert!(
             pill_bounds.top < 590.0,
-            "pill top ({}) should be above click_y (590) after flip",
+            "pill top ({}) should be above click_y (590) after shift",
             pill_bounds.top
         );
-        // cluster_y = click_y - cluster_h = 590 - 144 = 446.
+        // cluster_y = (window_h - 8) - cluster_h = 592 - 144 = 448.
         assert!(
-            (pill_bounds.top - 446.0).abs() < 1.0,
-            "pill top should be cluster_y (446 = click_y - cluster_h = 590 - 144), got {}",
+            (pill_bounds.top - 448.0).abs() < 1.0,
+            "pill top should be cluster_y (448 = (window_h - 8) - cluster_h = 592 - 144), got {}",
             pill_bounds.top
         );
     }
