@@ -439,6 +439,8 @@ fn test_nav_transition_text_does_not_wrap() {
         right: Some(0.0),
         top: Some(0.0),
         bottom: Some(0.0),
+        width: None,
+        height: None,
     }));
     let opacity_ro = Box::new(OpacityRenderObject::new(0.5));
     let transform_ro = Box::new(TransformRenderObject::new(

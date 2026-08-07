@@ -24,6 +24,8 @@ pub struct PositionedInsets {
     pub right: Option<f32>,
     pub bottom: Option<f32>,
     pub left: Option<f32>,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
 }
 
 impl PositionedInsets {
@@ -45,6 +47,14 @@ impl PositionedInsets {
     }
     pub fn left(mut self, v: f32) -> Self {
         self.left = Some(v);
+        self
+    }
+    pub fn width(mut self, v: f32) -> Self {
+        self.width = Some(v);
+        self
+    }
+    pub fn height(mut self, v: f32) -> Self {
+        self.height = Some(v);
         self
     }
 }
@@ -93,6 +103,12 @@ impl PositionedRenderObject {
         }
         if let Some(left) = self.insets.left {
             layout = layout.left(left);
+        }
+        if let Some(width) = self.insets.width {
+            layout = layout.width(width);
+        }
+        if let Some(height) = self.insets.height {
+            layout = layout.height(height);
         }
 
         layout

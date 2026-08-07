@@ -56,6 +56,15 @@ pub trait Simulation: Send + Sync {
     fn tolerance(&self) -> Tolerance {
         Tolerance::DEFAULT
     }
+    /// The final value the simulation converges to, if any.
+    /// Returns `f64::NAN` for simulations without a fixed target.
+    /// The controller uses this to snap `value` to the exact target
+    /// when `is_done()` returns true, avoiding tiny residual error
+    /// (e.g. 0.999 instead of 1.0) that can cause misclassification
+    /// downstream (e.g. opacity-based depth-write classification).
+    fn target(&self) -> f64 {
+        f64::NAN
+    }
 }
 
 /// Exponential-decay fling. `x(t) = x0 + v0·τ·(1 - e^(-t/τ))`,
@@ -268,6 +277,10 @@ impl Simulation for SpringSimulation {
 
     fn tolerance(&self) -> Tolerance {
         self.tolerance
+    }
+
+    fn target(&self) -> f64 {
+        self.to
     }
 }
 

@@ -995,6 +995,119 @@ impl WgpuBackend {
     }
 
     /// Execute the render pass, iterating `current_op_locations` in paint order.
+    /// Draw a single op in the render pass. Handles scissor, pipeline
+    /// switching, rclip binding, and the indexed draw call. Called from
+    /// `execute_render_pass` in two phases (opaque before text, transparent
+    /// after text). State (`prev_kind`, `prev_clip`, `prev_rclip_offset`)
+    /// is passed by reference so it persists across calls within a phase.
+    fn draw_op_in_pass(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        i: usize,
+        prev_kind: &mut Option<OpKind>,
+        prev_clip: &mut Option<Option<crate::core::Bounds<crate::core::Logical>>>,
+        prev_rclip_offset_per_slot: &mut [Option<u32>; 2],
+        scale_factor: f32,
+        viewport_width: u32,
+        viewport_height: u32,
+    ) {
+        let loc = self.current_op_locations[i];
+        let clip = self.current_op_clips[i];
+
+        // 1. Scissor: only set when clip changes.
+        let clip_value = clip;
+        if *prev_clip != Some(clip_value) {
+            match &clip {
+                Some(c) => {
+                    let x = (c.left * scale_factor).max(0.0) as u32;
+                    let y = (c.top * scale_factor).max(0.0) as u32;
+                    let right = (c.right * scale_factor).min(viewport_width as f32) as u32;
+                    let bottom = (c.bottom * scale_factor).min(viewport_height as f32) as u32;
+                    let w = right.saturating_sub(x);
+                    let h = bottom.saturating_sub(y);
+                    if w == 0 || h == 0 {
+                        *prev_clip = Some(clip_value);
+                        return;
+                    }
+                    render_pass.set_scissor_rect(x, y, w, h);
+                }
+                None => {
+                    render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+                }
+            }
+            *prev_clip = Some(clip_value);
+        }
+
+        // 2. Pipeline: only switch when op kind changes.
+        let kind = loc.kind();
+        let rclip_slot_idx = match kind {
+            OpKind::Quad | OpKind::TransparentQuad => 0,
+            OpKind::Image => 1,
+        };
+        if Some(kind) != *prev_kind {
+            match kind {
+                OpKind::Quad => {
+                    render_pass.set_pipeline(&self.render_pipeline);
+                    render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                }
+                OpKind::TransparentQuad => {
+                    render_pass.set_pipeline(&self.transparent_render_pipeline);
+                    render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                }
+                OpKind::Image => {
+                    render_pass.set_pipeline(&self.image_pipeline);
+                    render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.image_atlas_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
+                }
+            }
+            prev_rclip_offset_per_slot[rclip_slot_idx] = None;
+            *prev_kind = Some(kind);
+        }
+
+        // 3. RClip bind group: per-op dynamic offset.
+        let rclip_offset = self.current_op_rclip_offsets[i];
+        if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
+            let rclip_group = match kind {
+                OpKind::Quad | OpKind::TransparentQuad => 1,
+                OpKind::Image => 2,
+            };
+            render_pass.set_bind_group(
+                rclip_group,
+                &self.rclip_bind_group,
+                &[rclip_offset],
+            );
+            prev_rclip_offset_per_slot[rclip_slot_idx] = Some(rclip_offset);
+        }
+
+        // 4. Draw one instance.
+        match kind {
+            OpKind::Quad | OpKind::TransparentQuad => {
+                render_pass.set_index_buffer(
+                    self.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+            }
+            OpKind::Image => {
+                render_pass.set_index_buffer(
+                    self.image_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+            }
+        }
+        let idx = match loc {
+            crate::frame_builder::OpLocation::Quad { index } => index,
+            crate::frame_builder::OpLocation::TransparentQuad { index } => index,
+            crate::frame_builder::OpLocation::Image { index } => index,
+        };
+        render_pass.draw_indexed(0..6, 0, idx..idx + 1);
+    }
+
     /// Scissor rect and pipeline are set only when they change between ops;
     /// each op draws exactly one instance at its typed-buffer index. Text is
     /// rendered last as a single full-viewport pass.
@@ -1086,120 +1199,79 @@ impl WgpuBackend {
             // Index 0 = Quad slot (group 1), Index 1 = Image slot (group 2).
             let mut prev_rclip_offset_per_slot: [Option<u32>; 2] = [None, None];
 
-            for (i, (loc, clip)) in self.current_op_locations
-                .iter()
-                .zip(self.current_op_clips.iter())
-                .enumerate()
-            {
-                // 1. Scissor: only set when clip changes.
-                //    Compare Option<Bounds> by value via the Option<Option> sentinel.
-                let clip_value = *clip;
-                if prev_clip != Some(clip_value) {
-                    match clip {
-                        Some(c) => {
-                            let x = (c.left * scale_factor).max(0.0) as u32;
-                            let y = (c.top * scale_factor).max(0.0) as u32;
-                            let right = (c.right * scale_factor).min(viewport_width as f32) as u32;
-                            let bottom = (c.bottom * scale_factor).min(viewport_height as f32) as u32;
-                            let w = right.saturating_sub(x);
-                            let h = bottom.saturating_sub(y);
-                            if w == 0 || h == 0 {
-                                // Fully clipped — skip this op. Still advance prev_clip
-                                // so we don't repeatedly re-set scissor for adjacent
-                                // ops with the same degenerate clip.
-                                prev_clip = Some(clip_value);
-                                continue;
-                            }
-                            render_pass.set_scissor_rect(x, y, w, h);
-                        }
-                        None => {
-                            render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
-                        }
-                    }
-                    prev_clip = Some(clip_value);
-                }
+            // Three-phase rendering (standard transparency sorting):
+            //
+            // Phase 1 — Opaque quads + images (depth-write ON). These write
+            //   their depth to the depth buffer, so text rendered in Phase 2
+            //   that is behind an opaque quad (e.g. the actions card at full
+            //   open) fails the LessEqual depth test and is correctly occluded.
+            //
+            // Phase 2 — Text (glyphon). All text is batched into one pass by
+            //   glyphon's TextRenderer. Text tests against the depth buffer
+            //   written by Phase 1, so background text behind an opaque card
+            //   is hidden, while background text in open areas passes and is
+            //   drawn.
+            //
+            // Phase 3 — Transparent quads (depth-write OFF, depth test ON).
+            //   Semi-transparent quads (fill alpha < 1.0, e.g. the context-menu
+            //   dim barrier, or the card during the opening animation) blend
+            //   ON TOP of the already-rendered text. This means:
+            //   • The dim barrier correctly dims background text (text drawn
+            //     first, then barrier blends 40% black over it).
+            //   • A semi-transparent card during the opening animation lets
+            //     background text show through it (correct for transparency).
+            //   • At full open (v=1.0, Opacity(1.0)), the card's fill alpha is
+            //     1.0 → classified as opaque → Phase 1 → writes depth →
+            //     occludes background text behind it.
+            //
+            // Without three-phase rendering, text (always in a separate final
+            // pass) would render on top of ALL transparent quads, causing
+            // background text to show through the card and overlap menu text.
 
-                // 2. Pipeline: only switch when op kind changes.
-                let kind = loc.kind();
-                let rclip_slot_idx = match kind {
-                    OpKind::Quad | OpKind::TransparentQuad => 0,
-                    OpKind::Image => 1,
-                };
-                if Some(kind) != prev_kind {
-                    match kind {
-                        OpKind::Quad => {
-                            render_pass.set_pipeline(&self.render_pipeline);
-                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-                        }
-                        OpKind::TransparentQuad => {
-                            render_pass.set_pipeline(&self.transparent_render_pipeline);
-                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-                        }
-                        OpKind::Image => {
-                            render_pass.set_pipeline(&self.image_pipeline);
-                            render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-                            render_pass.set_bind_group(1, &self.image_atlas_bind_group, &[]);
-                            render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
-                            render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
-                        }
-                    }
-                    // Bind group index 1 is shared: rclip for Quad, image_atlas
-                    // for Image. After a pipeline switch the slot may hold the
-                    // other pipeline's bind group, so force rclip to be re-bound.
-                    prev_rclip_offset_per_slot[rclip_slot_idx] = None;
-                    prev_kind = Some(kind);
+            // Phase 1: Opaque quads + images.
+            for i in 0..self.current_op_locations.len() {
+                if self.current_op_locations[i].kind() == OpKind::TransparentQuad {
+                    continue;
                 }
-
-                // 3. RClip bind group: per-op dynamic offset.
-                //    Quad pipeline: group 1. Image pipeline: group 2
-                //    (group 1 is the image atlas).
-                //    Skip when the target slot already has this offset.
-                let rclip_offset = self.current_op_rclip_offsets[i];
-                if prev_rclip_offset_per_slot[rclip_slot_idx] != Some(rclip_offset) {
-                    let rclip_group = match kind {
-                        OpKind::Quad | OpKind::TransparentQuad => 1,
-                        OpKind::Image => 2,
-                    };
-                    render_pass.set_bind_group(
-                        rclip_group,
-                        &self.rclip_bind_group,
-                        &[rclip_offset],
-                    );
-                    prev_rclip_offset_per_slot[rclip_slot_idx] = Some(rclip_offset);
-                }
-
-                // 4. Draw one instance. Index buffer is per-pipeline (same indices 0..6).
-                match kind {
-                    OpKind::Quad | OpKind::TransparentQuad => {
-                        render_pass.set_index_buffer(
-                            self.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint16,
-                        );
-                    }
-                    OpKind::Image => {
-                        render_pass.set_index_buffer(
-                            self.image_index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint16,
-                        );
-                    }
-                }
-                let idx = match loc {
-                    crate::frame_builder::OpLocation::Quad { index } => *index,
-                    crate::frame_builder::OpLocation::TransparentQuad { index } => *index,
-                    crate::frame_builder::OpLocation::Image { index } => *index,
-                };
-                render_pass.draw_indexed(0..6, 0, idx..idx + 1);
+                self.draw_op_in_pass(
+                    &mut render_pass,
+                    i,
+                    &mut prev_kind,
+                    &mut prev_clip,
+                    &mut prev_rclip_offset_per_slot,
+                    scale_factor,
+                    viewport_width,
+                    viewport_height,
+                );
             }
 
-            // Text pass — full-viewport scissor, unchanged.
+            // Phase 2: Text — full-viewport scissor.
             render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
             self.text_renderer
                 .render(&self.atlas, &self.viewport, &mut render_pass)
                 .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
+
+            // Phase 3: Transparent quads. Reset pipeline/clip/rclip state so
+            // they are re-bound after the text pass (which may have changed
+            // pipeline bindings).
+            prev_kind = None;
+            prev_clip = None;
+            prev_rclip_offset_per_slot = [None, None];
+            for i in 0..self.current_op_locations.len() {
+                if self.current_op_locations[i].kind() != OpKind::TransparentQuad {
+                    continue;
+                }
+                self.draw_op_in_pass(
+                    &mut render_pass,
+                    i,
+                    &mut prev_kind,
+                    &mut prev_clip,
+                    &mut prev_rclip_offset_per_slot,
+                    scale_factor,
+                    viewport_width,
+                    viewport_height,
+                );
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

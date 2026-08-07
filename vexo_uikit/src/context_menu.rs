@@ -589,67 +589,62 @@ impl Component for ContextMenu {
                 // scales). Tappable to dismiss (matches iMessage: tapping the
                 // lifted bubble closes the menu).
                 let ctrl_for_bubble = controller.clone();
-                let bubble_scale = 1.0 + v * 0.03;
-                let bubble_lift = -(v * 4.0) as f32;
                 let bw = bubble_bounds.width();
                 let bh = bubble_bounds.height();
-                let bubble_copy = vexo::Positioned::new(
-                    vexo::GestureDetector::new(scale_about_center(
-                        bubble_widget,
-                        bubble_scale as f32,
-                        bubble_scale as f32,
-                        bw,
-                        bh,
-                    ))
-                    .on_press(move || ctrl_for_bubble.close()),
-                )
-                .left(bubble_bounds.left)
-                .top(bubble_bounds.top + bubble_lift);
+                // The bubble copy sits exactly on top of the original — no
+                // scale, no lift. The dim barrier (40% black) dims the
+                // original underneath; this bright copy is the focal point on
+                // top. Any scale/lift would create a visible offset between
+                // the copy and the dimmed original beneath it (the dim is only
+                // 40% opacity, so the original remains partially visible).
+                let sized_bubble = vexo::WithLayout::new(
+                    vexo::GestureDetector::new(bubble_widget)
+                        .on_press(move || ctrl_for_bubble.close()),
+                    vexo::Layout::default().width(bw).height(bh),
+                );
+                let bubble_copy = vexo::Positioned::new(sized_bubble)
+                    .left(bubble_bounds.left)
+                    .top(bubble_bounds.top);
                 stack = stack.push(bubble_copy);
 
-                // [4] Reactions pill — scale 0.8+v*0.2 (grows 80%→100%),
-                // opacity v (fades in), positioned at (pill_x, pill_y). Same
-                // scale+opacity treatment as the actions card; anchored via
-                // `scale_about_center` using `metrics.reactions_size` so the
-                // pill scales about its own center, not the bubble's. The
-                // pill's position is edge-aware: above the bubble by default,
-                // below the actions card if no room above, above the card if
-                // the whole stack flipped, etc. (see `pill_y` derivation
-                // above).
+                // [4] Reactions pill — scale 0.8+v*0.2 (grows 80%→100%).
+                // No opacity fade: the pill is always opaque so it always
+                // occludes background text behind it (Phase 1, writes depth).
+                // The scale animation provides the visual transition. This
+                // matches iMessage: the pill scales in, not fades in.
+                // Anchored via `scale_about_center` using
+                // `metrics.reactions_size` so the pill scales about its own
+                // center, not the bubble's. The pill's position is edge-aware:
+                // above the bubble by default, below the actions card if no
+                // room above, above the card if the whole stack flipped, etc.
                 let pill_scale = 0.8 + v * 0.2;
-                let pill_opacity = v as f32;
-                let positioned_pill = vexo::Positioned::new(vexo::Opacity::new(
-                    scale_about_center(
-                        content.reactions,
-                        pill_scale as f32,
-                        pill_scale as f32,
-                        metrics.reactions_size.width,
-                        metrics.reactions_size.height,
-                    ),
-                    pill_opacity,
+                let positioned_pill = vexo::Positioned::new(scale_about_center(
+                    content.reactions,
+                    pill_scale as f32,
+                    pill_scale as f32,
+                    metrics.reactions_size.width,
+                    metrics.reactions_size.height,
                 ))
                 .left(pill_x)
                 .top(pill_y);
                 stack = stack.push(positioned_pill);
 
-                // [5] Actions card — scale 0.8+v*0.2 (grows 80%→100%), opacity
-                // v (fades in), positioned at (card_x, card_y) — edge-aware.
-                // Task 7 replaces the old hardcoded
-                // `(bubble_bounds.left, bubble_bottom + gap)` with the
-                // `card_x`/`card_y` derived above, so the card centers on the
-                // bubble horizontally (clamped to window margins) and flips
-                // above the bubble when there's no room below.
+                // [5] Actions card — scale 0.8+v*0.2 (grows 80%→100%).
+                // No opacity fade: the card is always opaque so it always
+                // occludes background text behind it (Phase 1, writes depth).
+                // The scale animation provides the "grows in" transition —
+                // background text is gradually covered as the card grows from
+                // 80% to 100% size. This matches iMessage and avoids the
+                // show-through-then-sudden-disappear artifact that opacity
+                // fade caused (transparent quads render after text, letting
+                // background text show through during the animation).
                 let card_scale = 0.8 + v * 0.2;
-                let card_opacity = v as f32;
-                let positioned_actions = vexo::Positioned::new(vexo::Opacity::new(
-                    scale_about_center(
-                        content.actions,
-                        card_scale as f32,
-                        card_scale as f32,
-                        metrics.actions_size.width,
-                        metrics.actions_size.height,
-                    ),
-                    card_opacity,
+                let positioned_actions = vexo::Positioned::new(scale_about_center(
+                    content.actions,
+                    card_scale as f32,
+                    card_scale as f32,
+                    metrics.actions_size.width,
+                    metrics.actions_size.height,
                 ))
                 .left(card_x)
                 .top(card_y);
@@ -1866,8 +1861,15 @@ mod tests {
     /// bubble copy still renders at the correct size after wrapping it in the
     /// transform chain — `TransformRenderObject` is a layout pass-through, so
     /// the Text's computed bounds are unchanged.)
+    /// The card is NOT wrapped in `Opacity` — it is always opaque so it
+    /// always writes depth (Phase 1) and occludes background text behind it.
+    /// Only the scale animates (0.8→1.0). This test verifies that no
+    /// `OpacityRenderObject` exists on the card's subtree when the menu is
+    /// mid-open. (The dim barrier DOES have Opacity, but
+    /// `find_card_opacity` excludes subtrees with a black DecoratedBox, so
+    /// the dim is not a false positive.)
     #[test]
-    fn test_card_opacity_tracks_spring_value() {
+    fn test_card_has_no_opacity_fade() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1900,17 +1902,13 @@ mod tests {
 
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
-        let card_opacity = find_card_opacity(ro_reg, root, "Copy").expect(
-            "card OpacityRenderObject should exist when menu is open after Task 6 \
-             (find_card_opacity found none — card is not wrapped in Opacity yet)",
-        );
-        let expected = v as f32;
+        let card_opacity = find_card_opacity(ro_reg, root, "Copy");
         assert!(
-            (card_opacity - expected).abs() < 0.01,
-            "card opacity should track v (v={:.4}, expected≈{:.4}, got {:.4})",
-            v,
-            expected,
-            card_opacity
+            card_opacity.is_none(),
+            "card should NOT be wrapped in Opacity (always opaque for depth-write occlusion), \
+             but found opacity={:?} at v={:.4}",
+            card_opacity,
+            v
         );
     }
 

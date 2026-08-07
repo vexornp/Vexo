@@ -175,6 +175,16 @@ impl AnimationController {
                 let elapsed = now.saturating_duration_since(start).as_secs_f64();
                 self.value = sim.x(elapsed);
                 if sim.is_done(elapsed) {
+                    // Snap to the exact target to avoid tiny residual error
+                    // (e.g. 0.999 instead of 1.0) that can cause
+                    // misclassification downstream — e.g. opacity-based
+                    // depth-write classification treating a 99.9%-opaque
+                    // card as transparent, causing background text to show
+                    // through it.
+                    let target = sim.target();
+                    if !target.is_nan() {
+                        self.value = target;
+                    }
                     self.drive = Drive::Stopped;
                     self.unregister_from_ticker();
                 }

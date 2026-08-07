@@ -66,6 +66,22 @@ impl Positioned {
         self.insets.left = Some(value);
         self
     }
+
+    /// Set the explicit width. When set, the child is constrained to this
+    /// width instead of using its intrinsic width. Useful when the child
+    /// needs to match a size determined by a different layout context
+    /// (e.g. a bubble copy in the context menu that must match the
+    /// original bubble's laid-out size).
+    pub fn width(mut self, value: f32) -> Self {
+        self.insets.width = Some(value);
+        self
+    }
+
+    /// Set the explicit height. See `width` for rationale.
+    pub fn height(mut self, value: f32) -> Self {
+        self.insets.height = Some(value);
+        self
+    }
 }
 
 impl Clone for Positioned {
