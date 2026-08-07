@@ -19,14 +19,12 @@ use crate::widgets::avatar::avatar;
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
-    /// Root messages Signal (NOT a derived per-conversation Signal). We filter
-    /// by `conv_id` in `render()`. This is critical: a derived Signal created
-    /// in `DesktopChatsPage::render` would be recreated on every parent
-    /// cascade, but `should_rebuild` returns false — so the new derived
-    /// Signal's dirty_callback would never be registered (render is skipped),
-    /// and state-driven rebuilds would silently break. By using the root
-    /// Signal directly, the dirty_callback is registered on a Signal that
-    /// persists across widget replacements.
+    /// Root messages Signal (identity-stable for this element's lifetime).
+    /// Must be a root Signal, NOT a `Signal::derive` created in parent
+    /// render — see "Signal field rule" in
+    /// `docs/rebuild-skipping-patterns.md`. The per-conversation derived
+    /// Signal lives in `ChatScreenState::derived_messages` (created in
+    /// `on_mount`), so its subscription survives `should_rebuild == false`.
     pub(crate) messages: Signal<std::collections::HashMap<ConvId, Vec<Message>>>,
     pub(crate) avatar_bytes: Rc<[u8]>,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
@@ -56,7 +54,9 @@ impl Clone for ChatScreen {
     }
 }
 
-#[derive(Default)]
+// Note: cannot #[derive(Default)] because `Signal<Vec<Message>>` doesn't
+// impl Default. We implement Default manually below, initializing
+// `derived_messages` to `None` (populated in `on_mount`).
 pub(crate) struct ChatScreenState {
     text_controller: Option<TextEditingController>,
     /// Decoded avatar image data, cached so we don't re-decode the PNG on
@@ -64,6 +64,23 @@ pub(crate) struct ChatScreenState {
     /// every keyboard animation frame — 40+ PNG decodes/frame = 63ms).
     them_avatar_image: Option<ImageData>,
     me_avatar_image: Option<ImageData>,
+    /// Derived per-conversation messages Signal, created once in `on_mount`
+    /// from the root `messages` Signal + `conv_id`. Lives in State (not the
+    /// Widget struct) so its Arc identity is stable across widget
+    /// replacements — critical for `should_rebuild == false` (see the
+    /// "Signal field rule" section in `docs/rebuild-skipping-patterns.md`).
+    derived_messages: Option<Signal<Vec<Message>>>,
+}
+
+impl Default for ChatScreenState {
+    fn default() -> Self {
+        Self {
+            text_controller: None,
+            them_avatar_image: None,
+            me_avatar_image: None,
+            derived_messages: None,
+        }
+    }
 }
 
 impl ChatScreenState {
@@ -96,6 +113,23 @@ impl ComponentState for ChatScreenState {
         if let Some(tc) = self.text_controller.as_ref() {
             tc.set_dirty_callback(ctx.dirty_callback());
         }
+
+        // Create the derived per-conversation Signal from the root messages
+        // Signal + conv_id. This must live in State (not Widget) so the
+        // derived's Arc identity is stable across parent cascades — when
+        // should_rebuild returns false, render() is skipped and
+        // signal_value is not re-called, but the subscription on the
+        // State-owned derived survives. See the "Signal field rule" in
+        // docs/rebuild-skipping-patterns.md.
+        let widget = ctx
+            .widget()
+            .downcast_ref::<ChatScreen>()
+            .expect("ChatScreenState::on_mount: widget must be ChatScreen");
+        let conv_id = widget.conv_id.clone();
+        let root = widget.messages.clone();
+        self.derived_messages = Some(Signal::derive(root, move |map| {
+            map.get(&conv_id).cloned().unwrap_or_default()
+        }));
     }
     fn on_update(&mut self, _old_widget: &dyn Any, ctx: &mut LifecycleContext) {
         if let Some(tc) = self.text_controller.as_ref() {
@@ -120,9 +154,11 @@ impl Component for ChatScreen {
     /// Level 3 rebuild-skip (see `docs/rebuild-skipping-patterns.md`).
     /// During keyboard animation, TabBar and NavigationStack cascade `update()`
     /// to ChatScreen with fresh closure fields but identical data. Only
-    /// `conv_id` participates in identity — the `messages` Signal drives
-    /// state-driven rebuilds via `RenderContext::signal_value`, so the parent
-    /// cascade can stop here without re-rendering message bubbles.
+    /// `conv_id` participates in identity — the derived messages Signal in
+    /// State drives state-driven rebuilds via `RenderContext::signal_value`,
+    /// so the parent cascade can stop here without re-rendering message
+    /// bubbles. See "Signal field rule" in `rebuild-skipping-patterns.md`
+    /// for why the derived must live in State, not Widget.
     fn should_rebuild(&self, old: &Self) -> bool {
         self.conv_id != old.conv_id
     }
@@ -130,11 +166,17 @@ impl Component for ChatScreen {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
 
-        // Read the ROOT messages Signal (registers dirty_callback on the
-        // root, which persists across widget replacements — see the field
-        // comment). Filter by `conv_id` to get this conversation's messages.
-        let all_messages = ctx.signal_value(&self.messages);
-        let messages = all_messages.get(&self.conv_id).cloned().unwrap_or_default();
+        // Read the State-owned derived Signal (not the root). The derived
+        // filters to this conversation's messages and its Arc identity is
+        // stable (created once in on_mount), so the subscription survives
+        // should_rebuild == false. See "Signal field rule" in
+        // docs/rebuild-skipping-patterns.md.
+        let messages = ctx.signal_value(
+            state
+                .derived_messages
+                .as_ref()
+                .expect("derived_messages must be set in on_mount before render"),
+        );
 
         let ctrl = self.context_menu.clone();
         let on_react = Rc::clone(&self.on_react);
