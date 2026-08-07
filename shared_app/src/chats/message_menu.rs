@@ -278,7 +278,6 @@ mod tests {
     /// within ~15px. If this test fails, update the constants in `builder()`
     /// to match the real sizes printed in the assertion message.
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_metrics_match_real_sizes() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());

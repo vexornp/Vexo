@@ -9,35 +9,27 @@
 //! reads the current theme. Each trigger captures its own builder, so different
 //! bubbles can render different menu styles.
 //!
-//! Task 5 state: open is driven by a critical spring
-//! (`SpringDescription::ios(340.0, 1.0)`) through a 3-state phase machine
-//! (`Closed → Opening → Open`). `show()` starts a forward spring (0.0 → 1.0,
-//! phase=Opening); `close()` instantly clears to `Closed` (clears `open` →
-//! unmount, no reverse spring). `show()` always resets the spring to start
-//! from 0.0 (Amendment 2), so every open animates 0→1 consistently — a
-//! re-show after `close()` animates the same as a first open (close() already
-//! unmounted the overlay, so the reset has no visible jump). The host's
-//! `on_tick` calls `controller.advance(now)`, which samples the spring and
-//! flips Opening→Open on settle.
+//! Open is driven by a critical spring (`SpringDescription::ios(340.0, 1.0)`)
+//! through a 3-state phase machine (`Closed → Opening → Open`). `show()`
+//! starts a forward spring (0.0 → 1.0, phase=Opening); `close()` instantly
+//! clears to `Closed` (clears `open` → unmount, no reverse spring). `show()`
+//! always resets the spring to start from 0.0, so every open animates 0→1
+//! consistently — a re-show after `close()` animates the same as a first open.
+//! The host's `on_tick` calls `controller.advance(now)`, which samples the
+//! spring and flips Opening→Open on settle.
 //!
-//! Task 6 wires the spring value `v = controller.animation_value()` (0→1 on
-//! open, 1→0 on close) into all three overlay layers: the dim barrier's alpha
-//! is `v*0.4` (was fixed 0.4), the bright bubble copy gets a subtle
-//! `scale(1+v*0.03)` + `translate_y(-v*4.0)` lift (opacity stays 1.0), and the
-//! actions card gets `scale(0.8+v*0.2)` + `opacity(v)`. Scale-about-center is
-//! achieved via the `scale_about_center` helper (a translate→scale→translate
-//! `Transform` chain). `Opacity` is paint-only (layout + hit-test
-//! pass-through), so the dim barrier stays tappable even at v≈0 — barrier
-//! dismiss works mid-open (test #5).
+//! `render()` builds a 3-layer `Stack`: (1) the child content, (2) a
+//! transparent full-screen dismiss barrier (`GestureDetector::on_press` →
+//! `close()`), (3) the menu cluster anchored at the click point — the
+//! reactions pill on top and the actions card below, separated by `gap`. The
+//! cluster scales `0.92 + v*0.08` about the click point on open (composed into
+//! a single `AffineTransform` via `scale_about_point` so the framework's
+//! per-level hit-tester maps taps correctly). No dim, no bubble copy.
 //!
-//! Task 7 adds the 5th overlay layer — the reactions pill — with the same
-//! `scale(0.8+v*0.2)` + `opacity(v)` treatment as the actions card. Both
-//! cards are positioned edge-aware relative to the bubble: pill above + card
-//! below by default; pill flips below the card if no room above; whole stack
-//! flips above the bubble if no room below; best-effort below if neither.
-//! Horizontally both center on the bubble's horizontal center, clamped to
-//! `[8, window_w - card_w - 8]`. Window size is read via `MediaQuery::of(ctx)`
-//! (an `InheritedWidget` dependency, so the host rebuilds on resize).
+//! Edge-aware positioning: the cluster flips above the click point when it
+//! doesn't fit below, and left-clamps to `[8, window_w - cluster_w - 8]` on
+//! right overflow. Window size is read via `MediaQuery::of(ctx)` (an
+//! `InheritedWidget` dependency, so the host rebuilds on resize).
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -123,9 +115,8 @@ pub enum Phase {
 /// Snapshot of what `show()` was called with. Held in the controller's shared
 /// cell while the menu is open; cleared on `close()`.
 ///
-/// Unused in Task 2 (render() is stubbed); Task 3's render rewrite reads
-/// `click_pos` + `builder` via `open_snapshot()`.
-#[allow(dead_code)]
+/// Read by `render()` via `open_snapshot()` to get the click point + builder
+/// for the overlay cluster.
 struct OpenState {
     click_pos: Point<Logical>,
     builder: MenuBuilder,
@@ -309,10 +300,6 @@ impl ContextMenuController {
     /// Snapshot the current open state (clones the click point + builder).
     /// Returns `None` when closed. Called by the host during `render()` only
     /// when `phase() != Closed`.
-    ///
-    /// Unused in Task 2 (render() is stubbed); Task 3's render rewrite calls
-    /// this to read the click point + builder for the overlay cluster.
-    #[allow(dead_code)]
     pub(crate) fn open_snapshot(&self) -> Option<(Point<Logical>, MenuBuilder)> {
         let s = self.shared.borrow();
         s.open.as_ref().map(|o| (o.click_pos, o.builder.clone()))
@@ -419,45 +406,130 @@ impl Component for ContextMenu {
         _state: &mut ContextMenuHostState,
         ctx: &mut RenderContext,
     ) -> Box<dyn Widget> {
-        // TEMPORARY STUB - Task 3 replaces this with the 3-layer Stack
-        // (content + transparent barrier + click-point-anchored cluster).
-        let _ = ctx;
-        let _ = self.controller.phase();
-        self.child.clone_boxed()
+        let theme = vexo::Theme::of(ctx);
+        let phase = self.controller.phase();
+        let v = self.controller.animation_value();
+
+        let mut stack = vexo::Stack::new().push(self.child.clone_boxed());
+
+        if phase != Phase::Closed {
+            if let Some((click_pos, builder)) = self.controller.open_snapshot() {
+                let controller = self.controller.clone();
+                let content = builder(&controller, &theme);
+                let metrics = content.metrics;
+
+                let mq = vexo::MediaQuery::of(ctx);
+                let window_w = mq.size.width;
+                let window_h = mq.size.height;
+
+                // === Cluster geometry ===
+                let gap = metrics.gap;
+                let pill_w = metrics.reactions_size.width;
+                let pill_h = metrics.reactions_size.height;
+                let card_w = metrics.actions_size.width;
+                let card_h = metrics.actions_size.height;
+                let cluster_w = pill_w.max(card_w);
+                let cluster_h = pill_h + gap + card_h;
+
+                // === Horizontal: left-clamp ===
+                let cluster_x = if window_w > 0.0 {
+                    let lo = 8.0;
+                    let hi = (window_w - cluster_w - 8.0).max(lo);
+                    click_pos.x.max(lo).min(hi)
+                } else {
+                    click_pos.x
+                };
+
+                // === Vertical: flip up if no room below ===
+                let fits_below = if window_h > 0.0 {
+                    click_pos.y + cluster_h <= window_h - 8.0
+                } else {
+                    true
+                };
+                let fits_above = if window_h > 0.0 {
+                    click_pos.y - cluster_h >= 8.0
+                } else {
+                    true
+                };
+                let cluster_y = if fits_below {
+                    click_pos.y
+                } else if fits_above {
+                    click_pos.y - cluster_h
+                } else {
+                    // Neither fits — pick the side with more room.
+                    let room_below = (window_h - 8.0 - click_pos.y).max(0.0);
+                    let room_above = (click_pos.y - 8.0).max(0.0);
+                    if room_below >= room_above {
+                        click_pos.y
+                    } else {
+                        click_pos.y - cluster_h
+                    }
+                };
+
+                let pill_x = cluster_x;
+                let pill_y = cluster_y;
+                let card_x = cluster_x;
+                let card_y = cluster_y + pill_h + gap;
+
+                // === Layer [2]: transparent dismiss barrier ===
+                let ctrl_for_barrier = controller.clone();
+                let barrier = vexo::Positioned::new(
+                    vexo::GestureDetector::new(vexo::WithLayout::new(
+                        vexo::Text::new(""),
+                        vexo::Layout::default()
+                            .width_percent(1.0)
+                            .height_percent(1.0),
+                    ))
+                    .on_press(move || ctrl_for_barrier.close()),
+                )
+                .left(0.0)
+                .top(0.0)
+                .right(0.0)
+                .bottom(0.0);
+                stack = stack.push(barrier);
+
+                // === Layer [3]: menu cluster (pill + card), scaled about click point ===
+                let scale = (0.92 + v * 0.08) as f32;
+                let positioned_pill =
+                    vexo::Positioned::new(scale_about_point(content.reactions, scale, click_pos))
+                        .left(pill_x)
+                        .top(pill_y);
+                stack = stack.push(positioned_pill);
+
+                let positioned_card =
+                    vexo::Positioned::new(scale_about_point(content.actions, scale, click_pos))
+                        .left(card_x)
+                        .top(card_y);
+                stack = stack.push(positioned_card);
+            }
+        }
+
+        stack.boxed()
     }
 }
 
-/// Wrap `child` in a single `Transform` that scales about its center:
-/// `M = translate(w/2, h/2) ∘ scale(sx, sy) ∘ translate(-w/2, -h/2)`.
+/// Wrap `child` in a single `Transform` that scales about a fixed origin
+/// point: `M = translate(ox, oy) ∘ scale(s, s) ∘ translate(-ox, -oy)`.
 ///
 /// Composing the three-step chain into ONE `AffineTransform` (rather than
 /// three nested `Transform` widgets) is deliberate: the framework's
 /// hit-tester checks `is_inside` against the child's bounds at EACH
 /// `Transform` render object after applying that RO's inverse transform. With
 /// three nested ROs (translate → scale → translate), the outer translate's
-/// inverse shifts the point far from the origin (e.g. `(5,22)` → `(-95,-32)`),
-/// failing the per-level bounds check — even at v=1 where the scale is
-/// identity — so taps on the scaled card silently miss and fall through to
-/// the dim barrier. A single composed `Transform` applies the full inverse in
-/// one step, so `is_inside` is checked against the correctly-mapped point.
+/// inverse shifts the point far from the origin, failing the per-level bounds
+/// check — so taps on the scaled card silently miss. A single composed
+/// `Transform` applies the full inverse in one step.
 ///
-/// The composed matrix works out to `{ a: sx, d: sy, e: w/2*(1-sx),
-/// f: h/2*(1-sy) }`: scale `(sx, sy)` with a compensating translation so the
-/// center `(w/2, h/2)` stays fixed.
+/// The composed matrix: scale `(s, s)` with a compensating translation so the
+/// origin `(ox, oy)` stays fixed.
 ///
-/// `TransformRenderObject` is a layout pass-through (`is_pass_through() ==
-/// true`): the child's laid-out bounds propagate up unchanged, and the
-/// transform is applied only at paint + hit-test time. So wrapping a widget
-/// in `scale_about_center` does NOT change its `computed_bounds` — only its
-/// painted appearance and hit region.
-///
-/// Unused in Task 2 (render() is stubbed); Task 3's render rewrite re-uses it
-/// for the click-point-anchored cluster's scale-about-center transforms.
-#[allow(dead_code)]
-fn scale_about_center(child: Box<dyn Widget>, sx: f32, sy: f32, w: f32, h: f32) -> Box<dyn Widget> {
-    let transform = vexo::AffineTransform::translation(w / 2.0, h / 2.0)
-        .mul(&vexo::AffineTransform::scale(sx, sy))
-        .mul(&vexo::AffineTransform::translation(-w / 2.0, -h / 2.0));
+/// `TransformRenderObject` is a layout pass-through: the child's laid-out
+/// bounds propagate up unchanged, and the transform is applied only at paint
+/// + hit-test time.
+fn scale_about_point(child: Box<dyn Widget>, s: f32, origin: Point<Logical>) -> Box<dyn Widget> {
+    let transform = vexo::AffineTransform::translation(origin.x, origin.y)
+        .mul(&vexo::AffineTransform::scale(s, s))
+        .mul(&vexo::AffineTransform::translation(-origin.x, -origin.y));
     vexo::Transform::new(child, transform).boxed()
 }
 
@@ -600,7 +672,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_host_open_renders_menu_at_position() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(Text::new("content"), controller.clone());
@@ -637,7 +708,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_item_tap_fires_on_select_and_closes() {
         let selected = Rc::new(std::cell::Cell::new(false));
         let selected_clone = selected.clone();
@@ -742,7 +812,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_barrier_dismiss_on_outside_click() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(Text::new("content"), controller.clone());
@@ -791,7 +860,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_builder_reads_current_theme() {
         // A builder that encodes theme.surface.r into the rendered text label
         // (placed in the actions card). The builder runs inside
@@ -922,166 +990,8 @@ mod tests {
         None
     }
 
-    /// Walk the render tree and collect the `computed_bounds` sizes of every
-    /// `TextRenderObject` whose content contains `needle`. Used by the
-    /// dual-render spike test (#7) to assert the in-content and bright-copy
-    /// Text render objects have identical laid-out sizes.
-    fn collect_text_sizes(
-        reg: &RenderObjectRegistry,
-        key: RenderObjectKey,
-        needle: &str,
-        out: &mut Vec<vexo::core::Size<Logical>>,
-    ) {
-        if let Some(ro) = reg.get(key) {
-            if ro
-                .as_any()
-                .downcast_ref::<TextRenderObject>()
-                .map_or(false, |t| t.content().contains(needle))
-            {
-                if let Some(b) = ro.computed_bounds() {
-                    out.push(vexo::core::Size::new(b.width(), b.height()));
-                }
-            }
-            for &child in ro.children() {
-                collect_text_sizes(reg, child, needle, out);
-            }
-        }
-    }
-
-    #[test]
-    #[ignore = "bubble copy removed in Task 3 — test deleted there"]
-    fn test_bright_bubble_copy_rendered_on_top() {
-        let controller = ContextMenuController::new();
-        let pos = vexo::core::Point::new(10.0, 10.0);
-        let host = ContextMenu::new(vexo::Text::new("background content"), controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        controller.show(pos, test_content_builder("Actions"));
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        assert!(
-            find_text_in_tree(ro_reg, root, "BUBBLE_CONTENT marker"),
-            "bright bubble copy should be rendered when menu is open"
-        );
-    }
-
-    #[test]
-    #[ignore = "bubble copy removed in Task 3 — test deleted there"]
-    fn test_bubble_copy_size_matches_original() {
-        let controller = ContextMenuController::new();
-        let pos = vexo::core::Point::new(50.0, 50.0);
-
-        let content = vexo::WithLayout::new(
-            vexo::Text::new("X"),
-            vexo::Layout::default().width(80.0).height(30.0),
-        );
-
-        let host = ContextMenu::new(content, controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        controller.show(pos, test_content_builder("A"));
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let mut found_sizes: Vec<vexo::core::Size<Logical>> = Vec::new();
-        collect_text_sizes(ro_reg, root, "X", &mut found_sizes);
-        assert_eq!(found_sizes.len(), 2);
-        assert_eq!(found_sizes[0], found_sizes[1]);
-    }
-
-    /// Walk the render tree and collect the `RenderObjectKey`s of every
-    /// `DecoratedBoxRenderObject` whose `Style.background` is `Some(BLACK)`.
-    /// Used by the dim-barrier height regression test to locate the dim's
-    /// render object (the only BLACK-background DecoratedBox in the menu's
-    /// render tree when the menu is open).
-    fn collect_black_decorated_boxes(
-        reg: &RenderObjectRegistry,
-        key: RenderObjectKey,
-        out: &mut Vec<RenderObjectKey>,
-    ) {
-        if let Some(ro) = reg.get(key) {
-            let is_black_bg = ro
-                .as_any()
-                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                .map_or(false, |d| {
-                    d.style()
-                        .background
-                        .map_or(false, |c| c == vexo::Color::BLACK)
-                });
-            if is_black_bg {
-                out.push(key);
-            }
-            for &child in ro.children() {
-                collect_black_decorated_boxes(reg, child, out);
-            }
-        }
-    }
-
-    /// Regression test for the dim-barrier sizing bug.
-    ///
-    /// Before the fix, the dim barrier's `DecoratedBox(BLACK)` was nested
-    /// INSIDE `WithLayout` — so its child was `Text("")`. `DecoratedBox` is a
-    /// pass-through render object, so it inherits its CHILD's bounds, not the
-    /// `WithLayout`'s full-screen bounds. The `WithLayout` Column's
-    /// `align_items: Stretch` only affects the cross axis (width), not the
-    /// main axis (height), so `Text("")` stretched to full width (400px) but
-    /// kept its intrinsic line height (~29px) on the main axis. The
-    /// pass-through `DecoratedBox` inherited those 400x29 bounds → the dim
-    /// painted only a 29px strip at the top of the screen instead of covering
-    /// the full window. Tap-to-close still worked because the
-    /// `GestureDetector` reads the `WithLayout`'s full-screen bounds (its own
-    /// layout node), not the `DecoratedBox`'s — masking the bug from existing
-    /// tests.
-    ///
-    /// After the fix, `DecoratedBox` WRAPS `WithLayout`, inheriting the
-    /// `WithLayout`'s full-screen bounds (from `width_percent(1.0)` +
-    /// `height_percent(1.0)`). This test walks the render tree when the menu
-    /// is open, finds the dim's `DecoratedBoxRenderObject` (the one with a
-    /// BLACK background), and asserts its `computed_bounds` cover the full
-    /// screen — both height > 0 (the literal regression guard) and height
-    /// equal to the screen height (the actual bug catcher: the buggy version
-    /// produced 29px, not 600px).
-    #[test]
-    #[ignore = "dim barrier removed in Task 3 — test deleted there"]
-    fn test_dim_barrier_has_nonzero_height() {
-        let screen = vexo::core::Size::new(400.0, 600.0);
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(Text::new("content"), controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(screen, &mut engine, &mut font_system);
-
-        let pos = vexo::core::Point::new(10.0, 10.0);
-        controller.show(pos, test_content_builder("Copy"));
-        pipeline.perform_rebuilds();
-        pipeline.layout(screen, &mut engine, &mut font_system);
-
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let mut black_boxes: Vec<RenderObjectKey> = Vec::new();
-        collect_black_decorated_boxes(ro_reg, root, &mut black_boxes);
-        assert_eq!(black_boxes.len(), 1);
-    }
-
+    // ========================================================================
+    // Task 5: spring-driven phase machine lifecycle tests
     // ========================================================================
     // Task 5: spring-driven phase machine lifecycle tests
     // ========================================================================
@@ -1212,7 +1122,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reshow_after_close_retargets_from_current_value() {
+    fn test_reshow_after_close_restarts_from_zero() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1302,7 +1212,6 @@ mod tests {
     /// `mid_value` assertion (0 < v < 1) is meaningful — it confirms the
     /// barrier was actually hit mid-open, not after settle.
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_dim_barrier_dismiss_during_animation() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
@@ -1364,71 +1273,21 @@ mod tests {
         );
     }
 
-    /// Walk the render tree and return true if the subtree rooted at `key`
-    /// contains a `DecoratedBoxRenderObject` whose `Style.background` is
-    /// `Some(BLACK)` (the dim barrier's black fill).
-    fn subtree_has_black_decorated_box(reg: &RenderObjectRegistry, key: RenderObjectKey) -> bool {
-        if let Some(ro) = reg.get(key) {
-            let is_black = ro
-                .as_any()
-                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                .map_or(false, |d| {
-                    d.style()
-                        .background
-                        .map_or(false, |c| c == vexo::Color::BLACK)
-                });
-            if is_black {
-                return true;
-            }
-            for &child in ro.children() {
-                if subtree_has_black_decorated_box(reg, child) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// Walk the render tree and return the opacity of the
-    /// `OpacityRenderObject` whose subtree contains a BLACK-background
-    /// `DecoratedBox` (i.e. the dim barrier's `Opacity` wrapper). Returns
-    /// `None` when no such opacity node exists.
+    /// `OpacityRenderObject` whose subtree contains `needle` text (i.e. the
+    /// actions card's `Opacity` wrapper). Returns `None` when no such opacity
+    /// node exists.
     ///
-    /// This uniquely identifies the dim's opacity: the dim is the only
-    /// `Opacity` in the menu whose subtree contains a BLACK `DecoratedBox`.
-    /// (The actions card's `Opacity` subtree contains the card's text, not a
-    /// BLACK box.)
-    fn find_dim_opacity(reg: &RenderObjectRegistry, key: RenderObjectKey) -> Option<f32> {
-        let ro = reg.get(key)?;
-        if ro.opacity().is_some() && subtree_has_black_decorated_box(reg, key) {
-            return ro.opacity();
-        }
-        for &child in ro.children() {
-            if let Some(op) = find_dim_opacity(reg, child) {
-                return Some(op);
-            }
-        }
-        None
-    }
-
-    /// Walk the render tree and return the opacity of the
-    /// `OpacityRenderObject` whose subtree contains `needle` text but NO
-    /// BLACK-background `DecoratedBox` (i.e. the actions card's `Opacity`
-    /// wrapper). Returns `None` when no such opacity node exists.
-    ///
-    /// Before Task 6, the actions card has no `Opacity` wrapper (rendered at
-    /// full opacity directly) → returns `None`. After Task 6, the card is
-    /// wrapped in `Opacity(v)` → returns `Some(v)`.
+    /// The card is never wrapped in `Opacity` (always opaque for depth-write
+    /// occlusion), so this returns `None` — verified by
+    /// `test_card_has_no_opacity_fade`.
     fn find_card_opacity(
         reg: &RenderObjectRegistry,
         key: RenderObjectKey,
         needle: &str,
     ) -> Option<f32> {
         let ro = reg.get(key)?;
-        if ro.opacity().is_some()
-            && find_text_in_tree(reg, key, needle)
-            && !subtree_has_black_decorated_box(reg, key)
-        {
+        if ro.opacity().is_some() && find_text_in_tree(reg, key, needle) {
             return ro.opacity();
         }
         for &child in ro.children() {
@@ -1439,96 +1298,19 @@ mod tests {
         None
     }
 
-    /// RED→GREEN test for the spring-driven dim opacity.
+    /// Verifies the actions card is never wrapped in `Opacity`.
     ///
-    /// Before Task 6: the dim barrier's `Opacity` is fixed at `0.4` regardless
-    /// of the spring value. After Task 6: the dim opacity is `v * 0.4`, where
-    /// `v = controller.animation_value()`.
+    /// The card is always opaque so it always writes depth (Phase 1) and
+    /// occludes background text behind it. Only the scale animates
+    /// (0.92→1.0 about the click point). This test opens the menu, advances
+    /// ~150ms (mid-open, 0 < v < 1), then asserts no `OpacityRenderObject`
+    /// exists on the card's subtree (`find_card_opacity` returns `None`).
     ///
-    /// We open the menu, advance real time ~150ms so the spring is genuinely
-    /// mid-open (`v ≈ 0.76`), then read the dim's `OpacityRenderObject` from
-    /// the render tree and assert its opacity ≈ `v * 0.4` (NOT the fixed
-    /// `0.4`). Before Task 6 this fails (dim=0.4, expected ≈0.30); after Task
-    /// 6 it passes (dim=v*0.4).
-    #[test]
-    #[ignore = "dim barrier removed in Task 3 — test deleted there"]
-    fn test_dim_opacity_tracks_spring_value() {
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
-        let ticker = Arc::new(AnimationTicker::new());
-
-        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        controller.show(
-            vexo::core::Point::new(10.0, 10.0),
-            test_content_builder("Copy"),
-        );
-        pipeline.perform_rebuilds();
-
-        // Advance ~150ms so the spring is mid-open (0 < v < 1).
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        let v = controller.animation_value();
-        assert!(
-            v > 0.05 && v < 0.99,
-            "spring should be mid-open for this test to be meaningful, got v={}",
-            v
-        );
-
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let dim_opacity = find_dim_opacity(ro_reg, root).expect(
-            "dim OpacityRenderObject should exist when menu is open (find_dim_opacity found none)",
-        );
-
-        let expected = (v * 0.4) as f32;
-        assert!(
-            (dim_opacity - expected).abs() < 0.01,
-            "dim opacity should track v*0.4 (v={:.4}, expected≈{:.4}, got {:.4}); \
-             if got 0.4 the dim is still fixed-alpha (pre-Task-6 behavior)",
-            v,
-            expected,
-            dim_opacity
-        );
-    }
-
-    /// RED→GREEN test for the spring-driven actions-card opacity.
-    ///
-    /// Before Task 6: the actions card is rendered at full opacity with no
-    /// `Opacity` wrapper. After Task 6: the card is wrapped in `Opacity(v)`.
-    ///
-    /// We open the menu, advance ~150ms (v ≈ 0.76), then assert the card has
-    /// an `OpacityRenderObject` with opacity ≈ `v`. Before Task 6: no such
-    /// opacity node exists → `find_card_opacity` returns `None` → `expect`
-    /// panics → RED. After Task 6: `Opacity(v)` is present → GREEN.
-    ///
-    /// (The card's scale-about-center transform can't be inspected here —
+    /// (The card's scale-about-point transform can't be inspected here —
     /// `TransformRenderObject` is `pub(crate)` in `vexo` and not re-exported.
-    /// The card opacity check plus the dim opacity check together prove the
-    /// spring value `v` is read and applied to multiple overlay layers. The
-    /// bubble's scale/lift transform is verified indirectly by the existing
-    /// `test_bright_bubble_copy_rendered_on_top` /
-    /// `test_bubble_copy_size_matches_original` tests, which confirm the
-    /// bubble copy still renders at the correct size after wrapping it in the
-    /// transform chain — `TransformRenderObject` is a layout pass-through, so
-    /// the Text's computed bounds are unchanged.)
-    /// The card is NOT wrapped in `Opacity` — it is always opaque so it
-    /// always writes depth (Phase 1) and occludes background text behind it.
-    /// Only the scale animates (0.8→1.0). This test verifies that no
-    /// `OpacityRenderObject` exists on the card's subtree when the menu is
-    /// mid-open. (The dim barrier DOES have Opacity, but
-    /// `find_card_opacity` excludes subtrees with a black DecoratedBox, so
-    /// the dim is not a false positive.)
+    /// `TransformRenderObject` is a layout pass-through, so the card's
+    /// `computed_bounds` are unchanged by the transform.)
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_card_has_no_opacity_fade() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
@@ -1624,7 +1406,6 @@ mod tests {
     /// produce the same layout today, but depending on the real MediaQuery
     /// makes the test actually exercise the path the comment describes.
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_edge_flip_when_no_room_above() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
@@ -1686,7 +1467,6 @@ mod tests {
     ///
     /// Wrapped in `MediaQuery` (see test #8 rationale).
     #[test]
-    #[ignore = "Task 3 un-ignores after implementing render()"]
     fn test_edge_flip_when_no_room_below() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
@@ -1756,6 +1536,76 @@ mod tests {
              (computed_bounds.top={}, expected >= 0.0); a negative top indicates \
              the branch-3 flip-above math overflowed past the window origin",
             pill_bounds.top
+        );
+    }
+
+    /// Test — click-point anchor: opening the menu at a known click_pos places
+    /// the pill's Positioned at (click_x, click_y) and the card's at
+    /// (click_x, click_y + pill_h + gap), when there's room (no flip/clamp).
+    #[test]
+    fn test_click_point_anchor_default_placement() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at (100, 200). test_content_builder's metrics: pill 150×28,
+        // card 200×108, gap 8 → cluster 150×144. Fits below
+        // (200 + 144 = 344 < 592). Cluster width = max(150, 200) = 200, fits
+        // right (100 + 200 = 300 < 392). No flip/clamp.
+        controller.show(
+            vexo::core::Point::new(100.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        // Settle to Open so scale = 1.0 (Positioned offsets are unaffected by
+        // the scale transform — Transform is paint-only — but settle anyway
+        // for a clean state).
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        // Pill "r" Positioned should be at (100, 200).
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        assert!(
+            (pill_bounds.left - 100.0).abs() < 0.5,
+            "pill left should be click_x (100), got {}",
+            pill_bounds.left
+        );
+        assert!(
+            (pill_bounds.top - 200.0).abs() < 0.5,
+            "pill top should be click_y (200), got {}",
+            pill_bounds.top
+        );
+
+        // Card "Copy" Positioned should be at (100, 200 + 28 + 8) = (100, 236).
+        let card_bounds = find_positioned_bounds_around_text(ro_reg, root, "Copy")
+            .expect("card Positioned should have bounds");
+        assert!(
+            (card_bounds.left - 100.0).abs() < 0.5,
+            "card left should be click_x (100), got {}",
+            card_bounds.left
+        );
+        assert!(
+            (card_bounds.top - 236.0).abs() < 0.5,
+            "card top should be click_y + pill_h + gap (236), got {}",
+            card_bounds.top
         );
     }
 }
