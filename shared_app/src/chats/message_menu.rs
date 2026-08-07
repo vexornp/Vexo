@@ -28,18 +28,18 @@ pub(super) fn builder() -> MenuBuilder {
         metrics: MenuMetrics {
             // Verified by `test_metrics_match_real_sizes`: the real laid-out
             // sizes (read back from the DecoratedBox render objects after
-            // layout) are 222×40 for the pill and 200×134 for the card. The
+            // layout) are 222×40 for the pill and 200×98 for the card. The
             // pill is 6 reaction circles × 30px (18px FA icon in a fixed
             // 30×30 circled cell — see `ReactionIcon`) + 5 gaps × 6px + 6px
             // outer padding each side = 222px wide; 30px circle height + 5px
             // top/bottom padding = 40px tall. The circle's `Layout::width/
             // height(30)` forces an exact 30px cell, so (unlike the old
             // padding-based layout) the icon's line height no longer inflates
-            // the pill height. The card is taller because each row's text
-            // line height (~28px) plus 8px top/bottom padding → ~44px per
-            // row × 3 = 134px.
+            // the pill height. The card is 3 `MenuRow`s; each row's icon and
+            // label share a 14px font size (line height ~17px) plus 8px
+            // top/bottom padding → ~33px per row × 3 = 98px.
             reactions_size: vexo::core::Size::new(222.0, 40.0),
-            actions_size: vexo::core::Size::new(200.0, 134.0),
+            actions_size: vexo::core::Size::new(200.0, 98.0),
             gap: 8.0,
         },
     })
@@ -81,10 +81,13 @@ impl Component for MenuRow {
         } else {
             Color::TRANSPARENT
         };
-        let (icon_color, text_color) = if self.destructive {
-            (self.theme.error, self.theme.error)
+        // Icon and label share one color + one font size so the glyph and the
+        // text read at the same visual weight. `destructive` recolors both to
+        // `error` (used for Delete).
+        let color = if self.destructive {
+            self.theme.error
         } else {
-            (self.theme.on_surface_variant, self.theme.on_surface)
+            self.theme.on_surface
         };
 
         let on_enter = state.hovered.clone();
@@ -93,8 +96,8 @@ impl Component for MenuRow {
 
         let content = WithLayout::new(
             row! {
-                Icon::new(self.icon).with_size(14.0).with_color(icon_color),
-                Text::new(self.label).with_color(text_color),
+                Icon::new(self.icon).with_size(14.0).with_color(color),
+                Text::new(self.label).with_font_size(14.0).with_color(color),
             }
             .gap(10.0),
             // padding_each(left, right, top, bottom) — 12h, 8v.
