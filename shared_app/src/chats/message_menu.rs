@@ -188,7 +188,7 @@ impl ComponentState for ReactionIconState {
 /// wash on hover. Tap logs the reaction and closes the menu.
 ///
 /// A single `AnimationController` value `v` (0→1) drives both the icon scale
-/// (`Transform::scale(1.0 + v*0.15, ...)`) and the circle background color
+/// (`Transform::scale(1.0 + v*0.30, ...)`) and the circle background color
 /// (`Color::lerp(surface, hover_tint, v)`), so the circle appears as the icon
 /// grows — one spring, two effects, perfectly in sync.
 ///
@@ -223,7 +223,7 @@ impl Component for ReactionIcon {
 
     fn render(&self, state: &mut ReactionIconState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
         let v = state.controller.borrow().value();
-        let scale = 1.0 + (v as f32) * 0.15;
+        let scale = 1.0 + (v as f32) * 0.30;
         // ~6% on_surface wash over surface — a subtle neutral gray circle that
         // reads on the pill's surface background. The icon already carries the
         // semantic color, so the circle stays neutral (unlike MenuRow's tint,
