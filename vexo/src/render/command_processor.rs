@@ -92,27 +92,45 @@ pub fn process_commands(
                 // For text, apply center-relative transform: rotate around the origin,
                 // not around the text's own position or the window origin.
                 // T(origin) * transform * T(-origin) maps the position correctly.
-                let final_pos = if current_transform.is_identity() {
-                    offset_pos
-                } else {
-                    // Translate to origin, apply transform, translate back
-                    let relative = Point::new(
-                        offset_pos.x - current_origin.x,
-                        offset_pos.y - current_origin.y,
-                    );
-                    let transformed = current_transform.transform_point(relative);
-                    Point::new(
-                        transformed.x + current_origin.x,
-                        transformed.y + current_origin.y,
-                    )
-                };
+                //
+                // Also scale font_size and max_width by the transform's scale factor,
+                // so Transform::scale actually grows/shrinks text glyphs (not just
+                // shifts their position). The scale is extracted from the affine
+                // matrix columns: sx = |col0|, sy = |col1|.
+                let (final_pos, scaled_font_size, scaled_max_width) =
+                    if current_transform.is_identity() {
+                        (offset_pos, *font_size, *max_width)
+                    } else {
+                        // Translate to origin, apply transform, translate back
+                        let relative = Point::new(
+                            offset_pos.x - current_origin.x,
+                            offset_pos.y - current_origin.y,
+                        );
+                        let transformed = current_transform.transform_point(relative);
+                        let final_pos = Point::new(
+                            transformed.x + current_origin.x,
+                            transformed.y + current_origin.y,
+                        );
+                        let sx = (current_transform.a * current_transform.a
+                            + current_transform.b * current_transform.b)
+                            .sqrt();
+                        let sy = (current_transform.c * current_transform.c
+                            + current_transform.d * current_transform.d)
+                            .sqrt();
+                        let font_scale = (sx + sy) * 0.5;
+                        (
+                            final_pos,
+                            *font_size * font_scale,
+                            max_width.map(|w| w * font_scale),
+                        )
+                    };
                 frame_builder.add_text(
                     content,
                     final_pos,
-                    *font_size,
+                    scaled_font_size,
                     color,
                     font_family.clone(),
-                    *max_width,
+                    scaled_max_width,
                 );
             }
             RenderCommand::Caret {

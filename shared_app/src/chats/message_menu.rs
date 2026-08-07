@@ -1,11 +1,15 @@
 //! Message-bubble context menu: builder + reactions pill + actions card,
 //! assembled by `builder` into a `MenuContent { reactions, actions, metrics }`.
 
+use std::any::Any;
+use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use vexo::{
-    column, row, BoxShadow, Color, Component, ComponentState, DecoratedBox, GestureDetector,
-    JustifyContent, Layout, MouseCursor, RenderContext, Signal, Style, SystemCursorKind, Text,
+    column, row, AlignItems, AnimationController, BoxShadow, Color, Component, ComponentState,
+    DecoratedBox, GestureDetector, JustifyContent, Layout, LifecycleContext, MouseCursor,
+    RenderContext, Signal, SpringDescription, SpringSimulation, Style, SystemCursorKind, Text,
     Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
@@ -24,16 +28,17 @@ pub(super) fn builder() -> MenuBuilder {
         metrics: MenuMetrics {
             // Verified by `test_metrics_match_real_sizes`: the real laid-out
             // sizes (read back from the DecoratedBox render objects after
-            // layout) are 222×44 for the pill and 200×134 for the card. The
-            // original estimates (150×28 / 200×108) were off by 72/16px and
-            // 0/26px respectively — beyond the 15px tolerance, so the
-            // constants were tuned to match the real sizes. The pill is wider
-            // than estimated because each 18px FA icon has 6px padding
-            // (→30px each) plus 6px gaps + 6px outer padding = 222px; taller
-            // because the icon's line height (~28px) exceeds its font size
-            // (18px). The card is taller because each row's text line height
-            // (~28px) plus 8px top/bottom padding → ~44px per row × 3 = 134px.
-            reactions_size: vexo::core::Size::new(222.0, 44.0),
+            // layout) are 222×40 for the pill and 200×134 for the card. The
+            // pill is 6 reaction circles × 30px (18px FA icon in a fixed
+            // 30×30 circled cell — see `ReactionIcon`) + 5 gaps × 6px + 6px
+            // outer padding each side = 222px wide; 30px circle height + 5px
+            // top/bottom padding = 40px tall. The circle's `Layout::width/
+            // height(30)` forces an exact 30px cell, so (unlike the old
+            // padding-based layout) the icon's line height no longer inflates
+            // the pill height. The card is taller because each row's text
+            // line height (~28px) plus 8px top/bottom padding → ~44px per
+            // row × 3 = 134px.
+            reactions_size: vexo::core::Size::new(222.0, 40.0),
             actions_size: vexo::core::Size::new(200.0, 134.0),
             gap: 8.0,
         },
@@ -126,39 +131,218 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
     })
 }
 
+/// State for `ReactionIcon` — owns the hover-scale spring controller.
+///
+/// The controller is shared (`Rc<RefCell<...>>`) so the `on_enter`/`on_exit`
+/// closures can drive it directly via `animate_with`, mirroring how
+/// `ContextMenuController::show` starts its spring from an event handler
+/// rather than a lifecycle hook. Wired in `on_mount`/`on_update` (ticker +
+/// dirty callback), advanced in `on_tick`, stopped in `on_unmount` — the
+/// standard three-hook floor (see `SlideTransitionState` for the minimal
+/// owned-controller shape, `ContextMenuHostState` for the shared-cell shape).
+struct ReactionIconState {
+    controller: Rc<RefCell<AnimationController>>,
+}
+
+impl Default for ReactionIconState {
+    fn default() -> Self {
+        // Placeholder duration; the controller is driven by spring sims, not
+        // the tween path, so this duration is never sampled. Matches the
+        // `SlideTransitionState::default` pattern.
+        Self {
+            controller: Rc::new(RefCell::new(AnimationController::new(
+                Duration::from_millis(300),
+            ))),
+        }
+    }
+}
+
+impl ComponentState for ReactionIconState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        let mut ctrl = self.controller.borrow_mut();
+        ctrl.set_ticker(ctx.animation_ticker().clone());
+        ctrl.set_dirty_callback(ctx.dirty_callback());
+    }
+
+    fn on_update(&mut self, _old_widget: &dyn Any, ctx: &mut LifecycleContext) {
+        // Re-wire on parent-cascade rebuilds: the dirty callback is
+        // element-id-keyed and changes when the widget struct is recreated,
+        // even though our shared controller cell persists. Mirrors
+        // `ContextMenuHostState::on_update`.
+        let mut ctrl = self.controller.borrow_mut();
+        ctrl.set_ticker(ctx.animation_ticker().clone());
+        ctrl.set_dirty_callback(ctx.dirty_callback());
+    }
+
+    fn on_tick(&mut self, now: Instant) {
+        self.controller.borrow_mut().advance(now);
+    }
+
+    fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
+        self.controller.borrow_mut().stop();
+    }
+}
+
+/// One reaction icon in the reactions pill: a FontAwesome glyph in a 30×30
+/// circled background that scales up (spring) and fades in a neutral surface
+/// wash on hover. Tap logs the reaction and closes the menu.
+///
+/// A single `AnimationController` value `v` (0→1) drives both the icon scale
+/// (`Transform::scale(1.0 + v*0.15, ...)`) and the circle background color
+/// (`Color::lerp(surface, hover_tint, v)`), so the circle appears as the icon
+/// grows — one spring, two effects, perfectly in sync.
+///
+/// **Circle background opacity strategy**: Both `surface` and `hover_tint`
+/// are opaque (alpha=1.0), so the lerp result is always opaque → the circle
+/// is always classified as an opaque quad → rendered in Phase 1 (behind
+/// text). This is critical: if the circle were semi-transparent (alpha < 1.0)
+/// during the animation, it would be classified as a TransparentQuad and
+/// rendered in Phase 3 (ON TOP of text), covering the icon glyph with a
+/// white square. At v=0, `bg == surface` (same as the pill background) so
+/// the circle is invisible; at v=1, `bg == hover_tint` (slightly darker).
+///
+/// **Icon scale strategy**: `Transform::scale` is paint-only (layout
+/// pass-through, cell footprint stays 30×30). The command processor scales
+/// `font_size` under the transform (see `command_processor.rs` Text handler),
+/// so the glyph actually grows. The painter re-anchors every paint_transform
+/// to the child's bounds center, so the scale pivots about the icon's own
+/// center.
+///
+/// The circle is sized 30×30 with `corner_radius(15)` (half the size) → a
+/// perfect circle, matching the unread-badge pattern in `conversation_list`.
+#[derive(Clone)]
+struct ReactionIcon {
+    theme: vexo::ThemeData,
+    icon: Icons,
+    color: Color,
+    on_tap: Rc<dyn Fn()>,
+}
+
+impl Component for ReactionIcon {
+    type State = ReactionIconState;
+
+    fn render(&self, state: &mut ReactionIconState, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let v = state.controller.borrow().value();
+        let scale = 1.0 + (v as f32) * 0.15;
+        // ~6% on_surface wash over surface — a subtle neutral gray circle that
+        // reads on the pill's surface background. The icon already carries the
+        // semantic color, so the circle stays neutral (unlike MenuRow's tint,
+        // which uses primary since the row has no colored glyph).
+        let hover_tint = Color::lerp(self.theme.surface, self.theme.on_surface, 0.06);
+        // Lerp between surface (invisible at v=0) and hover_tint (visible at
+        // v=1). Both are opaque → always Phase 1 → behind text. See the widget
+        // doc comment for why alpha animation would cause a white square.
+        let bg = Color::lerp(self.theme.surface, hover_tint, v);
+
+        let on_enter_controller = state.controller.clone();
+        let on_exit_controller = state.controller.clone();
+        let on_tap = self.on_tap.clone();
+
+        let circle = DecoratedBox::with_style(
+            WithLayout::new(
+                Icon::new(self.icon).with_size(18.0).with_color(self.color),
+                Layout::default()
+                    .width(30.0)
+                    .height(30.0)
+                    .justify(JustifyContent::Center)
+                    .align(AlignItems::Center)
+                    .flex_shrink(0.0),
+            ),
+            Style::default().background(bg).corner_radius(15.0),
+        );
+
+        // Paint-only scale; layout stays 30×30. The command processor scales
+        // font_size under the transform, so the glyph actually grows.
+        let scaled = circle.scale(scale, scale);
+
+        let interactive = scaled
+            .on_enter(move || {
+                // `from = current value` lets an interrupted hover-out reverse
+                // smoothly from wherever it was, no snap. Same shape as
+                // `ContextMenuController::show`'s spring start.
+                let from = on_enter_controller.borrow().value();
+                on_enter_controller
+                    .borrow_mut()
+                    .animate_with(Box::new(SpringSimulation::new(
+                        SpringDescription::ios(340.0, 1.0),
+                        from,
+                        1.0,
+                        0.0,
+                    )));
+            })
+            .on_exit(move || {
+                let from = on_exit_controller.borrow().value();
+                on_exit_controller
+                    .borrow_mut()
+                    .animate_with(Box::new(SpringSimulation::new(
+                        SpringDescription::ios(340.0, 1.0),
+                        from,
+                        0.0,
+                        0.0,
+                    )));
+            })
+            .cursor(MouseCursor::System(SystemCursorKind::Pointer));
+
+        GestureDetector::new(interactive)
+            .on_tap(move || on_tap())
+            .boxed()
+    }
+}
+
 /// The reactions pill: a compact row of 6 FA icons in a pill-shaped
-/// (18px radius) DecoratedBox. Each icon is tappable: logs a message and
-/// closes the menu. Stateless (no hover background) — the cursor still flips
-/// to pointer via `.cursor(...)`.
+/// (18px radius) DecoratedBox. Each icon is a `ReactionIcon` — tappable
+/// (logs + closes the menu) with a circled hover background and a spring
+/// scale-up animation. See `ReactionIcon` for the hover/scale mechanics.
 fn reaction_pill(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn Widget> {
-    // (icon, log message) pairs. The log messages use emoji codepoints in the
-    // string literal for grep-ability — they're just log text, never rendered.
-    let reactions: [(Icons, &str); 6] = [
-        (Icons::ThumbsUp, "context menu: thumbsup"),
-        (Icons::Heart, "context menu: heart"),
-        (Icons::FaceLaugh, "context menu: laugh"),
-        (Icons::FaceSurprise, "context menu: surprise"),
-        (Icons::FaceSadTear, "context menu: sad"),
-        (Icons::FaceAngry, "context menu: angry"),
+    // (icon, color, log message) pairs. Each icon gets a unique emoji-semantic
+    // color so the glyph reads at a glance. The log messages use emoji
+    // codepoints in the string literal for grep-ability — they're just log
+    // text, never rendered.
+    let reactions: [(Icons, Color, &str); 6] = [
+        (
+            Icons::ThumbsUp,
+            Color::rgb(0.10, 0.46, 0.82),
+            "context menu: thumbsup",
+        ),
+        (
+            Icons::Heart,
+            Color::rgb(0.91, 0.22, 0.21),
+            "context menu: heart",
+        ),
+        (
+            Icons::FaceLaugh,
+            Color::rgb(0.98, 0.75, 0.18),
+            "context menu: laugh",
+        ),
+        (
+            Icons::FaceSurprise,
+            Color::rgb(0.98, 0.55, 0.11),
+            "context menu: surprise",
+        ),
+        (
+            Icons::FaceSadTear,
+            Color::rgb(0.36, 0.42, 0.75),
+            "context menu: sad",
+        ),
+        (
+            Icons::FaceAngry,
+            Color::rgb(0.78, 0.16, 0.16),
+            "context menu: angry",
+        ),
     ];
 
     let row = row! {
-        for (icon, msg) in reactions {
+        for (icon, color, msg) in reactions {
             let ctrl = ctrl.clone();
-            GestureDetector::new(
-                WithLayout::new(
-                    Icon::new(icon)
-                        .with_size(18.0)
-                        .with_color(theme.on_surface_variant),
-                    Layout::default().padding(6.0),
-                )
-                .boxed()
-                .cursor(MouseCursor::System(SystemCursorKind::Pointer)),
-            )
-            .on_tap(move || {
-                log::debug!("{}", msg);
-                ctrl.close();
-            })
+            ReactionIcon {
+                theme: theme.clone(),
+                icon,
+                color,
+                on_tap: Rc::new(move || {
+                    log::debug!("{}", msg);
+                    ctrl.close();
+                }),
+            }
         }
     }
     .gap(6.0)
