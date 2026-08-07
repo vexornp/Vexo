@@ -250,8 +250,8 @@ impl ContextMenuController {
         self.shared.borrow().phase
     }
 
-    /// The live spring value in `[0.0, 1.0]`. Drives the open/close transforms
-    /// (Task 6) and the dim opacity (Task 6). Read at render time.
+    /// The live spring value in `[0.0, 1.0]`. Drives the open scale
+    /// (`0.92 + v * 0.08`) applied to the menu cluster. Read at render time.
     pub fn animation_value(&self) -> f64 {
         self.shared.borrow().animation.value()
     }
@@ -1362,25 +1362,22 @@ mod tests {
     // ========================================================================
     //
     // These tests exercise the host's edge-aware positioning logic. The host
-    // picks one of four layouts based on whether the reactions pill fits above
-    // the bubble (`room_above`) and whether the actions card fits below it
-    // (`room_below`):
+    // anchors the cluster (pill on top, card below) at the click point and
+    // picks one of three vertical placements:
     //
-    //   room_above && room_below  → default (pill above bubble, card below)
-    //   !room_above && room_below → pill below the actions card
-    //   room_above && !room_below → flip both above the bubble
-    //   !room_above && !room_below→ default to below (best effort)
+    //   fits_below (click_y + cluster_h ≤ window_h - 8) → cluster_y = click_y
+    //   fits_above (click_y - cluster_h ≥ 8)            → cluster_y = click_y - cluster_h
+    //   neither fits                                    → pick the side with more room
     //
-    // The assertions are intentionally presence-based (`find_text_in_tree`)
-    // rather than position-based: walking `Positioned` render objects to read
-    // laid-out offsets is fragile (the framework's render-object hierarchy
-    // doesn't expose a stable "Positioned offset" field). Instead, we assert
-    // that BOTH cards (reactions "r" + actions "Copy") still appear in the
-    // render tree after the flip — i.e. neither was clipped off-screen by a
-    // bad offset. The flip path is what makes the difference: with the old
-    // (Task 6) host code, only the actions card is rendered, so the reactions
-    // pill ("r") is missing → RED. After Task 7 adds the pill layer + edge
-    // positioning, both appear → GREEN.
+    // The cluster's internal stacking (pill-on-top, card-below) is never
+    // reordered — only `cluster_y` shifts. The horizontal left-clamp
+    // (`cluster_x = click_x.max(8).min(window_w - cluster_w - 8)`) is exercised
+    // by `test_horizontal_clamp_when_near_right_edge`.
+    //
+    // Test #8 and #9 below are presence-guards: they assert both cards remain
+    // in the render tree (not clipped off-screen) after the host picks a
+    // placement. The real flip-position assertions live in
+    // `test_vertical_flip_when_no_room_below` (Task 8 tests).
     //
     // Test #9 clicks at (50, 560) in a 600px window. The cluster is
     // pill_h(28) + gap(8) + card_h(108) = 144px tall, so it doesn't fit
@@ -1388,22 +1385,15 @@ mod tests {
     // (560 - 144 = 416 ≥ 8) — exercising the host's flip-up branch
     // (`cluster_y = click_pos.y - cluster_h`).
 
-    /// Test #8 — edge flip when no room above for the reactions pill.
-    ///
-    /// Bubble pinned to the top of a 600px window (top=5). With pill_h=28 and
-    /// gap=8, the pill needs 8+28+8=44px above the bubble but only 5px is
-    /// available → `room_above = false`. The host flips the pill to BELOW the
-    /// actions card (which still goes below the bubble). Both cards must
-    /// remain in the render tree (not clipped off-screen).
+    /// Test #8 — presence guard: click near the top edge. With click y=5 and
+    /// cluster_h=144, the cluster fits below (5 + 144 = 149 < 592), so no
+    /// flip occurs — both cards render at their default click-point positions.
+    /// This test guards that the top-edge placement doesn't clip cards
+    /// off-screen. (The real flip-up assertion is in
+    /// `test_vertical_flip_when_no_room_below`.)
     ///
     /// The host is wrapped in a `MediaQuery` with size=(400, 600) so
-    /// `MediaQuery::of(ctx)` returns the real window size — without this,
-    /// `MediaQuery::of` falls back to `all_zero` (size=0,0), making
-    /// `room_below` false (since `bubble_bottom + gap + card_h > 0`) and
-    /// sending the host into the "no room anywhere" fallback branch instead
-    /// of the intended "no room above, room below" branch. The two branches
-    /// produce the same layout today, but depending on the real MediaQuery
-    /// makes the test actually exercise the path the comment describes.
+    /// `MediaQuery::of(ctx)` returns the real window size for edge detection.
     #[test]
     fn test_edge_flip_when_no_room_above() {
         let controller = ContextMenuController::new();
@@ -1423,7 +1413,9 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Click point at the very top — no room above for the reactions pill.
+        // Click point at the very top. Cluster fits below (5 + 144 = 149 <
+        // 592), so no flip — both cards render at default click-point
+        // positions. Presence guard: neither card should be clipped.
         controller.show(
             vexo::core::Point::new(50.0, 5.0),
             test_content_builder("Copy"),
@@ -1436,23 +1428,18 @@ mod tests {
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // The reactions pill should be positioned BELOW the actions card
-        // (not above the bubble, where it would clip off-screen).
-        // We assert this by checking that both cards are within window bounds.
-        // (Detailed position assertions require walking Positioned render
-        // objects, which is fragile. Instead, assert the menu didn't clip by
-        // checking both cards are within window bounds.)
+        // Both cards should be present in the render tree (not clipped).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
             find_text_in_tree(ro_reg, root, "Copy"),
-            "actions card should still be rendered with edge flip"
+            "actions card should still be rendered with top-edge click"
         );
         // The key assertion: both "r" (reactions) and "Copy" (actions) appear,
         // proving neither card was clipped off-screen.
         assert!(
             find_text_in_tree(ro_reg, root, "r"),
-            "reactions pill should still be rendered with edge flip"
+            "reactions pill should still be rendered with top-edge click"
         );
     }
 
@@ -1513,18 +1500,12 @@ mod tests {
         // (not the inner `TextRenderObject`'s) because the Text's
         // `computed_bounds` is local to its layout origin (always 0,0), while
         // the `Positioned`'s reflects the absolute laid-out position in window
-        // coords. This catches the branch-3 overlap regression where `pill_y`
-        // was computed as `bubble_top - gap - pill_h` (placing the pill's
-        // bottom at the card's bottom) instead of
-        // `bubble_top - 2*gap - card_h - pill_h` (placing the pill fully above
-        // the card). With the buggy math and bubble_top=560, gap=8, card_h=108,
-        // pill_h=28, the pill would be at y=524 (on-screen, so this assertion
-        // alone doesn't catch the overlap directly) but overlapping the card;
-        // a worse variant of the bug (e.g. wrong sign or extra multiplier)
-        // would push the pill off-screen, which this assertion catches. The
-        // presence check above plus this bounds check together guard the
-        // branch-3 flip-above positioning. The corrected math places the pill
-        // at y=408, well within bounds.
+        // coords. With click y=560 and cluster_h=144, the host flips up:
+        // `cluster_y = 560 - 144 = 416`, so pill_top should be 416 (well
+        // within bounds). A bug in the flip math (wrong sign, missing
+        // cluster_h term) could push pill_top negative, which this assertion
+        // catches. The presence checks above plus this bounds check together
+        // guard the flip-up positioning.
         let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r").expect(
             "reactions pill's PositionedRenderObject should have computed_bounds after layout \
              (find_positioned_bounds_around_text found none — pill was not laid out)",
@@ -1533,7 +1514,7 @@ mod tests {
             pill_bounds.top >= 0.0,
             "reactions pill must not be clipped off the top of the screen \
              (computed_bounds.top={}, expected >= 0.0); a negative top indicates \
-             the branch-3 flip-above math overflowed past the window origin",
+             the flip-up math overflowed past the window origin",
             pill_bounds.top
         );
     }
