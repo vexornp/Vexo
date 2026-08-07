@@ -226,7 +226,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
-    use vexo::core::{Bounds, Logical, Size};
+    use vexo::core::{Logical, Size};
     use vexo::layout::TaffyLayoutEngine;
     use vexo::render_objects::DecoratedBoxRenderObject;
     use vexo::resource::new_font_system;
@@ -305,11 +305,9 @@ mod tests {
 
         // Bubble in the middle of the screen — plenty of room above + below
         // so neither card flips (default layout: pill above, card below).
-        controller.show(
-            Bounds::from_xywh(150.0, 280.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
-            builder(),
-        );
+        // Click point in the middle of the screen — plenty of room above +
+        // below so neither card flips (default layout: pill above, card below).
+        controller.show(vexo::core::Point::new(150.0, 280.0), builder());
         pipeline.perform_rebuilds();
 
         // Settle the open spring (v→1.0, phase→Open) so the cards are at full

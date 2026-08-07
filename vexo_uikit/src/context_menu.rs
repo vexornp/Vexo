@@ -9,34 +9,27 @@
 //! reads the current theme. Each trigger captures its own builder, so different
 //! bubbles can render different menu styles.
 //!
-//! Task 5 state: open/close is driven by a critical spring
-//! (`SpringDescription::ios(340.0, 1.0)`) through a 4-state phase machine
-//! (`Closed → Opening → Open → Closing → Closed`). `show()` starts a forward
-//! spring (current value → 1.0, phase=Opening); `close()` starts a reverse
-//! spring (current value → 0.0, phase=Closing). Both retarget from the live
-//! value, so early close / re-show produce no jump. The host's `on_tick`
-//! calls `controller.advance(now)`, which samples the spring and flips
-//! Opening→Open or Closing→Closed (the latter clears `open` → unmount) on
-//! settle.
+//! Open is driven by a critical spring (`SpringDescription::ios(340.0, 1.0)`)
+//! through a 3-state phase machine (`Closed → Opening → Open`). `show()`
+//! starts a forward spring (0.0 → 1.0, phase=Opening); `close()` instantly
+//! clears to `Closed` (clears `open` → unmount, no reverse spring). `show()`
+//! always resets the spring to start from 0.0, so every open animates 0→1
+//! consistently — a re-show after `close()` animates the same as a first open.
+//! The host's `on_tick` calls `controller.advance(now)`, which samples the
+//! spring and flips Opening→Open on settle.
 //!
-//! Task 6 wires the spring value `v = controller.animation_value()` (0→1 on
-//! open, 1→0 on close) into all three overlay layers: the dim barrier's alpha
-//! is `v*0.4` (was fixed 0.4), the bright bubble copy gets a subtle
-//! `scale(1+v*0.03)` + `translate_y(-v*4.0)` lift (opacity stays 1.0), and the
-//! actions card gets `scale(0.8+v*0.2)` + `opacity(v)`. Scale-about-center is
-//! achieved via the `scale_about_center` helper (a translate→scale→translate
-//! `Transform` chain). `Opacity` is paint-only (layout + hit-test
-//! pass-through), so the dim barrier stays tappable even at v≈0 — barrier
-//! dismiss works mid-open (test #5).
+//! `render()` builds a 3-layer `Stack`: (1) the child content, (2) a
+//! transparent full-screen dismiss barrier (`GestureDetector::on_press` →
+//! `close()`), (3) the menu cluster anchored at the click point — the
+//! reactions pill on top and the actions card below, separated by `gap`. The
+//! cluster scales `0.92 + v*0.08` about the click point on open (composed into
+//! a single `AffineTransform` via `scale_about_point` so the framework's
+//! per-level hit-tester maps taps correctly). No dim, no bubble copy.
 //!
-//! Task 7 adds the 5th overlay layer — the reactions pill — with the same
-//! `scale(0.8+v*0.2)` + `opacity(v)` treatment as the actions card. Both
-//! cards are positioned edge-aware relative to the bubble: pill above + card
-//! below by default; pill flips below the card if no room above; whole stack
-//! flips above the bubble if no room below; best-effort below if neither.
-//! Horizontally both center on the bubble's horizontal center, clamped to
-//! `[8, window_w - card_w - 8]`. Window size is read via `MediaQuery::of(ctx)`
-//! (an `InheritedWidget` dependency, so the host rebuilds on resize).
+//! Edge-aware positioning: the cluster flips above the click point when it
+//! doesn't fit below, and left-clamps to `[8, window_w - cluster_w - 8]` on
+//! right overflow. Window size is read via `MediaQuery::of(ctx)` (an
+//! `InheritedWidget` dependency, so the host rebuilds on resize).
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -46,7 +39,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::animation::{AnimationController, AnimationTicker, SpringDescription, SpringSimulation};
-use vexo::core::{Bounds, Logical, Size};
+use vexo::core::{Logical, Point, Size};
 use vexo::{Component, ComponentState, LifecycleContext, RenderContext, Widget};
 
 // ============================================================================
@@ -56,9 +49,9 @@ use vexo::{Component, ComponentState, LifecycleContext, RenderContext, Widget};
 /// The two cards produced by a menu builder.
 ///
 /// `reactions` is the top pill (emoji/reaction strip); `actions` is the lower
-/// card (Copy / Reply / Delete rows). The host positions them relative to
-/// `bubble_bounds` using `metrics` for spacing. Task 2 renders only `actions`;
-/// Task 3 adds the reactions pill and proper styling.
+/// card (Copy / Reply / Delete rows). The host positions both relative to the
+/// click point using `metrics` for spacing (pill on top, card below, with
+/// `gap` between them).
 pub struct MenuContent {
     pub reactions: Box<dyn Widget>,
     pub actions: Box<dyn Widget>,
@@ -66,7 +59,7 @@ pub struct MenuContent {
 }
 
 /// Size hints for positioning + transform anchors. These are estimates used
-/// by the host to position cards and compute scale-about-center transforms
+/// by the host to position cards and compute scale-about-point transforms
 /// before layout runs. The actual laid-out sizes may differ slightly; these
 /// are tuned during implementation.
 pub struct MenuMetrics {
@@ -109,22 +102,23 @@ impl Deref for MenuBuilder {
 // Phase + OpenState + ContextMenuController
 // ============================================================================
 
-/// Lifecycle phase of the context menu. The 4-state phase machine is driven
+/// Lifecycle phase of the context menu. The 3-state phase machine is driven
 /// by a critical spring: `show()` → `Opening`, settle → `Open`; `close()` →
-/// `Closing`, settle → `Closed` (clears `open`, unmounting the menu).
+/// `Closed` (instant — clears `open`, unmounts the menu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Closed,
     Opening,
     Open,
-    Closing,
 }
 
 /// Snapshot of what `show()` was called with. Held in the controller's shared
 /// cell while the menu is open; cleared on `close()`.
+///
+/// Read by `render()` via `open_snapshot()` to get the click point + builder
+/// for the overlay cluster.
 struct OpenState {
-    bubble_bounds: Bounds<Logical>,
-    bubble_widget: Box<dyn Widget>,
+    click_pos: Point<Logical>,
     builder: MenuBuilder,
 }
 
@@ -132,12 +126,16 @@ struct OpenState {
 struct Shared {
     phase: Phase,
     open: Option<OpenState>,
-    /// The critical spring driving `Opening`/`Closing`. Same spring as
+    /// The critical spring driving `Opening`. Same spring as
     /// KeyboardAvoidance/SlideTransition: `SpringDescription::ios(340.0, 1.0)`.
-    /// `show()`/`close()` start a forward/reverse spring from the current
-    /// value (smooth retarget — no jump on early close or re-show during
-    /// close). The host's `on_tick` calls `advance(now)` to sample the spring
-    /// and flip phases on settle.
+    /// `show()` starts a forward spring from 0.0 → 1.0 (Amendment 2: every
+    /// show() animates 0→1 consistently — re-show after close() animates the
+    /// same as a first open; close() already unmounted the overlay, so the
+    /// value reset has no visible jump). `close()` stops the spring (halts the
+    /// sim + unregisters from the ticker) but does NOT reset `value`, so the
+    /// frozen value is the leftover from the last advance — harmless, since
+    /// show() ignores it. The host's `on_tick` calls `advance(now)` to sample
+    /// the spring and flip `Opening → Open` on settle.
     animation: AnimationController,
     /// Cached so `show()`/`close()` can (re-)wire the `AnimationController`
     /// even if called before the host's `on_mount` (e.g. in tests). Set by
@@ -181,24 +179,16 @@ impl ContextMenuController {
         }
     }
 
-    /// Open the menu anchored to `bubble_bounds`, carrying a clone of the
-    /// bubble widget (Task 6 renders a lifted copy). Starts a forward spring
-    /// (current value → 1.0) and sets phase to `Opening`. The spring retargets
-    /// from the current value, so calling `show()` during a `Closing` spring
-    /// (re-show) produces no jump — the spring reverses direction smoothly.
-    /// `on_tick` flips `Opening` → `Open` when the spring settles.
-    pub fn show(
-        &self,
-        bubble_bounds: Bounds<Logical>,
-        bubble_widget: Box<dyn Widget>,
-        builder: MenuBuilder,
-    ) {
+    /// Open the menu anchored at `click_pos` (the right-click cursor
+    /// position in window-logical coords). Starts a forward spring
+    /// (0.0 → 1.0) and sets phase to `Opening`. The spring always starts
+    /// from 0.0 — `show()` resets the value so every open animates
+    /// consistently, whether first open or re-show after `close()`. Since
+    /// `close()` already unmounted the overlay, the reset has no visible
+    /// jump. `on_tick` flips `Opening` → `Open` when the spring settles.
+    pub fn show(&self, click_pos: Point<Logical>, builder: MenuBuilder) {
         let mut s = self.shared.borrow_mut();
-        s.open = Some(OpenState {
-            bubble_bounds,
-            bubble_widget,
-            builder,
-        });
+        s.open = Some(OpenState { click_pos, builder });
         s.phase = Phase::Opening;
         // (Re-)wire the ticker + dirty callback into the AnimationController.
         // The host does this in on_mount/on_update, but show() may be called
@@ -212,13 +202,15 @@ impl ContextMenuController {
         if let Some(cb) = s.dirty_callback.clone() {
             s.animation.set_dirty_callback(cb);
         }
-        // Forward spring from the *current* value (smooth retarget). v0=0
-        // because the user gesture that triggered show() has no carried
-        // velocity (unlike a scroll fling).
-        let from = s.animation.value();
+        // Forward spring from 0.0 (Amendment 2: show() always resets to 0.0 so
+        // every open animates 0→1 consistently — a re-show after close()
+        // animates the same as a first open). v0=0 because the user gesture
+        // that triggered show() has no carried velocity (unlike a scroll
+        // fling). `close()` already unmounted the overlay, so the value reset
+        // produces no visible jump.
         s.animation.animate_with(Box::new(SpringSimulation::new(
             SpringDescription::ios(340.0, 1.0),
-            from,
+            0.0,
             1.0,
             0.0,
         )));
@@ -229,40 +221,37 @@ impl ContextMenuController {
         // send — no RefCell reentry — so holding borrow_mut here is safe.
     }
 
-    /// Close the menu. Starts a reverse spring (current value → 0.0) and
-    /// sets phase to `Closing`. The spring retargets from the current value,
-    /// so calling `close()` during an `Opening` spring (early close) produces
-    /// no jump — the spring reverses direction smoothly. `on_tick` flips
-    /// `Closing` → `Closed` and clears `open` (unmount) when the spring
-    /// settles. No-op if already `Closed`.
+    /// Close the menu instantly. Sets phase to `Closed` and clears `open`
+    /// (unmount on next rebuild). No reverse spring, no animation. No-op if
+    /// already `Closed`.
     pub fn close(&self) {
         let mut s = self.shared.borrow_mut();
         if s.phase == Phase::Closed {
             return;
         }
-        s.phase = Phase::Closing;
-        if let Some(ticker) = s.ticker.clone() {
-            s.animation.set_ticker(ticker);
+        s.phase = Phase::Closed;
+        s.open = None;
+        // A forward spring may still be running if close() was called mid-
+        // Opening. `stop()` halts the spring AND unregisters from the ticker
+        // (so the dirty callback stops firing on subsequent ticks). But
+        // `stop()` does NOT itself fire the dirty callback — so we must fire
+        // it explicitly here to trigger the host rebuild that unmounts the
+        // overlay. Without this, close() sets phase=Closed but the host never
+        // re-renders, so the menu stays visible forever.
+        s.animation.stop();
+        let cb = s.dirty_callback.clone();
+        drop(s);
+        if let Some(cb) = cb {
+            cb();
         }
-        if let Some(cb) = s.dirty_callback.clone() {
-            s.animation.set_dirty_callback(cb);
-        }
-        // Reverse spring from the current value (smooth retarget).
-        let from = s.animation.value();
-        s.animation.animate_with(Box::new(SpringSimulation::new(
-            SpringDescription::ios(340.0, 1.0),
-            from,
-            0.0,
-            0.0,
-        )));
     }
 
     pub fn phase(&self) -> Phase {
         self.shared.borrow().phase
     }
 
-    /// The live spring value in `[0.0, 1.0]`. Drives the open/close transforms
-    /// (Task 6) and the dim opacity (Task 6). Read at render time.
+    /// The live spring value in `[0.0, 1.0]`. Drives the open scale
+    /// (`0.92 + v * 0.08`) applied to the menu cluster. Read at render time.
     pub fn animation_value(&self) -> f64 {
         self.shared.borrow().animation.value()
     }
@@ -293,7 +282,6 @@ impl ContextMenuController {
     ///
     /// On settle (`!is_animating()`):
     /// - `Opening` → `Open` (menu fully shown; spring holds at 1.0).
-    /// - `Closing` → `Closed` + clear `open` (menu unmounts; spring holds at 0.0).
     ///
     /// No-op when `Closed` (no spring running, nothing to advance). This
     /// guards against the host's `on_tick` firing after the menu has already
@@ -306,38 +294,19 @@ impl ContextMenuController {
         }
         s.animation.advance(now);
 
-        // Check for settle. `advance` sets `drive = Stopped` and unregisters
-        // from the ticker when the sim reports `is_done`; `is_animating()`
-        // reflects that.
         if !s.animation.is_animating() {
-            match s.phase {
-                Phase::Opening => {
-                    s.phase = Phase::Open;
-                }
-                Phase::Closing => {
-                    s.phase = Phase::Closed;
-                    s.open = None;
-                }
-                _ => {}
+            if s.phase == Phase::Opening {
+                s.phase = Phase::Open;
             }
         }
     }
 
-    /// Snapshot the current open state (clones bounds, clones the bubble
-    /// widget, clones the builder). Returns `None` when closed.
-    /// Called by the host during `render()` only when `phase() != Closed`.
-    /// The bubble widget isn't used by the host in Task 2 (Task 6 renders a
-    /// lifted copy during the open animation), but it's returned here so the
-    /// snapshot signature is stable across tasks.
-    pub(crate) fn open_snapshot(&self) -> Option<(Bounds<Logical>, Box<dyn Widget>, MenuBuilder)> {
+    /// Snapshot the current open state (clones the click point + builder).
+    /// Returns `None` when closed. Called by the host during `render()` only
+    /// when `phase() != Closed`.
+    pub(crate) fn open_snapshot(&self) -> Option<(Point<Logical>, MenuBuilder)> {
         let s = self.shared.borrow();
-        s.open.as_ref().map(|o| {
-            (
-                o.bubble_bounds,
-                o.bubble_widget.clone_boxed(),
-                o.builder.clone(),
-            )
-        })
+        s.open.as_ref().map(|o| (o.click_pos, o.builder.clone()))
     }
 }
 
@@ -354,11 +323,10 @@ impl Default for ContextMenuController {
 /// A host widget that renders a context menu overlay on top of its child.
 ///
 /// Wrap the screen's root content in `ContextMenu::new(content, controller)`.
-/// When `controller.show(bubble_bounds, bubble_widget, builder)` is called
-/// (e.g. by a `context_menu_trigger` on right-click), the host rebuilds and
-/// shows a floating menu at the bubble position — the menu's content is
-/// whatever the caller's `builder` returns — with a full-size dismiss barrier
-/// behind it.
+/// When `controller.show(click_pos, builder)` is called (e.g. by a
+/// `context_menu_trigger` on right-click), the host rebuilds and shows a
+/// floating menu anchored at the click position — the menu's content is
+/// whatever the caller's `builder` returns — with a dismiss barrier behind it.
 ///
 /// The host must be OUTSIDE any `ScrollView` (which clips with `overflow:
 /// Hidden`). Place it at the screen root so the menu floats above all content.
@@ -423,12 +391,11 @@ impl ComponentState for ContextMenuHostState {
         }
     }
     fn on_tick(&mut self, now: Instant) {
-        // Advance the spring and flip phases on settle (Opening→Open,
-        // Closing→Closed + clear open). The host element is marked dirty by
-        // the controller's dirty callback (fired by `animate_with` on start
-        // and by `advance` on each sample), so `perform_rebuilds` →
-        // `element.animate(now)` → `state.on_tick(now)` reaches here every
-        // frame while the spring is active.
+        // Advance the spring and flip Opening→Open on settle. The host element
+        // is marked dirty by the controller's dirty callback (fired by
+        // `animate_with` on start and by `advance` on each sample), so
+        // `perform_rebuilds` → `element.animate(now)` → `state.on_tick(now)`
+        // reaches here every frame while the spring is active.
         if let Some(ctrl) = &self.controller {
             ctrl.advance(now);
         }
@@ -450,130 +417,76 @@ impl Component for ContextMenu {
         let mut stack = vexo::Stack::new().push(self.child.clone_boxed());
 
         if phase != Phase::Closed {
-            if let Some((bubble_bounds, bubble_widget, builder)) = self.controller.open_snapshot() {
+            if let Some((click_pos, builder)) = self.controller.open_snapshot() {
                 let controller = self.controller.clone();
-                // Run the builder up-front so `metrics` is available for the
-                // card's scale-about-center anchor + edge-aware positioning.
-                // The builder runs at render time (reads the live theme).
                 let content = builder(&controller, &theme);
                 let metrics = content.metrics;
 
-                // Window size for edge detection. `MediaQuery::of(ctx)` reads
-                // the `MediaQuery` InheritedWidget (composed by `RootMediaQuery`
-                // from platform sources each frame). Depending on it makes the
-                // host rebuild on window resize — same mechanism `Theme::of`
-                // uses for theme toggles. Falls back to all-zero if no
-                // `MediaQuery` ancestor exists (defensive; the desktop/iOS
-                // hosts always wrap the tree in `RootMediaQuery`).
                 let mq = vexo::MediaQuery::of(ctx);
                 let window_w = mq.size.width;
                 let window_h = mq.size.height;
 
-                // === Edge-aware positioning ===
-                //
-                // Default layout (room above + below): pill above bubble, card
-                // below bubble. The pill's bottom edge sits `gap` above the
-                // bubble's top; the card's top edge sits `gap` below the
-                // bubble's bottom.
-                //
-                // If the pill doesn't fit above (e.g. bubble near the top of
-                // the window), the pill flips to BELOW the actions card. If the
-                // card doesn't fit below (e.g. bubble near the bottom), the
-                // whole stack flips above the bubble (card directly above
-                // bubble, pill above card). If neither fits, default to below
-                // (best effort).
-                //
-                // Horizontally, both cards center on the bubble's horizontal
-                // center, clamped to `[8, window_w - card_w - 8]` so neither
-                // edge touches the window border.
+                // === Cluster geometry ===
                 let gap = metrics.gap;
+                let pill_w = metrics.reactions_size.width;
                 let pill_h = metrics.reactions_size.height;
+                let card_w = metrics.actions_size.width;
                 let card_h = metrics.actions_size.height;
-                let bubble_bottom = bubble_bounds.top + bubble_bounds.height();
-                let bubble_center_x = bubble_bounds.left + bubble_bounds.width() / 2.0;
+                let cluster_w = pill_w.max(card_w);
+                let cluster_h = pill_h + gap + card_h;
 
-                // `room_above` checks whether the pill fits above the bubble
-                // with a `gap` on each side (pill_bottom = bubble_top - gap,
-                // pill_top = pill_bottom - pill_h = bubble_top - gap - pill_h,
-                // plus a `gap` margin to the window top). The double `gap`
-                // mirrors iMessage: spacing between pill and bubble, and
-                // spacing between pill and window top.
-                let room_above = bubble_bounds.top - gap - pill_h - gap >= 0.0;
-                let room_below = bubble_bottom + gap + card_h <= window_h;
-
-                let (pill_y, card_y) = if room_above && room_below {
-                    // Default: pill above bubble, card below bubble.
-                    (bubble_bounds.top - gap - pill_h, bubble_bottom + gap)
-                } else if !room_above && room_below {
-                    // No room above for the pill: pill below the actions card.
-                    (bubble_bottom + gap + card_h + gap, bubble_bottom + gap)
-                } else if room_above && !room_below {
-                    // No room below for the card: flip both above the bubble.
-                    // Card sits `gap` above the bubble; pill sits `gap` above
-                    // the card. Stacking bottom-up: bubble_top - gap (card
-                    // bottom), - card_h (card top), - gap (pill bottom),
-                    // - pill_h (pill top). The earlier `bubble_bounds.top -
-                    // gap - pill_h` for `pill_y` placed the pill's BOTTOM at
-                    // the card's BOTTOM (overlap); the corrected
-                    // `2.0*gap + card_h + pill_h` offset places the pill fully
-                    // above the card.
-                    (
-                        bubble_bounds.top - 2.0 * gap - card_h - pill_h,
-                        bubble_bounds.top - gap - card_h,
-                    )
-                } else {
-                    // No room above or below: default to below (best effort).
-                    (bubble_bottom + gap + card_h + gap, bubble_bottom + gap)
-                };
-
-                // Horizontal: center on bubble, clamp to
-                // `[8, window_w - card_w - 8]`. The clamp keeps the card fully
-                // inside the window with an 8px margin on each side. When the
-                // window is too narrow for the card + margins (or the
-                // `MediaQuery` ancestor is absent, yielding `window_w = 0`),
-                // the upper bound collapses to the lower bound so the card
-                // sticks to the left margin instead of going negative.
-                let clamp_x = |card_w: f32| -> f32 {
-                    let x = bubble_center_x - card_w / 2.0;
+                // === Horizontal: left-clamp ===
+                let cluster_x = if window_w > 0.0 {
                     let lo = 8.0;
-                    let hi = (window_w - card_w - 8.0).max(lo);
-                    x.max(lo).min(hi)
+                    let hi = (window_w - cluster_w - 8.0).max(lo);
+                    click_pos.x.max(lo).min(hi)
+                } else {
+                    click_pos.x
                 };
-                let pill_x = clamp_x(metrics.reactions_size.width);
-                let card_x = clamp_x(metrics.actions_size.width);
 
-                // [2] Dim barrier — alpha = v * 0.4 (was fixed 0.4 in Task 4).
-                // Structure: Positioned(0,0,0,0) → GestureDetector.on_press(→
-                // close) → Opacity(v*0.4) → DecoratedBox(BLACK) →
-                // WithLayout(width_percent=1.0, height_percent=1.0) → Text("").
-                //
-                // CRITICAL: `DecoratedBox` is a pass-through render object —
-                // it inherits its *child's* bounds, not its parent's. So
-                // `DecoratedBox` must WRAP `WithLayout` (not the other way
-                // around). `WithLayout`'s width_percent/height_percent give it
-                // full-screen bounds; `DecoratedBox` then inherits those
-                // full-screen bounds and paints the black.
-                //
-                // Opacity is paint-only (layout + hit-test pass-through), so
-                // even at v≈0 (dim invisible) the GestureDetector still
-                // receives the press → barrier dismiss works mid-open. This
-                // is the property test #5 relies on.
+                // === Vertical: flip up if no room below ===
+                let fits_below = if window_h > 0.0 {
+                    click_pos.y + cluster_h <= window_h - 8.0
+                } else {
+                    true
+                };
+                let fits_above = if window_h > 0.0 {
+                    click_pos.y - cluster_h >= 8.0
+                } else {
+                    true
+                };
+                let cluster_y = if fits_below {
+                    click_pos.y
+                } else if fits_above {
+                    click_pos.y - cluster_h
+                } else {
+                    // Neither fits — pick the side with more room.
+                    let room_below = (window_h - 8.0 - click_pos.y).max(0.0);
+                    let room_above = (click_pos.y - 8.0).max(0.0);
+                    if room_below >= room_above {
+                        click_pos.y
+                    } else {
+                        click_pos.y - cluster_h
+                    }
+                };
+
+                let pill_x = cluster_x;
+                let pill_y = cluster_y;
+                let card_x = cluster_x;
+                let card_y = cluster_y + pill_h + gap;
+
+                // === Layer [2]: transparent dismiss barrier ===
                 let ctrl_for_barrier = controller.clone();
-                let dim_alpha = (v * 0.4) as f32;
                 let barrier = vexo::Positioned::new(
-                    vexo::GestureDetector::new(vexo::Opacity::new(
-                        vexo::DecoratedBox::with_style(
-                            vexo::WithLayout::new(
-                                vexo::Text::new(""),
-                                vexo::Layout::default()
-                                    .width_percent(1.0)
-                                    .height_percent(1.0),
-                            ),
-                            vexo::Style::default().background(vexo::Color::BLACK),
-                        ),
-                        dim_alpha,
+                    vexo::GestureDetector::new(vexo::WithLayout::new(
+                        vexo::Text::new(""),
+                        vexo::Layout::default()
+                            .width_percent(1.0)
+                            .height_percent(1.0),
                     ))
-                    .on_press(move || ctrl_for_barrier.close()),
+                    .on_press(move || {
+                        ctrl_for_barrier.close();
+                    }),
                 )
                 .left(0.0)
                 .top(0.0)
@@ -581,74 +494,19 @@ impl Component for ContextMenu {
                 .bottom(0.0);
                 stack = stack.push(barrier);
 
-                // [3] Bright bubble copy — scale 1+v*0.03 (subtle grow), lift
-                // -v*4.0px (rises as the menu opens), opacity 1.0 (always full
-                // bright — the focal point). The scale is applied about the
-                // bubble's center via scale_about_center; the lift is applied
-                // to the Positioned.top offset (so the bubble rises as it
-                // scales). Tappable to dismiss (matches iMessage: tapping the
-                // lifted bubble closes the menu).
-                let ctrl_for_bubble = controller.clone();
-                let bw = bubble_bounds.width();
-                let bh = bubble_bounds.height();
-                // The bubble copy sits exactly on top of the original — no
-                // scale, no lift. The dim barrier (40% black) dims the
-                // original underneath; this bright copy is the focal point on
-                // top. Any scale/lift would create a visible offset between
-                // the copy and the dimmed original beneath it (the dim is only
-                // 40% opacity, so the original remains partially visible).
-                let sized_bubble = vexo::WithLayout::new(
-                    vexo::GestureDetector::new(bubble_widget)
-                        .on_press(move || ctrl_for_bubble.close()),
-                    vexo::Layout::default().width(bw).height(bh),
-                );
-                let bubble_copy = vexo::Positioned::new(sized_bubble)
-                    .left(bubble_bounds.left)
-                    .top(bubble_bounds.top);
-                stack = stack.push(bubble_copy);
-
-                // [4] Reactions pill — scale 0.8+v*0.2 (grows 80%→100%).
-                // No opacity fade: the pill is always opaque so it always
-                // occludes background text behind it (Phase 1, writes depth).
-                // The scale animation provides the visual transition. This
-                // matches iMessage: the pill scales in, not fades in.
-                // Anchored via `scale_about_center` using
-                // `metrics.reactions_size` so the pill scales about its own
-                // center, not the bubble's. The pill's position is edge-aware:
-                // above the bubble by default, below the actions card if no
-                // room above, above the card if the whole stack flipped, etc.
-                let pill_scale = 0.8 + v * 0.2;
-                let positioned_pill = vexo::Positioned::new(scale_about_center(
-                    content.reactions,
-                    pill_scale as f32,
-                    pill_scale as f32,
-                    metrics.reactions_size.width,
-                    metrics.reactions_size.height,
-                ))
-                .left(pill_x)
-                .top(pill_y);
+                // === Layer [3]: menu cluster (pill + card), scaled about click point ===
+                let scale = (0.92 + v * 0.08) as f32;
+                let positioned_pill =
+                    vexo::Positioned::new(scale_about_point(content.reactions, scale, click_pos))
+                        .left(pill_x)
+                        .top(pill_y);
                 stack = stack.push(positioned_pill);
 
-                // [5] Actions card — scale 0.8+v*0.2 (grows 80%→100%).
-                // No opacity fade: the card is always opaque so it always
-                // occludes background text behind it (Phase 1, writes depth).
-                // The scale animation provides the "grows in" transition —
-                // background text is gradually covered as the card grows from
-                // 80% to 100% size. This matches iMessage and avoids the
-                // show-through-then-sudden-disappear artifact that opacity
-                // fade caused (transparent quads render after text, letting
-                // background text show through during the animation).
-                let card_scale = 0.8 + v * 0.2;
-                let positioned_actions = vexo::Positioned::new(scale_about_center(
-                    content.actions,
-                    card_scale as f32,
-                    card_scale as f32,
-                    metrics.actions_size.width,
-                    metrics.actions_size.height,
-                ))
-                .left(card_x)
-                .top(card_y);
-                stack = stack.push(positioned_actions);
+                let positioned_card =
+                    vexo::Positioned::new(scale_about_point(content.actions, scale, click_pos))
+                        .left(card_x)
+                        .top(card_y);
+                stack = stack.push(positioned_card);
             }
         }
 
@@ -656,33 +514,28 @@ impl Component for ContextMenu {
     }
 }
 
-/// Wrap `child` in a single `Transform` that scales about its center:
-/// `M = translate(w/2, h/2) ∘ scale(sx, sy) ∘ translate(-w/2, -h/2)`.
+/// Wrap `child` in a single `Transform` that scales about a fixed origin
+/// point: `M = translate(ox, oy) ∘ scale(s, s) ∘ translate(-ox, -oy)`.
 ///
 /// Composing the three-step chain into ONE `AffineTransform` (rather than
 /// three nested `Transform` widgets) is deliberate: the framework's
 /// hit-tester checks `is_inside` against the child's bounds at EACH
 /// `Transform` render object after applying that RO's inverse transform. With
 /// three nested ROs (translate → scale → translate), the outer translate's
-/// inverse shifts the point far from the origin (e.g. `(5,22)` → `(-95,-32)`),
-/// failing the per-level bounds check — even at v=1 where the scale is
-/// identity — so taps on the scaled card silently miss and fall through to
-/// the dim barrier. A single composed `Transform` applies the full inverse in
-/// one step, so `is_inside` is checked against the correctly-mapped point.
+/// inverse shifts the point far from the origin, failing the per-level bounds
+/// check — so taps on the scaled card silently miss. A single composed
+/// `Transform` applies the full inverse in one step.
 ///
-/// The composed matrix works out to `{ a: sx, d: sy, e: w/2*(1-sx),
-/// f: h/2*(1-sy) }`: scale `(sx, sy)` with a compensating translation so the
-/// center `(w/2, h/2)` stays fixed.
+/// The composed matrix: scale `(s, s)` with a compensating translation so the
+/// origin `(ox, oy)` stays fixed.
 ///
-/// `TransformRenderObject` is a layout pass-through (`is_pass_through() ==
-/// true`): the child's laid-out bounds propagate up unchanged, and the
-/// transform is applied only at paint + hit-test time. So wrapping a widget
-/// in `scale_about_center` does NOT change its `computed_bounds` — only its
-/// painted appearance and hit region.
-fn scale_about_center(child: Box<dyn Widget>, sx: f32, sy: f32, w: f32, h: f32) -> Box<dyn Widget> {
-    let transform = vexo::AffineTransform::translation(w / 2.0, h / 2.0)
-        .mul(&vexo::AffineTransform::scale(sx, sy))
-        .mul(&vexo::AffineTransform::translation(-w / 2.0, -h / 2.0));
+/// `TransformRenderObject` is a layout pass-through: the child's laid-out
+/// bounds propagate up unchanged, and the transform is applied only at paint
+/// + hit-test time.
+fn scale_about_point(child: Box<dyn Widget>, s: f32, origin: Point<Logical>) -> Box<dyn Widget> {
+    let transform = vexo::AffineTransform::translation(origin.x, origin.y)
+        .mul(&vexo::AffineTransform::scale(s, s))
+        .mul(&vexo::AffineTransform::translation(-origin.x, -origin.y));
     vexo::Transform::new(child, transform).boxed()
 }
 
@@ -691,14 +544,12 @@ fn scale_about_center(child: Box<dyn Widget>, sx: f32, sy: f32, w: f32, h: f32) 
 // ============================================================================
 
 /// Wrap `child` with a right-click handler that opens the context menu
-/// anchored to the child's global bounds, rendering content from `builder`.
+/// anchored at the click cursor position, rendering content from `builder`.
 ///
-/// The child widget is cloned and passed to `controller.show()` as the
-/// `bubble_widget` (Task 6 renders a lifted copy of it during the open
-/// animation). Equivalent to:
+/// Equivalent to:
 /// ```ignore
-/// child.on_secondary_press(move |_pos, bounds| {
-///     controller.show(bounds, child.clone_boxed(), builder);
+/// child.on_secondary_press(move |pos, _bounds| {
+///     controller.show(pos, builder);
 /// })
 /// ```
 pub fn context_menu_trigger(
@@ -707,9 +558,8 @@ pub fn context_menu_trigger(
     builder: MenuBuilder,
 ) -> Box<dyn Widget> {
     let ctrl = controller.clone();
-    let bubble_widget = child.clone_boxed();
-    child.on_secondary_press(move |_pos, bounds| {
-        ctrl.show(bounds, bubble_widget.clone_boxed(), builder.clone());
+    child.on_secondary_press(move |pos, _bounds| {
+        ctrl.show(pos, builder.clone());
     })
 }
 
@@ -718,6 +568,7 @@ mod tests {
     use super::*;
 
     use std::sync::Arc;
+    use vexo::core::Bounds;
     use vexo::core::ScaleSource;
     use vexo::input::{ButtonState, InputEvent, Modifiers, PointerButton};
     use vexo::layout::TaffyLayoutEngine;
@@ -775,17 +626,16 @@ mod tests {
         assert!((controller.animation_value() - 0.0).abs() < 1e-9);
 
         // show() now starts a forward spring — phase is Opening, not Open.
-        // The spring starts from the current value (0.0), so animation_value
-        // is still ~0.0 immediately after show() (the first sample happens on
-        // the next on_tick/advance).
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 20.0, 100.0, 50.0);
-        controller.show(bounds, bubble_widget, test_content_builder("Copy"));
+        // The spring starts from 0.0 (Amendment 2: show() always resets to
+        // 0.0), so animation_value is still ~0.0 immediately after show()
+        // (the first sample happens on the next on_tick/advance).
+        let pos = vexo::core::Point::new(10.0, 20.0);
+        controller.show(pos, test_content_builder("Copy"));
         assert_eq!(controller.phase(), Phase::Opening);
 
-        // close() starts a reverse spring — phase is Closing, not Closed.
+        // close() instantly clears to Closed — no Closing phase.
         controller.close();
-        assert_eq!(controller.phase(), Phase::Closing);
+        assert_eq!(controller.phase(), Phase::Closed);
     }
 
     #[test]
@@ -793,9 +643,8 @@ mod tests {
         let controller = ContextMenuController::new();
         let cloned = controller.clone();
 
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(50.0, 60.0, 150.0, 100.0);
-        cloned.show(bounds, bubble_widget, test_content_builder("A"));
+        let pos = vexo::core::Point::new(50.0, 60.0);
+        cloned.show(pos, test_content_builder("A"));
 
         // The original sees the same state (shared via Rc<RefCell>). show()
         // starts a spring, so phase is Opening (not Open) immediately after.
@@ -844,11 +693,10 @@ mod tests {
             &mut font_system,
         );
 
-        // Open the menu anchored to a bubble at (100, 200) with a builder that
+        // Open the menu anchored at click point (100, 200) with a builder that
         // renders "Copy" in the actions card.
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(100.0, 200.0, 300.0, 250.0);
-        controller.show(bounds, bubble_widget, test_content_builder("Copy"));
+        let pos = vexo::core::Point::new(100.0, 200.0);
+        controller.show(pos, test_content_builder("Copy"));
         pipeline.perform_rebuilds();
         pipeline.layout(
             vexo::core::Size::new(400.0, 600.0),
@@ -909,21 +757,19 @@ mod tests {
             &mut font_system,
         );
 
-        // The actions card is Positioned below the bubble at
-        // (bubble_bounds.left, bubble_bounds.top + bubble_bounds.height() + gap)
-        // = (10, 10 + 40 + 8) = (10, 58). The item row has 8px padding, so
+        // The actions card is Positioned at (click_x, click_y + pill_h + gap)
+        // = (10, 10 + 28 + 8) = (10, 46). The item row has 8px padding, so
         // clicking at (15, 70) lands inside the row's padding area.
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
-        controller.show(bounds, bubble_widget, builder);
+        let pos = vexo::core::Point::new(10.0, 10.0);
+        controller.show(pos, builder);
         pipeline.perform_rebuilds();
-        // Settle the open spring (v→1.0, phase→Open) before tapping. Task 6
-        // scales the card to 0.8+v*0.2 and fades it to opacity v; right after
-        // show() (v≈0) the card is at 80% scale + 0 opacity and its hit region
-        // is shifted by the scale-about-center transform, so (15, 70) no longer
-        // lands on the row. At v=1 the scale is 1.0 (identity) and opacity 1.0,
-        // so the hit-test works exactly as in Task 4. This mirrors real usage:
-        // the user taps an item after the menu has opened.
+        // Settle the open spring (v→1.0, phase→Open) before tapping. The host
+        // scales the card `0.92 + v*0.08` about the click point; right after
+        // show() (v≈0) the card is at 92% scale and its hit region is shifted
+        // by the scale-about-point transform, so (15, 70) no longer lands on
+        // the row. At v=1 the scale is 1.0 (identity), so the hit-test works
+        // exactly as at rest. This mirrors real usage: the user taps an item
+        // after the menu has opened.
         std::thread::sleep(std::time::Duration::from_millis(700));
         ticker.tick();
         pipeline.drain_dirty_to_build_owner();
@@ -963,26 +809,11 @@ mod tests {
         );
 
         assert!(selected.get(), "on_tap should have fired");
-        // After the tap, the menu should close (controller.close() called by
-        // the item's on_tap closure). Because the menu was fully open (v=1.0)
-        // when tapped, close() starts a reverse spring from 1.0→0.0 that is
-        // NOT instantly done (unlike the v≈0 case) — phase is `Closing` right
-        // after. Advance real time past settle so the spring finishes and the
-        // phase machine flips `Closing` → `Closed` (clearing `open`).
-        pipeline.perform_rebuilds();
-        assert_eq!(
-            controller.phase(),
-            Phase::Closing,
-            "menu should be mid-close right after the item tap fires close()"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(
             controller.phase(),
             Phase::Closed,
-            "menu should be closed after the close spring settles"
+            "menu should be closed immediately after item tap (instant close)"
         );
     }
 
@@ -1002,9 +833,8 @@ mod tests {
             &mut font_system,
         );
 
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
-        controller.show(bounds, bubble_widget, test_content_builder("Copy"));
+        let pos = vexo::core::Point::new(10.0, 10.0);
+        controller.show(pos, test_content_builder("Copy"));
         pipeline.perform_rebuilds();
         pipeline.layout(
             vexo::core::Size::new(400.0, 600.0),
@@ -1085,9 +915,8 @@ mod tests {
                 },
             }
         });
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
-        controller.show(bounds, bubble_widget, builder);
+        let pos = vexo::core::Point::new(10.0, 10.0);
+        controller.show(pos, builder);
         pipeline.perform_rebuilds();
         pipeline.layout(
             vexo::core::Size::new(400.0, 600.0),
@@ -1140,9 +969,9 @@ mod tests {
     /// window coords), unlike the inner `TextRenderObject`'s
     /// `computed_bounds` which is local to its layout origin (always 0,0).
     /// Identifying the right `Positioned` is unambiguous: the pill's
-    /// `Positioned` subtree contains "r" (never "Copy" or "bubble"), the
-    /// card's contains "Copy", the bubble copy's contains "bubble", and the
-    /// barrier's contains a BLACK `DecoratedBox` (no text needle).
+    /// `Positioned` subtree contains "r", the card's contains "Copy". (The
+    /// transparent dismiss barrier carries an empty `Text` — no needle — so
+    /// it is never matched by this helper.)
     fn find_positioned_bounds_around_text(
         reg: &RenderObjectRegistry,
         key: RenderObjectKey,
@@ -1167,249 +996,12 @@ mod tests {
         None
     }
 
-    /// Walk the render tree and collect the `computed_bounds` sizes of every
-    /// `TextRenderObject` whose content contains `needle`. Used by the
-    /// dual-render spike test (#7) to assert the in-content and bright-copy
-    /// Text render objects have identical laid-out sizes.
-    fn collect_text_sizes(
-        reg: &RenderObjectRegistry,
-        key: RenderObjectKey,
-        needle: &str,
-        out: &mut Vec<vexo::core::Size<Logical>>,
-    ) {
-        if let Some(ro) = reg.get(key) {
-            if ro
-                .as_any()
-                .downcast_ref::<TextRenderObject>()
-                .map_or(false, |t| t.content().contains(needle))
-            {
-                if let Some(b) = ro.computed_bounds() {
-                    out.push(vexo::core::Size::new(b.width(), b.height()));
-                }
-            }
-            for &child in ro.children() {
-                collect_text_sizes(reg, child, needle, out);
-            }
-        }
-    }
-
-    #[test]
-    fn test_bright_bubble_copy_rendered_on_top() {
-        let controller = ContextMenuController::new();
-        let bubble_text = "BUBBLE_CONTENT marker";
-        let bubble_widget = vexo::Text::new(bubble_text).boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0);
-
-        let host = ContextMenu::new(vexo::Text::new("background content"), controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        // Open the menu with the bubble widget. The host should render a
-        // bright copy of `bubble_widget` on top of the dim barrier.
-        controller.show(bounds, bubble_widget, test_content_builder("Actions"));
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        // The bubble widget's text should appear in the render tree (as the
-        // bright copy on top of the dim). It does NOT appear in the host's
-        // background content ("background content") nor in the actions card
-        // ("Actions"), so a presence check is sufficient.
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        assert!(
-            find_text_in_tree(ro_reg, root, bubble_text),
-            "bright bubble copy should be rendered when menu is open"
-        );
-    }
-
-    #[test]
-    fn test_bubble_copy_size_matches_original() {
-        let controller = ContextMenuController::new();
-        // A bubble widget with a known intrinsic size (pinned via WithLayout).
-        let bubble_widget = vexo::WithLayout::new(
-            vexo::Text::new("X"),
-            vexo::Layout::default().width(80.0).height(30.0),
-        )
-        .boxed();
-        // Bounds use (left, top, width, height) — `Bounds::from_xywh` produces
-        // valid (left, top, right, bottom) from x/y/w/h. The brief's literal
-        // `Bounds::new(50.0, 50.0, 80.0, 30.0)` would be (left=50, top=50,
-        // right=80, bottom=30) → negative width/height; using from_xywh keeps
-        // the intent (bubble at (50,50) sized 80x30) without malformed edges.
-        let bounds = vexo::core::Bounds::from_xywh(50.0, 50.0, 80.0, 30.0);
-
-        // Wrap the bubble widget in the content tree too, so it renders twice
-        // (once in-content, once as the bright copy on top of the dim).
-        let content = vexo::WithLayout::new(
-            bubble_widget.clone_boxed(),
-            vexo::Layout::default().width(80.0).height(30.0),
-        );
-
-        let host = ContextMenu::new(content, controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        controller.show(
-            bounds,
-            bubble_widget.clone_boxed(),
-            test_content_builder("A"),
-        );
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        // Find all TextRenderObjects with content "X" in the tree. There
-        // should be two (one in-content, one as the bright copy). Assert
-        // their computed_bounds sizes match — this is the dual-render spike
-        // gate: if sizes diverge, the dual-render assumption is wrong and the
-        // spec's cutout-frame fallback must be used.
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let mut found_sizes: Vec<vexo::core::Size<Logical>> = Vec::new();
-        collect_text_sizes(ro_reg, root, "X", &mut found_sizes);
-        assert_eq!(
-            found_sizes.len(),
-            2,
-            "should find 2 'X' TextRenderObjects (in-content + bright copy)"
-        );
-        assert_eq!(
-            found_sizes[0], found_sizes[1],
-            "in-content and bright copy sizes must match (dual-render is deterministic)"
-        );
-    }
-
-    /// Walk the render tree and collect the `RenderObjectKey`s of every
-    /// `DecoratedBoxRenderObject` whose `Style.background` is `Some(BLACK)`.
-    /// Used by the dim-barrier height regression test to locate the dim's
-    /// render object (the only BLACK-background DecoratedBox in the menu's
-    /// render tree when the menu is open).
-    fn collect_black_decorated_boxes(
-        reg: &RenderObjectRegistry,
-        key: RenderObjectKey,
-        out: &mut Vec<RenderObjectKey>,
-    ) {
-        if let Some(ro) = reg.get(key) {
-            let is_black_bg = ro
-                .as_any()
-                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                .map_or(false, |d| {
-                    d.style()
-                        .background
-                        .map_or(false, |c| c == vexo::Color::BLACK)
-                });
-            if is_black_bg {
-                out.push(key);
-            }
-            for &child in ro.children() {
-                collect_black_decorated_boxes(reg, child, out);
-            }
-        }
-    }
-
-    /// Regression test for the dim-barrier sizing bug.
-    ///
-    /// Before the fix, the dim barrier's `DecoratedBox(BLACK)` was nested
-    /// INSIDE `WithLayout` — so its child was `Text("")`. `DecoratedBox` is a
-    /// pass-through render object, so it inherits its CHILD's bounds, not the
-    /// `WithLayout`'s full-screen bounds. The `WithLayout` Column's
-    /// `align_items: Stretch` only affects the cross axis (width), not the
-    /// main axis (height), so `Text("")` stretched to full width (400px) but
-    /// kept its intrinsic line height (~29px) on the main axis. The
-    /// pass-through `DecoratedBox` inherited those 400x29 bounds → the dim
-    /// painted only a 29px strip at the top of the screen instead of covering
-    /// the full window. Tap-to-close still worked because the
-    /// `GestureDetector` reads the `WithLayout`'s full-screen bounds (its own
-    /// layout node), not the `DecoratedBox`'s — masking the bug from existing
-    /// tests.
-    ///
-    /// After the fix, `DecoratedBox` WRAPS `WithLayout`, inheriting the
-    /// `WithLayout`'s full-screen bounds (from `width_percent(1.0)` +
-    /// `height_percent(1.0)`). This test walks the render tree when the menu
-    /// is open, finds the dim's `DecoratedBoxRenderObject` (the one with a
-    /// BLACK background), and asserts its `computed_bounds` cover the full
-    /// screen — both height > 0 (the literal regression guard) and height
-    /// equal to the screen height (the actual bug catcher: the buggy version
-    /// produced 29px, not 600px).
-    #[test]
-    fn test_dim_barrier_has_nonzero_height() {
-        let screen = vexo::core::Size::new(400.0, 600.0);
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(Text::new("content"), controller.clone());
-
-        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
-        pipeline.update(host.boxed());
-
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(screen, &mut engine, &mut font_system);
-
-        // Open the menu — the dim barrier should be in the render tree.
-        let bubble_widget = vexo::Text::new("bubble").boxed();
-        let bounds = vexo::core::Bounds::new(10.0, 10.0, 200.0, 40.0);
-        controller.show(bounds, bubble_widget, test_content_builder("Copy"));
-        pipeline.perform_rebuilds();
-        pipeline.layout(screen, &mut engine, &mut font_system);
-
-        // Find the dim's DecoratedBoxRenderObject (BLACK background).
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let mut black_boxes: Vec<RenderObjectKey> = Vec::new();
-        collect_black_decorated_boxes(ro_reg, root, &mut black_boxes);
-        assert_eq!(
-            black_boxes.len(),
-            1,
-            "exactly one BLACK-background DecoratedBox (the dim) should exist when menu is open"
-        );
-
-        let dim_ro = ro_reg
-            .get(black_boxes[0])
-            .expect("dim DecoratedBoxRenderObject should be registered");
-        let dim_bounds = dim_ro
-            .computed_bounds()
-            .expect("dim DecoratedBox should have computed_bounds after layout");
-
-        // Literal regression guard: height must be > 0.
-        assert!(
-            dim_bounds.height() > 0.0,
-            "dim barrier height must be > 0 (got {}); zero height means the dim paints nothing",
-            dim_bounds.height()
-        );
-
-        // Actual bug catcher: the dim must cover the FULL screen height. The
-        // buggy nesting (DecoratedBox inside WithLayout) produced a 29px-tall
-        // strip — non-zero, so the `> 0` check above passed, but the dim was
-        // visually broken (only the top 29px dimmed). The fixed nesting
-        // (DecoratedBox wraps WithLayout) yields full-screen coverage.
-        assert_eq!(
-            dim_bounds.height(),
-            screen.height,
-            "dim barrier height must equal screen height ({}); got {} — if this is a small \
-             value (~font line height), DecoratedBox is inside WithLayout and inheriting \
-             Text(\"\")'s intrinsic line height instead of WithLayout's full-screen bounds",
-            screen.height,
-            dim_bounds.height()
-        );
-        assert_eq!(
-            dim_bounds.width(),
-            screen.width,
-            "dim barrier width must equal screen width ({})",
-            screen.width
-        );
-    }
-
     // ========================================================================
     // Task 5: spring-driven phase machine lifecycle tests
     // ========================================================================
     //
-    // These tests exercise the 4-state phase machine (Closed → Opening →
-    // Open → Closing → Closed) driven by a critical spring
+    // These tests exercise the 3-state phase machine (Closed → Opening →
+    // Open) driven by a critical spring
     // (`SpringDescription::ios(340.0, 1.0)`). They use the
     // `pump(ticker, pipeline)` pattern: `std::thread::sleep` to advance real
     // time past the spring's settle point (~0.6s for k=340 critical), then
@@ -1432,8 +1024,7 @@ mod tests {
 
         // show() starts the forward spring.
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(10.0, 10.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
@@ -1460,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn test_close_starts_reverse_spring_not_immediate_unmount() {
+    fn test_close_is_instant_no_reverse_spring() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1471,10 +1062,8 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Open and settle.
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(10.0, 10.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
@@ -1484,33 +1073,22 @@ mod tests {
         pipeline.perform_rebuilds();
         assert_eq!(controller.phase(), Phase::Open);
 
-        // Close — should start reverse spring, NOT immediately clear.
         controller.close();
         pipeline.perform_rebuilds();
 
-        assert_eq!(controller.phase(), Phase::Closing);
-        assert!(
-            controller.animation_value() > 0.0,
-            "spring should still be mid-reverse (value={})",
-            controller.animation_value()
+        assert_eq!(
+            controller.phase(),
+            Phase::Closed,
+            "close() should instantly clear to Closed — no Closing phase"
         );
-
-        // Advance past settle.
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-
-        assert_eq!(controller.phase(), Phase::Closed);
         assert!(
-            (controller.animation_value() - 0.0).abs() < 0.01,
-            "spring should have settled to 0.0 (value={})",
-            controller.animation_value()
+            controller.open_snapshot().is_none(),
+            "open state should be cleared immediately after close()"
         );
     }
 
     #[test]
-    fn test_early_close_during_open_reverses_smoothly() {
+    fn test_early_close_during_open_is_instant() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1522,13 +1100,55 @@ mod tests {
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(10.0, 10.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
 
-        // Advance partway (value should be between 0 and 1).
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+
+        controller.close();
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            controller.phase(),
+            Phase::Closed,
+            "early close() should be instant — no Closing phase"
+        );
+        assert!(controller.open_snapshot().is_none());
+        assert!(
+            !ticker.has_active(),
+            "spring should be unregistered from ticker after close() (stop() called)"
+        );
+    }
+
+    #[test]
+    fn test_reshow_after_close_restarts_from_zero() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open and advance partway so the spring is genuinely mid-open
+        // (0 < v < 1). We close mid-open (not after settle) so the frozen
+        // value (mid_value) is meaningfully > 0 — this lets the reshow below
+        // prove show() resets the spring to 0.0 (Amendment 2) rather than
+        // retargeting from the frozen mid_value. If we closed after settle
+        // (value=1.0), a reshow without reset would spring 1.0→1.0 (instant),
+        // masking the difference; closing mid-open makes the reset observable.
+        controller.show(
+            vexo::core::Point::new(10.0, 10.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
         std::thread::sleep(std::time::Duration::from_millis(150));
         ticker.tick();
         pipeline.drain_dirty_to_build_owner();
@@ -1536,71 +1156,24 @@ mod tests {
         let mid_value = controller.animation_value();
         assert!(
             mid_value > 0.0 && mid_value < 1.0,
-            "mid-value should be 0<v<1, got {}",
+            "spring should be mid-open (0<v<1), got {}",
             mid_value
         );
 
-        // Close mid-open.
+        // Instant close mid-open: phase→Closed, open cleared. `close()` stops
+        // the spring (unregisters from ticker) but does NOT reset `value`, so
+        // the value is frozen at mid_value until the next show().
         controller.close();
-        pipeline.perform_rebuilds();
-        assert_eq!(controller.phase(), Phase::Closing);
-
-        // The value right after close should NOT jump to 1.0 — it should be
-        // near mid_value (the spring starts from the current value).
-        let value_after_close = controller.animation_value();
-        assert!(
-            (value_after_close - mid_value).abs() < 0.15,
-            "value after close ({}) should be near mid_value ({}) — no jump to 1.0",
-            value_after_close,
-            mid_value
-        );
-
-        // Settle to Closed.
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
         pipeline.perform_rebuilds();
         assert_eq!(controller.phase(), Phase::Closed);
-    }
 
-    #[test]
-    fn test_reshow_during_close_retargets_upward() {
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
-        let ticker = Arc::new(AnimationTicker::new());
-
-        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        // Open and settle.
+        // Re-show immediately (no tick between close and show): show() resets
+        // the spring to start from 0.0 (Amendment 2), so the forward spring
+        // runs 0.0 → 1.0 fresh — every show() animates consistently, whether
+        // first open or re-show after close. Since close() already unmounted
+        // the overlay, the value reset has no visible jump.
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
-            test_content_builder("Copy"),
-        );
-        pipeline.perform_rebuilds();
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-
-        // Start close, advance partway down.
-        controller.close();
-        pipeline.perform_rebuilds();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-        let mid_value = controller.animation_value();
-        assert!(mid_value > 0.0 && mid_value < 1.0);
-
-        // Re-show with new bounds — should retarget upward.
-        controller.show(
-            vexo::core::Bounds::new(20.0, 20.0, 100.0, 40.0),
-            vexo::Text::new("bubble2").boxed(),
+            vexo::core::Point::new(20.0, 20.0),
             test_content_builder("Reply"),
         );
         pipeline.perform_rebuilds();
@@ -1608,8 +1181,10 @@ mod tests {
 
         let value_after_reshow = controller.animation_value();
         assert!(
-            (value_after_reshow - mid_value).abs() < 0.15,
-            "value after reshow ({}) should be near mid_value ({}) — no jump",
+            value_after_reshow < 0.1,
+            "value after reshow ({}) should be near 0.0 — show() resets the \
+             spring to start from 0.0 (Amendment 2), not retarget from the \
+             frozen mid_value ({})",
             value_after_reshow,
             mid_value
         );
@@ -1628,22 +1203,20 @@ mod tests {
 
     /// Test #5 — barrier dismiss during animation.
     ///
-    /// Opens the menu, then clicks the dim barrier *mid-open* (before the
+    /// Opens the menu, then clicks the transparent barrier *mid-open* (before the
     /// spring settles). The barrier's `on_press` fires `controller.close()`,
-    /// which starts the reverse spring → phase becomes `Closing` (the spring
-    /// is mid-reverse, not yet settled to `Closed`).
+    /// which instantly clears phase to `Closed` and unmounts the menu (no
+    /// `Closing` phase, no reverse spring).
     ///
     /// To be genuinely "mid-animation", the spring value must be meaningfully
     /// between 0 and 1 when the barrier is clicked. Immediately after
     /// `show()` + one `perform_rebuilds()`, the spring has only advanced by
-    /// microseconds and `animation_value() ≈ 0` — so a `close()` from ≈0 to 0
-    /// would satisfy `is_done()` instantly (zero displacement), flipping phase
-    /// straight to `Closed`. That would make the `Phase::Closing` assertion
-    /// impossible. We therefore advance real time ~150ms (past the spring's
-    /// initial ramp, value ≈ 0.5) before clicking, so the reverse spring has
-    /// real distance to travel and `phase` is `Closing` when asserted.
+    /// microseconds and `animation_value() ≈ 0`. We advance real time ~150ms
+    /// (past the spring's initial ramp, value ≈ 0.5) before clicking, so the
+    /// `mid_value` assertion (0 < v < 1) is meaningful — it confirms the
+    /// barrier was actually hit mid-open, not after settle.
     #[test]
-    fn test_dim_barrier_dismiss_during_animation() {
+    fn test_barrier_dismiss_during_animation() {
         let controller = ContextMenuController::new();
         let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
         let ticker = Arc::new(AnimationTicker::new());
@@ -1656,8 +1229,7 @@ mod tests {
 
         // Open — don't wait for settle (we want mid-animation).
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(10.0, 10.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
@@ -1678,7 +1250,7 @@ mod tests {
             mid_value
         );
 
-        // Click far away (on the dim barrier) mid-open.
+        // Click far away (on the transparent barrier) mid-open.
         let primary_press = vexo::input::InputEvent::PointerButton {
             position: vexo::core::Point::new(350.0, 550.0),
             button: vexo::input::PointerButton::Primary,
@@ -1696,80 +1268,30 @@ mod tests {
         );
         pipeline.perform_rebuilds();
 
-        // close() should have fired — phase is Closing (not Closed yet, spring
-        // is mid-reverse).
+        // close() should have fired — phase is Closed (instant close, no
+        // Closing phase).
         assert_eq!(
             controller.phase(),
-            Phase::Closing,
-            "barrier click mid-open should start close (phase=Closing)"
+            Phase::Closed,
+            "barrier click mid-open should instantly close (phase=Closed)"
         );
     }
 
-    /// Walk the render tree and return true if the subtree rooted at `key`
-    /// contains a `DecoratedBoxRenderObject` whose `Style.background` is
-    /// `Some(BLACK)` (the dim barrier's black fill).
-    fn subtree_has_black_decorated_box(reg: &RenderObjectRegistry, key: RenderObjectKey) -> bool {
-        if let Some(ro) = reg.get(key) {
-            let is_black = ro
-                .as_any()
-                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
-                .map_or(false, |d| {
-                    d.style()
-                        .background
-                        .map_or(false, |c| c == vexo::Color::BLACK)
-                });
-            if is_black {
-                return true;
-            }
-            for &child in ro.children() {
-                if subtree_has_black_decorated_box(reg, child) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// Walk the render tree and return the opacity of the
-    /// `OpacityRenderObject` whose subtree contains a BLACK-background
-    /// `DecoratedBox` (i.e. the dim barrier's `Opacity` wrapper). Returns
-    /// `None` when no such opacity node exists.
+    /// `OpacityRenderObject` whose subtree contains `needle` text (i.e. the
+    /// actions card's `Opacity` wrapper). Returns `None` when no such opacity
+    /// node exists.
     ///
-    /// This uniquely identifies the dim's opacity: the dim is the only
-    /// `Opacity` in the menu whose subtree contains a BLACK `DecoratedBox`.
-    /// (The actions card's `Opacity` subtree contains the card's text, not a
-    /// BLACK box.)
-    fn find_dim_opacity(reg: &RenderObjectRegistry, key: RenderObjectKey) -> Option<f32> {
-        let ro = reg.get(key)?;
-        if ro.opacity().is_some() && subtree_has_black_decorated_box(reg, key) {
-            return ro.opacity();
-        }
-        for &child in ro.children() {
-            if let Some(op) = find_dim_opacity(reg, child) {
-                return Some(op);
-            }
-        }
-        None
-    }
-
-    /// Walk the render tree and return the opacity of the
-    /// `OpacityRenderObject` whose subtree contains `needle` text but NO
-    /// BLACK-background `DecoratedBox` (i.e. the actions card's `Opacity`
-    /// wrapper). Returns `None` when no such opacity node exists.
-    ///
-    /// Before Task 6, the actions card has no `Opacity` wrapper (rendered at
-    /// full opacity directly) → returns `None`. After Task 6, the card is
-    /// wrapped in `Opacity(v)` → returns `Some(v)`.
+    /// The card is never wrapped in `Opacity` (always opaque for depth-write
+    /// occlusion), so this returns `None` — verified by
+    /// `test_card_has_no_opacity_fade`.
     fn find_card_opacity(
         reg: &RenderObjectRegistry,
         key: RenderObjectKey,
         needle: &str,
     ) -> Option<f32> {
         let ro = reg.get(key)?;
-        if ro.opacity().is_some()
-            && find_text_in_tree(reg, key, needle)
-            && !subtree_has_black_decorated_box(reg, key)
-        {
+        if ro.opacity().is_some() && find_text_in_tree(reg, key, needle) {
             return ro.opacity();
         }
         for &child in ro.children() {
@@ -1780,94 +1302,18 @@ mod tests {
         None
     }
 
-    /// RED→GREEN test for the spring-driven dim opacity.
+    /// Verifies the actions card is never wrapped in `Opacity`.
     ///
-    /// Before Task 6: the dim barrier's `Opacity` is fixed at `0.4` regardless
-    /// of the spring value. After Task 6: the dim opacity is `v * 0.4`, where
-    /// `v = controller.animation_value()`.
+    /// The card is always opaque so it always writes depth (Phase 1) and
+    /// occludes background text behind it. Only the scale animates
+    /// (0.92→1.0 about the click point). This test opens the menu, advances
+    /// ~150ms (mid-open, 0 < v < 1), then asserts no `OpacityRenderObject`
+    /// exists on the card's subtree (`find_card_opacity` returns `None`).
     ///
-    /// We open the menu, advance real time ~150ms so the spring is genuinely
-    /// mid-open (`v ≈ 0.76`), then read the dim's `OpacityRenderObject` from
-    /// the render tree and assert its opacity ≈ `v * 0.4` (NOT the fixed
-    /// `0.4`). Before Task 6 this fails (dim=0.4, expected ≈0.30); after Task
-    /// 6 it passes (dim=v*0.4).
-    #[test]
-    fn test_dim_opacity_tracks_spring_value() {
-        let controller = ContextMenuController::new();
-        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
-        let ticker = Arc::new(AnimationTicker::new());
-
-        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
-        pipeline.update(host.boxed());
-        let mut engine = TaffyLayoutEngine::new();
-        let mut font_system = new_font_system();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
-            test_content_builder("Copy"),
-        );
-        pipeline.perform_rebuilds();
-
-        // Advance ~150ms so the spring is mid-open (0 < v < 1).
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        ticker.tick();
-        pipeline.drain_dirty_to_build_owner();
-        pipeline.perform_rebuilds();
-        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
-
-        let v = controller.animation_value();
-        assert!(
-            v > 0.05 && v < 0.99,
-            "spring should be mid-open for this test to be meaningful, got v={}",
-            v
-        );
-
-        let ro_reg = pipeline.render_objects();
-        let root = ro_reg.root().expect("root");
-        let dim_opacity = find_dim_opacity(ro_reg, root).expect(
-            "dim OpacityRenderObject should exist when menu is open (find_dim_opacity found none)",
-        );
-
-        let expected = (v * 0.4) as f32;
-        assert!(
-            (dim_opacity - expected).abs() < 0.01,
-            "dim opacity should track v*0.4 (v={:.4}, expected≈{:.4}, got {:.4}); \
-             if got 0.4 the dim is still fixed-alpha (pre-Task-6 behavior)",
-            v,
-            expected,
-            dim_opacity
-        );
-    }
-
-    /// RED→GREEN test for the spring-driven actions-card opacity.
-    ///
-    /// Before Task 6: the actions card is rendered at full opacity with no
-    /// `Opacity` wrapper. After Task 6: the card is wrapped in `Opacity(v)`.
-    ///
-    /// We open the menu, advance ~150ms (v ≈ 0.76), then assert the card has
-    /// an `OpacityRenderObject` with opacity ≈ `v`. Before Task 6: no such
-    /// opacity node exists → `find_card_opacity` returns `None` → `expect`
-    /// panics → RED. After Task 6: `Opacity(v)` is present → GREEN.
-    ///
-    /// (The card's scale-about-center transform can't be inspected here —
+    /// (The card's scale-about-point transform can't be inspected here —
     /// `TransformRenderObject` is `pub(crate)` in `vexo` and not re-exported.
-    /// The card opacity check plus the dim opacity check together prove the
-    /// spring value `v` is read and applied to multiple overlay layers. The
-    /// bubble's scale/lift transform is verified indirectly by the existing
-    /// `test_bright_bubble_copy_rendered_on_top` /
-    /// `test_bubble_copy_size_matches_original` tests, which confirm the
-    /// bubble copy still renders at the correct size after wrapping it in the
-    /// transform chain — `TransformRenderObject` is a layout pass-through, so
-    /// the Text's computed bounds are unchanged.)
-    /// The card is NOT wrapped in `Opacity` — it is always opaque so it
-    /// always writes depth (Phase 1) and occludes background text behind it.
-    /// Only the scale animates (0.8→1.0). This test verifies that no
-    /// `OpacityRenderObject` exists on the card's subtree when the menu is
-    /// mid-open. (The dim barrier DOES have Opacity, but
-    /// `find_card_opacity` excludes subtrees with a black DecoratedBox, so
-    /// the dim is not a false positive.)
+    /// `TransformRenderObject` is a layout pass-through, so the card's
+    /// `computed_bounds` are unchanged by the transform.)
     #[test]
     fn test_card_has_no_opacity_fade() {
         let controller = ContextMenuController::new();
@@ -1881,8 +1327,7 @@ mod tests {
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
         controller.show(
-            vexo::core::Bounds::new(10.0, 10.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(10.0, 10.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
@@ -1917,53 +1362,38 @@ mod tests {
     // ========================================================================
     //
     // These tests exercise the host's edge-aware positioning logic. The host
-    // picks one of four layouts based on whether the reactions pill fits above
-    // the bubble (`room_above`) and whether the actions card fits below it
-    // (`room_below`):
+    // anchors the cluster (pill on top, card below) at the click point and
+    // picks one of three vertical placements:
     //
-    //   room_above && room_below  → default (pill above bubble, card below)
-    //   !room_above && room_below → pill below the actions card
-    //   room_above && !room_below → flip both above the bubble
-    //   !room_above && !room_below→ default to below (best effort)
+    //   fits_below (click_y + cluster_h ≤ window_h - 8) → cluster_y = click_y
+    //   fits_above (click_y - cluster_h ≥ 8)            → cluster_y = click_y - cluster_h
+    //   neither fits                                    → pick the side with more room
     //
-    // The assertions are intentionally presence-based (`find_text_in_tree`)
-    // rather than position-based: walking `Positioned` render objects to read
-    // laid-out offsets is fragile (the framework's render-object hierarchy
-    // doesn't expose a stable "Positioned offset" field). Instead, we assert
-    // that BOTH cards (reactions "r" + actions "Copy") still appear in the
-    // render tree after the flip — i.e. neither was clipped off-screen by a
-    // bad offset. The flip path is what makes the difference: with the old
-    // (Task 6) host code, only the actions card is rendered, so the reactions
-    // pill ("r") is missing → RED. After Task 7 adds the pill layer + edge
-    // positioning, both appear → GREEN.
+    // The cluster's internal stacking (pill-on-top, card-below) is never
+    // reordered — only `cluster_y` shifts. The horizontal left-clamp
+    // (`cluster_x = click_x.max(8).min(window_w - cluster_w - 8)`) is exercised
+    // by `test_horizontal_clamp_when_near_right_edge`.
     //
-    // BOUNDS NOTE: `Bounds::new(l, t, r, b)` takes edge coordinates, but the
-    // brief's literal `Bounds::new(50.0, 560.0, 100.0, 40.0)` for test #9
-    // would produce `top=560, bottom=40, height=-520` (malformed). The
-    // bubble_bottom math (`top + height()`) then collapses to 40, making
-    // `room_below` true and the flip-above path never runs — defeating the
-    // test's stated intent ("Bubble near the bottom — no room below"). We use
-    // `Bounds::from_xywh` (matches the established pattern in
-    // `test_bubble_copy_size_matches_original`) to produce a valid
-    // 100×40 bubble at (50, 560) whose bottom edge sits at y=600 — genuinely
-    // leaving no room below in a 600px window.
+    // Test #8 and #9 below are presence-guards: they assert both cards remain
+    // in the render tree (not clipped off-screen) after the host picks a
+    // placement. The real flip-position assertions live in
+    // `test_vertical_flip_when_no_room_below` (Task 8 tests).
+    //
+    // Test #9 clicks at (50, 560) in a 600px window. The cluster is
+    // pill_h(28) + gap(8) + card_h(108) = 144px tall, so it doesn't fit
+    // below the click point (560 + 144 = 704 > 592) but does fit above
+    // (560 - 144 = 416 ≥ 8) — exercising the host's flip-up branch
+    // (`cluster_y = click_pos.y - cluster_h`).
 
-    /// Test #8 — edge flip when no room above for the reactions pill.
-    ///
-    /// Bubble pinned to the top of a 600px window (top=5). With pill_h=28 and
-    /// gap=8, the pill needs 8+28+8=44px above the bubble but only 5px is
-    /// available → `room_above = false`. The host flips the pill to BELOW the
-    /// actions card (which still goes below the bubble). Both cards must
-    /// remain in the render tree (not clipped off-screen).
+    /// Test #8 — presence guard: click near the top edge. With click y=5 and
+    /// cluster_h=144, the cluster fits below (5 + 144 = 149 < 592), so no
+    /// flip occurs — both cards render at their default click-point positions.
+    /// This test guards that the top-edge placement doesn't clip cards
+    /// off-screen. (The real flip-up assertion is in
+    /// `test_vertical_flip_when_no_room_below`.)
     ///
     /// The host is wrapped in a `MediaQuery` with size=(400, 600) so
-    /// `MediaQuery::of(ctx)` returns the real window size — without this,
-    /// `MediaQuery::of` falls back to `all_zero` (size=0,0), making
-    /// `room_below` false (since `bubble_bottom + gap + card_h > 0`) and
-    /// sending the host into the "no room anywhere" fallback branch instead
-    /// of the intended "no room above, room below" branch. The two branches
-    /// produce the same layout today, but depending on the real MediaQuery
-    /// makes the test actually exercise the path the comment describes.
+    /// `MediaQuery::of(ctx)` returns the real window size for edge detection.
     #[test]
     fn test_edge_flip_when_no_room_above() {
         let controller = ContextMenuController::new();
@@ -1983,11 +1413,11 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Bubble at the very top — no room above for the reactions pill.
-        // from_xywh(50, 5, 100, 40) → top=5, bottom=45, height=40.
+        // Click point at the very top. Cluster fits below (5 + 144 = 149 <
+        // 592), so no flip — both cards render at default click-point
+        // positions. Presence guard: neither card should be clipped.
         controller.show(
-            vexo::core::Bounds::from_xywh(50.0, 5.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(50.0, 5.0),
             test_content_builder("Copy"),
         );
         // Settle to Open so we can inspect the laid-out positions.
@@ -1998,23 +1428,18 @@ mod tests {
         pipeline.perform_rebuilds();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // The reactions pill should be positioned BELOW the actions card
-        // (not above the bubble, where it would clip off-screen).
-        // We assert this by checking that both cards are within window bounds.
-        // (Detailed position assertions require walking Positioned render
-        // objects, which is fragile. Instead, assert the menu didn't clip by
-        // checking both cards are within window bounds.)
+        // Both cards should be present in the render tree (not clipped).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
         assert!(
             find_text_in_tree(ro_reg, root, "Copy"),
-            "actions card should still be rendered with edge flip"
+            "actions card should still be rendered with top-edge click"
         );
         // The key assertion: both "r" (reactions) and "Copy" (actions) appear,
         // proving neither card was clipped off-screen.
         assert!(
             find_text_in_tree(ro_reg, root, "r"),
-            "reactions pill should still be rendered with edge flip"
+            "reactions pill should still be rendered with top-edge click"
         );
     }
 
@@ -2044,11 +1469,9 @@ mod tests {
         let mut font_system = new_font_system();
         pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
 
-        // Bubble near the bottom — no room below for the actions card.
-        // from_xywh(50, 560, 100, 40) → top=560, bottom=600, height=40.
+        // Click point near the bottom — no room below for the actions card.
         controller.show(
-            vexo::core::Bounds::from_xywh(50.0, 560.0, 100.0, 40.0),
-            vexo::Text::new("bubble").boxed(),
+            vexo::core::Point::new(50.0, 560.0),
             test_content_builder("Copy"),
         );
         pipeline.perform_rebuilds();
@@ -2077,18 +1500,12 @@ mod tests {
         // (not the inner `TextRenderObject`'s) because the Text's
         // `computed_bounds` is local to its layout origin (always 0,0), while
         // the `Positioned`'s reflects the absolute laid-out position in window
-        // coords. This catches the branch-3 overlap regression where `pill_y`
-        // was computed as `bubble_top - gap - pill_h` (placing the pill's
-        // bottom at the card's bottom) instead of
-        // `bubble_top - 2*gap - card_h - pill_h` (placing the pill fully above
-        // the card). With the buggy math and bubble_top=560, gap=8, card_h=108,
-        // pill_h=28, the pill would be at y=524 (on-screen, so this assertion
-        // alone doesn't catch the overlap directly) but overlapping the card;
-        // a worse variant of the bug (e.g. wrong sign or extra multiplier)
-        // would push the pill off-screen, which this assertion catches. The
-        // presence check above plus this bounds check together guard the
-        // branch-3 flip-above positioning. The corrected math places the pill
-        // at y=408, well within bounds.
+        // coords. With click y=560 and cluster_h=144, the host flips up:
+        // `cluster_y = 560 - 144 = 416`, so pill_top should be 416 (well
+        // within bounds). A bug in the flip math (wrong sign, missing
+        // cluster_h term) could push pill_top negative, which this assertion
+        // catches. The presence checks above plus this bounds check together
+        // guard the flip-up positioning.
         let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r").expect(
             "reactions pill's PositionedRenderObject should have computed_bounds after layout \
              (find_positioned_bounds_around_text found none — pill was not laid out)",
@@ -2097,8 +1514,296 @@ mod tests {
             pill_bounds.top >= 0.0,
             "reactions pill must not be clipped off the top of the screen \
              (computed_bounds.top={}, expected >= 0.0); a negative top indicates \
-             the branch-3 flip-above math overflowed past the window origin",
+             the flip-up math overflowed past the window origin",
             pill_bounds.top
+        );
+    }
+
+    /// Test — click-point anchor: opening the menu at a known click_pos places
+    /// the pill's Positioned at (click_x, click_y) and the card's at
+    /// (click_x, click_y + pill_h + gap), when there's room (no flip/clamp).
+    #[test]
+    fn test_click_point_anchor_default_placement() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at (100, 200). test_content_builder's metrics: pill 150×28,
+        // card 200×108, gap 8 → cluster 150×144. Fits below
+        // (200 + 144 = 344 < 592). Cluster width = max(150, 200) = 200, fits
+        // right (100 + 200 = 300 < 392). No flip/clamp.
+        controller.show(
+            vexo::core::Point::new(100.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        // Settle to Open so scale = 1.0 (Positioned offsets are unaffected by
+        // the scale transform — Transform is paint-only — but settle anyway
+        // for a clean state).
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        // Pill "r" Positioned should be at (100, 200).
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        assert!(
+            (pill_bounds.left - 100.0).abs() < 0.5,
+            "pill left should be click_x (100), got {}",
+            pill_bounds.left
+        );
+        assert!(
+            (pill_bounds.top - 200.0).abs() < 0.5,
+            "pill top should be click_y (200), got {}",
+            pill_bounds.top
+        );
+
+        // Card "Copy" Positioned should be at (100, 200 + 28 + 8) = (100, 236).
+        let card_bounds = find_positioned_bounds_around_text(ro_reg, root, "Copy")
+            .expect("card Positioned should have bounds");
+        assert!(
+            (card_bounds.left - 100.0).abs() < 0.5,
+            "card left should be click_x (100), got {}",
+            card_bounds.left
+        );
+        assert!(
+            (card_bounds.top - 236.0).abs() < 0.5,
+            "card top should be click_y + pill_h + gap (236), got {}",
+            card_bounds.top
+        );
+    }
+
+    // ========================================================================
+    // Task 8: edge-case tests (vertical flip, horizontal clamp, instant dismiss)
+    // ========================================================================
+    //
+    // These tests cover the spec's required edge cases against the Task 3
+    // 3-layer Stack render. They use `test_content_builder` whose metrics are
+    // pill 150×28, card 200×108, gap 8 → cluster_w = max(150, 200) = 200,
+    // cluster_h = 28 + 8 + 108 = 144. (The real builder's metrics are larger
+    // — 222×44 / 200×134, cluster 222×186 — but these tests use the test
+    // builder, so assertions cite 200/144, not 222/186.)
+
+    /// Test — vertical flip: click near the bottom edge flips the cluster
+    /// above the click point so it doesn't overflow the window.
+    ///
+    /// `test_content_builder` metrics: pill_h=28, gap=8, card_h=108 →
+    /// cluster_h = 144. Click at y=590 in a 600px window:
+    ///   fits_below? 590 + 144 = 734 > 600 - 8 = 592 → false
+    ///   fits_above? 590 - 144 = 446 >= 8             → true
+    ///   → cluster_y = 590 - 144 = 446 (flipped above the click point)
+    /// The pill sits at the top of the cluster, so pill_top = cluster_y = 446.
+    #[test]
+    fn test_vertical_flip_when_no_room_below() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at y=590 (near bottom). cluster_h=144 (test_content_builder).
+        controller.show(
+            vexo::core::Point::new(100.0, 590.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        // Settle to Open so scale = 1.0 (Positioned offsets are unaffected by
+        // the scale transform — Transform is paint-only — but settle anyway
+        // for a clean state, mirroring test_click_point_anchor_default_placement).
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        // Pill should be ABOVE the click point after the flip.
+        assert!(
+            pill_bounds.top < 590.0,
+            "pill top ({}) should be above click_y (590) after flip",
+            pill_bounds.top
+        );
+        // cluster_y = click_y - cluster_h = 590 - 144 = 446.
+        assert!(
+            (pill_bounds.top - 446.0).abs() < 1.0,
+            "pill top should be cluster_y (446 = click_y - cluster_h = 590 - 144), got {}",
+            pill_bounds.top
+        );
+    }
+
+    /// Test — horizontal left-clamp: click near the right edge shifts the
+    /// cluster left so its right edge stays at window_w - 8.
+    ///
+    /// `test_content_builder` metrics: pill_w=150, card_w=200 → cluster_w =
+    /// max(150, 200) = 200. Click at x=390 in a 400px window:
+    ///   lo = 8.0
+    ///   hi = 400 - 200 - 8 = 192
+    ///   cluster_x = 390.max(8).min(192) = 192 (clamped left)
+    /// The pill sits at the cluster's left edge, so pill_left = cluster_x = 192.
+    #[test]
+    fn test_horizontal_clamp_when_near_right_edge() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Click at x=390 (near right edge). cluster_w=200 (test_content_builder).
+        controller.show(
+            vexo::core::Point::new(390.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let pill_bounds = find_positioned_bounds_around_text(ro_reg, root, "r")
+            .expect("pill Positioned should have bounds");
+        // cluster_x = window_w - 8 - cluster_w = 400 - 8 - 200 = 192.
+        assert!(
+            (pill_bounds.left - 192.0).abs() < 1.0,
+            "pill left should be clamped to 192 (window_w - 8 - cluster_w = 400 - 8 - 200), got {}",
+            pill_bounds.left
+        );
+    }
+
+    /// Test — instant dismiss: close() immediately sets phase=Closed and
+    /// the overlay layers unmount on the next rebuild (no Closing phase, no
+    /// reverse spring — Task 1 dropped the Closing phase).
+    #[test]
+    fn test_close_unmounts_overlay_immediately() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+        let ticker = Arc::new(AnimationTicker::new());
+
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = new_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        controller.show(
+            vexo::core::Point::new(100.0, 200.0),
+            test_content_builder("Copy"),
+        );
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Menu content is mounted while open.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, "Copy"),
+            "menu should be rendered when open"
+        );
+
+        // close() instantly clears to Closed — no Closing phase, no reverse
+        // spring. The overlay unmounts on the next rebuild.
+        controller.close();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            !find_text_in_tree(ro_reg, root, "Copy"),
+            "menu content should be unmounted immediately after close()"
+        );
+        assert_eq!(controller.phase(), Phase::Closed);
+    }
+
+    /// Regression test: `close()` must fire the dirty callback so the host
+    /// rebuilds and unmounts the overlay. Without this, `close()` sets
+    /// phase=Closed but the host never re-renders — the menu stays visible
+    /// forever (observed during Task 6 manual verification). The root cause:
+    /// `animation.stop()` unregisters from the ticker but does NOT itself fire
+    /// the dirty callback, so `close()` must fire it explicitly.
+    ///
+    /// This test uses a counting dirty callback (no pipeline) to isolate the
+    /// controller behavior from the host rebuild cycle — `perform_rebuilds`
+    /// masks the bug because it rebuilds unconditionally, bypassing the
+    /// dirty-callback gate that the real app relies on.
+    #[test]
+    fn test_close_fires_dirty_callback() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc as StdArc;
+
+        let controller = ContextMenuController::new();
+        let count = StdArc::new(AtomicU32::new(0));
+        let count_for_cb = count.clone();
+        controller.set_dirty_callback(Arc::new(move || {
+            count_for_cb.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // Wire a ticker so show()'s animate_with registers + fires dirty.
+        let ticker = Arc::new(AnimationTicker::new());
+        controller.set_animation_ticker(ticker.clone());
+
+        // show() fires dirty once (animate_with fires immediately).
+        controller.show(
+            vexo::core::Point::new(10.0, 10.0),
+            test_content_builder("Copy"),
+        );
+        let after_show = count.load(Ordering::SeqCst);
+        assert!(
+            after_show >= 1,
+            "show() should fire the dirty callback at least once, got {}",
+            after_show
+        );
+
+        // close() must fire dirty so the host rebuilds to unmount the overlay.
+        // This is the regression guard: before the fix, close() set phase=Closed
+        // but never fired dirty, so the host never rebuilt.
+        controller.close();
+        let after_close = count.load(Ordering::SeqCst);
+        assert!(
+            after_close > after_show,
+            "close() should fire the dirty callback (count before={}, after={}); \
+             without it the host never rebuilds and the overlay stays mounted",
+            after_show,
+            after_close
         );
     }
 }
