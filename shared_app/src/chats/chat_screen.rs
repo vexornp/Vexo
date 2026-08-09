@@ -189,13 +189,12 @@ impl Component for ChatScreen {
                     ctrl.clone(),
                     message_menu::builder(index, Rc::clone(&on_react)),
                 );
-                // Chip is the sole feedback for a set reaction (the pill has
-                // no highlight — Q4). Built at the call site (Q12) from
+                // Chip row is the sole feedback for set reactions (the pill
+                // has no highlight — Q4). Built at the call site (Q12) from
                 // `msg.reactions` + `theme`; `assemble_row` places it below
-                // the bubble, aligned to the author's side.
-                let chip = msg
-                    .reactions
-                    .map(|rt| message_menu::reaction_chip(rt, &theme));
+                // the bubble, aligned to the author's side. Multiple reactions
+                // accumulate into a horizontal row of chips (one per reaction).
+                let chip = message_menu::reaction_chip_row(&msg.reactions, &theme);
                 assemble_row(
                     bubble_with_menu,
                     chip,
@@ -467,7 +466,7 @@ mod tests {
             author: MessageAuthor::Me,
             text: new_message_text.to_string(),
             timestamp: 1732348000,
-            reactions: None,
+            reactions: vec![],
         });
         messages_signal.set_from(&updated_map);
         pipeline.perform_rebuilds();
@@ -1367,6 +1366,160 @@ mod tests {
             count_decorated_by_corner_radius(ro_reg, root, 10.0),
             2,
             "after on_react(1, Like) again: toggle cleared → back to 2 chips",
+        );
+    }
+
+    /// Regression for accumulate semantics (replaces the old one-reaction-
+    /// per-message replace model). On a single message, reacting with `Like`
+    /// then `Love` then `Haha` must produce THREE chips under that bubble
+    /// (not one chip showing the latest). Tapping `Love` again then removes
+    /// only the `Love` chip, leaving `Like` and `Haha`.
+    ///
+    /// Counts chips across the whole tree: baseline 2 (seed) → +1 = 3 →
+    /// +1 = 4 → +1 = 5 (three on message 1) → toggle off Love = 4. Each
+    /// step exercises the full Signal→derive→rebuild→render cycle.
+    #[test]
+    fn test_reaction_accumulates_multiple_chips() {
+        let messages_signal = seed_messages_signal();
+        let messages_for_check = messages_signal.clone();
+        let controller = ContextMenuController::new();
+
+        let msgs_for_react = messages_signal.clone();
+        let on_react: Rc<dyn Fn(usize, ReactionType)> = Rc::new(move |index, rt| {
+            let mut map = msgs_for_react.get_cloned();
+            if let Some(vec) = map.get_mut(&ConvId(1)) {
+                crate::data::apply_reaction(vec, index, rt);
+            }
+            msgs_for_react.set_from(&map);
+        });
+
+        let view = ContextMenu::new(
+            ChatScreen {
+                conv_id: ConvId(1),
+                messages: messages_signal,
+                avatar_bytes: seed_avatar(ConvId(1)),
+                me_avatar_bytes: seed_me_avatar(),
+                on_send: Rc::new(|_| ()),
+                on_react: on_react.clone(),
+                scroll_controller: ScrollController::new(),
+                context_menu: controller.clone(),
+            },
+            controller,
+        )
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        // Baseline: 2 seeded chips (messages 0 and 2 each have one reaction).
+        {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            assert_eq!(
+                count_decorated_by_corner_radius(ro_reg, root, 10.0),
+                2,
+                "baseline: 2 seeded chips",
+            );
+        }
+
+        // First reaction on message 1: [Like] → one new chip → total 3.
+        on_react(1, ReactionType::Like);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            assert_eq!(
+                count_decorated_by_corner_radius(ro_reg, root, 10.0),
+                3,
+                "after on_react(1, Like): message 1 now has 1 chip → total 3",
+            );
+        }
+
+        // Second DISTINCT reaction on the SAME message: under the old replace
+        // model this would stay at 3 (Love replaces Like). Under accumulate
+        // semantics it must become 4 (Like + Love both present).
+        on_react(1, ReactionType::Love);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            assert_eq!(
+                count_decorated_by_corner_radius(ro_reg, root, 10.0),
+                4,
+                "after on_react(1, Love): message 1 should ACCUMULATE to 2 chips \
+                 (Like + Love), not replace → total 4. If this is 3, the old \
+                 replace semantics are still in effect.",
+            );
+        }
+
+        // Third distinct reaction: [Like, Love, Haha] → total 5.
+        on_react(1, ReactionType::Haha);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            assert_eq!(
+                count_decorated_by_corner_radius(ro_reg, root, 10.0),
+                5,
+                "after on_react(1, Haha): message 1 has 3 chips → total 5",
+            );
+        }
+
+        // Toggle off the middle one: [Like, Love, Haha] → [Like, Haha] →
+        // total 4. Verifies toggle-off removes ONLY the tapped reaction,
+        // preserving the others.
+        on_react(1, ReactionType::Love);
+        pipeline.perform_rebuilds();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        {
+            let ro_reg = pipeline.render_objects();
+            let root = ro_reg.root().expect("root");
+            assert_eq!(
+                count_decorated_by_corner_radius(ro_reg, root, 10.0),
+                4,
+                "after on_react(1, Love) again: toggle-off removes only Love; \
+                 Like and Haha remain → total 4",
+            );
+        }
+
+        // Final state sanity: message 1 should have exactly [Like, Haha].
+        let msgs = messages_for_check
+            .get_cloned()
+            .get(&ConvId(1))
+            .expect("ConvId(1) exists")
+            .clone();
+        assert_eq!(
+            msgs[1].reactions,
+            vec![ReactionType::Like, ReactionType::Haha],
+            "message 1 final reactions should be [Like, Haha] after the \
+             sequence",
         );
     }
 }

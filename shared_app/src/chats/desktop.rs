@@ -102,7 +102,7 @@ impl Component for DesktopChatsPage {
                                 author: MessageAuthor::Me,
                                 text: text.to_string(),
                                 timestamp: 1732348000,
-                                reactions: None,
+                                reactions: vec![],
                             });
                         }
                         msgs_for_send.set_from(&map);

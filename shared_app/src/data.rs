@@ -45,25 +45,28 @@ pub(crate) struct Message {
     pub author: MessageAuthor,
     pub text: String,
     pub timestamp: u64, // unix seconds (mocked)
-    /// `Me`'s reaction on this message, if any. One reaction per user per
-    /// message (iMessage/WhatsApp model). Toggle via `apply_reaction`.
-    pub reactions: Option<ReactionType>,
+    /// `Me`'s reactions on this message, in click order. Each click on a
+    /// reaction icon either appends (new) or removes (already present) — see
+    /// `apply_reaction`. Multiple distinct reactions may accumulate on a
+    /// single message (Slack/Discord-style), unlike the prior
+    /// one-reaction-per-message (iMessage/WhatsApp) model.
+    pub reactions: Vec<ReactionType>,
 }
 
-/// Toggle `Me`'s reaction on the message at `index` in `vec`:
-/// - `None` → `Some(rt)` (set)
-/// - `Some(rt)` → `None` (clear)
-/// - `Some(other)` → `Some(rt)` (replace)
+/// Accumulate-or-toggle `Me`'s reaction on the message at `index` in `vec`:
+/// - `rt` not present → push it (accumulate; preserves click order)
+/// - `rt` already present → remove it (toggle off; preserves order of others)
 ///
-/// Centralized so both wiring sites (`mod.rs`, `desktop.rs`) share one
-/// definition of toggle semantics — and so it's unit-testable in isolation.
+/// Duplicates are impossible by construction. Centralized so both wiring sites
+/// (`mod.rs`, `desktop.rs`) share one definition of accumulate semantics —
+/// and so it's unit-testable in isolation.
 pub(crate) fn apply_reaction(vec: &mut [Message], index: usize, rt: ReactionType) {
     if let Some(msg) = vec.get_mut(index) {
-        msg.reactions = if msg.reactions == Some(rt) {
-            None
+        if let Some(pos) = msg.reactions.iter().position(|r| *r == rt) {
+            msg.reactions.remove(pos);
         } else {
-            Some(rt)
-        };
+            msg.reactions.push(rt);
+        }
     }
 }
 
@@ -378,19 +381,19 @@ pub(crate) fn seed() -> ImState {
                 author: MessageAuthor::Them,
                 text: "Hey! Are we still on for tomorrow?".into(),
                 timestamp: 1732347000,
-                reactions: Some(ReactionType::Like),
+                reactions: vec![ReactionType::Like],
             },
             Message {
                 author: MessageAuthor::Me,
                 text: "Yes, definitely!".into(),
                 timestamp: 1732347300,
-                reactions: None,
+                reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Them,
                 text: "See you tomorrow!".into(),
                 timestamp: 1732347520,
-                reactions: Some(ReactionType::Love),
+                reactions: vec![ReactionType::Love],
             },
         ],
     );
@@ -401,13 +404,13 @@ pub(crate) fn seed() -> ImState {
                 author: MessageAuthor::Them,
                 text: "Did you get the file?".into(),
                 timestamp: 1732346800,
-                reactions: None,
+                reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Me,
                 text: "Got it, thanks".into(),
                 timestamp: 1732347050,
-                reactions: None,
+                reactions: vec![],
             },
         ],
     );
@@ -417,7 +420,7 @@ pub(crate) fn seed() -> ImState {
             author: MessageAuthor::Them,
             text: "Charlie: sounds good".into(),
             timestamp: 1732346700,
-            reactions: None,
+            reactions: vec![],
         }],
     );
     messages.insert(ConvId(4), vec![]);
@@ -536,9 +539,10 @@ mod tests {
         assert_eq!(s.tab_controller.current(), ImTab::Chats);
     }
 
-    /// `apply_reaction` toggle semantics: set (None→Some), replace
-    /// (Some(other)→Some(rt)), clear (Some(rt)→None). Also covers
-    /// out-of-bounds index (no-op).
+    /// `apply_reaction` accumulate/toggle-off semantics: append (absent),
+    /// remove (present), out-of-bounds no-op. Multiple distinct reactions
+    /// accumulate in click order; toggling one off preserves the order of
+    /// the rest.
     #[test]
     fn test_apply_reaction_toggle() {
         let mut vec = vec![
@@ -546,42 +550,72 @@ mod tests {
                 author: MessageAuthor::Them,
                 text: "a".into(),
                 timestamp: 1,
-                reactions: None,
+                reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Me,
                 text: "b".into(),
                 timestamp: 2,
-                reactions: Some(ReactionType::Like),
+                reactions: vec![ReactionType::Like],
             },
             Message {
                 author: MessageAuthor::Them,
                 text: "c".into(),
                 timestamp: 3,
-                reactions: Some(ReactionType::Love),
+                reactions: vec![ReactionType::Love],
             },
         ];
 
-        // Set: None → Some(Like)
+        // Append: [] → [Like]
         apply_reaction(&mut vec, 0, ReactionType::Like);
-        assert_eq!(vec[0].reactions, Some(ReactionType::Like));
+        assert_eq!(vec[0].reactions, vec![ReactionType::Like]);
 
-        // Replace: Some(Like) → Some(Love)
+        // Append a different reaction: [Like] → [Like, Love] (accumulate, NOT replace)
         apply_reaction(&mut vec, 0, ReactionType::Love);
-        assert_eq!(vec[0].reactions, Some(ReactionType::Love));
+        assert_eq!(
+            vec[0].reactions,
+            vec![ReactionType::Like, ReactionType::Love]
+        );
 
-        // Clear: Some(Like) → None (same reaction toggles off)
+        // Append a third: [Like, Love] → [Like, Love, Haha]
+        apply_reaction(&mut vec, 0, ReactionType::Haha);
+        assert_eq!(
+            vec[0].reactions,
+            vec![ReactionType::Like, ReactionType::Love, ReactionType::Haha]
+        );
+
+        // Toggle off the middle one: [Like, Love, Haha] → [Like, Haha]
+        // (preserves order of the remaining reactions)
+        apply_reaction(&mut vec, 0, ReactionType::Love);
+        assert_eq!(
+            vec[0].reactions,
+            vec![ReactionType::Like, ReactionType::Haha]
+        );
+
+        // Idempotent toggle-off: a second tap on an already-removed reaction
+        // is a no-op (it's not in the list, so it gets pushed back).
+        apply_reaction(&mut vec, 0, ReactionType::Love);
+        assert_eq!(
+            vec[0].reactions,
+            vec![ReactionType::Like, ReactionType::Haha, ReactionType::Love]
+        );
+
+        // Toggle off the sole reaction on message 1: [Like] → []
         apply_reaction(&mut vec, 1, ReactionType::Like);
-        assert_eq!(vec[1].reactions, None);
+        assert!(vec[1].reactions.is_empty());
 
-        // No-op for different reaction: Some(Love) stays Some(Love) only if
-        // rt != Love; here we replace Love with Haha.
+        // Replace semantics no longer apply: message 2 had [Love]; tapping
+        // Haha accumulates rather than replacing.
         apply_reaction(&mut vec, 2, ReactionType::Haha);
-        assert_eq!(vec[2].reactions, Some(ReactionType::Haha));
+        assert_eq!(
+            vec[2].reactions,
+            vec![ReactionType::Love, ReactionType::Haha]
+        );
 
-        // Clear via same-reaction toggle on the replaced value.
+        // Toggle off both reactions on message 2 → [].
+        apply_reaction(&mut vec, 2, ReactionType::Love);
         apply_reaction(&mut vec, 2, ReactionType::Haha);
-        assert_eq!(vec[2].reactions, None);
+        assert!(vec[2].reactions.is_empty());
 
         // Out-of-bounds index is a no-op (no panic).
         apply_reaction(&mut vec, 999, ReactionType::Like);
@@ -594,8 +628,8 @@ mod tests {
         let s = seed();
         let map = s.messages.get_cloned();
         let msgs = map.get(&ConvId(1)).expect("Alice has messages");
-        assert_eq!(msgs[0].reactions, Some(ReactionType::Like));
-        assert_eq!(msgs[1].reactions, None);
-        assert_eq!(msgs[2].reactions, Some(ReactionType::Love));
+        assert_eq!(msgs[0].reactions, vec![ReactionType::Like]);
+        assert!(msgs[1].reactions.is_empty());
+        assert_eq!(msgs[2].reactions, vec![ReactionType::Love]);
     }
 }

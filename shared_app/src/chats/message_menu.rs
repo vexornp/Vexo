@@ -377,13 +377,12 @@ impl Component for ReactionChip {
     }
 }
 
-/// Build the `ReactionChip` widget for `rt` against `theme`. Returns the
-/// chip ready to drop into the bubble column below the bubble. Called by
-/// `ChatScreen::render` per-message when `msg.reactions.is_some()`.
+/// Build a single `ReactionChip` widget for `rt` against `theme`. Used by
+/// `reaction_chip_row` per entry; not called directly outside this module.
 ///
 /// The bg is a 15% tint of the semantic color over `theme.surface` — light
 /// enough that the full-strength icon glyph reads clearly against it.
-pub(super) fn reaction_chip(rt: ReactionType, theme: &vexo::ThemeData) -> Box<dyn Widget> {
+fn reaction_chip(rt: ReactionType, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let (icon, color) = reaction_visual(rt);
     let bg_color = Color::lerp(theme.surface, color, 0.15);
     ReactionChip {
@@ -392,6 +391,31 @@ pub(super) fn reaction_chip(rt: ReactionType, theme: &vexo::ThemeData) -> Box<dy
         bg_color,
     }
     .boxed()
+}
+
+/// Build the row of `ReactionChip` widgets for `rts` against `theme`, laid
+/// out left-to-right with a small gap. Returns `None` when `rts` is empty so
+/// the caller can drop the chip slot entirely (`assemble_row`'s `chip:
+/// Option<Box<dyn Widget>>`).
+///
+/// Each reaction in `rts` becomes its own 20px circle chip — multiple
+/// reactions accumulate (Slack/Discord-style) rather than replacing each
+/// other. Order matches `rts` (click order, preserved by
+/// `data::apply_reaction`).
+pub(super) fn reaction_chip_row(
+    rts: &[ReactionType],
+    theme: &vexo::ThemeData,
+) -> Option<Box<dyn Widget>> {
+    if rts.is_empty() {
+        return None;
+    }
+    let row = row! {
+        for rt in rts {
+            reaction_chip(*rt, theme)
+        }
+    }
+    .gap(4.0);
+    Some(row.boxed())
 }
 
 /// The reactions pill: a compact row of 6 FA icons in a pill-shaped
