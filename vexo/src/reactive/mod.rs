@@ -4,7 +4,7 @@
 //! with the Vexo BuildOwner for automatic dirty marking when state changes.
 //!
 //! In addition to the owning-element notification (`on_change` / `set_dirty_callback`),
-//! `Signal` supports read-tracking: `RenderContext::signal_value` registers the
+//! `Signal` supports read-tracking: `RenderContext::depend_on_signal` registers the
 //! reader element as a subscriber, and `Signal::set` notifies all subscribers.
 //! `Signal::derive` creates a derived Signal that auto-updates from a parent.
 

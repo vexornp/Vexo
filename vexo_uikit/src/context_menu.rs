@@ -151,7 +151,7 @@ struct Shared {
     /// Wired by the host's `on_mount`/`on_update`. Invoked by the
     /// `AnimationController` (via `animate_with` + per-tick registration) so
     /// the host rebuilds and re-reads `phase()`/`open_snapshot()`. This
-    /// replaces the old `Signal<Option<Point>>` + `signal_value` path — the
+    /// replaces the old `Signal<Option<Point>>`-based read-tracking path — the
     /// builder is `!Send + !Sync` (`Rc<dyn Fn>`), so it can't travel through a
     /// `Signal`, and the controller now owns the open state directly.
     dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,

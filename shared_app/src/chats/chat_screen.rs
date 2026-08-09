@@ -118,7 +118,7 @@ impl ComponentState for ChatScreenState {
         // Signal + conv_id. This must live in State (not Widget) so the
         // derived's Arc identity is stable across parent cascades — when
         // should_rebuild returns false, render() is skipped and
-        // signal_value is not re-called, but the subscription on the
+        // depend_on_signal is not re-called, but the subscription on the
         // State-owned derived survives. See the "Signal field rule" in
         // docs/rebuild-skipping-patterns.md.
         let widget = ctx
@@ -155,7 +155,7 @@ impl Component for ChatScreen {
     /// During keyboard animation, TabBar and NavigationStack cascade `update()`
     /// to ChatScreen with fresh closure fields but identical data. Only
     /// `conv_id` participates in identity — the derived messages Signal in
-    /// State drives state-driven rebuilds via `RenderContext::signal_value`,
+    /// State drives state-driven rebuilds via `RenderContext::depend_on_signal`,
     /// so the parent cascade can stop here without re-rendering message
     /// bubbles. See "Signal field rule" in `rebuild-skipping-patterns.md`
     /// for why the derived must live in State, not Widget.
@@ -171,7 +171,7 @@ impl Component for ChatScreen {
         // stable (created once in on_mount), so the subscription survives
         // should_rebuild == false. See "Signal field rule" in
         // docs/rebuild-skipping-patterns.md.
-        let messages = ctx.signal_value(
+        let messages = ctx.depend_on_signal(
             state
                 .derived_messages
                 .as_ref()
@@ -390,7 +390,7 @@ mod tests {
 
     /// Walk the render tree and return true if any `TextRenderObject` contains
     /// `needle`. `RenderObjectRegistry` exposes no `iter()`, so recurse from
-    /// `key` (same pattern as the `test_signal_value_registers_dependency_and_
+    /// `key` (same pattern as the `test_depend_on_signal_registers_dependency_and_
     /// rebuilds` test in `vexo/src/stateful_widget.rs`).
     fn find_text_in_tree(reg: &RenderObjectRegistry, key: RenderObjectKey, needle: &str) -> bool {
         let ro = match reg.get(key) {
@@ -458,7 +458,7 @@ mod tests {
 
         // Send a new message via the root Signal — this exercises the full
         // derive chain: root `set_from` → derived Signal's subscriber closure
-        // → ChatScreen's `signal_value` dependency is marked dirty →
+        // → ChatScreen's `depend_on_signal` dependency is marked dirty →
         // `perform_rebuilds()` re-renders and the new bubble appears.
         let mut updated_map = messages_signal.get_cloned();
         let new_message_text = "LIVE_UPDATE_TEST_MESSAGE";
@@ -474,7 +474,7 @@ mod tests {
         // Walk the render tree and assert the new message text appears in a
         // TextRenderObject. `RenderObjectRegistry` exposes no `iter()`, so
         // recurse from the root (same pattern as the
-        // `test_signal_value_registers_dependency_and_rebuilds` test in
+        // `test_depend_on_signal_registers_dependency_and_rebuilds` test in
         // `vexo/src/stateful_widget.rs`).
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("render tree should have a root");

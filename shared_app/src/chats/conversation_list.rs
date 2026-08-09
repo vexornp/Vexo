@@ -5,7 +5,7 @@
 //! so the active conversation is highlighted.
 //!
 //! `ConversationList` is a `Component` that subscribes to the `messages`
-//! Signal via `ctx.signal_value`, deriving each row's preview/timestamp from
+//! Signal via `ctx.depend_on_signal`, deriving each row's preview/timestamp from
 //! the latest message (with seed fallback). This state-driven rebuild
 //! bypasses `should_rebuild` gates (TabBarView, NavigationStackView) so the
 //! list refreshes on mobile even while the chat screen is pushed.
@@ -56,7 +56,7 @@ impl Component for ConversationList {
     fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
         let theme = Theme::of(ctx);
         let nav_colors = navigation::colors(&theme);
-        let messages = ctx.signal_value(&self.messages);
+        let messages = ctx.depend_on_signal(&self.messages);
 
         let list = column! {
             for conv in &self.conversations {

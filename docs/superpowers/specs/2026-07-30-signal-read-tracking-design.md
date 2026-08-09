@@ -46,7 +46,7 @@ to Rust via an explicit API.
 - Replacing `InheritedWidget` (Theme, MediaQuery). It remains the mechanism
   for tree-scoped values; read-tracking is for shared mutable state.
 - Transparent/thread-local read-tracking. The API is explicit
-  (`ctx.signal_value(&sig)`).
+  (`ctx.depend_on_signal(&sig)`).
 
 ## Design
 
@@ -88,7 +88,7 @@ ownership of the closure, not by an unmount hook:
 
 | Subscriber type | Strong-ref owner | Removed when |
 |---|---|---|
-| `ctx.signal_value` | StatefulElement's `dirty_callback: Arc<...>` | Element unmounts → dirty_callback dropped → weak dies |
+| `ctx.depend_on_signal` | StatefulElement's `dirty_callback: Arc<...>` | Element unmounts → dirty_callback dropped → weak dies |
 | `Signal::derive` | Derived Signal's `owned_subscriptions` | Derived dropped → strong dropped → parent's weak dies |
 
 On `Signal::set`, iterate `subscribers`, `upgrade()` each `Weak` — dead ones
@@ -104,7 +104,7 @@ cleared per-rebuild), except weak refs make it leak-free.
 
 ```rust
 impl<T: PartialEq + Clone + Send + Sync + 'static> Signal<T> {
-    /// Register a subscriber. Called by `ctx.signal_value` and `Signal::derive`.
+    /// Register a subscriber. Called by `ctx.depend_on_signal` and `Signal::derive`.
     /// The closure is stored as `Weak`; the caller must hold a strong ref
     /// somewhere (element dirty_callback or derived's owned_subscriptions).
     pub fn add_subscriber(&self, callback: Arc<dyn Fn() + Send + Sync>) {
@@ -159,7 +159,7 @@ pub fn set_from(&self, value: &T) {
 The existing `old != value` check gates both `on_change` and subscriber
 notification — no work if the value didn't actually change.
 
-### 5. RenderContext::signal_value
+### 5. RenderContext::depend_on_signal
 
 New method on `RenderContext`:
 
@@ -171,7 +171,7 @@ impl<'a> RenderContext<'a> {
     /// The element's dirty_callback (held by StatefulElement) is the strong
     /// ref that keeps the subscription alive; when the element unmounts,
     /// the dirty_callback drops and the subscription dies.
-    pub fn signal_value<T: PartialEq + Clone + Send + Sync + 'static>(
+    pub fn depend_on_signal<T: PartialEq + Clone + Send + Sync + 'static>(
         &mut self,
         signal: &Signal<T>,
     ) -> T {
@@ -234,7 +234,7 @@ fn should_rebuild(&self, old: &Self) -> bool {
 }
 
 fn render(&self, state: &mut State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-    let messages = ctx.signal_value(&self.messages);
+    let messages = ctx.depend_on_signal(&self.messages);
     // ...
 }
 ```
@@ -278,7 +278,7 @@ User taps Send:
      field of a `ComponentState`).
    - Iterate subscribers → ChatScreen's dirty_callback fires.
 4. ChatScreen marked dirty → `rebuild_from_state()` → `render()` →
-   `ctx.signal_value(&self.messages)` re-reads → fresh message list.
+   `ctx.depend_on_signal(&self.messages)` re-reads → fresh message list.
 5. New message bubble renders. No keyboard dismiss needed.
 
 Other conversation's messages change (e.g. incoming message while viewing
@@ -324,8 +324,8 @@ a different chat):
 
 ### Unit tests (vexo/src/stateful_widget.rs)
 
-8. `render_context_signal_value_registers_dependency` — component reads
-   Signal via `ctx.signal_value`, Signal `set` triggers component rebuild
+8. `render_context_depend_on_signal_registers_dependency` — component reads
+   Signal via `ctx.depend_on_signal`, Signal `set` triggers component rebuild
    (state-driven, bypasses `should_rebuild`).
 
 ### Integration tests (shared_app/src/chats/chat_screen.rs)
@@ -338,7 +338,7 @@ a different chat):
 ## Open questions
 
 None. All design decisions resolved during brainstorming:
-- Read API: explicit `ctx.signal_value(&sig)`.
+- Read API: explicit `ctx.depend_on_signal(&sig)`.
 - Coexist with `set_dirty_callback`.
 - Weak-ref subscriptions (not sticky).
 - `owned_subscriptions` anchors derive closures.
@@ -349,12 +349,12 @@ None. All design decisions resolved during brainstorming:
 - `vexo/src/reactive/mod.rs` — `SignalInner`, `add_subscriber`, `derive`,
   `set`/`set_from` subscriber notification, tests.
 - `vexo/src/stateful_widget.rs` — `RenderContext` gains `dirty_callback`
-  field + `signal_value` method.
+  field + `depend_on_signal` method.
 - `vexo/src/component_state_derive/src/lib.rs` — no change (still wires
   `set_dirty_callback` for owning fields).
 - `shared_app/src/chats/chat_screen.rs` — remove `messages` snapshot +
   `messages_reader`; add `messages: Signal<Vec<Message>>`; simplify
-  `should_rebuild`; `render` uses `ctx.signal_value`.
+  `should_rebuild`; `render` uses `ctx.depend_on_signal`.
 - `shared_app/src/chats/mod.rs` — construct derived Signal, pass to
   ChatScreen.
 - `shared_app/src/chats/desktop.rs` — same.

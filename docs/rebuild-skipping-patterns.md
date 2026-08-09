@@ -218,7 +218,7 @@ child widget field.**
 
 When `should_rebuild` returns `false`, the framework still replaces widget
 fields (`StatefulElement::update`, `stateful_widget.rs`) but skips `render()`.
-`signal_value` — which registers the dirty_callback as a weak subscriber on
+`depend_on_signal` — which registers the dirty_callback as a weak subscriber on
 the Signal — is only called during `render()`. If a parent passes a fresh
 `Signal::derive(...)` each cascade, the new derived Signal never gets a
 subscriber, and state-driven rebuilds silently break.
@@ -255,7 +255,7 @@ impl ComponentState for ChatScreenState {
 
 impl Component for ChatScreen {
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-        let messages = ctx.signal_value(state.derived_messages.as_ref().unwrap());
+        let messages = ctx.depend_on_signal(state.derived_messages.as_ref().unwrap());
         // ...
     }
 }

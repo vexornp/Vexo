@@ -311,7 +311,7 @@ pub struct RenderContext<'a> {
     inherited_registry: &'a InheritedRegistry,
 
     /// Closure that marks this element dirty (sends its element_id through
-    /// the dirty channel). `signal_value` registers a clone of this `Arc`
+    /// the dirty channel). `depend_on_signal` registers a clone of this `Arc`
     /// as a subscriber so `Signal::set` triggers a rebuild of this element.
     dirty_callback: Arc<dyn Fn() + Send + Sync>,
 }
@@ -385,7 +385,7 @@ impl<'a> RenderContext<'a> {
     /// Calling it during a rebuild establishes the dependency edge; the
     /// subscriber is held weakly by the `Signal`, so it disappears when the
     /// element unmounts and the `dirty_callback`'s `Arc` is dropped.
-    pub fn signal_value<T: PartialEq + Clone + Send + Sync + 'static>(
+    pub fn depend_on_signal<T: PartialEq + Clone + Send + Sync + 'static>(
         &mut self,
         signal: &Signal<T>,
     ) -> T {
@@ -526,7 +526,7 @@ pub struct StatefulElement<W: Component> {
 
     /// Closure that marks this element dirty (sends its `element_id` through
     /// the dirty channel). Retained for the element's lifetime so that the
-    /// weak subscriber references registered by `RenderContext::signal_value`
+    /// weak subscriber references registered by `RenderContext::depend_on_signal`
     /// (held weakly by external `Signal`s) stay valid between rebuilds. When
     /// the element unmounts, this `Arc` drops and the weak refs auto-expire.
     dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -663,7 +663,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         // Build the child widget tree using RenderContext
         let child_widget = {
             // Retain the dirty_callback for the element's lifetime so that
-            // weak subscriber refs (from `signal_value`) survive past this
+            // weak subscriber refs (from `depend_on_signal`) survive past this
             // `render()` call.
             self.dirty_callback = Some(dirty_callback.clone());
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
@@ -848,7 +848,7 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
         // Build the child widget tree using RenderContext
         let child_widget = {
             // Retain the dirty_callback so weak subscriber refs (re-registered
-            // by `signal_value` during this render) survive past this call.
+            // by `depend_on_signal` during this render) survive past this call.
             self.dirty_callback = Some(dirty_callback.clone());
             let state_ref = context.state.get_mut::<W::State>(element_id).unwrap();
             self.build_child_widget(
@@ -1547,7 +1547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_signal_value_registers_dependency_and_rebuilds() {
+    fn test_depend_on_signal_registers_dependency_and_rebuilds() {
         use crate::animation::AnimationTicker;
         use crate::render_objects::TextRenderObject;
         use crate::ThreeTreePipeline;
@@ -1564,7 +1564,7 @@ mod tests {
         impl Component for Reader {
             type State = ReaderState;
             fn render(&self, _state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
-                let val = ctx.signal_value(&self.signal);
+                let val = ctx.depend_on_signal(&self.signal);
                 Text::new(format!("val={}", val)).boxed()
             }
         }
