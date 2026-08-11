@@ -430,8 +430,18 @@ impl Element for GestureDetectorElement {
     ) {
         match event {
             ArenaEvent::Up { .. } => {
-                // Fire on_tap when the tap recognizer wins (on Up).
-                if recognizer.accepted() {
+                // Fire on_tap only when a TapRecognizer actually won on Up.
+                // A LongPressRecognizer is also `accepted()` by the time the
+                // finger lifts (the arena closes on the 500ms Tick and never
+                // feeds Up to the winner), so the `accepted()` check alone is
+                // not sufficient — without the downcast, a long-press would
+                // spuriously also fire `on_tap`.
+                if recognizer.accepted()
+                    && recognizer
+                        .as_any()
+                        .downcast_ref::<TapRecognizer>()
+                        .is_some()
+                {
                     if let Some(callback) = &self.on_tap {
                         (callback.borrow_mut())();
                     }
@@ -441,8 +451,8 @@ impl Element for GestureDetectorElement {
                 // Long-press fires at 500ms while the finger is still down.
                 // Position comes from the recognizer's `down_position()`
                 // (the press location). Bounds come from the EventContext,
-                // which the pipeline's tick_arena dispatch builds from
-                // render_objects.bounds_for_element(winner_id).
+                // which the pipeline's `tick_arena` builds via a hit-test at
+                // the recognizer's `down_position()`.
                 if recognizer.accepted() {
                     if let Some(callback) = &self.on_long_press {
                         if let Some(lp) = recognizer
@@ -1067,9 +1077,9 @@ mod tests {
         let pos_clone = press_pos.clone();
         let bounds_clone = press_bounds.clone();
 
-        // A small tappable area. Layout gives it non-zero bounds, but
-        // `tick_arena` does not hit-test on Tick, so the callback's `bounds`
-        // argument will still be `Bounds::default()` (asserted below).
+        // A small tappable area. Layout gives it non-zero bounds; tick_arena
+        // hit-tests at the press position, so the callback's `bounds`
+        // argument should be the element's laid-out bounds (asserted below).
         let widget: Box<dyn Widget> = crate::DecoratedBox::with_style(
             crate::Text::new("Hold me"),
             crate::Style::default().background(crate::Color::WHITE),
@@ -1113,8 +1123,8 @@ mod tests {
 
         // Second Tick at start + 500ms: elapsed >= 500ms → recognizer accepts
         // → arena resolves → on_arena_winner_update fires on_long_press with
-        // the recognizer's down_position and `Bounds::default()` (tick_arena
-        // does not hit-test on Tick — see pipeline.rs).
+        // the recognizer's down_position and the winner's laid-out bounds
+        // (tick_arena hit-tests at the press position — see pipeline.rs).
         pipeline.tick_arena(
             start + Duration::from_millis(500),
             &mut font_system,
@@ -1128,14 +1138,126 @@ mod tests {
             Point::new(50.0, 30.0),
             "position should be the press location"
         );
-        // Bounds: `tick_arena` does not perform a hit-test on Tick, so it
-        // dispatches with `Bounds::default()` (see pipeline.rs `tick_arena`).
-        // The callback still receives the channel — verify it's the default
-        // so a future change to pass real bounds trips this test deliberately.
-        assert_eq!(
-            press_bounds.get(),
-            Bounds::default(),
-            "bounds should be Bounds::default() — tick_arena does not hit-test on Tick"
+        // Bounds: tick_arena hit-tests at the press position, so the
+        // callback should receive the winner's laid-out bounds. Verify the
+        // width is non-zero so a regression to `Bounds::default()` would
+        // trip this test deliberately.
+        assert!(
+            press_bounds.get().width() > 0.0,
+            "bounds should be the element's laid-out bounds (tick_arena hit-tests on Tick)"
+        );
+    }
+
+    #[test]
+    fn test_on_tap_does_not_fire_after_on_long_press_on_release() {
+        // Regression: when both `on_tap` and `on_long_press` are set on the
+        // SAME GestureDetector, a long-press that wins on the 500ms Tick
+        // must NOT also fire `on_tap` when the finger lifts.
+        //
+        // Root cause: the LongPressRecognizer is `Accepted` once it wins on
+        // Tick, and the closed arena never feeds `Up` to it (so it stays
+        // Accepted). Without a TapRecognizer downcast in the Up arm,
+        // `recognizer.accepted()` was true and `on_tap` fired spuriously.
+        use crate::animation::AnimationTicker;
+        use crate::core::ScaleSource;
+        use crate::layout::TaffyLayoutEngine;
+        use crate::pipeline::ThreeTreePipeline;
+        use std::time::{Duration, Instant};
+
+        let long_press_fired = Rc::new(Cell::new(false));
+        let tap_fired = Rc::new(Cell::new(false));
+        let lp_clone = long_press_fired.clone();
+        let tap_clone = tap_fired.clone();
+
+        // Build a SINGLE GestureDetector with both callbacks. Using the
+        // Widget-trait `.on_tap`/`.on_long_press` helpers would nest two
+        // detectors and the bug wouldn't reproduce — both recognizers must
+        // register against the same element.
+        let widget: Box<dyn Widget> = Box::new(
+            GestureDetector::new(crate::DecoratedBox::with_style(
+                crate::Text::new("Hold me"),
+                crate::Style::default().background(crate::Color::WHITE),
+            ))
+            .on_tap(move || tap_clone.set(true))
+            .on_long_press(move |_pos: Point<Logical>, _bounds: Bounds<Logical>| {
+                lp_clone.set(true);
+            }),
+        );
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(widget);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        let clipboard = test_clipboard();
+
+        // Primary press inside the bubble.
+        let press = InputEvent::PointerButton {
+            position: Point::new(50.0, 30.0),
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        pipeline.handle_event(
+            Point::new(50.0, 30.0),
+            &press,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &clipboard,
+        );
+
+        // First Tick records down_time; stays Pending.
+        let start = Instant::now();
+        pipeline.tick_arena(start, &mut font_system, &clipboard);
+        pipeline.perform_rebuilds();
+        assert!(
+            !long_press_fired.get(),
+            "long-press must not fire before 500ms"
+        );
+        assert!(!tap_fired.get(), "tap must not fire on press");
+
+        // Tick at 500ms: long-press accepts → arena resolves → on_long_press
+        // fires. The arena is now CLOSED; the TapRecognizer was fed Cancel
+        // by `declare_winner`.
+        pipeline.tick_arena(
+            start + Duration::from_millis(500),
+            &mut font_system,
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+        assert!(
+            long_press_fired.get(),
+            "long-press callback should fire after 500ms"
+        );
+        assert!(
+            !tap_fired.get(),
+            "tap must not fire when long-press wins on Tick"
+        );
+
+        // Finger lifts. The closed arena short-circuits `handle_event(Up)`
+        // without feeding Up to the winner, so the LongPressRecognizer is
+        // still `Accepted`. The event_handler then dispatches
+        // `on_arena_winner_update(Up)` to the winner element. Without the
+        // TapRecognizer downcast guard, this would fire on_tap here.
+        let release = InputEvent::PointerButton {
+            position: Point::new(50.0, 30.0),
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Released,
+        };
+        pipeline.handle_event(
+            Point::new(50.0, 30.0),
+            &release,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert!(
+            !tap_fired.get(),
+            "on_tap must NOT fire after on_long_press when finger lifts"
         );
     }
 }

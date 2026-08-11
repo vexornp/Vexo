@@ -42,7 +42,7 @@ use std::sync::{mpsc, Arc};
 use slotmap::SecondaryMap;
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Bounds, Logical, Point, Position, ScaleSource, Size};
+use crate::core::{Absolute, Logical, Point, Position, ScaleSource, Size};
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
 use crate::mouse_tracker::MouseTracker;
 use crate::render::RenderCommand;
@@ -352,9 +352,8 @@ impl ThreeTreePipeline {
     /// the `Tick` event so it can fire its `on_long_press` callback. The
     /// `EventContext` is built with the recognizer's `down_position()` as
     /// the position (the press location — semantically the long-press
-    /// happened *at* where the finger went down) and `Bounds::default()`
-    /// (no hit-test is performed for a Tick; the winner's bounds aren't
-    /// needed — long-press dispatch uses the recognizer's position).
+    /// happened *at* where the finger went down) and the winner's laid-out
+    /// bounds, recovered via a hit-test at the press position.
     ///
     /// `font_system` and `clipboard` are threaded from `WindowState` (same
     /// as `handle_event`) because the pipeline doesn't own them.
@@ -410,7 +409,14 @@ impl ThreeTreePipeline {
             None => return,
         };
 
-        let bounds = Bounds::default();
+        // Bounds: hit-test at the press location to recover the winner's
+        // laid-out bounds. `bounds_for_element` lives on `HitTestResult`, not
+        // `RenderObjectRegistry`, so we go through `hit_test` first (same
+        // pattern as `event_handler.rs` on release). Falls back to default
+        // if the element isn't on the hit path (defensive).
+        let absolute_pos = Position::<Logical, Absolute>::new(position.x, position.y);
+        let hit_result = render_objects.hit_test(absolute_pos);
+        let bounds = hit_result.bounds_for_element(winner_id).unwrap_or_default();
 
         let mut ctx = crate::event_context::EventContext::with_build_owner(
             winner_id,
