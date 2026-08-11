@@ -299,4 +299,75 @@ mod tests {
         assert_eq!(outcome, ArenaOutcome::Resolved { winner_index: 1 });
         assert_eq!(arena.winner, Some(1));
     }
+
+    #[test]
+    fn arena_resolves_long_press_winner_on_tick() {
+        use crate::gestures::LongPressRecognizer;
+        use std::time::{Duration, Instant};
+
+        let mut arena = GestureArena::new(Point::new(50.0, 50.0));
+        arena.add(Box::new(TapRecognizer::new()), dummy_element_key());
+        arena.add(Box::new(LongPressRecognizer::new()), dummy_element_key());
+        let down = Point::new(50.0, 50.0);
+        arena.handle_event(ArenaEvent::Down { position: down });
+
+        let start = Instant::now();
+        // First Tick records down_time on the LongPressRecognizer (it
+        // defers down_time from Down to the first Tick). Both stay Pending.
+        let outcome = arena.handle_event(ArenaEvent::Tick { now: start });
+        assert_eq!(outcome, ArenaOutcome::Open);
+
+        // Tick at 499ms — still open.
+        let outcome = arena.handle_event(ArenaEvent::Tick {
+            now: start + Duration::from_millis(499),
+        });
+        assert_eq!(outcome, ArenaOutcome::Open);
+
+        // Tick at 500ms — long-press (index 1) accepts and wins. Tap is
+        // fed Cancel by declare_winner → Rejected.
+        let outcome = arena.handle_event(ArenaEvent::Tick {
+            now: start + Duration::from_millis(500),
+        });
+        assert_eq!(outcome, ArenaOutcome::Resolved { winner_index: 1 });
+        assert!(arena.winner_recognizer().unwrap().accepted());
+        assert!(arena.is_closed(), "arena must close after resolving");
+    }
+
+    #[test]
+    fn arena_long_press_rejected_when_drag_wins_first() {
+        use crate::gestures::LongPressRecognizer;
+        use std::time::{Duration, Instant};
+
+        let mut arena = GestureArena::new(Point::new(50.0, 50.0));
+        arena.add(Box::new(LongPressRecognizer::new()), dummy_element_key());
+        arena.add(Box::new(VerticalDragRecognizer::new()), dummy_element_key());
+        let down = Point::new(50.0, 50.0);
+        arena.handle_event(ArenaEvent::Down { position: down });
+
+        let start = Instant::now();
+        // First Tick records down_time on the LongPressRecognizer; both
+        // still Pending.
+        arena.handle_event(ArenaEvent::Tick {
+            now: start + Duration::from_millis(200),
+        });
+        // Move 30px — drag accepts (cumulative Δy > 18), long-press rejects
+        // (net movement > slop), arena resolves to drag (index 1).
+        let outcome = arena.handle_event(ArenaEvent::Move {
+            position: Point::new(50.0, 80.0),
+        });
+        assert_eq!(outcome, ArenaOutcome::Resolved { winner_index: 1 });
+        // Long-press (index 0) was fed Cancel by declare_winner → Rejected.
+        let lp = arena
+            .winner_recognizer()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<LongPressRecognizer>();
+        // The winner is the drag, not the long-press. Verify the long-press
+        // is NOT the winner (it lost).
+        assert!(
+            lp.is_none(),
+            "long-press must not be the winner when drag wins"
+        );
+        assert!(arena.is_closed());
+    }
 }
