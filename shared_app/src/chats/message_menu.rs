@@ -409,12 +409,28 @@ pub(super) fn reaction_chip_row(
     if rts.is_empty() {
         return None;
     }
+    // Pad the chip row horizontally by `BUBBLE_CONTENT_PADDING` so chip icons
+    // align with the bubble's text content edges (not the bubble border):
+    //  - "them" (column aligned Start): row's left = bubble left, so chips
+    //    start at bubble_left + padding = text content left.
+    //  - "me" (column aligned End): row's right = bubble right, so chips end
+    //    at bubble_right - padding = text content right.
+    // The padding on the trailing side is inert inset space inside the row
+    // box (the row is sized to its content and aligned to one edge). Value
+    // must stay in sync with `build_bubble`'s padding — hence the shared
+    // const.
     let row = row! {
         for rt in rts {
             reaction_chip(*rt, theme)
         }
     }
-    .gap(4.0);
+    .gap(4.0)
+    .padding_each(
+        crate::chats::chat_screen::BUBBLE_CONTENT_PADDING,
+        crate::chats::chat_screen::BUBBLE_CONTENT_PADDING,
+        0.0,
+        0.0,
+    );
     Some(row.boxed())
 }
 

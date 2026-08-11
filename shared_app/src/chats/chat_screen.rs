@@ -251,9 +251,15 @@ impl Component for ChatScreen {
     }
 }
 
+/// Horizontal padding inside the message bubble (between the bubble border
+/// and the text content). The reaction chip row mirrors this so chip icons
+/// align with the text content edges, not the bubble border — see
+/// `message_menu::reaction_chip_row`.
+pub(crate) const BUBBLE_CONTENT_PADDING: f32 = 10.0;
+
 /// Build just the message bubble (DecoratedBox + text), without the avatar
-/// or row layout. This is what gets wrapped in `context_menu_trigger` so
-/// the trigger's bounds match the bubble, not the full-width row.
+/// or row layout. This is what gets wrapped in `context_menu_trigger` so the
+/// trigger's bounds match the bubble, not the full-width row.
 fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let is_me = msg.author == MessageAuthor::Me;
     DecoratedBox::with_style(
@@ -267,7 +273,7 @@ fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
                 }),
             Layout::default()
                 .flex_direction(FlexDirection::Row)
-                .padding(10.0)
+                .padding(BUBBLE_CONTENT_PADDING)
                 .max_width(220.0)
                 .align_self(AlignSelf::Start)
                 .flex_shrink(0.0),
