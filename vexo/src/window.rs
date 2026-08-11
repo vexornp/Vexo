@@ -643,6 +643,13 @@ impl<A: Application + 'static> WindowState<A> {
         // via the mpsc channel, which perform_rebuilds() will process below.
         self.animation_ticker.tick();
 
+        // Feed a Tick to the active gesture arena so time-based recognizers
+        // (long-press) can fire. Must run BEFORE perform_rebuilds() so that
+        // a long-press firing (which may set a Signal, e.g. open the menu)
+        // has its dirty mark visible to the rebuild pass this frame.
+        self.three_tree_pipeline
+            .tick_arena(std::time::Instant::now(), &mut self.font_system, &self.clipboard);
+
         log::debug!("\n========================================");
         log::debug!("[RetainMode] === FRAME START ===");
 

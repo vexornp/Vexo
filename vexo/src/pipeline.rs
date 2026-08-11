@@ -42,7 +42,7 @@ use std::sync::{mpsc, Arc};
 use slotmap::SecondaryMap;
 
 use crate::animation::AnimationTicker;
-use crate::core::{Absolute, Logical, Point, Position, ScaleSource, Size};
+use crate::core::{Absolute, Bounds, Logical, Point, Position, ScaleSource, Size};
 use crate::input::{InputEvent, Modifiers, MouseTrackerAnnotation, SystemCursorKind};
 use crate::mouse_tracker::MouseTracker;
 use crate::render::RenderCommand;
@@ -335,6 +335,101 @@ impl ThreeTreePipeline {
         // software keyboard on mobile.
         if self.build_owner.take_unfocus_requested() {
             self.focus_manager.unfocus();
+        }
+    }
+
+    /// Feed a `Tick` event to the active gesture arena (if any) and dispatch
+    /// the winner if the Tick resolves the arena. Called once per frame from
+    /// `WindowState::render_retain` right after `animation_ticker.tick()`.
+    ///
+    /// This is the clock that drives time-based recognizers (currently only
+    /// `LongPressRecognizer`). Without this call, long-press would never
+    /// fire — the arena is purely event-driven (Down/Move/Up/Cancel) and
+    /// has no way to "wake up" at 500ms.
+    ///
+    /// If the arena resolves on this Tick (e.g. long-press accepts at
+    /// 500ms), the winner element's `on_arena_winner_update` is called with
+    /// the `Tick` event so it can fire its `on_long_press` callback. The
+    /// `EventContext` is built with the recognizer's `down_position()` as
+    /// the position (the press location — semantically the long-press
+    /// happened *at* where the finger went down) and `Bounds::default()`
+    /// (no hit-test is performed for a Tick; the winner's bounds aren't
+    /// needed — long-press dispatch uses the recognizer's position).
+    ///
+    /// `font_system` and `clipboard` are threaded from `WindowState` (same
+    /// as `handle_event`) because the pipeline doesn't own them.
+    pub fn tick_arena(
+        &mut self,
+        now: std::time::Instant,
+        font_system: &mut glyphon::FontSystem,
+        clipboard: &std::sync::Arc<dyn crate::platform::Clipboard>,
+    ) {
+        use crate::gestures::{ArenaEvent, ArenaOutcome, LongPressRecognizer};
+
+        // Disjoint field borrows: `current_arena` (mut, for the recognizer
+        // reference handed to on_arena_winner_update), `element_registry`
+        // (mut, for the element), and `render_objects`/`build_owner`/
+        // `dirty_sender` (shared, for the EventContext) must all be alive
+        // simultaneously. Splitting at the field level lets the borrow
+        // checker see they don't overlap.
+        let arena_opt = &mut self.current_arena;
+        let element_registry = &mut self.element_registry;
+        let render_objects = &self.render_objects;
+        let build_owner = &self.build_owner;
+        let dirty_sender = &self.dirty_sender;
+
+        let arena = match arena_opt.as_mut() {
+            Some(a) => a,
+            None => return,
+        };
+        if arena.is_closed() {
+            return;
+        }
+
+        let outcome = arena.handle_event(ArenaEvent::Tick { now });
+        if !matches!(outcome, ArenaOutcome::Resolved { .. }) {
+            // Open or ClosedNoWinner — nothing to dispatch.
+            // (ClosedNoWinner on Tick shouldn't happen — Tick never Cancels —
+            // but handle it defensively by not dispatching.)
+            return;
+        }
+
+        let winner_id = match arena.winner_owner() {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Position: the recognizer's down_position (the press location).
+        // Only LongPressRecognizer produces Accepted on Tick; if the winner
+        // is some other recognizer (defensive), skip dispatch.
+        let position = match arena
+            .winner_recognizer()
+            .and_then(|r| r.as_any().downcast_ref::<LongPressRecognizer>())
+        {
+            Some(lp) => lp.down_position(),
+            None => return,
+        };
+
+        let bounds = Bounds::default();
+
+        let mut ctx = crate::event_context::EventContext::with_build_owner(
+            winner_id,
+            position,
+            bounds,
+            crate::input::Modifiers::default(),
+            font_system,
+            build_owner,
+            dirty_sender,
+            Some(render_objects),
+            clipboard.clone(),
+        );
+
+        let winner_recognizer = match arena.winner_recognizer() {
+            Some(r) => r,
+            None => return,
+        };
+        if let Some(element) = element_registry.get_mut(winner_id) {
+            element.on_arena_winner_update(winner_recognizer, &ArenaEvent::Tick { now }, &mut ctx);
         }
     }
 
