@@ -21,6 +21,7 @@ uniffi = { workspace = true }
 bitflags = { workspace = true }
 futures-signals = { workspace = true }
 image = { workspace = true }
+url = { workspace = true }
 component_state_derive = { version = "0.1.0", path = "component_state_derive" }
 vexo_macros = { version = "0.1.0", path = "vexo_macros" }
 

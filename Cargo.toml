@@ -65,6 +65,12 @@ android_logger = "0.14"
 # Image Decoding
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
+# URL parsing (for ImageCache keys and VexoUserEvent payload)
+url = { version = "2", features = ["serde"] }
+
+# HTTP client (blocking, rustls TLS — only used by vexo_http_ureq)
+ureq = { version = "2", features = ["tls"] }
+
 # Data Structures
 slotmap = "1.0"
 
