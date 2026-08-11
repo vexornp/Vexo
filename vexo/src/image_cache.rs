@@ -224,8 +224,7 @@ impl ImageCache {
 // TEST HELPERS
 // ============================================================================
 
-#[cfg(test)]
-mod test_helpers {
+pub mod test_helpers {
     use super::*;
     use std::collections::HashMap;
     use std::time::Duration;

@@ -126,7 +126,7 @@ pub use mouse_tracker::MouseTracker;
 
 mod frame_builder;
 pub mod image_atlas;
-mod image_cache;
+pub mod image_cache;
 mod image_data;
 mod image_instance;
 mod quad_instance;
@@ -311,7 +311,7 @@ pub use update_result::UpdateResult;
 pub use widgets::{
     Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
     GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
-    MultiChild, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
+    MultiChild, NetworkImage, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
     ScrollView, Shared, SlideDirection, SlideTransition, Spacer, Stack, Text, TextEdit, TextEditState,
     TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
 };
