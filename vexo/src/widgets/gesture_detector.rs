@@ -73,6 +73,11 @@ pub struct GestureDetector {
     /// inside the child bounds. Receives the global cursor position and the
     /// element's global bounds (window-logical coordinates).
     on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
+    /// Callback invoked when a long-press is recognized (pointer held still
+    /// for 500ms within slop). Arena-mediated — does NOT fire if a drag
+    /// (scroll) wins instead. Receives the press position (where the finger
+    /// went down) and the element's global bounds.
+    on_long_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
 }
 
 impl GestureDetector {
@@ -85,6 +90,7 @@ impl GestureDetector {
             on_release: None,
             on_tap: None,
             on_secondary_press: None,
+            on_long_press: None,
         }
     }
 
@@ -126,6 +132,20 @@ impl GestureDetector {
         self
     }
 
+    /// Set the callback for long-press events (arena-mediated: fires after
+    /// the pointer is held still for 500ms within slop). Receives the press
+    /// position (where the finger went down, in window-logical coordinates)
+    /// and the element's global bounds. Use this for actions like showing a
+    /// context menu on mobile — it will NOT fire if a drag (scroll) wins the
+    /// gesture instead.
+    pub fn on_long_press(
+        mut self,
+        callback: impl FnMut(Point<Logical>, Bounds<Logical>) + 'static,
+    ) -> Self {
+        self.on_long_press = Some(Rc::new(RefCell::new(callback)));
+        self
+    }
+
     /// Get the child widget.
     pub fn child(&self) -> &dyn Widget {
         self.child.as_ref()
@@ -141,6 +161,7 @@ impl Clone for GestureDetector {
             on_release: self.on_release.clone(),
             on_tap: self.on_tap.clone(),
             on_secondary_press: self.on_secondary_press.clone(),
+            on_long_press: self.on_long_press.clone(),
         }
     }
 }
@@ -193,6 +214,7 @@ pub struct GestureDetectorElement {
     on_release: Option<Rc<RefCell<dyn FnMut()>>>,
     on_tap: Option<Rc<RefCell<dyn FnMut()>>>,
     on_secondary_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
+    on_long_press: Option<Rc<RefCell<dyn FnMut(Point<Logical>, Bounds<Logical>)>>>,
     focus_attachment: Option<FocusAttachment>,
 }
 
@@ -208,6 +230,7 @@ impl GestureDetectorElement {
             on_release: None,
             on_tap: None,
             on_secondary_press: None,
+            on_long_press: None,
             focus_attachment: None,
         }
     }
@@ -219,6 +242,7 @@ impl GestureDetectorElement {
         self.on_release = widget.on_release.clone();
         self.on_tap = widget.on_tap.clone();
         self.on_secondary_press = widget.on_secondary_press.clone();
+        self.on_long_press = widget.on_long_press.clone();
         self.widget = Some(widget.clone_boxed());
     }
 
@@ -248,6 +272,7 @@ impl RenderObjectElement for GestureDetectorElement {
             self.on_release = gd.on_release.clone();
             self.on_tap = gd.on_tap.clone();
             self.on_secondary_press = gd.on_secondary_press.clone();
+            self.on_long_press = gd.on_long_press.clone();
         }
         self.widget = Some(widget);
     }
@@ -389,21 +414,47 @@ impl Element for GestureDetectorElement {
         if self.on_tap.is_some() {
             arena.add(Box::new(TapRecognizer::new()), self_id);
         }
+        if self.on_long_press.is_some() {
+            arena.add(
+                Box::new(crate::gestures::LongPressRecognizer::new()),
+                self_id,
+            );
+        }
     }
 
     fn on_arena_winner_update(
         &mut self,
         recognizer: &dyn GestureRecognizer,
         event: &ArenaEvent,
-        _ctx: &mut EventContext,
+        ctx: &mut EventContext,
     ) {
-        // Fire on_tap when the tap recognizer wins (on Up).
-        if let ArenaEvent::Up { .. } = event {
-            if recognizer.accepted() {
-                if let Some(callback) = &self.on_tap {
-                    (callback.borrow_mut())();
+        match event {
+            ArenaEvent::Up { .. } => {
+                // Fire on_tap when the tap recognizer wins (on Up).
+                if recognizer.accepted() {
+                    if let Some(callback) = &self.on_tap {
+                        (callback.borrow_mut())();
+                    }
                 }
             }
+            ArenaEvent::Tick { .. } => {
+                // Long-press fires at 500ms while the finger is still down.
+                // Position comes from the recognizer's `down_position()`
+                // (the press location). Bounds come from the EventContext,
+                // which the pipeline's tick_arena dispatch builds from
+                // render_objects.bounds_for_element(winner_id).
+                if recognizer.accepted() {
+                    if let Some(callback) = &self.on_long_press {
+                        if let Some(lp) = recognizer
+                            .as_any()
+                            .downcast_ref::<crate::gestures::LongPressRecognizer>()
+                        {
+                            (callback.borrow_mut())(lp.down_position(), ctx.bounds());
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -416,6 +467,7 @@ impl Element for GestureDetectorElement {
                 self.on_release = gd.on_release.clone();
                 self.on_tap = gd.on_tap.clone();
                 self.on_secondary_press = gd.on_secondary_press.clone();
+                self.on_long_press = gd.on_long_press.clone();
             }
             self.widget = Some(*widget);
 
