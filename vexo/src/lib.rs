@@ -135,6 +135,8 @@ mod text_cache;
 mod text_pipeline;
 mod text_processor;
 mod text_overflow;
+mod user_event;
+pub use user_event::VexoUserEvent;
 mod window;
 pub use window::WindowState;
 
