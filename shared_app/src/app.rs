@@ -154,14 +154,20 @@ impl Application for ImState {
             Platform::Desktop => unreachable!("Desktop platform on mobile target"),
         };
 
-        let themed = Theme::new(theme, inner).boxed();
-
-        // Wrap the entire app in `ContextMenu` so the menu's `Stack` fills the
-        // window. This makes Stack-local coords == window-logical coords, so
-        // `Positioned::left(click_x).top(click_y)` places the menu at the
-        // correct on-screen position regardless of which pane the right-clicked
+        // `ContextMenu` must be a DESCENDANT of `Theme` so its `render()`
+        // reads the live theme via `Theme::of(ctx)` — the builder it invokes
+        // threads that theme into the reactions pill + actions card. If
+        // `ContextMenu` wraps `Theme` (as it did before 2026-08-11),
+        // `Theme::of` finds no ancestor and falls back to `ThemeData::light()`
+        // — the menu renders white-on-black even in dark mode.
+        //
+        // `Theme` is layout-pass-through (`ProxyRenderObject`), so wrapping it
+        // OUTSIDE `ContextMenu` still lets the menu's `Stack` fill the window:
+        // `Positioned::left(click_x).top(click_y)` keeps mapping to
+        // window-logical coords regardless of which pane the right-clicked
         // bubble lives in.
-        ContextMenu::new(themed, state.context_menu.clone()).boxed()
+        let menu_host = ContextMenu::new(inner, state.context_menu.clone());
+        Theme::new(theme, menu_host).boxed()
     }
 }
 
