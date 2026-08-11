@@ -594,6 +594,9 @@ impl Element for ScrollViewElement {
             ArenaEvent::Cancel => {
                 // Drag cancelled. No cleanup needed.
             }
+            ArenaEvent::Tick { .. } => {
+                // Scroll is purely event-driven; ignore the clock tick.
+            }
         }
     }
 

@@ -88,6 +88,9 @@ impl GestureRecognizer for VerticalDragRecognizer {
             ArenaEvent::Cancel => {
                 self.resolution = RecognizerResolution::Rejected;
             }
+            ArenaEvent::Tick { .. } => {
+                // VerticalDrag is purely event-driven; ignore the clock tick.
+            }
         }
     }
 

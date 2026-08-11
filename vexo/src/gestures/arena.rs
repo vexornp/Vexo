@@ -98,6 +98,7 @@ impl GestureArena {
             ArenaEvent::Move { position } => *position,
             ArenaEvent::Up { position } => *position,
             ArenaEvent::Cancel => self.down_position,
+            ArenaEvent::Tick { .. } => self.down_position,
         };
         let ctx = ArenaContext {
             down_position: self.down_position,
@@ -115,7 +116,7 @@ impl GestureArena {
                 self.winner = None;
                 ArenaOutcome::ClosedNoWinner
             }
-            ArenaEvent::Move { .. } | ArenaEvent::Up { .. } => {
+            ArenaEvent::Move { .. } | ArenaEvent::Up { .. } | ArenaEvent::Tick { .. } => {
                 self.try_resolve();
                 match self.winner {
                     Some(i) => ArenaOutcome::Resolved { winner_index: i },

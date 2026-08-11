@@ -59,6 +59,9 @@ impl GestureRecognizer for TapRecognizer {
             ArenaEvent::Cancel => {
                 self.resolution = RecognizerResolution::Rejected;
             }
+            ArenaEvent::Tick { .. } => {
+                // Tap is purely event-driven; ignore the clock tick.
+            }
         }
     }
 
