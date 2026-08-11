@@ -49,6 +49,8 @@ use vexo::animation::{AnimationController, AnimationTicker, SpringDescription, S
 use vexo::core::{Logical, Point, Size};
 use vexo::{Component, ComponentState, LifecycleContext, RenderContext, Widget};
 
+use crate::Platform;
+
 // ============================================================================
 // MenuContent + MenuMetrics + MenuBuilder
 // ============================================================================
@@ -619,24 +621,33 @@ fn scale_about_anchor(
 // context_menu_trigger — sugar for wrapping a child with right-click detection
 // ============================================================================
 
-/// Wrap `child` with a right-click handler that opens the context menu
-/// anchored at the click cursor position, rendering content from `builder`.
+/// Wrap `child` with a right-click (desktop) or long-press (mobile) handler
+/// that opens the context menu anchored at the trigger position, rendering
+/// content from `builder`.
 ///
-/// Equivalent to:
+/// On desktop this is equivalent to:
 /// ```ignore
 /// child.on_secondary_press(move |pos, _bounds| {
 ///     controller.show(pos, builder);
 /// })
 /// ```
+///
+/// On mobile it uses `on_long_press` (500ms hold) instead; the menu content
+/// and positioning are identical on both platforms.
 pub fn context_menu_trigger(
     child: impl Widget + 'static,
     controller: ContextMenuController,
     builder: MenuBuilder,
 ) -> Box<dyn Widget> {
     let ctrl = controller.clone();
-    child.on_secondary_press(move |pos, _bounds| {
-        ctrl.show(pos, builder.clone());
-    })
+    match Platform::current() {
+        Platform::Desktop => child.on_secondary_press(move |pos, _bounds| {
+            ctrl.show(pos, builder.clone());
+        }),
+        Platform::Mobile => child.on_long_press(move |pos, _bounds| {
+            ctrl.show(pos, builder.clone());
+        }),
+    }
 }
 
 #[cfg(test)]
