@@ -173,6 +173,28 @@ fn close_after(ctrl: ContextMenuController, msg: &'static str) -> Rc<dyn Fn()> {
     })
 }
 
+/// Build the card chrome `Style` for a menu surface (pill or card).
+/// In light mode: surface bg + outline border + black drop shadow.
+/// In dark mode:  surface bg + outline border only — the border already
+/// provides separation against the dark backdrop, and a black shadow
+/// would be invisible against near-black surface anyway (Material dark-
+/// mode guidance: de-emphasize shadows).
+fn menu_card_style(theme: &vexo::ThemeData, corner_radius: f32) -> Style {
+    let style = Style::default()
+        .corner_radius(corner_radius)
+        .background(theme.surface)
+        .border(theme.outline, 1.0);
+    if theme.is_dark() {
+        style
+    } else {
+        style.shadow(
+            BoxShadow::new(Color::BLACK.with_alpha(0.20))
+                .blur(12.0)
+                .offset(0.0, 4.0),
+        )
+    }
+}
+
 /// State for `ReactionIcon` — owns the hover-scale spring controller.
 ///
 /// The controller is shared (`Rc<RefCell<...>>`) so the `on_enter`/`on_exit`
@@ -473,15 +495,7 @@ fn reaction_pill(
 
     DecoratedBox::with_style(
         WithLayout::new(row, Layout::default().padding_each(6.0, 6.0, 5.0, 5.0)),
-        Style::default()
-            .corner_radius(18.0)
-            .background(theme.surface)
-            .border(theme.outline, 1.0)
-            .shadow(
-                BoxShadow::new(Color::BLACK.with_alpha(0.20))
-                    .blur(12.0)
-                    .offset(0.0, 4.0),
-            ),
+        menu_card_style(&theme, 18.0),
     )
     .boxed()
 }
@@ -515,15 +529,7 @@ fn actions_card(ctrl: ContextMenuController, theme: vexo::ThemeData) -> Box<dyn 
 
     DecoratedBox::with_style(
         WithLayout::new(column, Layout::default().min_width(200.0)),
-        Style::default()
-            .corner_radius(12.0)
-            .background(theme.surface)
-            .border(theme.outline, 1.0)
-            .shadow(
-                BoxShadow::new(Color::BLACK.with_alpha(0.20))
-                    .blur(12.0)
-                    .offset(0.0, 4.0),
-            ),
+        menu_card_style(&theme, 12.0),
     )
     .boxed()
 }
@@ -680,6 +686,121 @@ mod tests {
             card_dx,
             card_dy,
             tol,
+        );
+    }
+
+    /// Walk the render tree and return the key of the first
+    /// `DecoratedBoxRenderObject` whose `Style.corner_radius` matches `radius`.
+    /// Sibling of `find_decorated_box_by_corner_radius` (which returns bounds);
+    /// this variant returns the key so the caller can read `style()`.
+    fn find_decorated_box_key_by_corner_radius(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        radius: f32,
+    ) -> Option<RenderObjectKey> {
+        if let Some(ro) = reg.get(key) {
+            let matches = ro
+                .as_any()
+                .downcast_ref::<DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .corner_radius
+                        .as_ref()
+                        .map_or(false, |cr| (cr.radius - radius).abs() < 0.01)
+                });
+            if matches {
+                return Some(key);
+            }
+            for &child in ro.children() {
+                if let Some(k) = find_decorated_box_key_by_corner_radius(reg, child, radius) {
+                    return Some(k);
+                }
+            }
+        }
+        None
+    }
+
+    /// Regression test for dark-theme inheritance (2026-08-11 design). Wraps
+    /// the menu host in a DARK `Theme` using the production wrap order
+    /// (`Theme::new(dark, ContextMenu::new(...))`), opens the menu, settles
+    /// the open spring, then asserts the actions card:
+    ///   1. background == dark.surface  (menu inherited the dark theme)
+    ///   2. shadows is empty            (menu_card_style drops shadow in dark)
+    /// Catches: builder ignoring the theme arg, ContextMenu not reading
+    /// `Theme::of`, `menu_card_style` always adding a shadow.
+    #[test]
+    fn test_message_menu_inherits_dark_theme() {
+        let controller = ContextMenuController::new();
+        let host = ContextMenu::new(vexo::Text::new("content"), controller.clone());
+
+        // Production wrap order: Theme OUTSIDE ContextMenu (the fixed order
+        // from Task 1). The test builds its own tree, so it validates the
+        // builder→theme contract, not the app.rs wrap order per se.
+        let dark_theme = vexo::ThemeData::dark();
+        let host = vexo::Theme::new(dark_theme.clone(), host);
+
+        // Wrap in MediaQuery (so edge-detection reads a real window size) —
+        // mirrors production + test_metrics_match_real_sizes.
+        let mq_data = vexo::MediaQueryData {
+            size: Size::new(400.0, 600.0),
+            ..vexo::MediaQueryData::all_zero()
+        };
+        let host = vexo::MediaQuery::new(mq_data, host);
+
+        let ticker = Arc::new(AnimationTicker::new());
+        let mut pipeline = ThreeTreePipeline::new(ticker.clone());
+        pipeline.update(host.boxed());
+
+        let mut engine = TaffyLayoutEngine::new();
+        // Register FontAwesome so the pill's FA icons shape with real glyphs
+        // (mirrors test_metrics_match_real_sizes).
+        let mut font_system = new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Open the menu in the middle of the screen — plenty of room.
+        controller.show(
+            vexo::core::Point::new(150.0, 280.0),
+            builder(0, Rc::new(|_, _| ())),
+        );
+        pipeline.perform_rebuilds();
+
+        // Settle the open spring (v→1.0) so the card is at full scale and
+        // its laid-out size/style reflects the real content.
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        ticker.tick();
+        pipeline.drain_dirty_to_build_owner();
+        pipeline.perform_rebuilds();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Find the actions card (corner_radius=12) and read its style.
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        let card_key = find_decorated_box_key_by_corner_radius(ro_reg, root, 12.0)
+            .expect("actions card (corner_radius=12) should exist when menu is open");
+        let card_ro = ro_reg
+            .get(card_key)
+            .and_then(|ro| ro.as_any().downcast_ref::<DecoratedBoxRenderObject>())
+            .expect("downcast DecoratedBoxRenderObject");
+        let style = card_ro.style();
+
+        // 1. Background must be the dark theme's surface — proves the menu
+        //    inherited the dark theme through ContextMenu → builder. If this
+        //    is white (0xFFFFFFFF) the menu fell back to ThemeData::light()
+        //    — check the Theme/ContextMenu wrap order in app.rs.
+        assert_eq!(
+            style.background,
+            Some(dark_theme.surface),
+            "actions card background should be dark theme surface",
+        );
+
+        // 2. No shadow in dark mode — menu_card_style drops it (a black
+        //    shadow is invisible against near-black dark surface anyway;
+        //    Material dark-mode guidance: de-emphasize shadows).
+        assert!(
+            style.shadows.is_empty(),
+            "actions card should have no shadow in dark mode; \
+             menu_card_style must branch on theme.is_dark()",
         );
     }
 }
