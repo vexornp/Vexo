@@ -225,6 +225,16 @@ impl ThreeTreePipeline {
         self.build_owner.set_media_query_data_source(source);
     }
 
+    /// Install the image cache on the [`BuildOwner`].
+    ///
+    /// Called once at window init by
+    /// [`WindowState`](crate::window::WindowState) so
+    /// [`RenderContext::image_cache()`](crate::stateful_widget::RenderContext::image_cache)
+    /// can reach it during `Component::render()`.
+    pub fn set_image_cache(&mut self, cache: std::sync::Arc<crate::image_cache::ImageCache>) {
+        self.build_owner.set_image_cache(cache);
+    }
+
     /// Reconcile a new widget tree with the existing element tree.
     ///
     /// This method:

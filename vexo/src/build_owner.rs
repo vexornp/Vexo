@@ -25,6 +25,7 @@ use super::global_key_registry::GlobalKeyRegistry;
 use super::id::ElementKey;
 use crate::core::KeyboardInsetSource;
 use crate::core::SafeAreaSource;
+use crate::image_cache::ImageCache;
 
 /// Tracks dirty elements and drives targeted rebuilds.
 ///
@@ -108,6 +109,17 @@ pub struct BuildOwner {
     /// by [`WindowState`](crate::window::WindowState); read by the root
     /// `MediaQuery` component via `RenderContext::media_query_sources()`.
     media_query_data_source: crate::core::MediaQueryDataSource,
+
+    /// In-memory image cache for remote URL fetching. Installed by
+    /// `WindowState` during init via `set_image_cache()`. Accessed by
+    /// `RenderContext::image_cache()` (which delegates here) so
+    /// `NetworkImage::render()` can call `cache.get_or_fetch(url)`.
+    ///
+    /// `Mutex<Option<...>>` because the cache is installed after
+    /// `BuildOwner::new()` (matching the `safe_area_source` etc. pattern,
+    /// but those are `Default`-constructible; `ImageCache` requires injected
+    /// fetcher + proxy, so it starts as `None` and is `Some` after install).
+    image_cache: std::sync::Mutex<Option<std::sync::Arc<ImageCache>>>,
 }
 
 impl BuildOwner {
@@ -123,6 +135,7 @@ impl BuildOwner {
             safe_area_source: SafeAreaSource::default(),
             keyboard_inset_source: KeyboardInsetSource::default(),
             media_query_data_source: crate::core::MediaQueryDataSource::default(),
+            image_cache: std::sync::Mutex::new(None),
         }
     }
 
@@ -344,6 +357,22 @@ impl BuildOwner {
     /// either clone.
     pub fn set_media_query_data_source(&mut self, source: crate::core::MediaQueryDataSource) {
         self.media_query_data_source = source;
+    }
+
+    /// Install the image cache. Called once at window init by
+    /// `WindowState` so `RenderContext::image_cache()` can reach it.
+    pub fn set_image_cache(&self, cache: std::sync::Arc<ImageCache>) {
+        *self.image_cache.lock().unwrap() = Some(cache);
+    }
+
+    /// Get the image cache. Panics if `set_image_cache()` was never called
+    /// (should only happen in test contexts that don't use `NetworkImage`).
+    pub fn image_cache(&self) -> std::sync::Arc<ImageCache> {
+        self.image_cache
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("ImageCache not installed — call set_image_cache() during init")
     }
 }
 

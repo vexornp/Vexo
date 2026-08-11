@@ -362,6 +362,14 @@ impl<'a> RenderContext<'a> {
         }
     }
 
+    /// Get the image cache for remote URL fetching.
+    ///
+    /// Used by `NetworkImage::render()` to call `cache.get_or_fetch(url)`.
+    /// Returns an `Arc<ImageCache>` (cheap clone — one atomic increment).
+    pub fn image_cache(&self) -> Arc<crate::image_cache::ImageCache> {
+        self.build_owner.image_cache()
+    }
+
     /// Read the nearest inherited value of type `V`. Establishes a
     /// dependency: the caller rebuilds when the provider's value changes.
     ///
