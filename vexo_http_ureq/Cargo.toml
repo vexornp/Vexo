@@ -1,0 +1,11 @@
+[package]
+name = "vexo_http_ureq"
+version = "0.1.0"
+edition = "2021"
+description = "ureq-based HTTP fetcher for Vexo's ImageCache"
+license = "MIT"
+
+[dependencies]
+vexo = { path = "../vexo" }
+ureq = { workspace = true }
+url = { workspace = true }

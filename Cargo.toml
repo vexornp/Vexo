@@ -25,6 +25,9 @@ members = [
 
     # 7. Android cdylib loaded by GameActivity; produces `libmain.so`
     "android_demo",
+
+    # 8. ureq-based HTTP fetcher for ImageCache (desktop)
+    "vexo_http_ureq",
 ]
 
 # ------------------------------------------------------------------------
