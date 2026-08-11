@@ -93,6 +93,7 @@ pub use core::{KeyboardAnimation, KeyboardAnimationSource, KeyboardInsetSource};
 pub use core::{Logical, Size};
 pub use glyphon;
 pub use image_data::{ImageData, ImageDataError};
+pub use image_cache::{FetchError, HttpFetch, ImageCache, ImageCacheProxy, LoadState, WinitImageCacheProxy};
 pub use uniffi;
 
 mod app;
@@ -116,6 +117,7 @@ pub use mouse_tracker::MouseTracker;
 
 mod frame_builder;
 pub mod image_atlas;
+mod image_cache;
 mod image_data;
 mod image_instance;
 mod quad_instance;

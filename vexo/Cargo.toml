@@ -71,3 +71,12 @@ block2 = { version = "0.6.2", default-features = false }
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true, features = ["game-activity"] }
 android_logger = { workspace = true }
+
+# Test-only deps:
+#  - `image` with `png` feature: the production build only enables `jpeg`
+#    (workspace default), but test helpers generate PNG fixtures
+#    (`FakeHttpFetch::red_pixel_png`, `solid_color_png`) and the decode
+#    tests exercise PNG decoding via `ImageData::from_bytes`. With
+#    resolver = "2", these features are only unified during test builds.
+[dev-dependencies]
+image = { workspace = true, default-features = false, features = ["jpeg", "png"] }
