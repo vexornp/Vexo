@@ -68,6 +68,7 @@ impl Application for ImState {
                             chats_nav.clone(),
                             messages_for_chat.clone(),
                             me_avatar.clone(),
+                            context_menu.clone(),
                         ),
                         ImTab::Contacts => {
                             build_contacts_tab(contacts.clone(), contacts_nav.clone())

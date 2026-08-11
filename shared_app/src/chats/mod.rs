@@ -25,6 +25,7 @@ struct MobileChatsPage {
     nav: NavigationController<ChatsRoute>,
     messages: Signal<HashMap<ConvId, Vec<Message>>>,
     me_avatar: Rc<[u8]>,
+    context_menu: ContextMenuController,
 }
 
 impl Clone for MobileChatsPage {
@@ -34,6 +35,7 @@ impl Clone for MobileChatsPage {
             nav: self.nav.clone(),
             messages: self.messages.clone(),
             me_avatar: Rc::clone(&self.me_avatar),
+            context_menu: self.context_menu.clone(),
         }
     }
 }
@@ -57,6 +59,7 @@ impl Component for MobileChatsPage {
         let msgs = self.messages.clone();
         let me_avatar_for_dest = self.me_avatar.clone();
         let nav = self.nav.clone();
+        let context_menu = self.context_menu.clone();
 
         NavigationStackView::new(nav, chats_root)
             .root_title("Chats")
@@ -103,7 +106,7 @@ impl Component for MobileChatsPage {
                             msgs_for_react.set_from(&map);
                         }),
                         scroll_controller: vexo::ScrollController::new(),
-                        context_menu: ContextMenuController::new(),
+                        context_menu: context_menu.clone(),
                     }
                     .boxed()
                 }
@@ -119,12 +122,14 @@ pub(crate) fn build_chats_tab(
     nav: NavigationController<ChatsRoute>,
     messages: Signal<HashMap<ConvId, Vec<Message>>>,
     me_avatar: Rc<[u8]>,
+    context_menu: ContextMenuController,
 ) -> Box<dyn Widget> {
     MobileChatsPage {
         conversations,
         nav,
         messages,
         me_avatar,
+        context_menu,
     }
     .boxed()
 }
