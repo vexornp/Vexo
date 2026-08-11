@@ -126,7 +126,10 @@ pub struct WindowState<A: Application + 'static> {
 
 
 impl<A: Application + 'static> WindowState<A> {
-    pub async fn new(window: Arc<dyn Window>) -> anyhow::Result<Self> {
+    pub async fn new(
+        window: Arc<dyn Window>,
+        image_cache: Arc<crate::image_cache::ImageCache>,
+    ) -> anyhow::Result<Self> {
         let backend = WgpuBackend::new(window.clone()).await?;
 
         // Get the shared scale source from the backend
@@ -158,6 +161,7 @@ impl<A: Application + 'static> WindowState<A> {
         three_tree_pipeline.set_safe_area_source(safe_area_source.clone());
         three_tree_pipeline.set_keyboard_inset_source(keyboard_inset_source.clone());
         three_tree_pipeline.set_media_query_data_source(media_query_data_source.clone());
+        three_tree_pipeline.set_image_cache(image_cache);
 
         #[cfg(target_os = "ios")]
         let display_link = {

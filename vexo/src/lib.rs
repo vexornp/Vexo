@@ -84,6 +84,7 @@
 
 use std::error::Error;
 use std::sync::mpsc;
+use std::sync::Arc;
 
 use winit::event_loop::EventLoop;
 
@@ -97,7 +98,7 @@ pub use image_cache::{FetchError, HttpFetch, ImageCache, ImageCacheProxy, LoadSt
 pub use uniffi;
 
 mod app;
-pub use app::{KeyBindingAction, VexoApp};
+pub use app::VexoApp;
 
 pub mod animation;
 
@@ -365,35 +366,24 @@ impl<A: Application> Component for RootComponent<A> {
     }
 }
 
-pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>> {
+pub fn run_desktop_demo<A: Application + 'static>(
+    image_fetcher: Arc<dyn crate::image_cache::HttpFetch>,
+) -> Result<(), Box<dyn Error>> {
     // Initialize logger with debug level for retain mode by default
     // Override with RUST_LOG environment variable if needed
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     let event_loop = EventLoop::new()?;
-    let (sender, receiver) = mpsc::channel();
+    let proxy = event_loop.create_proxy();
+    let (sender, receiver) = mpsc::channel::<VexoUserEvent>();
+    let winit_proxy = crate::image_cache::WinitImageCacheProxy::new(proxy, sender);
+    let image_cache = Arc::new(crate::image_cache::ImageCache::new(
+        image_fetcher,
+        Arc::new(winit_proxy),
+    ));
 
-    {
-        // Wire the user event from another thread.
-        let _event_loop_proxy = event_loop.create_proxy();
-        let _sender = sender.clone();
-        std::thread::spawn(move || {
-            // Wake up the `event_loop` once every second and dispatch a custom event
-            // from a different thread.
-            println!("Starting to send user event every second");
-            // loop {
-            //     let _ = sender.send(KeyBindingAction::Message);
-            //     event_loop_proxy.wake_up();
-            //     std::thread::sleep(std::time::Duration::from_secs(1));
-            // }
-        });
-    }
+    let app = VexoApp::<A>::new(image_cache, receiver);
 
-    let app = VexoApp::<A>::new(&event_loop, receiver, sender);
-
-    // let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
-    // let mut app = crate::VexoApp::<A>::new();
-    // event_loop.run_app(&mut app)?;
     Result::Ok(event_loop.run_app(app)?)
 }
 
@@ -413,6 +403,7 @@ pub fn run_desktop_demo<A: Application + 'static>() -> Result<(), Box<dyn Error>
 /// [`EventLoopBuilderExtAndroid::with_android_app`]: winit::platform::android::EventLoopBuilderExtAndroid::with_android_app
 #[cfg(target_os = "android")]
 pub fn run_android_demo<A: Application + 'static>(
+    image_fetcher: Arc<dyn crate::image_cache::HttpFetch>,
     app: android_activity::AndroidApp,
 ) -> Result<(), Box<dyn Error>> {
     use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -428,7 +419,14 @@ pub fn run_android_demo<A: Application + 'static>(
     let event_loop = EventLoop::builder()
         .with_android_app(app)
         .build()?;
-    let (sender, receiver) = mpsc::channel();
-    let app = VexoApp::<A>::new(&event_loop, receiver, sender);
+    let proxy = event_loop.create_proxy();
+    let (sender, receiver) = mpsc::channel::<VexoUserEvent>();
+    let winit_proxy = crate::image_cache::WinitImageCacheProxy::new(proxy, sender);
+    let image_cache = Arc::new(crate::image_cache::ImageCache::new(
+        image_fetcher,
+        Arc::new(winit_proxy),
+    ));
+
+    let app = VexoApp::<A>::new(image_cache, receiver);
     Ok(event_loop.run_app(app)?)
 }

@@ -91,10 +91,10 @@ pub trait ImageCacheProxy: Send + Sync {
 /// In winit 0.31, `EventLoopProxy` is no longer generic and only exposes
 /// `wake_up()`. To deliver the `VexoUserEvent::ImageLoaded` payload to the
 /// render loop, the proxy is paired with an `mpsc::Sender<VexoUserEvent>` —
-/// the same pattern `VexoApp` uses for `KeyBindingAction`. `send_image_loaded`
-/// pushes the event through the channel and then wakes the event loop. If the
-/// channel receiver has been dropped (app shutting down), the event is
-/// silently dropped with a debug log.
+/// the same channel pattern `VexoApp` drains from `proxy_wake_up`.
+/// `send_image_loaded` pushes the event through the channel and then wakes
+/// the event loop. If the channel receiver has been dropped (app shutting
+/// down), the event is silently dropped with a debug log.
 pub struct WinitImageCacheProxy {
     proxy: winit::event_loop::EventLoopProxy,
     sender: Sender<VexoUserEvent>,

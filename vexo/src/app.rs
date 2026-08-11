@@ -1,39 +1,36 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
 use winit::event::{DeviceEvent, DeviceId};
-use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use winit::{application::ApplicationHandler, event_loop::ActiveEventLoop};
 
 use crate::core::Size;
+use crate::image_cache::ImageCache;
+use crate::VexoUserEvent;
 use crate::{Application, WindowState};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyBindingAction {
-    CloseWindow,
-    Message,
-}
-
+/// The main application handler.
+///
+/// Holds the `ImageCache` (shared across all windows) and the per-window
+/// `WindowState` map. The `proxy_wake_up` handler drains the
+/// `VexoUserEvent` channel (woken by `EventLoopProxy::wake_up()` from
+/// background threads) and requests a new frame on every window when an
+/// `ImageLoaded` event arrives.
 pub struct VexoApp<A: Application + 'static> {
-    receiver: Receiver<KeyBindingAction>,
-    #[allow(dead_code)]
-    sender: Sender<KeyBindingAction>,
+    image_cache: Arc<ImageCache>,
+    receiver: Receiver<VexoUserEvent>,
     windows: HashMap<WindowId, WindowState<A>>,
 }
 
 impl<A: Application + 'static> VexoApp<A> {
-    pub fn new(
-        _event_loop: &EventLoop,
-        receiver: Receiver<KeyBindingAction>,
-        sender: Sender<KeyBindingAction>,
-    ) -> Self {
+    pub fn new(image_cache: Arc<ImageCache>, receiver: Receiver<VexoUserEvent>) -> Self {
         Self {
+            image_cache,
             receiver,
-            sender,
             windows: Default::default(),
         }
     }
@@ -50,23 +47,15 @@ impl<A: Application + 'static> VexoApp<A> {
                 size.height,
                 window.scale_factor()
             );
-            let mut state = pollster::block_on(WindowState::new(window.clone())).unwrap();
+            let mut state =
+                pollster::block_on(WindowState::new(window.clone(), self.image_cache.clone()))
+                    .unwrap();
             state.resize(Size::from_winit(size));
             self.windows.insert(window_id, state);
             return Some(window_id);
         }
 
         None
-    }
-
-    fn handle_action_from_proxy(
-        &mut self,
-        _event_loop: &dyn ActiveEventLoop,
-        action: KeyBindingAction,
-    ) {
-        if action == KeyBindingAction::Message {
-            println!("Use wake up")
-        }
     }
 
     fn create_window(
@@ -81,18 +70,6 @@ impl<A: Application + 'static> VexoApp<A> {
 }
 
 impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
-    // fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
-    //     if !self.windows.is_empty() {
-    //         println!("app resumed, already have window");
-    //         return;
-    //     }
-
-    //     println!("app resumed, create initial window");
-    //     let window_attributes = WindowAttributes::default();
-    //     let window = event_loop.create_window(window_attributes).unwrap();
-    //     self.try_init_framework_state(window);
-    // }
-
     fn window_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
@@ -106,9 +83,16 @@ impl<A: Application + 'static> ApplicationHandler for VexoApp<A> {
         window_state.handle_window_event(event_loop, &event);
     }
 
-    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
-        while let Ok(action) = self.receiver.try_recv() {
-            self.handle_action_from_proxy(event_loop, action);
+    fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        while let Ok(event) = self.receiver.try_recv() {
+            match event {
+                VexoUserEvent::ImageLoaded(url) => {
+                    log::debug!("ImageLoaded event: {}", url);
+                    for state in self.windows.values_mut() {
+                        state.request_frame();
+                    }
+                }
+            }
         }
     }
 
