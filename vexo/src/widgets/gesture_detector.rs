@@ -1051,4 +1051,91 @@ mod tests {
         // Verify it wrapped in a GestureDetector.
         assert!(widget.as_any().downcast_ref::<GestureDetector>().is_some());
     }
+
+    #[test]
+    fn test_on_long_press_fires_after_500ms_via_tick_arena() {
+        use crate::animation::AnimationTicker;
+        use crate::core::ScaleSource;
+        use crate::layout::TaffyLayoutEngine;
+        use crate::pipeline::ThreeTreePipeline;
+        use std::time::{Duration, Instant};
+
+        let pressed = Rc::new(Cell::new(false));
+        let press_pos = Rc::new(Cell::new(Point::new(0.0, 0.0)));
+        let press_bounds = Rc::new(Cell::new(Bounds::new(0.0, 0.0, 0.0, 0.0)));
+        let pressed_clone = pressed.clone();
+        let pos_clone = press_pos.clone();
+        let bounds_clone = press_bounds.clone();
+
+        // A small tappable area. Layout gives it non-zero bounds, but
+        // `tick_arena` does not hit-test on Tick, so the callback's `bounds`
+        // argument will still be `Bounds::default()` (asserted below).
+        let widget: Box<dyn Widget> = crate::DecoratedBox::with_style(
+            crate::Text::new("Hold me"),
+            crate::Style::default().background(crate::Color::WHITE),
+        )
+        .on_long_press(move |pos: Point<Logical>, bounds: Bounds<Logical>| {
+            pressed_clone.set(true);
+            pos_clone.set(pos);
+            bounds_clone.set(bounds);
+        });
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(widget);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Primary press inside the bubble.
+        let press = InputEvent::PointerButton {
+            position: Point::new(50.0, 30.0),
+            button: crate::input::PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        let clipboard = test_clipboard();
+        pipeline.handle_event(
+            Point::new(50.0, 30.0),
+            &press,
+            crate::input::Modifiers::default(),
+            &mut font_system,
+            &ScaleSource::default(),
+            &clipboard,
+        );
+
+        // The LongPressRecognizer defers `down_time` from `Down` to the first
+        // `Tick` (see gestures/long_press.rs). So the first Tick — sent at
+        // `start` — records down_time and stays Pending (0ms < 500ms). Long-
+        // press must NOT have fired yet.
+        let start = Instant::now();
+        pipeline.tick_arena(start, &mut font_system, &clipboard);
+        pipeline.perform_rebuilds();
+        assert!(!pressed.get(), "long-press must not fire before 500ms");
+
+        // Second Tick at start + 500ms: elapsed >= 500ms → recognizer accepts
+        // → arena resolves → on_arena_winner_update fires on_long_press with
+        // the recognizer's down_position and `Bounds::default()` (tick_arena
+        // does not hit-test on Tick — see pipeline.rs).
+        pipeline.tick_arena(
+            start + Duration::from_millis(500),
+            &mut font_system,
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert!(pressed.get(), "long-press callback should fire after 500ms");
+        assert_eq!(
+            press_pos.get(),
+            Point::new(50.0, 30.0),
+            "position should be the press location"
+        );
+        // Bounds: `tick_arena` does not perform a hit-test on Tick, so it
+        // dispatches with `Bounds::default()` (see pipeline.rs `tick_arena`).
+        // The callback still receives the channel — verify it's the default
+        // so a future change to pass real bounds trips this test deliberately.
+        assert_eq!(
+            press_bounds.get(),
+            Bounds::default(),
+            "bounds should be Bounds::default() — tick_arena does not hit-test on Tick"
+        );
+    }
 }
