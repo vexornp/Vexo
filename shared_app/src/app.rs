@@ -4,6 +4,9 @@ use vexo::{column, AlignItems, Application, Text, Theme, ThemeData, Widget};
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{ContextMenu, Platform, TabBarView};
 
+use std::sync::Arc;
+use vexo_http_ureq::UreqHttpFetch;
+
 use crate::chats::build_chats_tab;
 use crate::contacts::build_contacts_tab;
 use crate::data::{seed, ImTab};
@@ -182,7 +185,7 @@ impl MobileApp {
     }
 
     pub fn start_app(&self) {
-        let rt = vexo::run_desktop_demo::<ImState>();
+        let rt = vexo::run_desktop_demo::<ImState>(Arc::new(UreqHttpFetch::new()));
         match rt {
             Ok(_) => println!("App exited normally"),
             Err(e) => println!("App exited with error: {:?}", e),

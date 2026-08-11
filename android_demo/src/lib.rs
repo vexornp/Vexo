@@ -22,7 +22,8 @@ mod android {
     /// same `VexoApp` / three-tree pipeline used on desktop and iOS.
     #[no_mangle]
     fn android_main(app: AndroidApp) {
-        if let Err(e) = vexo::run_android_demo::<ImState>(app) {
+        let fetcher = std::sync::Arc::new(vexo_http_ureq::UreqHttpFetch::new());
+        if let Err(e) = vexo::run_android_demo::<ImState>(fetcher, app) {
             log::error!("vexo android demo exited with error: {e:?}");
         }
     }

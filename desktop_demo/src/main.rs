@@ -1,9 +1,10 @@
 use shared_app::ImState;
+use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Logger is already initialized in vexo::run_desktop_demo
     // Set RUST_LOG=debug environment variable to see retain mode partial update logs
-    vexo::run_desktop_demo::<ImState>()
+    vexo::run_desktop_demo::<ImState>(Arc::new(vexo_http_ureq::UreqHttpFetch::new()))
 }
 
 /*

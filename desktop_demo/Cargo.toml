@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 vexo = { path = "../vexo" }
+vexo_http_ureq = { path = "../vexo_http_ureq" }
 shared_app = { path = "../shared_app" } # Import the user's logic
 anyhow = { workspace = true }
 env_logger = "0.11"

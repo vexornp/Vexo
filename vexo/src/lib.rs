@@ -23,6 +23,8 @@
 //!
 //! ```no_run
 //! use vexo::{column, Application, ComponentState, Signal, Text, Widget};
+//! use vexo::{FetchError, HttpFetch};
+//! use url::Url;
 //!
 //! #[derive(ComponentState, Default)]
 //! struct CounterState {
@@ -47,9 +49,15 @@
 //!     }
 //! }
 //!
+//! # struct NoFetch;
+//! # impl HttpFetch for NoFetch {
+//! #     fn fetch(&self, _url: &Url) -> Result<Vec<u8>, FetchError> {
+//! #         Err(FetchError::Network("doctest: network disabled".into()))
+//! #     }
+//! # }
 //! # #[allow(dead_code)]
 //! fn main() {
-//!     vexo::run_desktop_demo::<CounterState>().unwrap();
+//!     vexo::run_desktop_demo::<CounterState>(std::sync::Arc::new(NoFetch)).unwrap();
 //! }
 //! ```
 //!
