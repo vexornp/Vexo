@@ -2427,6 +2427,7 @@ dependencies = [
  "parking_lot",
  "pollster",
  "uniffi",
+ "url",
  "vexo",
  "vexo_fontawesome",
  "vexo_http_ureq",

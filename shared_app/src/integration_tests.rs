@@ -46,11 +46,21 @@ fn nth_child(
         .unwrap_or_else(|| panic!("child {index} of node exists"))
 }
 
+fn install_test_image_cache(pipeline: &mut ThreeTreePipeline) {
+    use vexo::image_cache::test_helpers::{FakeHttpFetch, RecordingProxy};
+    let cache = Arc::new(vexo::ImageCache::new(
+        Arc::new(FakeHttpFetch::new()),
+        Arc::new(RecordingProxy::new()),
+    ));
+    pipeline.set_image_cache(cache);
+}
+
 #[test]
 fn test_full_app_view_renders_desktop_shell() {
     let mut state = ImState::default();
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    install_test_image_cache(&mut pipeline);
     pipeline.update(view);
     assert!(
         pipeline.element_registry().len() > 15,
@@ -64,6 +74,7 @@ fn test_tab_switch_to_contacts_renders_contacts_page() {
     state.tab_controller.switch_to(ImTab::Contacts);
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    install_test_image_cache(&mut pipeline);
     pipeline.update(view);
     assert!(
         pipeline.element_registry().len() > 15,
@@ -77,6 +88,7 @@ fn test_desktop_sidebar_is_narrow_and_fits_window() {
     let mut state = ImState::default();
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    install_test_image_cache(&mut pipeline);
     pipeline.update(view);
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = vexo::resource::new_font_system();
@@ -116,6 +128,7 @@ fn test_desktop_chats_tab_shows_three_column_layout() {
     let mut state = ImState::default();
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    install_test_image_cache(&mut pipeline);
     pipeline.update(view);
     let mut engine = TaffyLayoutEngine::new();
     let mut font_system = vexo::resource::new_font_system();
@@ -165,6 +178,7 @@ fn test_desktop_chats_empty_state_shows_placeholder() {
     // selected_conv is None by default
     let view = ImState::view(&mut state);
     let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    install_test_image_cache(&mut pipeline);
     pipeline.update(view);
     assert!(
         pipeline.element_registry().len() > 10,
