@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ImageData {
     pub pixels: Vec<u8>,
     pub width: u32,
