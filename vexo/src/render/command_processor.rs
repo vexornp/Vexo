@@ -251,12 +251,18 @@ pub fn process_commands(
                     current_opacity = prev_opacity;
                 }
             }
-            // SaveLayer variants are no-ops here until Task 4 wires the
-            // offscreen render-target path into FrameBuilder. Nothing emits
-            // these commands yet, so treating them as no-ops preserves the
-            // existing alpha-multiply fallback as the active path.
-            RenderCommand::PushSaveLayer { .. } => {}
-            RenderCommand::PopSaveLayer => {}
+            RenderCommand::PushSaveLayer { bounds, opacity } => {
+                let adjusted_bounds = Bounds::new(
+                    bounds.left + current_offset.x,
+                    bounds.top + current_offset.y,
+                    bounds.right + current_offset.x,
+                    bounds.bottom + current_offset.y,
+                );
+                frame_builder.begin_save_layer(adjusted_bounds, *opacity);
+            }
+            RenderCommand::PopSaveLayer => {
+                frame_builder.end_save_layer();
+            }
         }
     }
 }
@@ -269,6 +275,7 @@ pub fn process_commands(
 mod tests {
     use super::*;
     use crate::core::Color;
+    use crate::frame_builder::DrawOp;
 
     #[test]
     fn test_process_rect_command() {
@@ -767,5 +774,121 @@ mod tests {
         assert_eq!(entry.0.left, 15.0); // 10 + 5
         assert_eq!(entry.0.top, 27.0); // 20 + 7
         assert_eq!(entry.1, 8.0);
+    }
+
+    #[test]
+    fn test_process_save_layer_does_not_alpha_multiply() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let commands = vec![
+            RenderCommand::PushSaveLayer {
+                bounds,
+                opacity: 0.5,
+            },
+            RenderCommand::rect(bounds, Color::RED),
+            RenderCommand::PopSaveLayer,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        // The quad inside the save-layer must NOT be alpha-multiplied.
+        let quad = &frame_builder.quad_instances()[0];
+        assert_eq!(
+            quad.color,
+            Color::RED.to_array(),
+            "ops inside SaveLayer must keep original alpha (composite-time opacity)"
+        );
+    }
+
+    #[test]
+    fn test_process_save_layer_emits_markers() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let commands = vec![
+            RenderCommand::PushSaveLayer {
+                bounds,
+                opacity: 0.85,
+            },
+            RenderCommand::rect(bounds, Color::RED),
+            RenderCommand::PopSaveLayer,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        let ops = frame_builder.ops();
+        assert!(matches!(
+            &ops[0].0,
+            DrawOp::BeginSaveLayer { opacity, .. } if (*opacity - 0.85).abs() < 1e-6
+        ));
+        assert!(matches!(ops[1].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[2].0, DrawOp::EndSaveLayer));
+    }
+
+    #[test]
+    fn test_process_save_layer_routes_text_to_group() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 100.0, 50.0);
+        let commands = vec![
+            RenderCommand::PushSaveLayer {
+                bounds,
+                opacity: 0.5,
+            },
+            RenderCommand::text("inside", Point::new(10.0, 10.0), 16.0, Color::BLACK),
+            RenderCommand::PopSaveLayer,
+            RenderCommand::text("outside", Point::new(20.0, 20.0), 16.0, Color::BLACK),
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        // Main-pass text list should only have "outside"
+        assert_eq!(frame_builder.text_count(), 1);
+        assert_eq!(frame_builder.text_requests()[0].content, "outside");
+
+        // Group text list should have "inside"
+        let groups = frame_builder.save_layer_groups();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].text_requests.len(), 1);
+        assert_eq!(groups[0].text_requests[0].content, "inside");
+    }
+
+    #[test]
+    fn test_process_nested_save_layer() {
+        let mut frame_builder = FrameBuilder::new();
+        let bounds = Bounds::from_xywh(0.0, 0.0, 200.0, 200.0);
+        let commands = vec![
+            RenderCommand::PushSaveLayer {
+                bounds,
+                opacity: 0.8,
+            },
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 100.0, 50.0), Color::RED),
+            RenderCommand::PushSaveLayer {
+                bounds: Bounds::from_xywh(0.0, 0.0, 50.0, 50.0),
+                opacity: 0.5,
+            },
+            RenderCommand::rect(Bounds::from_xywh(0.0, 0.0, 50.0, 50.0), Color::BLUE),
+            RenderCommand::PopSaveLayer,
+            RenderCommand::PopSaveLayer,
+        ];
+
+        process_commands(&commands, &mut frame_builder, Point::new(0.0, 0.0));
+
+        let ops = frame_builder.ops();
+        // [Begin, Rect, Begin, Rect, End, End]
+        assert!(matches!(ops[0].0, DrawOp::BeginSaveLayer { .. }));
+        assert!(matches!(ops[1].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[2].0, DrawOp::BeginSaveLayer { .. }));
+        assert!(matches!(ops[3].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[4].0, DrawOp::EndSaveLayer));
+        assert!(matches!(ops[5].0, DrawOp::EndSaveLayer));
+
+        // Both quads keep original alpha (no multiplication)
+        assert_eq!(
+            frame_builder.quad_instances()[0].color,
+            Color::RED.to_array()
+        );
+        assert_eq!(
+            frame_builder.quad_instances()[1].color,
+            Color::BLUE.to_array()
+        );
     }
 }
