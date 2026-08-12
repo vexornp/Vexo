@@ -917,6 +917,8 @@ impl WgpuBackend {
                     );
                     image_instances.push(instance);
                 }
+                crate::frame_builder::DrawOp::BeginSaveLayer { .. }
+                | crate::frame_builder::DrawOp::EndSaveLayer => {}
             }
         }
 
@@ -1014,6 +1016,13 @@ impl WgpuBackend {
         let loc = self.current_op_locations[i];
         let clip = self.current_op_clips[i];
 
+        // SaveLayer markers carry no geometry and don't draw in the main
+        // pass — the backend scans for them to delimit offscreen groups
+        // (wired in a later task). Early-return before any state mutation.
+        if matches!(loc, crate::frame_builder::OpLocation::SaveLayerMarker) {
+            return;
+        }
+
         // 1. Scissor: only set when clip changes.
         let clip_value = clip;
         if *prev_clip != Some(clip_value) {
@@ -1043,6 +1052,7 @@ impl WgpuBackend {
         let rclip_slot_idx = match kind {
             OpKind::Quad | OpKind::TransparentQuad => 0,
             OpKind::Image => 1,
+            OpKind::SaveLayerMarker => return,
         };
         if Some(kind) != *prev_kind {
             match kind {
@@ -1065,6 +1075,7 @@ impl WgpuBackend {
                     render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
                     render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
                 }
+                OpKind::SaveLayerMarker => return,
             }
             prev_rclip_offset_per_slot[rclip_slot_idx] = None;
             *prev_kind = Some(kind);
@@ -1076,6 +1087,7 @@ impl WgpuBackend {
             let rclip_group = match kind {
                 OpKind::Quad | OpKind::TransparentQuad => 1,
                 OpKind::Image => 2,
+                OpKind::SaveLayerMarker => return,
             };
             render_pass.set_bind_group(
                 rclip_group,
@@ -1099,11 +1111,13 @@ impl WgpuBackend {
                     wgpu::IndexFormat::Uint16,
                 );
             }
+            OpKind::SaveLayerMarker => return,
         }
         let idx = match loc {
             crate::frame_builder::OpLocation::Quad { index } => index,
             crate::frame_builder::OpLocation::TransparentQuad { index } => index,
             crate::frame_builder::OpLocation::Image { index } => index,
+            crate::frame_builder::OpLocation::SaveLayerMarker => return,
         };
         render_pass.draw_indexed(0..6, 0, idx..idx + 1);
     }

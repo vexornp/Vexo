@@ -7,6 +7,14 @@ use crate::quad_instance::QuadInstance;
 pub enum DrawOp {
     Quad(QuadInstance),
     Image(ImageRequest),
+    /// Begin a save-layer group. Ops between Begin/End are rendered
+    /// into an offscreen texture and composited as a unit at `opacity`.
+    BeginSaveLayer {
+        bounds: Bounds,
+        opacity: f32,
+    },
+    /// End the most recent save-layer group.
+    EndSaveLayer,
 }
 
 /// Where an op landed in the typed instance buffer, for draw iteration.
@@ -23,6 +31,9 @@ pub enum OpLocation {
     Image {
         index: u32,
     },
+    /// SaveLayer marker (Begin/End) — not drawn directly. The backend
+    /// scans for these to delimit offscreen render groups.
+    SaveLayerMarker,
 }
 
 impl OpLocation {
@@ -31,6 +42,7 @@ impl OpLocation {
             OpLocation::Quad { .. } => OpKind::Quad,
             OpLocation::TransparentQuad { .. } => OpKind::TransparentQuad,
             OpLocation::Image { .. } => OpKind::Image,
+            OpLocation::SaveLayerMarker => OpKind::SaveLayerMarker,
         }
     }
 }
@@ -40,6 +52,7 @@ pub enum OpKind {
     Quad,
     TransparentQuad,
     Image,
+    SaveLayerMarker,
 }
 
 #[derive(Clone)]
@@ -87,6 +100,27 @@ pub const MAX_RCLIP_DEPTH: usize = 8;
 /// A single rounded-rect clip entry: (bounds, radius).
 pub type RClipEntry = (Bounds, f32);
 
+/// In-flight save-layer group state (while between begin/end).
+struct SaveLayerFrame {
+    bounds: Bounds,
+    opacity: f32,
+    z: f32,
+    text_start: usize,
+}
+
+/// A completed save-layer group, ready for backend consumption.
+#[derive(Clone)]
+pub struct SaveLayerGroup {
+    /// The group's bounds in window-absolute logical coords.
+    pub bounds: Bounds,
+    /// The opacity to apply at composite time.
+    pub opacity: f32,
+    /// Z-depth for the composite quad (paint-order position).
+    pub z: f32,
+    /// Text requests belonging to this group.
+    pub text_requests: Vec<TextRequest>,
+}
+
 pub struct FrameBuilder {
     /// Flat ordered draw list. Each entry is the op plus its effective clip
     /// bounds at add-time. This is the single source of truth for geometry
@@ -107,6 +141,14 @@ pub struct FrameBuilder {
     rclip_stack: Vec<RClipEntry>,
     transform_stack: Vec<AffineTransform>,
     current_transform: AffineTransform,
+
+    /// Stack of active save-layer groups (innermost last).
+    save_layer_stack: Vec<SaveLayerFrame>,
+    /// Completed save-layer groups (collected at end_save_layer).
+    save_layer_groups: Vec<SaveLayerGroup>,
+    /// Text requests for currently-active save-layer groups.
+    /// Drained into each group's `text_requests` at `end_save_layer`.
+    group_text_requests: Vec<TextRequest>,
 }
 
 impl Default for FrameBuilder {
@@ -126,6 +168,9 @@ impl FrameBuilder {
             rclip_stack: Vec::new(),
             transform_stack: Vec::new(),
             current_transform: AffineTransform::identity(),
+            save_layer_stack: Vec::new(),
+            save_layer_groups: Vec::new(),
+            group_text_requests: Vec::new(),
         }
     }
 
@@ -138,6 +183,9 @@ impl FrameBuilder {
         self.rclip_stack.clear();
         self.transform_stack.clear();
         self.current_transform = AffineTransform::identity();
+        self.save_layer_stack.clear();
+        self.save_layer_groups.clear();
+        self.group_text_requests.clear();
     }
 
     pub fn quad_count(&self) -> usize {
@@ -386,7 +434,7 @@ impl FrameBuilder {
     ) {
         let color: Color = color.into();
         let z = self.next_z();
-        self.text_requests.push(TextRequest {
+        let request = TextRequest {
             content: content.into(),
             position,
             size,
@@ -396,7 +444,12 @@ impl FrameBuilder {
             clip_bounds: self.current_clip(),
             rclip_snapshot: self.snapshot_rclip(),
             z,
-        });
+        };
+        if self.save_layer_stack.is_empty() {
+            self.text_requests.push(request);
+        } else {
+            self.group_text_requests.push(request);
+        }
     }
 
     pub fn add_image(&mut self, mut request: ImageRequest) {
@@ -404,6 +457,51 @@ impl FrameBuilder {
         let clip = self.current_clip();
         self.ops
             .push((DrawOp::Image(request), clip, self.snapshot_rclip()));
+    }
+
+    /// Begin a save-layer group. Ops added between `begin_save_layer`
+    /// and `end_save_layer` are rendered into an offscreen texture and
+    /// composited as a unit at `opacity`. The `bounds` determine the
+    /// offscreen texture size and the composite quad's position.
+    ///
+    /// Text requests added while a save-layer group is active are routed
+    /// to the group's text list (see `save_layer_groups`), not the
+    /// main-pass text list.
+    pub fn begin_save_layer(&mut self, bounds: Bounds, opacity: f32) {
+        let z = self.next_z();
+        let marker = DrawOp::BeginSaveLayer { bounds, opacity };
+        self.ops.push((marker, None, Vec::new()));
+        self.save_layer_stack.push(SaveLayerFrame {
+            bounds,
+            opacity,
+            z,
+            text_start: self.group_text_requests.len(),
+        });
+    }
+
+    /// End the most recent save-layer group.
+    pub fn end_save_layer(&mut self) {
+        self.ops.push((DrawOp::EndSaveLayer, None, Vec::new()));
+        if let Some(frame) = self.save_layer_stack.pop() {
+            let text_end = self.group_text_requests.len();
+            let group_texts: Vec<TextRequest> = self
+                .group_text_requests
+                .drain(frame.text_start..text_end)
+                .collect();
+            self.save_layer_groups.push(SaveLayerGroup {
+                bounds: frame.bounds,
+                opacity: frame.opacity,
+                z: frame.z,
+                text_requests: group_texts,
+            });
+        }
+    }
+
+    /// Completed save-layer groups, in paint order. Each group's ops
+    /// are delimited by BeginSaveLayer/EndSaveLayer markers in `ops()`.
+    /// The backend uses this to render groups offscreen.
+    pub fn save_layer_groups(&self) -> &[SaveLayerGroup] {
+        &self.save_layer_groups
     }
 
     pub fn image_count(&self) -> usize {
@@ -451,6 +549,7 @@ impl FrameBuilder {
                     image_idx += 1;
                     OpLocation::Image { index: i }
                 }
+                DrawOp::BeginSaveLayer { .. } | DrawOp::EndSaveLayer => OpLocation::SaveLayerMarker,
             })
             .collect()
     }
@@ -990,5 +1089,66 @@ mod tests {
             text_z,
             geom_z
         );
+    }
+
+    #[test]
+    fn test_save_layer_markers_in_ops() {
+        let mut fb = FrameBuilder::new();
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Color::RED,
+            None,
+            0.0,
+        );
+        fb.begin_save_layer(Bounds::from_xywh(10.0, 20.0, 200.0, 100.0), 0.85);
+        fb.add_rect(
+            Bounds::from_xywh(10.0, 20.0, 50.0, 50.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+        fb.end_save_layer();
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 10.0, 10.0),
+            Color::GREEN,
+            None,
+            0.0,
+        );
+
+        let ops = fb.ops();
+        assert!(matches!(ops[0].0, DrawOp::Quad(_)));
+        assert!(matches!(
+            &ops[1].0,
+            DrawOp::BeginSaveLayer { opacity, .. } if (*opacity - 0.85).abs() < 1e-6
+        ));
+        assert!(matches!(ops[2].0, DrawOp::Quad(_)));
+        assert!(matches!(ops[3].0, DrawOp::EndSaveLayer));
+        assert!(matches!(ops[4].0, DrawOp::Quad(_)));
+    }
+
+    #[test]
+    fn test_save_layer_markers_in_op_locations() {
+        let mut fb = FrameBuilder::new();
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 100.0, 50.0),
+            Color::RED,
+            None,
+            0.0,
+        );
+        fb.begin_save_layer(Bounds::from_xywh(0.0, 0.0, 100.0, 100.0), 0.5);
+        fb.add_rect(
+            Bounds::from_xywh(0.0, 0.0, 50.0, 50.0),
+            Color::BLUE,
+            None,
+            0.0,
+        );
+        fb.end_save_layer();
+
+        let locations = fb.compute_op_locations();
+        assert_eq!(locations.len(), 4);
+        assert_eq!(locations[0].kind(), OpKind::Quad);
+        assert_eq!(locations[1].kind(), OpKind::SaveLayerMarker);
+        assert_eq!(locations[2].kind(), OpKind::Quad);
+        assert_eq!(locations[3].kind(), OpKind::SaveLayerMarker);
     }
 }
