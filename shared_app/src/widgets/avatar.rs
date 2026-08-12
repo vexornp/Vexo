@@ -269,4 +269,29 @@ mod tests {
             "second render should hit cache, not re-decode"
         );
     }
+
+    #[test]
+    fn avatar_invalidates_cache_on_source_change() {
+        DECODE_COUNT.with(|c| c.set(0));
+        let bytes_a = make_avatar_png(255, 0, 0);
+        let bytes_b = make_avatar_png(0, 255, 0);
+
+        let view_a = Avatar::new(AvatarSource::Bytes(bytes_a), 40.0).boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view_a);
+        assert_eq!(
+            DECODE_COUNT.with(|c| c.get()),
+            1,
+            "first render with source A should decode exactly once"
+        );
+
+        let view_b = Avatar::new(AvatarSource::Bytes(bytes_b), 40.0).boxed();
+        pipeline.update(view_b);
+        assert_eq!(
+            DECODE_COUNT.with(|c| c.get()),
+            2,
+            "render with different source B should invalidate cache and re-decode"
+        );
+    }
 }

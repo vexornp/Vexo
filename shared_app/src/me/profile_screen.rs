@@ -6,12 +6,10 @@
 //! thing scrolls inside a `ScrollView` whose viewport shares the grouped
 //! backdrop so overscroll never flashes a different color.
 
-use url::Url;
 use vexo::layout::JustifyContent;
 use vexo::{
     column, row, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, Layout,
-    NetworkImage, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget,
-    WithLayout,
+    RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
