@@ -830,6 +830,7 @@ impl WgpuBackend {
     /// so op positions need no translation — every pass renders at window-
     /// absolute coords. The composite quad samples only the group's bounds
     /// sub-region via UV coordinates.
+    #[allow(clippy::too_many_arguments)]
     fn render_range(
         &mut self,
         render_pass: &mut wgpu::RenderPass<'_>,
@@ -1018,6 +1019,7 @@ impl WgpuBackend {
     /// so they outlive the parent encoder's submit. The bind group + sampler
     /// are created later by `draw_composite_quad` (which has the offscreen
     /// view in hand and can build the bind group directly).
+    #[allow(clippy::too_many_arguments)]
     fn render_save_layer_group(
         &mut self,
         gstart: usize,
@@ -1107,6 +1109,7 @@ impl WgpuBackend {
     /// dynamic vertex-buffer slice. This fixes the per-call write_buffer
     /// collision from Task 8 where multiple composites per frame would
     /// overwrite each other's instance data at offset 0.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_composite_quad(
         &mut self,
         render_pass: &mut wgpu::RenderPass<'_>,
