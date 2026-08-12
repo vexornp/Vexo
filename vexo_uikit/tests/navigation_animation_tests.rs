@@ -832,3 +832,164 @@ mod nav_push_shadow_tests {
         );
     }
 }
+
+// ============================================================================
+// MOBILE BASE DIM-OVERLAY (white-rectangle regression)
+// ============================================================================
+//
+// Regression guard for the iOS push/pop bug where light text in the
+// underneath page became a white rectangle during the transition.
+//
+// Root cause: `Opacity` multiplies its alpha into the page's opaque
+// background quad, reclassifying it as a transparent quad (Phase 3,
+// rendered AFTER text). Light text then renders on the window's white
+// clear color (Phase 2) before the dark background is composited —
+// visible as a white rectangle per text line.
+//
+// Fix: mobile dims the base via a black overlay quad (Phase 3, blended
+// over already-rendered text) instead of `Opacity`, keeping the base's
+// background opaque (Phase 1, before text). These tests lock in that
+// structure so a regression to `Opacity`-based dim is caught.
+
+mod mobile_base_dim_overlay_tests {
+    use super::render_stack;
+    use vexo::{DecoratedBox, IndexedStack, Opacity, Text, Widget};
+    use vexo_uikit::platform::Platform;
+    use vexo_uikit::{NavigationController, NavigationStackView};
+
+    /// True if `w`'s subtree contains an `IndexedStack`. There is exactly one
+    /// `IndexedStack` in the tree (the base), so this is a structural proxy for
+    /// "contains the base" without needing pointer identity.
+    fn subtree_has_indexed_stack(w: &dyn Widget) -> bool {
+        if w.as_any().downcast_ref::<IndexedStack>().is_some() {
+            return true;
+        }
+        if let Some(child) = w.child() {
+            if subtree_has_indexed_stack(child) {
+                return true;
+            }
+        }
+        for child in w.children() {
+            if subtree_has_indexed_stack(child.as_ref()) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn visit<F: FnMut(&dyn Widget)>(w: &dyn Widget, f: &mut F) {
+        f(w);
+        if let Some(child) = w.child() {
+            visit(child, f);
+        }
+        for child in w.children() {
+            visit(child.as_ref(), f);
+        }
+    }
+
+    /// Find the dim overlay: a `DecoratedBox` whose background is pure black
+    /// (rgb 0,0,0). In light-mode tests this uniquely identifies the mobile
+    /// dim overlay (nav bar / divider backgrounds are non-black).
+    fn find_dim_overlay<'a>(w: &'a dyn Widget) -> Option<&'a DecoratedBox> {
+        if let Some(db) = w.as_any().downcast_ref::<DecoratedBox>() {
+            if let Some(bg) = db.style_ref().background {
+                if (bg.r - 0.0).abs() < 1e-6
+                    && (bg.g - 0.0).abs() < 1e-6
+                    && (bg.b - 0.0).abs() < 1e-6
+                {
+                    return Some(db);
+                }
+            }
+        }
+        if let Some(child) = w.child() {
+            if let Some(db) = find_dim_overlay(child) {
+                return Some(db);
+            }
+        }
+        for child in w.children() {
+            if let Some(db) = find_dim_overlay(child.as_ref()) {
+                return Some(db);
+            }
+        }
+        None
+    }
+
+    /// True if the (unique) base `IndexedStack` sits under an `Opacity` widget.
+    fn base_under_opacity(tree: &dyn Widget) -> bool {
+        let mut under = false;
+        visit(tree, &mut |w: &dyn Widget| {
+            if under {
+                return;
+            }
+            // An `Opacity` "contains" the base if the base `IndexedStack` is in
+            // its proper subtree (the Opacity node itself is not an IndexedStack).
+            if let Some(op) = w.as_any().downcast_ref::<Opacity>() {
+                if let Some(child) = op.child() {
+                    if subtree_has_indexed_stack(child) {
+                        under = true;
+                    }
+                }
+            }
+        });
+        under
+    }
+
+    fn make_view(platform: Platform) -> NavigationStackView<&'static str> {
+        let controller: NavigationController<&'static str> = NavigationController::new();
+        controller.push("a");
+        controller.clear_pending();
+        NavigationStackView::new(controller.clone(), Text::new("Root"))
+            .platform(platform)
+            .destination(|d| Text::new(format!("Body-{}", d)).boxed())
+    }
+
+    #[test]
+    fn mobile_steady_no_dim_overlay() {
+        let view = make_view(Platform::Mobile);
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+        let tree = render_stack(view, &mut state);
+
+        // At steady state (base_alpha 1.0) the dim overlay must be ABSENT, not
+        // present at alpha 0. Vexo's hit-test traversal is bounds-based
+        // (`hit_test_recursive` returns true for any object whose bounds contain
+        // the pointer), so a full-screen overlay — even visually transparent —
+        // absorbs ALL pointer events and blocks the conversation list (taps +
+        // scroll). The overlay is only mounted during the transition.
+        assert!(
+            find_dim_overlay(&*tree).is_none(),
+            "mobile steady state must NOT have a dim overlay — it would absorb all pointer events \
+             (Vexo hit-test is bounds-based, not claim-based). The overlay is only mounted when \
+             base_alpha < 1.0 (during a transition)."
+        );
+    }
+
+    #[test]
+    fn mobile_base_not_under_opacity() {
+        let view = make_view(Platform::Mobile);
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+        let tree = render_stack(view, &mut state);
+
+        assert!(
+            !base_under_opacity(&*tree),
+            "mobile base must not be wrapped in Opacity — that reclassifies the page's opaque \
+             background as a transparent quad and reintroduces the white-rectangle bug. Use the \
+             black dim overlay instead."
+        );
+    }
+
+    #[test]
+    fn desktop_base_under_opacity_no_dim_overlay() {
+        let view = make_view(Platform::Desktop);
+        let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
+        let tree = render_stack(view, &mut state);
+
+        assert!(
+            base_under_opacity(&*tree),
+            "desktop base must keep its Opacity fade wrapper (unchanged by the mobile fix)"
+        );
+        assert!(
+            find_dim_overlay(&*tree).is_none(),
+            "desktop must not have a mobile-style black dim overlay"
+        );
+    }
+}
