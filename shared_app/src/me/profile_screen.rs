@@ -408,35 +408,7 @@ fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widge
         ImageData::from_bytes(&profile.avatar_bytes).expect("avatar bytes are valid PNG"),
         56.0,
     );
-    let remote_avatar = {
-        let placeholder_bg = theme.surface_variant;
-        NetworkImage::new(
-            Url::parse(
-                "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&s=112",
-            )
-            .unwrap(),
-        )
-        .placeholder(move || {
-            WithLayout::new(
-                DecoratedBox::with_style(
-                    Text::new(""),
-                    Style::default().background(placeholder_bg),
-                ),
-                Layout::default().width(56.0).height(56.0),
-            )
-            .boxed()
-        })
-        .error(move |_e| {
-            WithLayout::new(
-                DecoratedBox::with_style(
-                    Text::new("?"),
-                    Style::default().background(placeholder_bg),
-                ),
-                Layout::default().width(56.0).height(56.0),
-            )
-            .boxed()
-        })
-    };
+
     let name = Text::new(profile.name.as_str())
         .with_font_size(17.0)
         .with_color(theme.on_background);
@@ -445,7 +417,7 @@ fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widge
         .with_color(theme.on_surface_variant);
     let text_col = column! { name, email }.gap(2.0).flex_grow(1.0);
     WithLayout::new(
-        row! { avatar_widget, remote_avatar, text_col }
+        row! { avatar_widget, text_col }
             .gap(12.0)
             .align(AlignItems::Center),
         Layout::default().padding_each(ROW_PAD_H, ROW_PAD_H, ROW_PAD_V, ROW_PAD_V),
