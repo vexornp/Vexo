@@ -12,6 +12,7 @@ pub enum DrawOp {
     BeginSaveLayer {
         bounds: Bounds,
         opacity: f32,
+        z: f32,
     },
     /// End the most recent save-layer group.
     EndSaveLayer,
@@ -469,7 +470,7 @@ impl FrameBuilder {
     /// main-pass text list.
     pub fn begin_save_layer(&mut self, bounds: Bounds, opacity: f32) {
         let z = self.next_z();
-        let marker = DrawOp::BeginSaveLayer { bounds, opacity };
+        let marker = DrawOp::BeginSaveLayer { bounds, opacity, z };
         self.ops.push((marker, None, Vec::new()));
         self.save_layer_stack.push(SaveLayerFrame {
             bounds,

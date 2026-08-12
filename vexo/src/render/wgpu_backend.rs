@@ -13,7 +13,7 @@ use crate::image_data::ImageData;
 use crate::image_instance::ImageInstance;
 use crate::quad_instance::QuadInstance;
 use crate::render::backend::{RenderBackend, RenderConfig, RenderError};
-use crate::frame_builder::{FrameBuilder, OpKind};
+use crate::frame_builder::{DrawOp, FrameBuilder, OpKind};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -114,6 +114,40 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// Ops beyond this capacity fall back to the ZERO slot with a warning.
 const INITIAL_RCLIP_CAPACITY: usize = 1_000;
 
+/// Maximum number of SaveLayer composite draws per frame. Each composite
+/// uses one slot in the image instance buffer beyond the image instance
+/// count. Sized for v1 (1-2 groups typical); excess groups log and skip.
+const MAX_COMPOSITE_QUADS_PER_FRAME: usize = 8;
+
+#[derive(Clone, Copy)]
+enum SaveLayerMarkerKind {
+    Begin,
+    End,
+}
+
+#[derive(Clone, Copy)]
+struct SaveLayerMarkerInfo {
+    index: usize,
+    kind: SaveLayerMarkerKind,
+    bounds: crate::core::Bounds<crate::core::Logical>,
+    opacity: f32,
+    z: f32,
+}
+
+/// Resources that must outlive the main encoder's submit. Each composite
+/// draw records bind group / sampler / texture references into the main
+/// encoder; wgpu destroys these resources when their Rust handles drop,
+/// so we hold them here until the encoder is submitted (cleared at the
+/// start of the next frame's `execute_render_pass`).
+struct PendingCompositeResources {
+    _color_tex: wgpu::Texture,
+    _depth_tex: wgpu::Texture,
+    _color_view: wgpu::TextureView,
+    _depth_view: wgpu::TextureView,
+    _bind_group: wgpu::BindGroup,
+    _sampler: wgpu::Sampler,
+}
+
 /// WGPU-based render backend.
 ///
 /// Encapsulates all GPU resources and rendering operations.
@@ -183,6 +217,22 @@ pub struct WgpuBackend {
     group_text_renderers: Vec<glyphon::TextRenderer>,
     /// Pool of per-group Viewports (one per group, sized to group bounds).
     group_viewports: Vec<glyphon::Viewport>,
+
+    /// SaveLayer marker positions in `current_op_locations`, populated by
+    /// `upload_geometry`. Scanned by `render_range` to delimit groups.
+    current_save_layer_markers: Vec<SaveLayerMarkerInfo>,
+
+    /// Resources held alive until the main encoder is submitted.
+    /// Populated by `render_save_layer_group`; cleared at the start of
+    /// the next `execute_render_pass`.
+    pending_composite_resources: Vec<PendingCompositeResources>,
+
+    /// Number of image instances written to `image_instance_buffer` this
+    /// frame. Composite quads are appended after this offset.
+    image_instance_count: u32,
+    /// Composite draws issued this frame, for dynamic offset into
+    /// `image_instance_buffer`. Reset at the start of `execute_render_pass`.
+    composite_quad_count: u32,
 }
 
 impl WgpuBackend {
@@ -706,6 +756,10 @@ impl WgpuBackend {
             clear_color: Color::WHITE.to_wgpu_color(),
             group_text_renderers: Vec::new(),
             group_viewports: Vec::new(),
+            current_save_layer_markers: Vec::new(),
+            pending_composite_resources: Vec::new(),
+            image_instance_count: 0,
+            composite_quad_count: 0,
         })
     }
 
@@ -749,13 +803,325 @@ impl WgpuBackend {
         &mut self.group_viewports[index]
     }
 
+    /// Recursively render ops in `current_op_locations[start..end)` into
+    /// `render_pass` using the standard three-phase pipeline (opaque →
+    /// text → transparent).
+    ///
+    /// SaveLayer groups encountered in this range are rendered offscreen
+    /// (via `render_save_layer_group`) and composited back as textured
+    /// quads in paint order during Phase 3, interleaved with transparent
+    /// quads that precede each group.
+    ///
+    /// `group_text_renderer_idx`: 0 = use the main `text_renderer` (main
+    /// surface pass). >0 = use the pooled group text renderer at index
+    /// `group_text_renderer_idx - 1`. Per-group text preparation is not
+    /// wired up in v1; the pool slot exists but renders nothing until
+    /// a later task calls `prepare` on it.
+    ///
+    /// Offscreen textures are surface-sized (`viewport_width × viewport_height`)
+    /// so op positions need no translation — every pass renders at window-
+    /// absolute coords. The composite quad samples only the group's bounds
+    /// sub-region via UV coordinates.
+    fn render_range(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        start: usize,
+        end: usize,
+        group_text_renderer_idx: usize,
+        scale_factor: f32,
+        viewport_width: u32,
+        viewport_height: u32,
+    ) {
+        // ── Scan markers for top-level SaveLayer groups in this range ──
+        // Nested groups (a Begin inside another Begin within this range)
+        // are NOT recorded here — they're handled by the recursive call
+        // inside `render_save_layer_group`. We only composite top-level
+        // groups in THIS pass.
+        let mut save_layer_ranges: Vec<
+            (usize, usize, crate::core::Bounds<crate::core::Logical>, f32, f32),
+        > = Vec::new();
+        let mut begin_stack: Vec<usize> = Vec::new();
+        for (mi, marker) in self.current_save_layer_markers.iter().enumerate() {
+            if marker.index < start || marker.index >= end {
+                continue;
+            }
+            match marker.kind {
+                SaveLayerMarkerKind::Begin => begin_stack.push(mi),
+                SaveLayerMarkerKind::End => {
+                    if let Some(begin_mi) = begin_stack.pop() {
+                        // Only top-level groups (stack empty after pop) are
+                        // composited in this pass. Nested groups are rendered
+                        // by the recursive call.
+                        if begin_stack.is_empty() {
+                            let begin = &self.current_save_layer_markers[begin_mi];
+                            save_layer_ranges.push((
+                                begin.index + 1,
+                                marker.index,
+                                begin.bounds,
+                                begin.opacity,
+                                begin.z,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        // Sort by gstart so we can iterate groups in paint order during
+        // both op classification and Phase 3 interleaving.
+        save_layer_ranges.sort_by_key(|(gstart, _, _, _, _)| *gstart);
+
+        // ── Classify ops, skipping SaveLayer group ranges ──
+        let mut opaque_indices: Vec<usize> = Vec::new();
+        let mut transparent_indices: Vec<usize> = Vec::new();
+        let mut next_group = 0usize;
+        let mut i = start;
+        while i < end {
+            // If `i` is the Begin marker of the next top-level group,
+            // skip the whole group (it's rendered offscreen by recursion).
+            if next_group < save_layer_ranges.len() {
+                let (gstart, gend, _, _, _) = save_layer_ranges[next_group];
+                if i == gstart - 1 {
+                    i = gend + 1; // skip past EndSaveLayer marker
+                    next_group += 1;
+                    continue;
+                }
+            }
+            let loc = self.current_op_locations[i];
+            match loc.kind() {
+                OpKind::Quad | OpKind::Image => opaque_indices.push(i),
+                OpKind::TransparentQuad => transparent_indices.push(i),
+                OpKind::SaveLayerMarker => {} // unmatched End marker — skip
+            }
+            i += 1;
+        }
+
+        // ── Phase 1: Opaque quads + images ──
+        let mut prev_kind: Option<OpKind> = None;
+        let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
+        let mut prev_rclip_offset_per_slot: [Option<u32>; 2] = [None, None];
+        for &i in &opaque_indices {
+            self.draw_op_in_pass(
+                render_pass,
+                i,
+                &mut prev_kind,
+                &mut prev_clip,
+                &mut prev_rclip_offset_per_slot,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
+        }
+
+        // ── Phase 2: Text ──
+        render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+        if group_text_renderer_idx == 0 {
+            let _ = self.text_renderer.render(&self.atlas, &self.viewport, render_pass);
+        } else {
+            // Group pass — use the pooled group text renderer. The slot
+            // must already exist (created lazily in render_save_layer_group
+            // before recursing). If it doesn't, skip text for safety.
+            let idx = group_text_renderer_idx - 1;
+            if idx < self.group_text_renderers.len() && idx < self.group_viewports.len() {
+                let _ = self.group_text_renderers[idx]
+                    .render(&self.atlas, &self.group_viewports[idx], render_pass);
+            }
+        }
+
+        // ── Phase 3: Transparent quads + save-layer composites (paint order) ──
+        prev_kind = None;
+        prev_clip = None;
+        prev_rclip_offset_per_slot = [None, None];
+
+        let mut transparent_iter = transparent_indices.iter().peekable();
+        for (gi, &(gstart, gend, bounds, opacity, z)) in save_layer_ranges.iter().enumerate() {
+            // Draw transparent quads that come before this group in paint order.
+            while let Some(&&ti) = transparent_iter.peek() {
+                if ti < gstart {
+                    self.draw_op_in_pass(
+                        render_pass,
+                        ti,
+                        &mut prev_kind,
+                        &mut prev_clip,
+                        &mut prev_rclip_offset_per_slot,
+                        scale_factor,
+                        viewport_width,
+                        viewport_height,
+                    );
+                    transparent_iter.next();
+                } else {
+                    break;
+                }
+            }
+
+            // Render the group offscreen. `group_text_renderer_idx` for the
+            // recursive call is `gi + 1` (1-based; 0 = main pass). Each
+            // top-level group in this pass gets its own pool slot; nested
+            // groups inside the recursive call reuse the same slot indexing
+            // scheme — collisions are acceptable in v1 since group text
+            // preparation isn't wired up yet.
+            let group_text_idx = gi + 1;
+            let group_view = self.render_save_layer_group(
+                gstart,
+                gend,
+                bounds,
+                group_text_idx,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
+
+            // Composite the offscreen result into this pass at the group's
+            // paint-order z-depth.
+            self.draw_composite_quad(
+                render_pass,
+                &group_view,
+                bounds,
+                opacity,
+                z,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
+        }
+
+        // Draw remaining transparent quads after all groups.
+        for &ti in transparent_iter {
+            self.draw_op_in_pass(
+                render_pass,
+                ti,
+                &mut prev_kind,
+                &mut prev_clip,
+                &mut prev_rclip_offset_per_slot,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
+        }
+    }
+
+    /// Render a SaveLayer group offscreen and return the color view holding
+    /// the result. The caller is responsible for compositing the view into
+    /// the parent pass via `draw_composite_quad`.
+    ///
+    /// Creates a surface-sized offscreen target (no coordinate translation
+    /// needed — ops render at window-absolute positions), records the group's
+    /// ops via a recursive `render_range` call, submits the offscreen encoder,
+    /// and stashes the offscreen resources in `pending_composite_resources`
+    /// so they outlive the parent encoder's submit.
+    fn render_save_layer_group(
+        &mut self,
+        gstart: usize,
+        gend: usize,
+        _bounds: crate::core::Bounds<crate::core::Logical>,
+        group_text_idx: usize,
+        scale_factor: f32,
+        viewport_width: u32,
+        viewport_height: u32,
+    ) -> wgpu::TextureView {
+        // Ensure the group's text renderer + viewport slots exist. The
+        // slot is created even though v1 doesn't prepare group text —
+        // this keeps the pool indexed consistently for future tasks.
+        if group_text_idx > 0 {
+            let _ = self.group_text_renderer(group_text_idx - 1);
+            let _ = self.group_viewport(group_text_idx - 1);
+        }
+
+        let (color_tex, color_view, depth_tex, depth_view) =
+            self.create_offscreen_target(viewport_width, viewport_height);
+
+        let mut encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("SaveLayer Encoder") },
+        );
+        {
+            let mut offscreen_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("SaveLayer Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            self.render_range(
+                &mut offscreen_pass,
+                gstart,
+                gend,
+                group_text_idx,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Hold resources alive until the parent encoder is submitted.
+        // wgpu destroys resources when their Rust handles drop, but the
+        // parent encoder records resource IDs that must remain valid
+        // through submit. Cleared at the start of the next frame.
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("SaveLayer Composite Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SaveLayer Composite BindGroup"),
+            layout: &self.image_atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        self.pending_composite_resources.push(PendingCompositeResources {
+            _color_tex: color_tex,
+            _depth_tex: depth_tex,
+            _color_view: color_view.clone(),
+            _depth_view: depth_view,
+            _bind_group: bind_group,
+            _sampler: sampler,
+        });
+
+        color_view
+    }
+
     /// Draw a composite quad: sample the offscreen texture view and blend
     /// it at `opacity` over the current pass's content. Used to composite
     /// a SaveLayer group's offscreen result into its parent pass.
     ///
-    /// Reuses the image pipeline (which samples a 2D texture). A temporary
-    /// bind group is created per call to bind the offscreen texture view
-    /// instead of the image atlas.
+    /// Reuses the image pipeline. The bind group + sampler are created by
+    /// the caller (`render_save_layer_group`) and stashed in
+    /// `pending_composite_resources` to outlive the parent encoder.
+    ///
+    /// The composite instance is appended to `image_instance_buffer` past
+    /// the image-instance region (offset = `image_instance_count`), using a
+    /// dynamic vertex-buffer slice. This fixes the per-call write_buffer
+    /// collision from Task 8 where multiple composites per frame would
+    /// overwrite each other's instance data at offset 0.
     pub fn draw_composite_quad(
         &mut self,
         render_pass: &mut wgpu::RenderPass<'_>,
@@ -767,53 +1133,49 @@ impl WgpuBackend {
         viewport_width: u32,
         viewport_height: u32,
     ) {
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("SaveLayer Composite Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
+        // Look up the bind group stashed by render_save_layer_group. We
+        // can't recreate it here because we'd lose the association with
+        // the offscreen view (and recreating would leak — bind groups
+        // aren't cheap). The last entry in pending_composite_resources
+        // corresponds to the most recent group render.
+        let bind_group = match self.pending_composite_resources.last() {
+            Some(r) => &r._bind_group,
+            None => return,
+        };
 
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SaveLayer Composite BindGroup"),
-            layout: &self.image_atlas_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(offscreen_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-
-        render_pass.set_pipeline(&self.image_pipeline);
-        render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-        render_pass.set_bind_group(1, &bind_group, &[]);
-        render_pass.set_bind_group(2, &self.rclip_bind_group, &[0]);
-        render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
-        render_pass.set_index_buffer(
-            self.image_index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
+        // Append this composite's instance data past the image instances.
+        // Each composite gets its own slot; the slot index doubles as the
+        // instance index for the draw call.
+        if (self.composite_quad_count as usize) >= MAX_COMPOSITE_QUADS_PER_FRAME {
+            log::warn!(
+                "[SaveLayer] composite quad limit {} reached; skipping further composites this frame",
+                MAX_COMPOSITE_QUADS_PER_FRAME
+            );
+            return;
+        }
+        let composite_slot = self.image_instance_count + self.composite_quad_count;
+        let byte_offset = (composite_slot as wgpu::BufferAddress)
+            * (std::mem::size_of::<ImageInstance>() as wgpu::BufferAddress);
+        let byte_end = byte_offset + std::mem::size_of::<ImageInstance>() as wgpu::BufferAddress;
 
         let physical_x = logical_bounds.left * scale_factor;
         let physical_y = logical_bounds.top * scale_factor;
         let physical_w = logical_bounds.width() * scale_factor;
         let physical_h = logical_bounds.height() * scale_factor;
 
+        // UV: the group's bounds sub-region within the surface-sized
+        // offscreen texture. Samples only the group's area, not the
+        // full offscreen texture.
+        let uv_x = physical_x / viewport_width.max(1) as f32;
+        let uv_y = physical_y / viewport_height.max(1) as f32;
+        let uv_w = physical_w / viewport_width.max(1) as f32;
+        let uv_h = physical_h / viewport_height.max(1) as f32;
+
         let instance = ImageInstance {
             position: [physical_x, physical_y],
             size: [physical_w, physical_h],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
+            uv_origin: [uv_x, uv_y],
+            uv_size: [uv_w, uv_h],
             transform: AffineTransform::identity().to_array(),
             opacity,
             z,
@@ -821,8 +1183,20 @@ impl WgpuBackend {
 
         self.queue.write_buffer(
             &self.image_instance_buffer,
-            0,
+            byte_offset,
             bytemuck::cast_slice(&[instance]),
+        );
+        self.composite_quad_count += 1;
+
+        render_pass.set_pipeline(&self.image_pipeline);
+        render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+        render_pass.set_bind_group(1, bind_group, &[]);
+        render_pass.set_bind_group(2, &self.rclip_bind_group, &[0]);
+        render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(byte_offset..byte_end));
+        render_pass.set_index_buffer(
+            self.image_index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
         );
 
         let x = physical_x.max(0.0) as u32;
@@ -835,6 +1209,11 @@ impl WgpuBackend {
             render_pass.set_scissor_rect(x, y, w, h);
             render_pass.draw_indexed(0..6, 0, 0..1);
         }
+
+        // Keep `offscreen_view` referenced even though we don't use it
+        // directly here — the bind group already references it. This
+        // silences unused-parameter warnings and documents intent.
+        let _ = offscreen_view;
     }
 
     /// Get a reference to the queue.
@@ -1066,9 +1445,44 @@ impl WgpuBackend {
                 bytemuck::cast_slice(&image_instances),
             );
         }
+        // Reserve trailing slots for composite quads so draw_composite_quad
+        // can append without re-allocating (which would invalidate earlier
+        // slices bound in the same pass).
+        self.ensure_image_instance_capacity(
+            image_instances.len() + MAX_COMPOSITE_QUADS_PER_FRAME,
+        );
+        self.image_instance_count = image_instances.len() as u32;
 
         self.current_op_locations = op_locations;
         self.current_op_clips = op_clips;
+
+        // Scan ops for SaveLayer markers (Begin/End) so render_range can
+        // delimit groups without re-borrowing the frame builder. Each
+        // Begin carries its bounds/opacity/z for later compositing.
+        self.current_save_layer_markers.clear();
+        for (i, (op, _, _)) in frame_builder.ops().iter().enumerate() {
+            match op {
+                DrawOp::BeginSaveLayer { bounds, opacity, z } => {
+                    self.current_save_layer_markers.push(SaveLayerMarkerInfo {
+                        index: i,
+                        kind: SaveLayerMarkerKind::Begin,
+                        bounds: *bounds,
+                        opacity: *opacity,
+                        z: *z,
+                    });
+                }
+                DrawOp::EndSaveLayer => {
+                    self.current_save_layer_markers.push(SaveLayerMarkerInfo {
+                        index: i,
+                        kind: SaveLayerMarkerKind::End,
+                        bounds: crate::core::Bounds::ZERO,
+                        opacity: 0.0,
+                        z: 0.0,
+                    });
+                }
+                _ => {}
+            }
+        }
 
         // Compute per-op rclip offsets. Each op gets a slot in the
         // rclip uniform buffer. Ops with no rclip point to offset 0
@@ -1302,6 +1716,11 @@ impl WgpuBackend {
             label: Some("Render Encoder"),
         });
 
+        // Reset per-frame composite state. Dropping last frame's pending
+        // resources is safe — its encoder was submitted last frame.
+        self.composite_quad_count = 0;
+        self.pending_composite_resources.clear();
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -1327,93 +1746,19 @@ impl WgpuBackend {
                 multiview_mask: None,
             });
 
-            // Iterate ops in paint order. Set scissor + pipeline only on change.
-            // prev_clip uses Option<Option<Bounds>> so the initial state (no
-            // scissor ever set yet) is distinguishable from "scissor set to None
-            // (full viewport)". This matters when the first op has clip == None:
-            // we still need to set the scissor once.
-            let mut prev_kind: Option<OpKind> = None;
-            let mut prev_clip: Option<Option<crate::core::Bounds<crate::core::Logical>>> = None;
-            // Last rclip dynamic offset set on each slot this pass.
-            // `None` = slot has not been set yet. Bind group bindings persist
-            // across pipeline switches within a render pass, so we only need
-            // to re-set when the offset for the target slot changes.
-            // Index 0 = Quad slot (group 1), Index 1 = Image slot (group 2).
-            let mut prev_rclip_offset_per_slot: [Option<u32>; 2] = [None, None];
-
-            // Three-phase rendering (standard transparency sorting):
-            //
-            // Phase 1 — Opaque quads + images (depth-write ON). These write
-            //   their depth to the depth buffer, so text rendered in Phase 2
-            //   that is behind an opaque quad (e.g. the actions card at full
-            //   open) fails the LessEqual depth test and is correctly occluded.
-            //
-            // Phase 2 — Text (glyphon). All text is batched into one pass by
-            //   glyphon's TextRenderer. Text tests against the depth buffer
-            //   written by Phase 1, so background text behind an opaque card
-            //   is hidden, while background text in open areas passes and is
-            //   drawn.
-            //
-            // Phase 3 — Transparent quads (depth-write OFF, depth test ON).
-            //   Semi-transparent quads (fill alpha < 1.0, e.g. the context-menu
-            //   dim barrier, or the card during the opening animation) blend
-            //   ON TOP of the already-rendered text. This means:
-            //   • The dim barrier correctly dims background text (text drawn
-            //     first, then barrier blends 40% black over it).
-            //   • A semi-transparent card during the opening animation lets
-            //     background text show through it (correct for transparency).
-            //   • At full open (v=1.0, Opacity(1.0)), the card's fill alpha is
-            //     1.0 → classified as opaque → Phase 1 → writes depth →
-            //     occludes background text behind it.
-            //
-            // Without three-phase rendering, text (always in a separate final
-            // pass) would render on top of ALL transparent quads, causing
-            // background text to show through the card and overlap menu text.
-
-            // Phase 1: Opaque quads + images.
-            for i in 0..self.current_op_locations.len() {
-                if self.current_op_locations[i].kind() == OpKind::TransparentQuad {
-                    continue;
-                }
-                self.draw_op_in_pass(
-                    &mut render_pass,
-                    i,
-                    &mut prev_kind,
-                    &mut prev_clip,
-                    &mut prev_rclip_offset_per_slot,
-                    scale_factor,
-                    viewport_width,
-                    viewport_height,
-                );
-            }
-
-            // Phase 2: Text — full-viewport scissor.
-            render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
-            self.text_renderer
-                .render(&self.atlas, &self.viewport, &mut render_pass)
-                .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
-
-            // Phase 3: Transparent quads. Reset pipeline/clip/rclip state so
-            // they are re-bound after the text pass (which may have changed
-            // pipeline bindings).
-            prev_kind = None;
-            prev_clip = None;
-            prev_rclip_offset_per_slot = [None, None];
-            for i in 0..self.current_op_locations.len() {
-                if self.current_op_locations[i].kind() != OpKind::TransparentQuad {
-                    continue;
-                }
-                self.draw_op_in_pass(
-                    &mut render_pass,
-                    i,
-                    &mut prev_kind,
-                    &mut prev_clip,
-                    &mut prev_rclip_offset_per_slot,
-                    scale_factor,
-                    viewport_width,
-                    viewport_height,
-                );
-            }
+            // Recursive three-phase render. SaveLayer groups are rendered
+            // offscreen and composited as textured quads at their paint-order
+            // z-depth. group_text_renderer_idx=0 means "use the main
+            // text_renderer" (this pass).
+            self.render_range(
+                &mut render_pass,
+                0,
+                self.current_op_locations.len(),
+                0,
+                scale_factor,
+                viewport_width,
+                viewport_height,
+            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
