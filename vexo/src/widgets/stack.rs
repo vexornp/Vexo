@@ -1,15 +1,19 @@
-//! Stack widget — a multi-child container where children overlap (last child on top).
+//! Stack widget — a positioning context for overlapping `Positioned` children.
 //!
 //! `Stack` is the Vexo equivalent of Flutter's `Stack` / CSS `position: relative`
 //! container. It establishes a positioning context: descendant `Positioned` widgets
 //! are absolutely positioned relative to the Stack's content box.
 //!
-//! Non-positioned children are laid out by the Stack's flexbox (top-left aligned,
-//! `FlexDirection::Column` + `AlignItems::Start`). `Positioned` children are taken
-//! out of flow and positioned via their insets.
+//! Non-positioned children are laid out by the Stack's flexbox
+//! (`FlexDirection::Column` + `AlignItems::Stretch`): they flow vertically
+//! top-to-bottom and are stretched to fill the Stack's cross-axis (width).
+//! They do NOT overlap each other. Only `Positioned` children (taken out of
+//! flow via `position: Absolute`) overlap the in-flow children — that is the
+//! sole mechanism for z-stacking within a Stack.
 //!
 //! The Stack defaults to filling its parent (`width_percent(1.0).height_percent(1.0)`,
-//! i.e. `StackFit.expand`). Children paint in order, so the last child is on top.
+//! i.e. `StackFit.expand`). Children paint in push order, so a later `Positioned`
+//! child paints on top of an earlier one.
 //!
 //! # Example
 //!
@@ -19,6 +23,7 @@
 //!     .push(Positioned::new(Text::new("TL")).top(10.0).left(10.0))
 //!     .push(Positioned::new(Text::new("BR")).bottom(10.0).right(10.0))
 //! ```
+//!
 
 #[allow(unused_imports)]
 use super::super::core::{Logical, Size};
@@ -53,10 +58,13 @@ fn stack_layout() -> Layout {
         .min_height(0.0)
 }
 
-/// Stack widget — a multi-child container where children overlap.
+/// Stack widget — a positioning context for overlapping `Positioned` children.
 ///
-/// Non-positioned children are laid out top-left by the Stack's flexbox.
-/// `Positioned` children are absolutely positioned via their insets.
+/// Non-positioned children flow vertically in the Stack's column flexbox
+/// (`AlignItems::Stretch` stretches them to fill the cross-axis width); they
+/// do NOT overlap. `Positioned` children are taken out of flow
+/// (`position: Absolute`) and overlap the in-flow children via their insets —
+/// this is the only mechanism for z-stacking within a Stack.
 pub struct Stack {
     key: Option<WidgetKey>,
     children: Vec<Box<dyn Widget>>,

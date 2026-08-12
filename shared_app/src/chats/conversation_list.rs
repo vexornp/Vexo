@@ -30,7 +30,7 @@ use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
 use crate::data::{AvatarSource, ConvId, Conversation, Message};
-use crate::widgets::avatar::{avatar, network_avatar};
+use crate::widgets::avatar::{avatar, avatar_border_ring, network_avatar};
 
 pub(crate) struct ConversationList {
     pub(crate) conversations: Vec<Conversation>,
@@ -147,6 +147,11 @@ impl Component for ConversationRow {
             AvatarSource::Url(url) => network_avatar(url.clone(), 40.0),
         };
 
+        // 1px outline ring so a white/clear-background avatar still reads as
+        // a circle against the (white, in light mode) pane. Paints on top of
+        // the image via Stack push order; the badge sits above the ring.
+        let border_ring = avatar_border_ring(40.0, theme.outline);
+
         let name_color = nav_colors.row_text;
         let preview_color = nav_colors.placeholder_text;
 
@@ -180,6 +185,7 @@ impl Component for ConversationRow {
         let avatar_with_badge = Stack::new()
             .with_layout(Layout::stack().width(40.0).height(40.0).flex_shrink(0.0))
             .push(avatar)
+            .push(border_ring)
             .push(badge)
             .boxed();
 
