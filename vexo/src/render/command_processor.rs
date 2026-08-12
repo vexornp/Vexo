@@ -251,6 +251,12 @@ pub fn process_commands(
                     current_opacity = prev_opacity;
                 }
             }
+            // SaveLayer variants are no-ops here until Task 4 wires the
+            // offscreen render-target path into FrameBuilder. Nothing emits
+            // these commands yet, so treating them as no-ops preserves the
+            // existing alpha-multiply fallback as the active path.
+            RenderCommand::PushSaveLayer { .. } => {}
+            RenderCommand::PopSaveLayer => {}
         }
     }
 }

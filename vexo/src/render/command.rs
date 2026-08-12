@@ -142,6 +142,23 @@ pub enum RenderCommand {
 
     /// Pop the most recent opacity context from the stack.
     PopOpacity,
+
+    /// Push a save-layer context onto the stack.
+    /// All subsequent commands are rendered into an offscreen texture
+    /// as a unit, then composited at `opacity` — preserving internal
+    /// paint order (Flutter/Skia SaveLayer model). Replaces
+    /// `PushOpacity` for the Opacity widget when `opacity < 1.0`.
+    PushSaveLayer {
+        /// The bounds of the save-layer group in logical coordinates.
+        /// The offscreen texture is sized to this region.
+        bounds: Bounds<Logical>,
+        /// The opacity value (0.0 = invisible, 1.0 = fully opaque).
+        /// Applied at composite time, not baked into contained ops.
+        opacity: f32,
+    },
+
+    /// Pop the most recent save-layer context.
+    PopSaveLayer,
 }
 
 // ============================================================================
@@ -435,6 +452,28 @@ mod tests {
         match cmd {
             RenderCommand::PopOpacity => {}
             _ => panic!("Expected PopOpacity"),
+        }
+    }
+
+    #[test]
+    fn test_save_layer_commands() {
+        let bounds = Bounds::from_xywh(10.0, 20.0, 100.0, 50.0);
+        let cmd = RenderCommand::PushSaveLayer {
+            bounds,
+            opacity: 0.85,
+        };
+        match cmd {
+            RenderCommand::PushSaveLayer { bounds: b, opacity } => {
+                assert_eq!(b.left, 10.0);
+                assert_eq!(b.width(), 100.0);
+                assert!((opacity - 0.85).abs() < 1e-6);
+            }
+            _ => panic!("Expected PushSaveLayer"),
+        }
+        let cmd = RenderCommand::PopSaveLayer;
+        match cmd {
+            RenderCommand::PopSaveLayer => {}
+            _ => panic!("Expected PopSaveLayer"),
         }
     }
 
