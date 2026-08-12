@@ -90,7 +90,14 @@ impl TextProcessor {
     ///
     /// Each request carries its own `clip_bounds`; there is no clip-group
     /// bucketing. Clipping is per-request via `TextArea.bounds`.
-    fn process_text_requests(
+    ///
+    /// This is the shared per-request → TextArea conversion used by both the
+    /// main-pass text collection (`collect_text`) and per-save-layer-group text
+    /// preparation (`TextPipeline::execute_render`). The caller is responsible
+    /// for invoking `PreparedText::as_text_areas` to obtain the borrow-bound
+    /// `TextArea`s and keeping the `PreparedText` alive for the duration of
+    /// the `glyphon::TextRenderer::prepare` call.
+    pub fn process_text_requests(
         &mut self,
         font_system: &mut FontSystem,
         requests: &[TextRequest],

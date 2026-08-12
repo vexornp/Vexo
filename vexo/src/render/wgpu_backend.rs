@@ -1294,6 +1294,16 @@ impl WgpuBackend {
         self.current_config.as_ref()
     }
 
+    /// Get the current render config, panicking if unset.
+    ///
+    /// The config is set during `resize` / surface configuration and must be
+    /// available by the time rendering begins.
+    pub fn config(&self) -> &RenderConfig {
+        self.current_config
+            .as_ref()
+            .expect("config must be set before render")
+    }
+
     /// Get a clone of the scale source for distribution.
     pub fn scale_source(&self) -> ScaleSource {
         self.scale_source.clone()
@@ -1317,6 +1327,63 @@ impl WgpuBackend {
                 &mut swash_cache,
             )
             .unwrap();
+    }
+
+    /// Prepare text for a save-layer group using its pooled TextRenderer and
+    /// Viewport. The pooled slots are created lazily (one per group index,
+    /// 0-based here). The group's Viewport is updated to the current surface
+    /// resolution each call — offscreen group targets are surface-sized so no
+    /// coordinate translation is needed.
+    ///
+    /// This is the per-group counterpart to `prepare_text`. Errors are
+    /// propagated (unlike the main-pass `prepare_text`, which unwraps) because
+    /// group text preparation is new code and we want failures to surface
+    /// rather than silently rendering empty groups.
+    pub fn prepare_group_text(
+        &mut self,
+        group_idx: usize,
+        font_system: &mut FontSystem,
+        text_areas: Vec<glyphon::TextArea>,
+    ) -> Result<(), RenderError> {
+        // Ensure pooled slots exist (lazy grow). The returned borrows are
+        // discarded so the split-borrows below are unaffected.
+        if self.group_text_renderers.len() <= group_idx {
+            let _ = self.group_text_renderer(group_idx);
+        }
+        if self.group_viewports.len() <= group_idx {
+            let _ = self.group_viewport(group_idx);
+        }
+
+        let resolution = glyphon::Resolution {
+            width: self.config().width(),
+            height: self.config().height(),
+        };
+
+        // Split-borrow distinct fields directly. The borrow checker permits
+        // simultaneous mutable borrows of disjoint struct fields, which is
+        // essential here: `prepare` needs &mut atlas, &mut viewport, &mut
+        // renderer, plus &device and &queue at once. Method-based accessors
+        // would each borrow all of `self` and conflict.
+        let renderer = &mut self.group_text_renderers[group_idx];
+        let viewport = &mut self.group_viewports[group_idx];
+        let atlas = &mut self.atlas;
+        let device = &self.device;
+        let queue = &self.queue;
+
+        viewport.update(queue, resolution);
+
+        let mut swash_cache = glyphon::SwashCache::new();
+        renderer
+            .prepare(
+                device,
+                queue,
+                font_system,
+                atlas,
+                viewport,
+                text_areas,
+                &mut swash_cache,
+            )
+            .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))
     }
 
     /// Ensure the instance buffer can hold `required` instances.
