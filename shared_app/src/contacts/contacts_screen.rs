@@ -5,7 +5,6 @@ use vexo::{
     Text, Theme, Widget, WithLayout,
 };
 
-use crate::data::AvatarSource;
 use crate::data::Contact;
 use crate::widgets::avatar::Avatar;
 
@@ -41,7 +40,7 @@ impl Component for ContactsScreen {
 }
 
 fn build_contact_row(c: &Contact, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let avatar = Avatar::new(AvatarSource::Bytes(c.avatar_bytes.clone()), 40.0).boxed();
+    let avatar = Avatar::new(c.avatar.clone(), 40.0).boxed();
 
     let name = Text::new(c.name.as_str())
         .with_font_size(16.0)

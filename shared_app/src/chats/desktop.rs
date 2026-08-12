@@ -15,7 +15,9 @@ use vexo_uikit::ContextMenuController;
 
 use crate::chats::chat_screen::ChatScreen;
 use crate::chats::conversation_list::ConversationList;
-use crate::data::{apply_reaction, ConvId, Conversation, Message, MessageAuthor, ReactionType};
+use crate::data::{
+    apply_reaction, AvatarSource, ConvId, Conversation, Message, MessageAuthor, ReactionType,
+};
 use crate::widgets::titled_container::titled_container;
 
 /// Desktop Chats page: a two-column row with the conversation list (col 2)
@@ -24,7 +26,7 @@ use crate::widgets::titled_container::titled_container;
 pub(crate) struct DesktopChatsPage {
     pub conversations: Vec<Conversation>,
     pub messages: vexo::Signal<HashMap<ConvId, Vec<Message>>>,
-    pub me_avatar: Rc<[u8]>,
+    pub me_avatar: AvatarSource,
     pub selected_conv: vexo::Signal<Option<ConvId>>,
     pub context_menu: ContextMenuController,
 }
@@ -34,7 +36,7 @@ impl Clone for DesktopChatsPage {
         Self {
             conversations: self.conversations.clone(),
             messages: self.messages.clone(),
-            me_avatar: Rc::clone(&self.me_avatar),
+            me_avatar: self.me_avatar.clone(),
             selected_conv: self.selected_conv.clone(),
             context_menu: self.context_menu.clone(),
         }
@@ -94,7 +96,7 @@ impl Component for DesktopChatsPage {
                     conv_id: id_for_send.clone(),
                     messages,
                     avatar,
-                    me_avatar_bytes: self.me_avatar.clone(),
+                    me_avatar: self.me_avatar.clone(),
                     on_send: Rc::new(move |text: &str| {
                         let mut map = msgs_for_send.get_cloned();
                         if let Some(vec) = map.get_mut(&id_for_send) {
@@ -181,7 +183,7 @@ fn build_empty_placeholder(nav_colors: &NavColors) -> Box<dyn Widget> {
 pub(crate) fn build_chats_tab_desktop(
     conversations: Vec<Conversation>,
     messages: vexo::Signal<HashMap<ConvId, Vec<Message>>>,
-    me_avatar: Rc<[u8]>,
+    me_avatar: AvatarSource,
     selected_conv: vexo::Signal<Option<ConvId>>,
     context_menu: ContextMenuController,
 ) -> Box<dyn Widget> {

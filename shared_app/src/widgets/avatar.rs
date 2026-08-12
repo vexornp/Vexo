@@ -9,51 +9,6 @@ use vexo::{
 use crate::data::AvatarSource;
 
 // ---------------------------------------------------------------------------
-// Legacy free functions — removed in Task 5 when all callers migrate to
-// `Avatar`.
-// ---------------------------------------------------------------------------
-
-pub(crate) fn avatar(image_data: ImageData, diameter: f32) -> Box<dyn Widget> {
-    ClipRRect::new(
-        diameter / 2.0,
-        WithLayout::new(
-            Image::new(image_data),
-            Layout::default().width(diameter).height(diameter),
-        ),
-    )
-    .boxed()
-}
-
-pub(crate) fn network_avatar(url: url::Url, diameter: f32) -> Box<dyn Widget> {
-    let key = url.as_str().to_string();
-    ClipRRect::new(
-        diameter / 2.0,
-        WithLayout::new(
-            NetworkImage::new(url).with_key(key),
-            Layout::default().width(diameter).height(diameter),
-        ),
-    )
-    .boxed()
-}
-
-pub(crate) fn avatar_border_ring(diameter: f32, color: Color) -> Box<dyn Widget> {
-    Positioned::new(DecoratedBox::with_style(
-        WithLayout::new(
-            Spacer::new(),
-            Layout::default().width(diameter).height(diameter),
-        ),
-        Style::default()
-            .border(color, 1.0)
-            .corner_radius(diameter / 2.0),
-    ))
-    .top(0.0)
-    .left(0.0)
-    .width(diameter)
-    .height(diameter)
-    .boxed()
-}
-
-// ---------------------------------------------------------------------------
 // Unified Avatar Component
 // ---------------------------------------------------------------------------
 
@@ -203,7 +158,7 @@ fn border_ring(diameter: f32, color: Color) -> Box<dyn Widget> {
 
 /// Unread-count badge: red circle with white number. Moved here from
 /// `conversation_list.rs` so the `Avatar` widget owns badge rendering.
-pub(crate) fn unread_badge(count: u32, theme: &ThemeData) -> Box<dyn Widget> {
+fn unread_badge(count: u32, theme: &ThemeData) -> Box<dyn Widget> {
     DecoratedBox::with_style(
         WithLayout::new(
             Text::new(count.to_string())

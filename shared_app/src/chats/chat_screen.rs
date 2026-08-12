@@ -27,7 +27,7 @@ pub(crate) struct ChatScreen {
     /// `on_mount`), so its subscription survives `should_rebuild == false`.
     pub(crate) messages: Signal<std::collections::HashMap<ConvId, Vec<Message>>>,
     pub(crate) avatar: AvatarSource,
-    pub(crate) me_avatar_bytes: Rc<[u8]>,
+    pub(crate) me_avatar: AvatarSource,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
     /// Toggle-callback for reactions. `(index, rt)` where `index` is the
     /// message's position in the conversation `Vec<Message>`. Wired in
@@ -45,7 +45,7 @@ impl Clone for ChatScreen {
             conv_id: self.conv_id.clone(),
             messages: self.messages.clone(),
             avatar: self.avatar.clone(),
-            me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
+            me_avatar: self.me_avatar.clone(),
             on_send: Rc::clone(&self.on_send),
             on_react: Rc::clone(&self.on_react),
             scroll_controller: self.scroll_controller.clone(),
@@ -174,7 +174,7 @@ impl Component for ChatScreen {
                 // accumulate into a horizontal row of chips (one per reaction).
                 let chip = message_menu::reaction_chip_row(&msg.reactions, &theme);
                 let src = if is_me {
-                    AvatarSource::Bytes(self.me_avatar_bytes.clone())
+                    self.me_avatar.clone()
                 } else {
                     self.avatar.clone()
                 };
@@ -365,8 +365,8 @@ mod tests {
             .clone()
     }
 
-    fn seed_me_avatar() -> Rc<[u8]> {
-        crate::data::seed().profile.avatar_bytes.clone()
+    fn seed_me_avatar() -> AvatarSource {
+        crate::data::seed().profile.avatar.clone()
     }
 
     /// Walk the render tree and return true if any `TextRenderObject` contains
@@ -400,7 +400,7 @@ mod tests {
             conv_id: ConvId(1),
             messages: messages_signal,
             avatar: seed_avatar(ConvId(1)),
-            me_avatar_bytes: seed_me_avatar(),
+            me_avatar: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
@@ -423,7 +423,7 @@ mod tests {
             conv_id: ConvId(1),
             messages: messages_signal.clone(),
             avatar: seed_avatar(ConvId(1)),
-            me_avatar_bytes: seed_me_avatar(),
+            me_avatar: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
@@ -476,7 +476,7 @@ mod tests {
             conv_id: ConvId(4),
             messages: empty_signal,
             avatar: seed_avatar(ConvId(4)),
-            me_avatar_bytes: seed_me_avatar(),
+            me_avatar: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
@@ -548,7 +548,7 @@ mod tests {
             conv_id: ConvId(1),
             messages: messages_signal,
             avatar: seed_avatar(ConvId(1)),
-            me_avatar_bytes: seed_me_avatar(),
+            me_avatar: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
@@ -929,7 +929,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
@@ -1006,7 +1006,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
@@ -1077,7 +1077,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
@@ -1134,7 +1134,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
@@ -1238,7 +1238,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
@@ -1297,7 +1297,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: on_react.clone(),
                 scroll_controller: ScrollController::new(),
@@ -1391,7 +1391,7 @@ mod tests {
                 conv_id: ConvId(1),
                 messages: messages_signal,
                 avatar: seed_avatar(ConvId(1)),
-                me_avatar_bytes: seed_me_avatar(),
+                me_avatar: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: on_react.clone(),
                 scroll_controller: ScrollController::new(),

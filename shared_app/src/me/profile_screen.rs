@@ -16,7 +16,6 @@ use vexo::{
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
 
-use crate::data::AvatarSource;
 use crate::data::Profile;
 use crate::widgets::avatar::Avatar;
 
@@ -405,8 +404,7 @@ impl Component for AppearancePicker {
 /// Header row: avatar on the left, name + email stacked to the right.
 /// Display-only (no chevron, not tappable).
 fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let avatar_widget =
-        Avatar::new(AvatarSource::Bytes(profile.avatar_bytes.clone()), 56.0).boxed();
+    let avatar_widget = Avatar::new(profile.avatar.clone(), 56.0).boxed();
 
     let name = Text::new(profile.name.as_str())
         .with_font_size(17.0)

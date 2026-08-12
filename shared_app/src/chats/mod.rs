@@ -14,7 +14,8 @@ use vexo_uikit::{ContextMenuController, NavigationController, NavigationStackVie
 
 use crate::chats::conversation_list::ConversationList;
 use crate::data::{
-    apply_reaction, ChatsRoute, ConvId, Conversation, Message, MessageAuthor, ReactionType,
+    apply_reaction, AvatarSource, ChatsRoute, ConvId, Conversation, Message, MessageAuthor,
+    ReactionType,
 };
 
 /// Mobile Chats page. Renders the conversation list via the unified
@@ -24,7 +25,7 @@ struct MobileChatsPage {
     conversations: Vec<Conversation>,
     nav: NavigationController<ChatsRoute>,
     messages: Signal<HashMap<ConvId, Vec<Message>>>,
-    me_avatar: Rc<[u8]>,
+    me_avatar: AvatarSource,
     context_menu: ContextMenuController,
 }
 
@@ -34,7 +35,7 @@ impl Clone for MobileChatsPage {
             conversations: self.conversations.clone(),
             nav: self.nav.clone(),
             messages: self.messages.clone(),
-            me_avatar: Rc::clone(&self.me_avatar),
+            me_avatar: self.me_avatar.clone(),
             context_menu: self.context_menu.clone(),
         }
     }
@@ -85,7 +86,7 @@ impl Component for MobileChatsPage {
                         conv_id: id_for_send.clone(),
                         messages,
                         avatar,
-                        me_avatar_bytes: me_avatar_for_dest.clone(),
+                        me_avatar: me_avatar_for_dest.clone(),
                         on_send: Rc::new(move |text: &str| {
                             let mut map = msgs_for_send.get_cloned();
                             if let Some(vec) = map.get_mut(&id_for_send) {
@@ -121,7 +122,7 @@ pub(crate) fn build_chats_tab(
     conversations: Vec<Conversation>,
     nav: NavigationController<ChatsRoute>,
     messages: Signal<HashMap<ConvId, Vec<Message>>>,
-    me_avatar: Rc<[u8]>,
+    me_avatar: AvatarSource,
     context_menu: ContextMenuController,
 ) -> Box<dyn Widget> {
     MobileChatsPage {

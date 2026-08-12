@@ -41,7 +41,7 @@ impl Application for ImState {
         let messages_for_chat = state.messages.clone();
         let contacts = state.contacts.clone();
         let profile = state.profile.clone();
-        let me_avatar = profile.avatar_bytes.clone();
+        let me_avatar = profile.avatar.clone();
         let tab_controller = state.tab_controller.clone();
         let contacts_nav = state.contacts_nav.clone();
         let me_nav = state.me_nav.clone();
