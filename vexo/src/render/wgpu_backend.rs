@@ -1294,6 +1294,51 @@ impl WgpuBackend {
 
         Ok(())
     }
+
+    /// Create an offscreen render target (color + depth) for a SaveLayer group.
+    ///
+    /// The color texture uses the surface format for zero-conversion compositing.
+    /// The depth texture matches the main depth format for three-phase rendering.
+    /// Both are sized to the group's physical bounds.
+    ///
+    /// Per-frame allocation for v1 — texture pooling is a deferred optimization.
+    fn create_offscreen_target(
+        &self,
+        physical_width: u32,
+        physical_height: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Texture, wgpu::TextureView) {
+        let size = wgpu::Extent3d {
+            width: physical_width.max(1),
+            height: physical_height.max(1),
+            depth_or_array_layers: 1,
+        };
+
+        let color_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("SaveLayer Color"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("SaveLayer Depth"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        (color_texture, color_view, depth_texture, depth_view)
+    }
 }
 
 impl RenderBackend for WgpuBackend {
