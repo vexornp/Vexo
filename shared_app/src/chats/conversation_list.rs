@@ -21,14 +21,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::{
-    column, row, Component, ComponentState, DecoratedBox, ImageData, Layout, Positioned,
-    RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text, Theme, Widget, WithLayout,
+    column, row, Component, ComponentState, DecoratedBox, Layout, RenderContext, ScrollView,
+    Signal, SimpleState, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
 use crate::data::{AvatarSource, ConvId, Conversation, Message};
-use crate::widgets::avatar::{avatar, avatar_border_ring, network_avatar, unread_badge};
+use crate::widgets::avatar::Avatar;
 
 pub(crate) struct ConversationList {
     pub(crate) conversations: Vec<Conversation>,
@@ -137,18 +137,10 @@ impl Component for ConversationRow {
         let nav_colors = navigation::colors(&theme);
         let is_hovered = state.is_hovered.get();
 
-        let avatar: Box<dyn Widget> = match &self.avatar {
-            AvatarSource::Bytes(bytes) => avatar(
-                ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG"),
-                40.0,
-            ),
-            AvatarSource::Url(url) => network_avatar(url.clone(), 40.0),
-        };
-
-        // 1px outline ring so a white/clear-background avatar still reads as
-        // a circle against the (white, in light mode) pane. Paints on top of
-        // the image via Stack push order; the badge sits above the ring.
-        let border_ring = avatar_border_ring(40.0, theme.outline);
+        let avatar_with_badge = Avatar::new(self.avatar.clone(), 40.0)
+            .with_ring(true)
+            .with_unread_badge(self.unread_count)
+            .boxed();
 
         let name_color = nav_colors.row_text;
         let preview_color = nav_colors.placeholder_text;
@@ -168,24 +160,6 @@ impl Component for ConversationRow {
             .with_color(name_color);
 
         let right_col = column! { time_text }.flex_shrink(0.0);
-
-        let badge: Option<Box<dyn Widget>> = if self.unread_count > 0 {
-            Some(
-                Positioned::new(unread_badge(self.unread_count, &theme))
-                    .top(-4.0)
-                    .right(-4.0)
-                    .boxed(),
-            )
-        } else {
-            None
-        };
-
-        let avatar_with_badge = Stack::new()
-            .with_layout(Layout::stack().width(40.0).height(40.0).flex_shrink(0.0))
-            .push(avatar)
-            .push(border_ring)
-            .push(badge)
-            .boxed();
 
         // Precedence: selected > hover (desktop only) > transparent.
         // Hover is suppressed when selected so the selected row stays visually
