@@ -20,17 +20,15 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use vexo::layout::JustifyContent;
 use vexo::{
-    column, row, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, ImageData, Layout,
-    Positioned, RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text, Theme,
-    ThemeData, Widget, WithLayout,
+    column, row, Component, ComponentState, DecoratedBox, ImageData, Layout, Positioned,
+    RenderContext, ScrollView, Signal, SimpleState, Stack, Style, Text, Theme, Widget, WithLayout,
 };
 use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
 use crate::data::{AvatarSource, ConvId, Conversation, Message};
-use crate::widgets::avatar::{avatar, avatar_border_ring, network_avatar};
+use crate::widgets::avatar::{avatar, avatar_border_ring, network_avatar, unread_badge};
 
 pub(crate) struct ConversationList {
     pub(crate) conversations: Vec<Conversation>,
@@ -266,25 +264,6 @@ fn latest_preview(conv: &Conversation, messages: &HashMap<ConvId, Vec<Message>>)
         .and_then(|v| v.last())
         .map(|m| (m.text.clone(), m.timestamp))
         .unwrap_or_else(|| (conv.last_preview.clone(), conv.last_timestamp))
-}
-
-fn unread_badge(count: u32, theme: &ThemeData) -> Box<dyn Widget> {
-    DecoratedBox::with_style(
-        WithLayout::new(
-            Text::new(count.to_string())
-                .with_font_size(11.0)
-                .with_color(theme.on_error),
-            Layout::default()
-                .width(20.0)
-                .height(20.0)
-                .justify(JustifyContent::Center)
-                .align(AlignItems::Center)
-                .align_self(AlignSelf::Start)
-                .flex_shrink(0.0),
-        ),
-        Style::default().background(theme.error).corner_radius(10.0),
-    )
-    .boxed()
 }
 
 fn format_timestamp(ts: u64) -> String {

@@ -21,6 +21,16 @@ pub(crate) enum AvatarSource {
     Url(Url),
 }
 
+impl PartialEq for AvatarSource {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bytes(a), Self::Bytes(b)) => Rc::ptr_eq(a, b),
+            (Self::Url(a), Self::Url(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub(crate) struct ConvId(pub(crate) u32);
 
