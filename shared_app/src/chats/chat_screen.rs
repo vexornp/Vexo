@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use vexo::{
     column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, ImageData, Key, Layout, LifecycleContext, RenderContext, ScrollController,
-    ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
-    WidgetKey, WithLayout,
+    FlexDirection, Key, Layout, LifecycleContext, RenderContext, ScrollController, ScrollView,
+    Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey,
+    WithLayout,
 };
 use vexo_uikit::{
     context_menu_trigger, Button, ButtonVariant, ContextMenuController, KeyboardAvoider,
@@ -15,7 +15,7 @@ use vexo_uikit::{
 
 use crate::chats::message_menu;
 use crate::data::{AvatarSource, ConvId, Message, MessageAuthor, ReactionType};
-use crate::widgets::avatar::{avatar, network_avatar};
+use crate::widgets::avatar::Avatar;
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
@@ -59,11 +59,6 @@ impl Clone for ChatScreen {
 // `derived_messages` to `None` (populated in `on_mount`).
 pub(crate) struct ChatScreenState {
     text_controller: Option<TextEditingController>,
-    /// Decoded avatar image data, cached so we don't re-decode the PNG on
-    /// every rebuild (ChatScreen rebuilds on every MediaQuery change, i.e.
-    /// every keyboard animation frame — 40+ PNG decodes/frame = 63ms).
-    them_avatar_image: Option<ImageData>,
-    me_avatar_image: Option<ImageData>,
     /// Derived per-conversation messages Signal, created once in `on_mount`
     /// from the root `messages` Signal + `conv_id`. Lives in State (not the
     /// Widget struct) so its Arc identity is stable across widget
@@ -76,8 +71,6 @@ impl Default for ChatScreenState {
     fn default() -> Self {
         Self {
             text_controller: None,
-            them_avatar_image: None,
-            me_avatar_image: None,
             derived_messages: None,
         }
     }
@@ -89,21 +82,6 @@ impl ChatScreenState {
             let mut fs = vexo::resource::new_font_system();
             self.text_controller = Some(TextEditingController::new("", &mut fs));
         }
-    }
-
-    /// Lazily decode and cache the avatar images. Called from `render()` on
-    /// first use (not `on_mount`, to avoid blocking on images that might not
-    /// be needed yet). After the first call, returns the cached `ImageData`.
-    fn them_avatar(&mut self, bytes: &Rc<[u8]>) -> &ImageData {
-        self.them_avatar_image.get_or_insert_with(|| {
-            ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG")
-        })
-    }
-
-    fn me_avatar(&mut self, bytes: &Rc<[u8]>) -> &ImageData {
-        self.me_avatar_image.get_or_insert_with(|| {
-            ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG")
-        })
     }
 }
 
@@ -195,21 +173,12 @@ impl Component for ChatScreen {
                 // the bubble, aligned to the author's side. Multiple reactions
                 // accumulate into a horizontal row of chips (one per reaction).
                 let chip = message_menu::reaction_chip_row(&msg.reactions, &theme);
-                // Build only the avatar widget this row needs (Q20: single
-                // avatar, not both). The "me" path uses the cached decoded
-                // `ImageData`; the "them" path branches on `AvatarSource` —
-                // `Bytes` reuses the cache, `Url` defers to `NetworkImage`
-                // (which self-caches via `ImageCache`).
-                let avatar_widget: Box<dyn Widget> = if is_me {
-                    avatar(state.me_avatar(&self.me_avatar_bytes).clone(), 32.0)
+                let src = if is_me {
+                    AvatarSource::Bytes(self.me_avatar_bytes.clone())
                 } else {
-                    match &self.avatar {
-                        AvatarSource::Bytes(bytes) => {
-                            avatar(state.them_avatar(bytes).clone(), 32.0)
-                        }
-                        AvatarSource::Url(url) => network_avatar(url.clone(), 32.0),
-                    }
+                    self.avatar.clone()
                 };
+                let avatar_widget: Box<dyn Widget> = Avatar::new(src, 32.0).boxed();
                 assemble_row(bubble_with_menu, chip, avatar_widget, is_me)
             }
         }
