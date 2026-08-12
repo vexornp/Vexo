@@ -139,11 +139,16 @@ struct SaveLayerMarkerInfo {
 /// encoder; wgpu destroys these resources when their Rust handles drop,
 /// so we hold them here until the encoder is submitted (cleared at the
 /// start of the next frame's `execute_render_pass`).
-struct PendingCompositeResources {
+struct PendingOffscreenTextures {
     _color_tex: wgpu::Texture,
     _depth_tex: wgpu::Texture,
     _color_view: wgpu::TextureView,
     _depth_view: wgpu::TextureView,
+}
+
+/// Bind group + sampler created per composite draw. Kept alive until the
+/// parent encoder is submitted.
+struct PendingCompositeBinds {
     _bind_group: wgpu::BindGroup,
     _sampler: wgpu::Sampler,
 }
@@ -223,9 +228,11 @@ pub struct WgpuBackend {
     current_save_layer_markers: Vec<SaveLayerMarkerInfo>,
 
     /// Resources held alive until the main encoder is submitted.
-    /// Populated by `render_save_layer_group`; cleared at the start of
-    /// the next `execute_render_pass`.
-    pending_composite_resources: Vec<PendingCompositeResources>,
+    /// Populated by `render_save_layer_group` (offscreen textures + views)
+    /// and `draw_composite_quad` (bind group + sampler). Cleared at the
+    /// start of the next `execute_render_pass`.
+    pending_offscreen_textures: Vec<PendingOffscreenTextures>,
+    pending_composite_binds: Vec<PendingCompositeBinds>,
 
     /// Number of image instances written to `image_instance_buffer` this
     /// frame. Composite quads are appended after this offset.
@@ -757,7 +764,8 @@ impl WgpuBackend {
             group_text_renderers: Vec::new(),
             group_viewports: Vec::new(),
             current_save_layer_markers: Vec::new(),
-            pending_composite_resources: Vec::new(),
+            pending_offscreen_textures: Vec::new(),
+            pending_composite_binds: Vec::new(),
             image_instance_count: 0,
             composite_quad_count: 0,
         })
@@ -1006,8 +1014,10 @@ impl WgpuBackend {
     /// Creates a surface-sized offscreen target (no coordinate translation
     /// needed — ops render at window-absolute positions), records the group's
     /// ops via a recursive `render_range` call, submits the offscreen encoder,
-    /// and stashes the offscreen resources in `pending_composite_resources`
-    /// so they outlive the parent encoder's submit.
+    /// and stashes the offscreen textures/views in `pending_offscreen_textures`
+    /// so they outlive the parent encoder's submit. The bind group + sampler
+    /// are created later by `draw_composite_quad` (which has the offscreen
+    /// view in hand and can build the bind group directly).
     fn render_save_layer_group(
         &mut self,
         gstart: usize,
@@ -1069,53 +1079,28 @@ impl WgpuBackend {
         }
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Hold resources alive until the parent encoder is submitted.
-        // wgpu destroys resources when their Rust handles drop, but the
-        // parent encoder records resource IDs that must remain valid
-        // through submit. Cleared at the start of the next frame.
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("SaveLayer Composite Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SaveLayer Composite BindGroup"),
-            layout: &self.image_atlas_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&color_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-        self.pending_composite_resources.push(PendingCompositeResources {
+        // Stash textures + views so they outlive the parent encoder's
+        // submit. wgpu destroys resources when their Rust handles drop,
+        // but the parent encoder records resource IDs that must remain
+        // valid through submit. Cleared at the start of the next frame.
+        let returned_view = color_view.clone();
+        self.pending_offscreen_textures.push(PendingOffscreenTextures {
             _color_tex: color_tex,
             _depth_tex: depth_tex,
-            _color_view: color_view.clone(),
+            _color_view: color_view,
             _depth_view: depth_view,
-            _bind_group: bind_group,
-            _sampler: sampler,
         });
 
-        color_view
+        returned_view
     }
 
     /// Draw a composite quad: sample the offscreen texture view and blend
     /// it at `opacity` over the current pass's content. Used to composite
     /// a SaveLayer group's offscreen result into its parent pass.
     ///
-    /// Reuses the image pipeline. The bind group + sampler are created by
-    /// the caller (`render_save_layer_group`) and stashed in
-    /// `pending_composite_resources` to outlive the parent encoder.
+    /// Reuses the image pipeline. The bind group + sampler are created
+    /// here from `offscreen_view` (not by the caller), and stashed in
+    /// `pending_composite_binds` to outlive the parent encoder's submit.
     ///
     /// The composite instance is appended to `image_instance_buffer` past
     /// the image-instance region (offset = `image_instance_count`), using a
@@ -1133,16 +1118,6 @@ impl WgpuBackend {
         viewport_width: u32,
         viewport_height: u32,
     ) {
-        // Look up the bind group stashed by render_save_layer_group. We
-        // can't recreate it here because we'd lose the association with
-        // the offscreen view (and recreating would leak — bind groups
-        // aren't cheap). The last entry in pending_composite_resources
-        // corresponds to the most recent group render.
-        let bind_group = match self.pending_composite_resources.last() {
-            Some(r) => &r._bind_group,
-            None => return,
-        };
-
         // Append this composite's instance data past the image instances.
         // Each composite gets its own slot; the slot index doubles as the
         // instance index for the draw call.
@@ -1188,9 +1163,34 @@ impl WgpuBackend {
         );
         self.composite_quad_count += 1;
 
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("SaveLayer Composite Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SaveLayer Composite BindGroup"),
+            layout: &self.image_atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(offscreen_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
         render_pass.set_pipeline(&self.image_pipeline);
         render_pass.set_bind_group(0, &self.global_bind_group, &[]);
-        render_pass.set_bind_group(1, bind_group, &[]);
+        render_pass.set_bind_group(1, &bind_group, &[]);
         render_pass.set_bind_group(2, &self.rclip_bind_group, &[0]);
         render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(byte_offset..byte_end));
@@ -1210,10 +1210,12 @@ impl WgpuBackend {
             render_pass.draw_indexed(0..6, 0, 0..1);
         }
 
-        // Keep `offscreen_view` referenced even though we don't use it
-        // directly here — the bind group already references it. This
-        // silences unused-parameter warnings and documents intent.
-        let _ = offscreen_view;
+        // Stash bind group + sampler to keep them alive until the parent
+        // encoder is submitted.
+        self.pending_composite_binds.push(PendingCompositeBinds {
+            _bind_group: bind_group,
+            _sampler: sampler,
+        });
     }
 
     /// Get a reference to the queue.
@@ -1719,7 +1721,8 @@ impl WgpuBackend {
         // Reset per-frame composite state. Dropping last frame's pending
         // resources is safe — its encoder was submitted last frame.
         self.composite_quad_count = 0;
-        self.pending_composite_resources.clear();
+        self.pending_offscreen_textures.clear();
+        self.pending_composite_binds.clear();
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
