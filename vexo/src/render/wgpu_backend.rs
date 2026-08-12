@@ -149,6 +149,7 @@ pub struct WgpuBackend {
     image_instance_buffer: wgpu::Buffer,
     image_instance_buffer_capacity: usize,
     image_atlas_bind_group: wgpu::BindGroup,
+    image_atlas_bind_group_layout: wgpu::BindGroupLayout,
     image_atlas_texture: wgpu::Texture,
     image_allocator: ShelfAllocator,
 
@@ -689,6 +690,7 @@ impl WgpuBackend {
             image_instance_buffer,
             image_instance_buffer_capacity: INITIAL_IMAGE_INSTANCE_CAPACITY,
             image_atlas_bind_group,
+            image_atlas_bind_group_layout,
             image_atlas_texture,
             image_allocator,
             current_config: Some(RenderConfig::new(physical_size)),
@@ -745,6 +747,94 @@ impl WgpuBackend {
             self.group_viewports.push(viewport);
         }
         &mut self.group_viewports[index]
+    }
+
+    /// Draw a composite quad: sample the offscreen texture view and blend
+    /// it at `opacity` over the current pass's content. Used to composite
+    /// a SaveLayer group's offscreen result into its parent pass.
+    ///
+    /// Reuses the image pipeline (which samples a 2D texture). A temporary
+    /// bind group is created per call to bind the offscreen texture view
+    /// instead of the image atlas.
+    pub fn draw_composite_quad(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        offscreen_view: &wgpu::TextureView,
+        logical_bounds: crate::core::Bounds<crate::core::Logical>,
+        opacity: f32,
+        z: f32,
+        scale_factor: f32,
+        viewport_width: u32,
+        viewport_height: u32,
+    ) {
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("SaveLayer Composite Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("SaveLayer Composite BindGroup"),
+            layout: &self.image_atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(offscreen_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
+        render_pass.set_pipeline(&self.image_pipeline);
+        render_pass.set_bind_group(0, &self.global_bind_group, &[]);
+        render_pass.set_bind_group(1, &bind_group, &[]);
+        render_pass.set_bind_group(2, &self.rclip_bind_group, &[0]);
+        render_pass.set_vertex_buffer(0, self.image_vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.image_instance_buffer.slice(..));
+        render_pass.set_index_buffer(
+            self.image_index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
+
+        let physical_x = logical_bounds.left * scale_factor;
+        let physical_y = logical_bounds.top * scale_factor;
+        let physical_w = logical_bounds.width() * scale_factor;
+        let physical_h = logical_bounds.height() * scale_factor;
+
+        let instance = ImageInstance {
+            position: [physical_x, physical_y],
+            size: [physical_w, physical_h],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            transform: AffineTransform::identity().to_array(),
+            opacity,
+            z,
+        };
+
+        self.queue.write_buffer(
+            &self.image_instance_buffer,
+            0,
+            bytemuck::cast_slice(&[instance]),
+        );
+
+        let x = physical_x.max(0.0) as u32;
+        let y = physical_y.max(0.0) as u32;
+        let right = (physical_x + physical_w).min(viewport_width as f32) as u32;
+        let bottom = (physical_y + physical_h).min(viewport_height as f32) as u32;
+        let w = right.saturating_sub(x);
+        let h = bottom.saturating_sub(y);
+        if w > 0 && h > 0 {
+            render_pass.set_scissor_rect(x, y, w, h);
+            render_pass.draw_indexed(0..6, 0, 0..1);
+        }
     }
 
     /// Get a reference to the queue.
