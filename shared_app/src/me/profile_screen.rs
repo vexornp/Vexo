@@ -9,15 +9,16 @@
 use url::Url;
 use vexo::layout::JustifyContent;
 use vexo::{
-    column, row, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, ImageData,
-    Layout, NetworkImage, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData,
-    Widget, WithLayout,
+    column, row, AlignItems, ClipRRect, Color, Component, DecoratedBox, GestureDetector, Layout,
+    NetworkImage, RenderContext, ScrollView, SimpleState, Style, Text, Theme, ThemeData, Widget,
+    WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::theme::tokens::navigation;
 
+use crate::data::AvatarSource;
 use crate::data::Profile;
-use crate::widgets::avatar::avatar;
+use crate::widgets::avatar::Avatar;
 
 // --- iOS UIKit grouped-cell metrics ------------------------------------------------
 
@@ -404,10 +405,8 @@ impl Component for AppearancePicker {
 /// Header row: avatar on the left, name + email stacked to the right.
 /// Display-only (no chevron, not tappable).
 fn build_header_row(profile: &Profile, theme: &vexo::ThemeData) -> Box<dyn Widget> {
-    let avatar_widget = avatar(
-        ImageData::from_bytes(&profile.avatar_bytes).expect("avatar bytes are valid PNG"),
-        56.0,
-    );
+    let avatar_widget =
+        Avatar::new(AvatarSource::Bytes(profile.avatar_bytes.clone()), 56.0).boxed();
 
     let name = Text::new(profile.name.as_str())
         .with_font_size(17.0)
