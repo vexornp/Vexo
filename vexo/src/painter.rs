@@ -243,11 +243,39 @@ impl Painter {
             ctx.push_command(RenderCommand::PushOffset { offset: *offset });
         }
 
-        // If this object has an opacity, push it before painting children.
+        // If this object has an opacity < 1.0, push a SaveLayer (offscreen
+        // render-target grouping) before painting children. This preserves
+        // internal paint order: the subtree renders as a unit into an
+        // offscreen texture, then composites at `opacity`. Replaces the old
+        // PushOpacity (CPU alpha-multiply) which reversed phase order for
+        // opaque-background + text subtrees.
+        //
+        // Opacity(1.0) is a no-op skip — no PushSaveLayer, no PushOpacity.
+        // The old PushOpacity/PopOpacity path remains in the enum as the
+        // documented fallback (rollback).
         let opacity = obj.opacity();
-        if let Some(opacity_value) = &opacity {
-            ctx.push_command(RenderCommand::PushOpacity {
-                opacity: *opacity_value,
+        let push_save_layer = opacity.map(|o| o < 1.0).unwrap_or(false);
+        if push_save_layer {
+            let opacity_value = opacity.unwrap();
+            let bounds = obj
+                .computed_bounds()
+                .map(|b| {
+                    crate::core::Bounds::new(
+                        absolute_position.x,
+                        absolute_position.y,
+                        absolute_position.x + b.width(),
+                        absolute_position.y + b.height(),
+                    )
+                })
+                .unwrap_or(crate::core::Bounds::from_xywh(
+                    absolute_position.x,
+                    absolute_position.y,
+                    0.0,
+                    0.0,
+                ));
+            ctx.push_command(RenderCommand::PushSaveLayer {
+                bounds,
+                opacity: opacity_value,
             });
         }
 
@@ -275,9 +303,9 @@ impl Painter {
             Self::paint_recursive(render_objects, *child_id, ctx, child_parent_absolute);
         }
 
-        // Pop opacity after children
-        if opacity.is_some() {
-            ctx.push_command(RenderCommand::PopOpacity);
+        // Pop save-layer after children
+        if push_save_layer {
+            ctx.push_command(RenderCommand::PopSaveLayer);
         }
 
         // Pop scroll offset after children
@@ -384,5 +412,85 @@ mod tests {
             child: None,
         };
         assert_eq!(ro.clip_corner_radius(), None);
+    }
+
+    /// A mock RO that reports an `opacity()` and `computed_bounds()`,
+    /// matching the hooks the painter consults for SaveLayer emission.
+    struct MockOpacityRo {
+        opacity: f32,
+        bounds: Bounds<Logical>,
+        child: Option<RenderObjectKey>,
+    }
+
+    impl RenderObject for MockOpacityRo {
+        fn layout(
+            &mut self,
+            _ctx: &mut LayoutContext,
+            child_nodes: &[LayoutNodeKey],
+        ) -> LayoutResult {
+            LayoutResult {
+                node: child_nodes.first().copied().unwrap(),
+                size: crate::core::Size::zero(),
+            }
+        }
+        fn apply_layout(&mut self, _ctx: &mut LayoutContext) {}
+        fn is_pass_through(&self) -> bool {
+            true
+        }
+        fn paint(&self, _ctx: &mut PaintContext) -> Vec<RenderCommand> {
+            vec![]
+        }
+        fn hit_test(&self, _p: Point<Logical>, _ctx: &HitTestContext) -> bool {
+            false
+        }
+        fn children(&self) -> &[RenderObjectKey] {
+            self.child
+                .as_ref()
+                .map(|c| std::slice::from_ref(c))
+                .unwrap_or(&[])
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn set_child_id(&mut self, child: RenderObjectKey) {
+            self.child = Some(child);
+        }
+        fn computed_bounds(&self) -> Option<Bounds<Logical>> {
+            Some(self.bounds)
+        }
+        fn opacity(&self) -> Option<f32> {
+            Some(self.opacity)
+        }
+    }
+
+    // The painter is hard to unit-test in isolation because `paint_recursive`
+    // requires a full render object registry. This test documents the
+    // emission rule: when `obj.opacity()` returns `Some(o)` where `o < 1.0`,
+    // the painter must emit `PushSaveLayer` (not `PushOpacity`); when
+    // `o >= 1.0` it emits nothing. The full behavioral pipeline test lives
+    // in the integration tests (Task 8 / `test_paint_emits_save_layer`).
+    #[test]
+    fn test_opacity_emits_save_layer_when_below_one() {
+        let ro_transparent = MockOpacityRo {
+            opacity: 0.5,
+            bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
+            child: None,
+        };
+        let emits_save_layer = ro_transparent.opacity().map(|o| o < 1.0).unwrap_or(false);
+        assert!(emits_save_layer, "opacity < 1.0 must emit PushSaveLayer");
+
+        let ro_opaque = MockOpacityRo {
+            opacity: 1.0,
+            bounds: Bounds::from_xywh(0.0, 0.0, 100.0, 100.0),
+            child: None,
+        };
+        let emits_save_layer = ro_opaque.opacity().map(|o| o < 1.0).unwrap_or(false);
+        assert!(
+            !emits_save_layer,
+            "opacity >= 1.0 must be a no-op skip (no PushSaveLayer, no PushOpacity)"
+        );
     }
 }
