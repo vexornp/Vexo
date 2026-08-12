@@ -226,6 +226,86 @@ mod full_pipeline_tests {
         assert!(!pipeline.needs_layout());
         assert!(!pipeline.needs_paint());
     }
+
+    #[test]
+    fn test_opacity_emits_save_layer_markers() {
+        use crate::core::Color;
+        use crate::render::RenderCommand;
+        use crate::widgets::Opacity;
+        use crate::{DecoratedBox, Style, Widget};
+
+        // Build: Opacity(0.5, DecoratedBox(bg=black, Text("hello")))
+        // This is the exact subtree that triggers the white-rectangle bug.
+        let widget = Opacity::new(
+            DecoratedBox::with_style(
+                Text::new("hello"),
+                Style::default().background(Color::BLACK),
+            ),
+            0.5,
+        );
+
+        let mut pipeline: ThreeTreePipeline =
+            ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        pipeline.update(widget.boxed());
+
+        // Layout to populate computed_bounds
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = create_test_font_system();
+        pipeline.layout(Size::new(400.0, 600.0), &mut engine, &mut font_system);
+
+        // Paint to get the command stream
+        let commands = pipeline.paint();
+
+        // Verify PushSaveLayer/PopSaveLayer are in the command stream
+        let has_push_save_layer = commands.iter().any(|c| {
+            matches!(c, RenderCommand::PushSaveLayer { opacity, .. } if (*opacity - 0.5).abs() < 1e-6)
+        });
+        let has_pop_save_layer = commands
+            .iter()
+            .any(|c| matches!(c, RenderCommand::PopSaveLayer));
+        let has_no_push_opacity = commands
+            .iter()
+            .all(|c| !matches!(c, RenderCommand::PushOpacity { .. }));
+
+        assert!(
+            has_push_save_layer,
+            "must emit PushSaveLayer for Opacity(0.5)"
+        );
+        assert!(has_pop_save_layer, "must emit PopSaveLayer");
+        assert!(has_no_push_opacity, "must NOT emit PushOpacity (old path)");
+
+        // Sanity-check the SaveLayer bounds to exercise the latent
+        // bounds-origin concern flagged in Task 4's review: a pass-through
+        // RO's `computed_bounds()` returns grandparent-relative bounds whose
+        // origin must NOT be double-counted by the painter. The Opacity sits
+        // at the root (absolute origin 0,0), so the SaveLayer bounds must be
+        // at the origin with a non-zero size (the "hello" text + background).
+        let save_layer_bounds = commands.iter().find_map(|c| {
+            if let RenderCommand::PushSaveLayer { bounds, opacity } = c {
+                if (*opacity - 0.5).abs() < 1e-6 {
+                    return Some(*bounds);
+                }
+            }
+            None
+        });
+        let bounds = save_layer_bounds.expect("PushSaveLayer must carry bounds");
+        assert!(
+            bounds.width() > 0.0 && bounds.height() > 0.0,
+            "SaveLayer bounds must be non-zero-sized (got {}x{}); \
+             a zero size would indicate a grandparent-relative origin bug \
+             producing an empty offscreen texture",
+            bounds.width(),
+            bounds.height()
+        );
+        assert!(
+            bounds.left.abs() < 1e-6 && bounds.top.abs() < 1e-6,
+            "SaveLayer bounds origin must be (0,0) for a root Opacity \
+             (got ({}, {})); a non-zero origin would indicate the painter \
+             is double-counting the pass-through RO's bounds origin",
+            bounds.left,
+            bounds.top
+        );
+    }
 }
 
 // ============================================================================
