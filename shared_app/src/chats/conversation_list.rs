@@ -29,8 +29,8 @@ use vexo::{
 use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
-use crate::data::{ConvId, Conversation, Message};
-use crate::widgets::avatar::avatar;
+use crate::data::{AvatarSource, ConvId, Conversation, Message};
+use crate::widgets::avatar::{avatar, network_avatar};
 
 pub(crate) struct ConversationList {
     pub(crate) conversations: Vec<Conversation>,
@@ -95,7 +95,7 @@ struct ConversationRowState {
 #[derive(Clone)]
 struct ConversationRow {
     name: String,
-    avatar_bytes: Rc<[u8]>,
+    avatar: AvatarSource,
     unread_count: u32,
     preview: String,
     timestamp: u64,
@@ -116,7 +116,7 @@ impl ConversationRow {
         let (preview, timestamp) = latest_preview(conv, messages);
         Self {
             name: conv.name.clone(),
-            avatar_bytes: Rc::clone(&conv.avatar_bytes),
+            avatar: conv.avatar.clone(),
             unread_count: conv.unread_count,
             preview,
             timestamp,
@@ -139,10 +139,13 @@ impl Component for ConversationRow {
         let nav_colors = navigation::colors(&theme);
         let is_hovered = state.is_hovered.get();
 
-        let avatar = avatar(
-            ImageData::from_bytes(&self.avatar_bytes).expect("avatar bytes are valid PNG"),
-            40.0,
-        );
+        let avatar: Box<dyn Widget> = match &self.avatar {
+            AvatarSource::Bytes(bytes) => avatar(
+                ImageData::from_bytes(bytes).expect("avatar bytes are valid PNG"),
+                40.0,
+            ),
+            AvatarSource::Url(url) => network_avatar(url.clone(), 40.0),
+        };
 
         let name_color = nav_colors.row_text;
         let preview_color = nav_colors.placeholder_text;
@@ -305,6 +308,7 @@ mod tests {
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         assert!(
             pipeline.element_registry().len() > 5,

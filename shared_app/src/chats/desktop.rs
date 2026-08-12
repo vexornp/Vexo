@@ -71,8 +71,8 @@ impl Component for DesktopChatsPage {
                     .conversations
                     .iter()
                     .find(|c| c.id == id)
-                    .map(|c| Rc::clone(&c.avatar_bytes))
-                    .unwrap_or_else(|| Rc::from([0u8; 0]));
+                    .map(|c| c.avatar.clone())
+                    .expect("selected conv must exist in conversations");
                 let conv_name = self
                     .conversations
                     .iter()
@@ -93,7 +93,7 @@ impl Component for DesktopChatsPage {
                 let chat = ChatScreen {
                     conv_id: id_for_send.clone(),
                     messages,
-                    avatar_bytes: avatar,
+                    avatar,
                     me_avatar_bytes: self.me_avatar.clone(),
                     on_send: Rc::new(move |text: &str| {
                         let mut map = msgs_for_send.get_cloned();

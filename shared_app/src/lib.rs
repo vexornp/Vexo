@@ -13,6 +13,8 @@ mod desktop_shell;
 
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+mod test_util;
 
 pub use app::MobileApp;
 pub use data::ImState;

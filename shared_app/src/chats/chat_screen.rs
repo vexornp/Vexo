@@ -14,8 +14,8 @@ use vexo_uikit::{
 };
 
 use crate::chats::message_menu;
-use crate::data::{ConvId, Message, MessageAuthor, ReactionType};
-use crate::widgets::avatar::avatar;
+use crate::data::{AvatarSource, ConvId, Message, MessageAuthor, ReactionType};
+use crate::widgets::avatar::{avatar, network_avatar};
 
 pub(crate) struct ChatScreen {
     pub(crate) conv_id: ConvId,
@@ -26,7 +26,7 @@ pub(crate) struct ChatScreen {
     /// Signal lives in `ChatScreenState::derived_messages` (created in
     /// `on_mount`), so its subscription survives `should_rebuild == false`.
     pub(crate) messages: Signal<std::collections::HashMap<ConvId, Vec<Message>>>,
-    pub(crate) avatar_bytes: Rc<[u8]>,
+    pub(crate) avatar: AvatarSource,
     pub(crate) me_avatar_bytes: Rc<[u8]>,
     pub(crate) on_send: Rc<dyn Fn(&str)>,
     /// Toggle-callback for reactions. `(index, rt)` where `index` is the
@@ -44,7 +44,7 @@ impl Clone for ChatScreen {
         Self {
             conv_id: self.conv_id.clone(),
             messages: self.messages.clone(),
-            avatar_bytes: Rc::clone(&self.avatar_bytes),
+            avatar: self.avatar.clone(),
             me_avatar_bytes: Rc::clone(&self.me_avatar_bytes),
             on_send: Rc::clone(&self.on_send),
             on_react: Rc::clone(&self.on_react),
@@ -195,13 +195,22 @@ impl Component for ChatScreen {
                 // the bubble, aligned to the author's side. Multiple reactions
                 // accumulate into a horizontal row of chips (one per reaction).
                 let chip = message_menu::reaction_chip_row(&msg.reactions, &theme);
-                assemble_row(
-                    bubble_with_menu,
-                    chip,
-                    state.them_avatar(&self.avatar_bytes).clone(),
-                    state.me_avatar(&self.me_avatar_bytes).clone(),
-                    is_me,
-                )
+                // Build only the avatar widget this row needs (Q20: single
+                // avatar, not both). The "me" path uses the cached decoded
+                // `ImageData`; the "them" path branches on `AvatarSource` —
+                // `Bytes` reuses the cache, `Url` defers to `NetworkImage`
+                // (which self-caches via `ImageCache`).
+                let avatar_widget: Box<dyn Widget> = if is_me {
+                    avatar(state.me_avatar(&self.me_avatar_bytes).clone(), 32.0)
+                } else {
+                    match &self.avatar {
+                        AvatarSource::Bytes(bytes) => {
+                            avatar(state.them_avatar(bytes).clone(), 32.0)
+                        }
+                        AvatarSource::Url(url) => network_avatar(url.clone(), 32.0),
+                    }
+                };
+                assemble_row(bubble_with_menu, chip, avatar_widget, is_me)
             }
         }
         .gap(8.0)
@@ -300,8 +309,7 @@ fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
 fn assemble_row(
     bubble_with_menu: Box<dyn Widget>,
     chip: Option<Box<dyn Widget>>,
-    them_avatar_image: ImageData,
-    me_avatar_image: ImageData,
+    avatar_widget: Box<dyn Widget>,
     is_me: bool,
 ) -> Box<dyn Widget> {
     // Align the chip to the author's side — `End` for me (right), `Start` for
@@ -318,18 +326,16 @@ fn assemble_row(
     .align(bubble_align);
 
     if is_me {
-        let me_avatar = avatar(me_avatar_image, 32.0);
         row! {
             Spacer::new(),
             bubble_and_chip,
-            me_avatar,
+            avatar_widget,
         }
         .gap(8.0)
         .boxed()
     } else {
-        let them_avatar = avatar(them_avatar_image, 32.0);
         row! {
-            them_avatar,
+            avatar_widget,
             bubble_and_chip,
             Spacer::new(),
         }
@@ -380,13 +386,13 @@ mod tests {
         crate::data::seed().messages.clone()
     }
 
-    fn seed_avatar(conv_id: ConvId) -> Rc<[u8]> {
+    fn seed_avatar(conv_id: ConvId) -> AvatarSource {
         crate::data::seed()
             .conversations
             .iter()
             .find(|c| c.id == conv_id)
             .unwrap()
-            .avatar_bytes
+            .avatar
             .clone()
     }
 
@@ -424,7 +430,7 @@ mod tests {
         let view = ChatScreen {
             conv_id: ConvId(1),
             messages: messages_signal,
-            avatar_bytes: seed_avatar(ConvId(1)),
+            avatar: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
@@ -433,6 +439,7 @@ mod tests {
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         assert!(
             pipeline.element_registry().len() > 4,
@@ -446,7 +453,7 @@ mod tests {
         let view = ChatScreen {
             conv_id: ConvId(1),
             messages: messages_signal.clone(),
-            avatar_bytes: seed_avatar(ConvId(1)),
+            avatar: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
@@ -455,6 +462,7 @@ mod tests {
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         assert!(
             pipeline.element_registry().len() > 4,
@@ -498,7 +506,7 @@ mod tests {
         let chat = ChatScreen {
             conv_id: ConvId(4),
             messages: empty_signal,
-            avatar_bytes: seed_avatar(ConvId(4)),
+            avatar: seed_avatar(ConvId(4)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
@@ -509,6 +517,7 @@ mod tests {
         let view = column! { chat }.height(600.0).boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -569,7 +578,7 @@ mod tests {
         let view = ChatScreen {
             conv_id: ConvId(1),
             messages: messages_signal,
-            avatar_bytes: seed_avatar(ConvId(1)),
+            avatar: seed_avatar(ConvId(1)),
             me_avatar_bytes: seed_me_avatar(),
             on_send: Rc::new(|_| ()),
             on_react: Rc::new(|_, _| ()),
@@ -580,6 +589,7 @@ mod tests {
         let themed = vexo::Theme::new(dark_theme.clone(), view);
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(themed.boxed());
 
         let mut engine = TaffyLayoutEngine::new();
@@ -747,6 +757,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         pipeline.layout(vexo::core::Size::new(400.0, 600.0), &mut engine, &mut fs);
@@ -857,6 +868,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         // First layout: empty text, single-line input bar.
@@ -947,7 +959,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
@@ -959,6 +971,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1023,7 +1036,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
@@ -1035,6 +1048,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1093,7 +1107,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
@@ -1105,6 +1119,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1149,7 +1164,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
@@ -1161,6 +1176,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1252,7 +1268,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: Rc::new(|_, _| ()),
@@ -1264,6 +1280,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1310,7 +1327,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: on_react.clone(),
@@ -1322,6 +1339,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();
@@ -1403,7 +1421,7 @@ mod tests {
             ChatScreen {
                 conv_id: ConvId(1),
                 messages: messages_signal,
-                avatar_bytes: seed_avatar(ConvId(1)),
+                avatar: seed_avatar(ConvId(1)),
                 me_avatar_bytes: seed_me_avatar(),
                 on_send: Rc::new(|_| ()),
                 on_react: on_react.clone(),
@@ -1415,6 +1433,7 @@ mod tests {
         .boxed();
 
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
         pipeline.update(view);
         let mut engine = TaffyLayoutEngine::new();
         let mut font_system = vexo::resource::new_font_system();

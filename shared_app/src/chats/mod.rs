@@ -72,8 +72,8 @@ impl Component for MobileChatsPage {
                     let avatar = convs
                         .iter()
                         .find(|c| c.id == *id)
-                        .map(|c| Rc::clone(&c.avatar_bytes))
-                        .unwrap_or_else(|| Rc::from([0u8; 0]));
+                        .map(|c| c.avatar.clone())
+                        .expect("selected conv must exist in conversations");
                     let msgs_for_send = msgs.clone();
                     let id_for_send = id.clone();
                     let msgs_for_react = msgs.clone();
@@ -84,7 +84,7 @@ impl Component for MobileChatsPage {
                     chat_screen::ChatScreen {
                         conv_id: id_for_send.clone(),
                         messages,
-                        avatar_bytes: avatar,
+                        avatar,
                         me_avatar_bytes: me_avatar_for_dest.clone(),
                         on_send: Rc::new(move |text: &str| {
                             let mut map = msgs_for_send.get_cloned();
