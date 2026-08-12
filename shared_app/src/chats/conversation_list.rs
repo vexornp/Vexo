@@ -138,7 +138,6 @@ impl Component for ConversationRow {
         let is_hovered = state.is_hovered.get();
 
         let avatar_with_badge = Avatar::new(self.avatar.clone(), 40.0)
-            .with_ring(true)
             .with_unread_badge(self.unread_count)
             .boxed();
 

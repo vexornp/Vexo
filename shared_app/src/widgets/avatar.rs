@@ -3,7 +3,7 @@ use std::any::Any;
 use vexo::{
     AlignItems, AlignSelf, ClipRRect, Color, Component, ComponentState, DecoratedBox, Image,
     ImageData, JustifyContent, Layout, LifecycleContext, NetworkImage, Positioned, RenderContext,
-    Spacer, Stack, Style, Text, Theme, ThemeData, Widget, WithLayout,
+    Stack, Style, Text, Theme, ThemeData, Widget, WithLayout,
 };
 
 use crate::data::AvatarSource;
@@ -12,17 +12,16 @@ use crate::data::AvatarSource;
 // Unified Avatar Component
 // ---------------------------------------------------------------------------
 
-/// Unified avatar widget: clipped circular image + optional 1px ring +
-/// optional unread badge. Owns its PNG decode cache so the image is decoded
-/// once and reused across renders.
+/// Unified avatar widget: clipped circular image on a neutral circle
+/// background + optional unread badge. Owns its PNG decode cache so the
+/// image is decoded once and reused across renders.
 ///
 /// Builder API mirrors `Text`/`Image` conventions:
-///   `Avatar::new(source, diameter).with_ring(true).with_unread_badge(count)`
+///   `Avatar::new(source, diameter).with_unread_badge(count)`
 #[derive(Clone)]
 pub(crate) struct Avatar {
     source: AvatarSource,
     diameter: f32,
-    ring: bool,
     unread_badge: Option<u32>,
 }
 
@@ -31,14 +30,8 @@ impl Avatar {
         Self {
             source,
             diameter,
-            ring: false,
             unread_badge: None,
         }
-    }
-
-    pub(crate) fn with_ring(mut self, ring: bool) -> Self {
-        self.ring = ring;
-        self
     }
 
     pub(crate) fn with_unread_badge(mut self, count: u32) -> Self {
@@ -111,6 +104,19 @@ impl Component for Avatar {
             }
         };
 
+        // Background matches the message-menu reaction icon's visible circle
+        // bg (message_menu.rs ReactionIcon hover_tint): a ~6% on_surface wash
+        // over surface. Visible during URL image load and through PNG
+        // transparency.
+        let bg = Color::lerp(theme.surface, theme.on_surface, 0.06);
+        let base = DecoratedBox::with_style(
+            base,
+            Style::default()
+                .background(bg)
+                .corner_radius(diameter / 2.0),
+        )
+        .boxed();
+
         let mut stack = Stack::new()
             .with_layout(
                 Layout::stack()
@@ -119,10 +125,6 @@ impl Component for Avatar {
                     .flex_shrink(0.0),
             )
             .push(base);
-
-        if self.ring {
-            stack = stack.push(border_ring(diameter, theme.outline));
-        }
 
         if let Some(count) = self.unread_badge {
             if count > 0 {
@@ -136,24 +138,6 @@ impl Component for Avatar {
 
         stack.boxed()
     }
-}
-
-/// 1px circular border ring sized to `diameter`, painted in `color`.
-fn border_ring(diameter: f32, color: Color) -> Box<dyn Widget> {
-    Positioned::new(DecoratedBox::with_style(
-        WithLayout::new(
-            Spacer::new(),
-            Layout::default().width(diameter).height(diameter),
-        ),
-        Style::default()
-            .border(color, 1.0)
-            .corner_radius(diameter / 2.0),
-    ))
-    .top(0.0)
-    .left(0.0)
-    .width(diameter)
-    .height(diameter)
-    .boxed()
 }
 
 /// Unread-count badge: red circle with white number. Moved here from
@@ -218,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn avatar_with_badge_and_ring_has_more_elements_than_bare() {
+    fn avatar_with_badge_has_more_elements_than_bare() {
         let bytes = make_avatar_png(255, 0, 0);
         let source = AvatarSource::Bytes(bytes);
 
@@ -228,10 +212,7 @@ mod tests {
         pipeline.update(bare);
         let bare_count = pipeline.element_registry().len();
 
-        let full = Avatar::new(source, 40.0)
-            .with_ring(true)
-            .with_unread_badge(5)
-            .boxed();
+        let full = Avatar::new(source, 40.0).with_unread_badge(5).boxed();
         let mut pipeline2 = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
         crate::test_util::install_test_image_cache(&mut pipeline2);
         pipeline2.update(full);
@@ -239,7 +220,7 @@ mod tests {
 
         assert!(
             full_count > bare_count,
-            "avatar with ring + badge ({}) should have more elements than bare ({})",
+            "avatar with badge ({}) should have more elements than bare ({})",
             full_count,
             bare_count
         );
