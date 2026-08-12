@@ -176,6 +176,12 @@ pub struct WgpuBackend {
 
     // Clear color
     clear_color: wgpu::Color,
+
+    /// Pool of per-group TextRenderers, sharing the main atlas + font system.
+    /// Grows to the max concurrent groups seen. Reused across frames.
+    group_text_renderers: Vec<glyphon::TextRenderer>,
+    /// Pool of per-group Viewports (one per group, sized to group bounds).
+    group_viewports: Vec<glyphon::Viewport>,
 }
 
 impl WgpuBackend {
@@ -696,6 +702,8 @@ impl WgpuBackend {
             current_op_rclip_offsets: Vec::new(),
             scale_source,
             clear_color: Color::WHITE.to_wgpu_color(),
+            group_text_renderers: Vec::new(),
+            group_viewports: Vec::new(),
         })
     }
 
@@ -707,6 +715,36 @@ impl WgpuBackend {
     /// Get a mutable reference to the device.
     pub fn device_mut(&mut self) -> &mut wgpu::Device {
         &mut self.device
+    }
+
+    /// Get or create a pooled TextRenderer for save-layer group `index`.
+    /// All group TextRenderers share the main atlas and font system.
+    fn group_text_renderer(&mut self, index: usize) -> &mut glyphon::TextRenderer {
+        while self.group_text_renderers.len() <= index {
+            let renderer = glyphon::TextRenderer::new(
+                &mut self.atlas,
+                &self.device,
+                wgpu::MultisampleState::default(),
+                Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+            );
+            self.group_text_renderers.push(renderer);
+        }
+        &mut self.group_text_renderers[index]
+    }
+
+    /// Get or create a pooled Viewport for save-layer group `index`.
+    fn group_viewport(&mut self, index: usize) -> &mut glyphon::Viewport {
+        while self.group_viewports.len() <= index {
+            let viewport = glyphon::Viewport::new(&self.device, &self.cache);
+            self.group_viewports.push(viewport);
+        }
+        &mut self.group_viewports[index]
     }
 
     /// Get a reference to the queue.
