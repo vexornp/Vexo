@@ -30,7 +30,8 @@ pub use keyboard_avoider::KeyboardAvoider;
 
 pub mod navigation;
 pub use navigation::{
-    base_fx_alpha, NavigationController, NavigationStackView, NavigationStackViewState,
+    base_fx_alpha, InteractivePop, InteractivePopPhase, NavigationController, NavigationStackView,
+    NavigationStackViewState,
 };
 
 pub mod tab_bar;

@@ -454,16 +454,16 @@ struct NavTransition<Dest: Hash + Eq + Clone + 'static> {
 /// `Rc<RefCell<Option<InteractivePop>>>` on `NavigationStackViewState` so the
 /// gesture closures (built in `render`, fired outside `render`) can mutate it.
 /// Mirrors `ContextMenuState`'s shared `Rc<RefCell<...>>` pattern.
-struct InteractivePop<Dest: Hash + Eq + Clone + 'static> {
-    controller: AnimationController,
-    from_path: Vec<Dest>,
-    to_path: Vec<Dest>,
-    phase: InteractivePopPhase,
-    velocity_tracker: VelocityTracker,
+pub struct InteractivePop<Dest: Hash + Eq + Clone + 'static> {
+    pub controller: AnimationController,
+    pub from_path: Vec<Dest>,
+    pub to_path: Vec<Dest>,
+    pub phase: InteractivePopPhase,
+    pub velocity_tracker: VelocityTracker,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InteractivePopPhase {
+pub enum InteractivePopPhase {
     Dragging,
     Committing,
     Cancelling,
@@ -488,14 +488,14 @@ pub struct NavigationStackViewState<Dest: Hash + Eq + Clone + 'static> {
     /// Shared cell holding the in-flight interactive pop. `Rc<RefCell<...>>` so
     /// the gesture closures (built in `render`, fired outside `render`) can
     /// mutate it. Mirrors `ContextMenuState`'s shared-cell pattern.
-    interactive_pop: Rc<RefCell<Option<InteractivePop<Dest>>>>,
+    pub interactive_pop: Rc<RefCell<Option<InteractivePop<Dest>>>>,
     /// Cached content width from the last `render()`. Read by gesture closures
     /// to convert finger delta_x → progress (0..1).
     content_width: f32,
     /// Cached ticker from `on_mount`. Used to wire transition controllers.
-    ticker: Option<Arc<vexo::AnimationTicker>>,
+    pub ticker: Option<Arc<vexo::AnimationTicker>>,
     /// Cached dirty callback from `on_mount`. Used to wire transition controllers.
-    dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationStackViewState<Dest> {
