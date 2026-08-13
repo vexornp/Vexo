@@ -6,14 +6,12 @@
 //! end-to-end gesture tests are manual (see the design spec's manual
 //! verification checklist).
 
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::animation::{AnimationTicker, SpringDescription, SpringSimulation};
 use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
-use vexo::{BuildOwner, ElementKey, RenderContext, Text, VelocityTracker, Widget};
-use vexo_uikit::transitions::TransitionDir;
+use vexo::{BuildOwner, ElementKey, Positioned, RenderContext, Text, VelocityTracker, Widget};
 use vexo_uikit::{Component, NavigationController, NavigationStackView, NavigationStackViewState};
 
 fn make_element_key() -> ElementKey {
@@ -71,6 +69,28 @@ fn all_text(w: &dyn Widget) -> Vec<String> {
     out
 }
 
+/// Recursively walk the widget tree and return the first `Positioned` widget
+/// found. The interactive-pop overlay is wrapped in a `Positioned` (only when
+/// `interactive_pop` is `Some`), so finding one is a structural proof that the
+/// overlay rendered — stronger than a text check, since the base
+/// `IndexedStack` always mounts all pages offstage.
+fn find_positioned(w: &dyn Widget) -> Option<&Positioned> {
+    if let Some(p) = w.as_any().downcast_ref::<Positioned>() {
+        return Some(p);
+    }
+    if let Some(child) = w.child() {
+        if let Some(found) = find_positioned(child) {
+            return Some(found);
+        }
+    }
+    for child in w.children() {
+        if let Some(found) = find_positioned(child.as_ref()) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn make_view(controller: NavigationController<&'static str>) -> NavigationStackView<&'static str> {
     NavigationStackView::new(controller, Text::new("Root"))
         .root_title("Home")
@@ -91,8 +111,10 @@ fn interactive_pop_renders_both_pages_during_drag() {
     let mut state = NavigationStackViewState::default();
 
     // Wire a dummy ticker + dirty so the controller can be created in on_start.
-    state.ticker = Some(Arc::new(AnimationTicker::new()));
-    state.dirty_callback = Some(Arc::new(|| {}));
+    // Locals are captured first so clones can be handed to the AnimationController
+    // before the originals are moved into the state via wire_for_testing.
+    let ticker: Arc<AnimationTicker> = Arc::new(AnimationTicker::new());
+    let dirty: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
     // Begin interactive pop and inject a half-progress InteractivePop.
     let from_path = controller
@@ -100,10 +122,12 @@ fn interactive_pop_renders_both_pages_during_drag() {
         .expect("non-empty path with no pending");
     let to_path: Vec<&'static str> = Vec::new();
     let mut anim = vexo::AnimationController::new(Duration::from_millis(350));
-    anim.set_ticker(state.ticker.clone().unwrap());
-    anim.set_dirty_callback(state.dirty_callback.clone().unwrap());
+    anim.set_ticker(ticker.clone());
+    anim.set_dirty_callback(dirty.clone());
     anim.set_value(0.5);
-    *state.interactive_pop.borrow_mut() = Some(vexo_uikit::InteractivePop {
+
+    state.wire_for_testing(ticker, dirty);
+    state.set_interactive_pop(vexo_uikit::InteractivePop {
         controller: anim,
         from_path,
         to_path,
@@ -112,10 +136,19 @@ fn interactive_pop_renders_both_pages_during_drag() {
     });
 
     let w = render_stack(view, &mut state);
+
+    // Structural check: the interactive-pop overlay is wrapped in a
+    // `Positioned` (only present when `interactive_pop` is `Some`). The base
+    // `IndexedStack` always mounts all pages offstage, so a bare text check
+    // would pass even if the overlay never rendered — finding a `Positioned`
+    // proves the overlay exists.
+    assert!(
+        find_positioned(w.as_ref()).is_some(),
+        "interactive pop must render a Positioned overlay"
+    );
+
+    // The overlay (outgoing page) should contain "Page: a".
     let texts = all_text(&w);
-    // Should contain BOTH the root ("Root" / "Home") and the outgoing page
-    // ("Page: a"), because the interactive pop renders the overlay (outgoing)
-    // over the base (destination = root).
     assert!(
         texts.iter().any(|t| t.contains("Page: a")),
         "outgoing page must render during interactive pop, got {:?}",
@@ -129,14 +162,15 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
     push_and_clear(&controller, "a");
     let view = make_view(controller.clone());
     let mut state = NavigationStackViewState::default();
-    state.ticker = Some(Arc::new(AnimationTicker::new()));
-    state.dirty_callback = Some(Arc::new(|| {}));
+
+    let ticker: Arc<AnimationTicker> = Arc::new(AnimationTicker::new());
+    let dirty: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
     let from_path = controller.begin_interactive_pop().unwrap();
     let to_path: Vec<&'static str> = Vec::new();
     let mut anim = vexo::AnimationController::new(Duration::from_millis(350));
-    anim.set_ticker(state.ticker.clone().unwrap());
-    anim.set_dirty_callback(state.dirty_callback.clone().unwrap());
+    anim.set_ticker(ticker.clone());
+    anim.set_dirty_callback(dirty.clone());
     // Spring to completion.
     anim.animate_with(Box::new(SpringSimulation::new(
         SpringDescription::ios(340.0, 1.0),
@@ -144,7 +178,9 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
         1.0,
         0.0,
     )));
-    *state.interactive_pop.borrow_mut() = Some(vexo_uikit::InteractivePop {
+
+    state.wire_for_testing(ticker, dirty);
+    state.set_interactive_pop(vexo_uikit::InteractivePop {
         controller: anim,
         from_path,
         to_path,
@@ -157,7 +193,7 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
     let start = Instant::now();
     for i in 0..100u64 {
         let now = start + Duration::from_millis(20 * i);
-        if let Some(ip) = state.interactive_pop.borrow_mut().as_mut() {
+        if let Some(ip) = state.interactive_pop_cell().borrow_mut().as_mut() {
             ip.controller.advance(now);
         }
     }
@@ -167,7 +203,7 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
     let _w = render_stack(view, &mut state);
 
     assert!(
-        state.interactive_pop.borrow().is_none(),
+        state.interactive_pop_cell().borrow().is_none(),
         "interactive_pop cell must be cleared after commit"
     );
     assert_eq!(
@@ -183,21 +219,24 @@ fn interactive_pop_cancel_clears_state_without_mutating_path() {
     push_and_clear(&controller, "a");
     let view = make_view(controller.clone());
     let mut state = NavigationStackViewState::default();
-    state.ticker = Some(Arc::new(AnimationTicker::new()));
-    state.dirty_callback = Some(Arc::new(|| {}));
+
+    let ticker: Arc<AnimationTicker> = Arc::new(AnimationTicker::new());
+    let dirty: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
     let from_path = controller.begin_interactive_pop().unwrap();
     let to_path: Vec<&'static str> = Vec::new();
     let mut anim = vexo::AnimationController::new(Duration::from_millis(350));
-    anim.set_ticker(state.ticker.clone().unwrap());
-    anim.set_dirty_callback(state.dirty_callback.clone().unwrap());
+    anim.set_ticker(ticker.clone());
+    anim.set_dirty_callback(dirty.clone());
     anim.animate_with(Box::new(SpringSimulation::new(
         SpringDescription::ios(340.0, 1.0),
         0.5,
         0.0,
         0.0,
     )));
-    *state.interactive_pop.borrow_mut() = Some(vexo_uikit::InteractivePop {
+
+    state.wire_for_testing(ticker, dirty);
+    state.set_interactive_pop(vexo_uikit::InteractivePop {
         controller: anim,
         from_path,
         to_path,
@@ -208,7 +247,7 @@ fn interactive_pop_cancel_clears_state_without_mutating_path() {
     let start = Instant::now();
     for i in 0..100u64 {
         let now = start + Duration::from_millis(20 * i);
-        if let Some(ip) = state.interactive_pop.borrow_mut().as_mut() {
+        if let Some(ip) = state.interactive_pop_cell().borrow_mut().as_mut() {
             ip.controller.advance(now);
         }
     }
@@ -216,7 +255,7 @@ fn interactive_pop_cancel_clears_state_without_mutating_path() {
     let _w = render_stack(view, &mut state);
 
     assert!(
-        state.interactive_pop.borrow().is_none(),
+        state.interactive_pop_cell().borrow().is_none(),
         "interactive_pop cell must be cleared after cancel"
     );
     assert_eq!(

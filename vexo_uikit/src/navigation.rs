@@ -488,14 +488,14 @@ pub struct NavigationStackViewState<Dest: Hash + Eq + Clone + 'static> {
     /// Shared cell holding the in-flight interactive pop. `Rc<RefCell<...>>` so
     /// the gesture closures (built in `render`, fired outside `render`) can
     /// mutate it. Mirrors `ContextMenuState`'s shared-cell pattern.
-    pub interactive_pop: Rc<RefCell<Option<InteractivePop<Dest>>>>,
+    interactive_pop: Rc<RefCell<Option<InteractivePop<Dest>>>>,
     /// Cached content width from the last `render()`. Read by gesture closures
     /// to convert finger delta_x → progress (0..1).
     content_width: f32,
     /// Cached ticker from `on_mount`. Used to wire transition controllers.
-    pub ticker: Option<Arc<vexo::AnimationTicker>>,
+    ticker: Option<Arc<vexo::AnimationTicker>>,
     /// Cached dirty callback from `on_mount`. Used to wire transition controllers.
-    pub dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
+    dirty_callback: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationStackViewState<Dest> {
@@ -508,6 +508,33 @@ impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationStackViewState<Des
             ticker: None,
             dirty_callback: None,
         }
+    }
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> NavigationStackViewState<Dest> {
+    #[doc(hidden)]
+    pub fn interactive_pop_cell(&self) -> Rc<RefCell<Option<InteractivePop<Dest>>>> {
+        Rc::clone(&self.interactive_pop)
+    }
+
+    #[doc(hidden)]
+    pub fn set_interactive_pop(&self, ip: InteractivePop<Dest>) {
+        *self.interactive_pop.borrow_mut() = Some(ip);
+    }
+
+    #[doc(hidden)]
+    pub fn clear_interactive_pop(&self) {
+        *self.interactive_pop.borrow_mut() = None;
+    }
+
+    #[doc(hidden)]
+    pub fn wire_for_testing(
+        &mut self,
+        ticker: Arc<vexo::AnimationTicker>,
+        dirty: Arc<dyn Fn() + Send + Sync>,
+    ) {
+        self.ticker = Some(ticker);
+        self.dirty_callback = Some(dirty);
     }
 }
 
