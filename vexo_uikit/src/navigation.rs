@@ -43,10 +43,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vexo::{
-    children, AlignItems, AnimationController, Color, Component, ComponentState, CubicBezierCurve,
-    Curve, DecoratedBox, FractionalTranslation, IndexedStack, JustifyContent, Layout,
-    LifecycleContext, MediaQuery, MultiChild, Opacity, Positioned, RenderContext, SafeArea, Stack,
-    Style, Text, Theme, Widget, WithLayout,
+    children, AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
+    DecoratedBox, FractionalTranslation, IndexedStack, JustifyContent, Layout, LifecycleContext,
+    MediaQuery, MultiChild, Opacity, Positioned, RenderContext, SafeArea, Stack, Style, Text,
+    Theme, Widget, WithLayout,
 };
 
 use crate::platform::Platform;
@@ -652,64 +652,34 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             base_stack = base_stack.push((self.destination)(dest));
         }
 
-        // The base is always wrapped in a stable widget structure (even in
-        // steady state) so the reconciler's `can_update()` (type-based) does
-        // not swap the subtree and unmount page elements (losing state such as
-        // TextEditingController edits). The structure is platform-specific but
-        // constant across steady ↔ transition within a platform:
+        // The base is ALWAYS wrapped in an `Opacity(FractionalTranslation(...))`
+        // (stable widget types), even in steady state. This is critical for the
+        // same reason the outer `Stack` is always a `Stack`: if the base widget
+        // type flipped between bare `IndexedStack` (steady) and
+        // `Opacity(FractionalTranslation(IndexedStack))` (transition), the
+        // reconciler's `can_update()` (type-based) would replace the subtree on
+        // the swap, unmounting the page elements and losing their state (e.g.
+        // TextEditingController edits).
         //
-        //   Mobile  : `FractionalTranslation(Stack(base, [dim]))` — dim child
-        //             present only during transition (base_alpha < 1.0).
-        //   Desktop : `Opacity(FractionalTranslation(base))` — unchanged.
-        //
-        // `FractionalTranslation` and `Stack` are layout pass-through / size to
-        // their in-flow child, so the base's layout is unchanged. At steady
-        // state `base_fx = 0.0` makes `FractionalTranslation` a paint-time
+        // `Opacity` and `FractionalTranslation` are both layout pass-through and
+        // preserve their child element across changes, so wrapping is safe. At
+        // steady state `base_fx = 0.0` makes `FractionalTranslation` a paint-time
         // no-op (`paint_transform()` returns `None`) — zero rendering cost.
         //
-        // Why mobile dims via a black overlay instead of `Opacity`: `Opacity`
-        // multiplies its alpha into every child command's color, including the
-        // page's opaque background quad. That drops the background's fill alpha
-        // below 1.0, which `compute_op_locations` reclassifies as a transparent
-        // quad (Phase 3, rendered AFTER text). The reversal paints light text
-        // (Phase 2) on the window's white clear color before the dark background
-        // is composited, so each text line reads as a white rectangle during the
-        // push/pop animation. Keeping the base fully opaque (background stays in
-        // Phase 1, before text) and applying the dim as a separate black overlay
-        // quad (Phase 3, blended over the already-rendered text) preserves the
-        // correct background → text → dim order. Desktop keeps `Opacity` fade:
-        // the base fades all the way to 0, so any mid-fade artifact is fleeting
-        // and desktop defaults to light mode (dark text), where it does not
-        // manifest.
-        //
-        // The dim overlay is a `Positioned` full-screen sibling painted on top
-        // of the `IndexedStack` inside the base `Stack`. It is present ONLY
-        // during the transition (base_alpha < 1.0), never at steady state.
-        // This is critical: Vexo's hit-test traversal is bounds-based
-        // (`hit_test_recursive` returns true for any object whose bounds
-        // contain the pointer, stopping sibling traversal), so a full-screen
-        // overlay would absorb ALL pointer events — taps and scroll — blocking
-        // the conversation list underneath. By omitting the overlay at steady
-        // state, the `Stack` has a single child (`IndexedStack`) and events
-        // reach the page content normally. During the transition the base is
-        // not interactive anyway (the moving page is the active page), so the
-        // overlay absorbing events then is harmless.
-        //
-        // Type-stability: the `Stack` (and `FractionalTranslation`) are always
-        // present, so the reconciler updates them in place. Adding/removing the
-        // dim overlay as the Stack's SECOND child does NOT remount the first
-        // child (`IndexedStack`): the reconciler (`ContainerElement::rebuild`)
-        // updates children at matching indices in place and only inflates/
-        // unmounts the tail, so the `IndexedStack` at index 0 is preserved
-        // across steady ↔ transition — its `ComponentState`, focus, and
-        // `TextEditingController` edits survive.
+        // `Opacity` renders its subtree to an offscreen SaveLayer group and
+        // composites the group at the given alpha, preserving internal paint
+        // order (background → text → dim). This fixes the white-rectangle bug
+        // where CPU alpha-multiplication dropped the page background's alpha
+        // below 1.0, reclassifying it as a transparent quad (Phase 3, after
+        // text) and causing light text to render on the window's white clear
+        // color before the dark background was composited.
         //
         // Offset/alpha rules (SwiftUI-style dual-view animation on mobile;
         // fade-only on desktop):
         //   Push (mobile) : base (old top) slides left 30%, dims 1.0 → 0.85.
         //   Pop  (mobile) : base (destination) slides back to 0, un-dims 0.85 → 1.0.
         //   Desktop       : base_fx = 0.0 always (no slide); alpha fades as before.
-        //   Steady        : base_fx = 0.0, alpha = 1.0 (no dim overlay).
+        //   Steady        : base_fx = 0.0, alpha = 1.0 (no-op wrappers).
         let (base_fx, base_alpha): (f32, f32) = match state.transition.as_ref() {
             None => (0.0, 1.0),
             Some(t) => {
@@ -718,49 +688,17 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                 base_fx_alpha(t.direction, self.effective_platform(), eased)
             }
         };
-        let base_widget: Box<dyn Widget> = if self.effective_platform() == Platform::Mobile {
-            // The Stack is always present (type-stable). The IndexedStack is
-            // always the first child. The dim overlay is pushed as the second
-            // child ONLY when base_alpha < 1.0 (during a transition).
-            let mut base_inner = Stack::new().push(base_stack);
-            if base_alpha < 1.0 {
-                // Dim overlay: black at `1 - base_alpha` (0.15 at full push dim).
-                // `Positioned` fills the base area so the overlay slides with it
-                // inside the `FractionalTranslation`. The overlay is the second
-                // Stack child, so it paints on top of the base's background+text;
-                // the moving page (a `Positioned` sibling on the outer
-                // `content_stack`) then paints on top of the dim — only the
-                // peeking underneath page is darkened.
-                let dim_alpha = 1.0 - base_alpha;
-                let dim_overlay = Positioned::new(DecoratedBox::with_style(
-                    WithLayout::new(
-                        Text::new(""),
-                        Layout::default().width_percent(1.0).height_percent(1.0),
-                    ),
-                    Style::default().background(Color::BLACK.with_alpha(dim_alpha)),
-                ))
-                .left(0.0)
-                .top(0.0)
-                .right(0.0)
-                .bottom(0.0);
-                base_inner = base_inner.push(dim_overlay);
-            }
-            FractionalTranslation::new(base_inner, base_fx, 0.0).boxed()
-        } else {
-            Opacity::new(
-                FractionalTranslation::new(base_stack, base_fx, 0.0),
-                base_alpha,
-            )
-            .boxed()
-        };
+        let base_widget: Box<dyn Widget> = Opacity::new(
+            FractionalTranslation::new(base_stack, base_fx, 0.0),
+            base_alpha,
+        )
+        .boxed();
 
         // The base is an IN-FLOW child of the Stack (not Positioned). The
         // Stack's layout is `flex_direction: Column, align: Stretch,
         // width_percent(1.0), height_percent(1.0)`, so the base
         // (Opacity is layout pass-through → IndexedStack fills the Stack)
-        // occupies the content area. The overlay, when present, is a
-        // `Positioned` (absolute) sibling painted on top — it does not affect
-        // the base's in-flow layout.
+        // occupies the content area.
         let mut content_stack = Stack::new().push(base_widget);
 
         if let Some(t) = state.transition.as_ref() {
