@@ -106,6 +106,25 @@ impl AnimationController {
         self.unregister_from_ticker();
     }
 
+    /// Set the controller's value directly, stopping any active drive.
+    ///
+    /// Used by gesture-driven animations (e.g. swipe-to-pop) where the finger
+    /// controls progress: each pointer Move calls `set_value(progress)` so the
+    /// rendered transition tracks the finger 1:1. On release, the caller starts
+    /// a spring via `animate_with` to settle to 0.0 or 1.0.
+    ///
+    /// After this call: `is_animating() == false`, `direction() == Stopped`,
+    /// `value() == v.clamp(0.0, 1.0)`. The value is clamped so a finger
+    /// briefly overshooting the content width can't push progress past 1.0.
+    pub fn set_value(&mut self, v: f64) {
+        self.unregister_from_ticker();
+        self.drive = Drive::Stopped;
+        self.value = v.clamp(0.0, 1.0);
+        if let Some(cb) = &self.dirty_callback {
+            cb();
+        }
+    }
+
     /// Drive the controller with a physics simulation. `sim.x(t)` IS the
     /// value (the sim owns from/to/v0). Stamps `start_time`, registers the
     /// ticker, fires dirty immediately (avoids the render_retain deadlock).
@@ -654,5 +673,48 @@ mod tests {
         ctrl.set_dirty_callback(std::sync::Arc::new(|| {}));
         ctrl.forward();
         assert!(ctrl.is_animating());
+    }
+
+    #[test]
+    fn set_value_sets_value_and_stops_drive() {
+        let mut ctrl = AnimationController::new(Duration::from_millis(100));
+        ctrl.forward();
+        assert!(ctrl.is_animating());
+        ctrl.set_value(0.42);
+        assert!(!ctrl.is_animating(), "set_value must stop the drive");
+        assert_eq!(ctrl.direction(), AnimationDirection::Stopped);
+        assert!((ctrl.value() - 0.42).abs() < 1e-9, "value must be 0.42");
+    }
+
+    #[test]
+    fn set_value_clamps_to_0_1() {
+        let mut ctrl = AnimationController::new(Duration::from_millis(100));
+        ctrl.set_value(-0.5);
+        assert_eq!(ctrl.value(), 0.0, "negative clamps to 0");
+        ctrl.set_value(1.5);
+        assert_eq!(ctrl.value(), 1.0, ">1 clamps to 1");
+    }
+
+    #[test]
+    fn set_value_fires_dirty_callback() {
+        use std::sync::{Arc, Mutex};
+        let count = Arc::new(Mutex::new(0u32));
+        let cb_count = count.clone();
+        let mut ctrl = AnimationController::new(Duration::from_millis(100));
+        ctrl.set_dirty_callback(Arc::new(move || {
+            *cb_count.lock().unwrap() += 1;
+        }));
+        ctrl.set_value(0.5);
+        assert_eq!(*count.lock().unwrap(), 1, "set_value must fire dirty once");
+    }
+
+    #[test]
+    fn set_value_cancels_prior_simulation() {
+        let mut ctrl = AnimationController::new(Duration::from_millis(100));
+        ctrl.animate_with(Box::new(critical_spring_sim(0.0, 1.0, 0.0)));
+        assert!(ctrl.is_animating());
+        ctrl.set_value(0.3);
+        assert!(!ctrl.is_animating(), "set_value must cancel the simulation");
+        assert!((ctrl.value() - 0.3).abs() < 1e-9);
     }
 }
