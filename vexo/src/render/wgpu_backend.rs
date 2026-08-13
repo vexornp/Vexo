@@ -1157,9 +1157,12 @@ impl WgpuBackend {
         let uv_w = physical_w / viewport_width.max(1) as f32;
         let uv_h = physical_h / viewport_height.max(1) as f32;
 
+        // position/size are in LOGICAL pixels — the image shader converts
+        // to physical via `globals.scale_factor` (same as regular images).
+        // Passing physical here would double-scale (scale_factor² ).
         let instance = ImageInstance {
-            position: [physical_x, physical_y],
-            size: [physical_w, physical_h],
+            position: [logical_bounds.left, logical_bounds.top],
+            size: [logical_bounds.width(), logical_bounds.height()],
             uv_origin: [uv_x, uv_y],
             uv_size: [uv_w, uv_h],
             transform: AffineTransform::identity().to_array(),
