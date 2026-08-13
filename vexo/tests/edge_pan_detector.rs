@@ -4,15 +4,14 @@
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use vexo::animation::AnimationTicker;
-use vexo::core::{Logical, Point, ScaleSource, Size};
+use vexo::core::{Point, ScaleSource, Size};
 use vexo::input::{ButtonState, InputEvent, PointerButton};
 use vexo::layout::TaffyLayoutEngine;
 use vexo::ThreeTreePipeline;
 use vexo::{Color, DecoratedBox, Style, Text};
-use vexo::{EdgePanDetector, EdgePanRecognizer, Widget};
+use vexo::{EdgePanDetector, Widget};
 
 fn create_test_font_system() -> glyphon::FontSystem {
     let font_data = vexo::resource::file::FONT.to_vec();

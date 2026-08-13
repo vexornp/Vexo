@@ -120,7 +120,6 @@ pub mod core;
 pub mod editor;
 pub mod input;
 pub mod gestures;
-pub use gestures::EdgePanRecognizer;
 pub mod layout;
 mod mouse_tracker;
 pub use mouse_tracker::MouseTracker;

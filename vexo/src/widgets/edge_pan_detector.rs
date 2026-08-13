@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use crate::core::{Bounds, Logical, Point, Size};
 use crate::gestures::{ArenaEvent, EdgePanRecognizer, GestureArena, GestureRecognizer};
-use crate::input::{ButtonState, InputEvent};
+use crate::input::InputEvent;
 use crate::layout::{Layout, LayoutNodeKey};
 
 use super::super::elements::RenderObjectElement;
