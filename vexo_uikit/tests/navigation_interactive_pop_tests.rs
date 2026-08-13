@@ -127,13 +127,13 @@ fn interactive_pop_renders_both_pages_during_drag() {
     anim.set_value(0.5);
 
     state.wire_for_testing(ticker, dirty);
-    state.set_interactive_pop(vexo_uikit::InteractivePop {
-        controller: anim,
+    state.set_interactive_pop(vexo_uikit::InteractivePop::new_for_testing(
+        anim,
         from_path,
         to_path,
-        phase: vexo_uikit::InteractivePopPhase::Dragging,
-        velocity_tracker: VelocityTracker::new(),
-    });
+        vexo_uikit::InteractivePopPhase::Dragging,
+        VelocityTracker::new(),
+    ));
 
     let w = render_stack(view, &mut state);
 
@@ -180,13 +180,13 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
     )));
 
     state.wire_for_testing(ticker, dirty);
-    state.set_interactive_pop(vexo_uikit::InteractivePop {
-        controller: anim,
+    state.set_interactive_pop(vexo_uikit::InteractivePop::new_for_testing(
+        anim,
         from_path,
         to_path,
-        phase: vexo_uikit::InteractivePopPhase::Committing,
-        velocity_tracker: VelocityTracker::new(),
-    });
+        vexo_uikit::InteractivePopPhase::Committing,
+        VelocityTracker::new(),
+    ));
 
     // Advance the spring past settlement. A critically-damped iOS spring at
     // stiffness=340 settles well within 1s.
@@ -194,7 +194,7 @@ fn interactive_pop_commit_clears_state_and_pops_path() {
     for i in 0..100u64 {
         let now = start + Duration::from_millis(20 * i);
         if let Some(ip) = state.interactive_pop_cell().borrow_mut().as_mut() {
-            ip.controller.advance(now);
+            ip.advance_controller(now);
         }
     }
 
@@ -236,19 +236,19 @@ fn interactive_pop_cancel_clears_state_without_mutating_path() {
     )));
 
     state.wire_for_testing(ticker, dirty);
-    state.set_interactive_pop(vexo_uikit::InteractivePop {
-        controller: anim,
+    state.set_interactive_pop(vexo_uikit::InteractivePop::new_for_testing(
+        anim,
         from_path,
         to_path,
-        phase: vexo_uikit::InteractivePopPhase::Cancelling,
-        velocity_tracker: VelocityTracker::new(),
-    });
+        vexo_uikit::InteractivePopPhase::Cancelling,
+        VelocityTracker::new(),
+    ));
 
     let start = Instant::now();
     for i in 0..100u64 {
         let now = start + Duration::from_millis(20 * i);
         if let Some(ip) = state.interactive_pop_cell().borrow_mut().as_mut() {
-            ip.controller.advance(now);
+            ip.advance_controller(now);
         }
     }
 

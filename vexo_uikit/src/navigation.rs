@@ -455,11 +455,41 @@ struct NavTransition<Dest: Hash + Eq + Clone + 'static> {
 /// gesture closures (built in `render`, fired outside `render`) can mutate it.
 /// Mirrors `ContextMenuState`'s shared `Rc<RefCell<...>>` pattern.
 pub struct InteractivePop<Dest: Hash + Eq + Clone + 'static> {
-    pub controller: AnimationController,
-    pub from_path: Vec<Dest>,
-    pub to_path: Vec<Dest>,
-    pub phase: InteractivePopPhase,
-    pub velocity_tracker: VelocityTracker,
+    pub(crate) controller: AnimationController,
+    pub(crate) from_path: Vec<Dest>,
+    pub(crate) to_path: Vec<Dest>,
+    pub(crate) phase: InteractivePopPhase,
+    pub(crate) velocity_tracker: VelocityTracker,
+}
+
+impl<Dest: Hash + Eq + Clone + 'static> InteractivePop<Dest> {
+    /// Test-only constructor. The fields are `pub(crate)` to keep the state
+    /// machine's internals private; integration tests (an external crate) use
+    /// this to build an `InteractivePop` for injection via
+    /// `NavigationStackViewState::set_interactive_pop`.
+    #[doc(hidden)]
+    pub fn new_for_testing(
+        controller: AnimationController,
+        from_path: Vec<Dest>,
+        to_path: Vec<Dest>,
+        phase: InteractivePopPhase,
+        velocity_tracker: VelocityTracker,
+    ) -> Self {
+        Self {
+            controller,
+            from_path,
+            to_path,
+            phase,
+            velocity_tracker,
+        }
+    }
+
+    /// Test-only accessor to advance the spring. Integration tests drive the
+    /// controller forward to settle the spring before re-rendering.
+    #[doc(hidden)]
+    pub fn advance_controller(&mut self, now: Instant) {
+        self.controller.advance(now);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -691,14 +721,14 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                 if ip.phase != InteractivePopPhase::Dragging && !ip.controller.is_animating() {
                     let phase = ip.phase;
                     drop(ip_cell);
-                    match phase {
-                        InteractivePopPhase::Committing => {
-                            self.controller.commit_interactive_pop();
-                        }
-                        InteractivePopPhase::Cancelling => {
-                            self.controller.cancel_interactive_pop();
-                        }
-                        InteractivePopPhase::Dragging => {}
+                    // `phase` is `Committing` or `Cancelling` here (the `if`
+                    // above guards out `Dragging`), so direct branches suffice
+                    // — no need for an exhaustive match with a dead `Dragging`
+                    // arm.
+                    if phase == InteractivePopPhase::Committing {
+                        self.controller.commit_interactive_pop();
+                    } else if phase == InteractivePopPhase::Cancelling {
+                        self.controller.cancel_interactive_pop();
                     }
                     *state.interactive_pop.borrow_mut() = None;
                     // Fire dirty to re-render steady state (cancel doesn't fire
@@ -1041,7 +1071,6 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                 }
             })
             .on_update({
-                let dirty_cb = dirty_cb.clone();
                 let ip_cell = ip_cell.clone();
                 move |delta_x| {
                     let mut ip_cell = ip_cell.borrow_mut();
@@ -1055,14 +1084,12 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                     };
                     ip.controller.set_value(progress as f64);
                     ip.velocity_tracker.add(Instant::now(), progress);
+                    // No explicit dirty fire here: `set_value` fires dirty
+                    // internally (controller.rs `set_value` calls `cb()`).
                     drop(ip_cell);
-                    if let Some(cb) = &dirty_cb {
-                        cb();
-                    }
                 }
             })
             .on_end({
-                let dirty_cb = dirty_cb.clone();
                 let ip_cell = ip_cell.clone();
                 move |_final_delta_x| {
                     let mut ip_cell = ip_cell.borrow_mut();
@@ -1088,10 +1115,9 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
                         target,
                         velocity as f64,
                     )));
+                    // No explicit dirty fire here: `animate_with` fires dirty
+                    // internally (controller.rs `animate_with` calls `cb()`).
                     drop(ip_cell);
-                    if let Some(cb) = &dirty_cb {
-                        cb();
-                    }
                 }
             })
             .boxed()
