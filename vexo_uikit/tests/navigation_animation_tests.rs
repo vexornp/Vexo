@@ -973,3 +973,102 @@ mod base_opacity_wrapper_tests {
         );
     }
 }
+
+// ============================================================================
+// INTERACTIVE POP API (gesture-driven; no pending op, no path mutation
+// until commit)
+// ============================================================================
+
+#[test]
+fn begin_interactive_pop_returns_from_path_without_mutating() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a");
+    controller.clear_pending();
+    controller.push("b");
+    controller.clear_pending();
+
+    let from = controller
+        .begin_interactive_pop()
+        .expect("must return from_path when path is non-empty and no pending");
+    assert_eq!(from, vec!["a", "b"], "from_path is the current path");
+    assert_eq!(
+        controller.path(),
+        vec!["a", "b"],
+        "begin must NOT mutate the path"
+    );
+    assert!(
+        controller.pending().is_none(),
+        "begin must NOT set a pending op"
+    );
+}
+
+#[test]
+fn begin_interactive_pop_at_root_returns_none() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    assert!(controller.begin_interactive_pop().is_none());
+}
+
+#[test]
+fn begin_interactive_pop_returns_none_when_pending() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a"); // sets pending
+    assert!(controller.pending().is_some());
+    assert!(
+        controller.begin_interactive_pop().is_none(),
+        "must not begin interactive pop while a push/pop transition is pending"
+    );
+}
+
+#[test]
+fn commit_interactive_pop_pops_path_and_fires_dirty() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a");
+    controller.clear_pending();
+    controller.push("b");
+    controller.clear_pending();
+
+    let dirty_count = Arc::new(AtomicU32::new(0));
+    let dc = dirty_count.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        dc.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    let popped = controller.commit_interactive_pop();
+    assert_eq!(popped, Some("b"));
+    assert_eq!(controller.path(), vec!["a"]);
+    assert!(
+        controller.pending().is_none(),
+        "commit must NOT set pending"
+    );
+    assert!(
+        dirty_count.load(Ordering::SeqCst) >= 1,
+        "commit must fire dirty"
+    );
+}
+
+#[test]
+fn commit_interactive_pop_at_root_returns_none() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    assert!(controller.commit_interactive_pop().is_none());
+}
+
+#[test]
+fn cancel_interactive_pop_does_not_mutate_or_fire_dirty() {
+    let controller: NavigationController<&'static str> = NavigationController::new();
+    controller.push("a");
+    controller.clear_pending();
+
+    let dirty_count = Arc::new(AtomicU32::new(0));
+    let dc = dirty_count.clone();
+    controller.set_dirty_callback(Arc::new(move || {
+        dc.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    controller.cancel_interactive_pop();
+    assert_eq!(controller.path(), vec!["a"], "cancel must NOT mutate path");
+    assert_eq!(
+        dirty_count.load(Ordering::SeqCst),
+        0,
+        "cancel must NOT fire dirty"
+    );
+}

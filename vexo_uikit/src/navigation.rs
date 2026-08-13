@@ -205,6 +205,45 @@ impl<Dest: Hash + Eq + Clone + 'static> NavigationController<Dest> {
         self.notify();
     }
 
+    /// Begin an interactive (gesture-driven) pop. Does NOT mutate the path.
+    /// Returns the current path snapshot (the `from_path` the view should
+    /// render as the outgoing overlay). Returns `None` if the path is empty
+    /// (at root) or if a pending (non-interactive) push/pop/replace transition
+    /// is already in flight.
+    ///
+    /// The caller (the view's interactive-pop state) drives the transition
+    /// animation directly via `AnimationController::set_value`; on release it
+    /// calls `commit_interactive_pop` or `cancel_interactive_pop`.
+    pub fn begin_interactive_pop(&self) -> Option<Vec<Dest>> {
+        if self.pending.borrow().is_some() {
+            return None;
+        }
+        let path = self.path.borrow();
+        if path.is_empty() {
+            return None;
+        }
+        Some(path.clone())
+    }
+
+    /// Commit an interactive pop that has animated to completion. Removes the
+    /// top of the path. Does NOT set a pending op — the interactive animation
+    /// already played the visual transition, so no fire-and-forget animation
+    /// is needed. Fires the dirty callback so the view re-renders steady-state
+    /// against the new (shorter) path.
+    pub fn commit_interactive_pop(&self) -> Option<Dest> {
+        let popped = self.path.borrow_mut().pop();
+        if popped.is_some() {
+            self.notify();
+        }
+        popped
+    }
+
+    /// Cancel an interactive pop. No path mutation, no dirty fire — the view
+    /// clears its interactive state and re-renders steady-state against the
+    /// unchanged path. The view is responsible for firing its own dirty
+    /// callback to trigger the steady-state re-render after clearing state.
+    pub fn cancel_interactive_pop(&self) {}
+
     // --- Framework wiring (called by NavigationStackViewState lifecycle) ---
 
     /// Wire the dirty callback. Called from `ComponentState::on_mount` (and
