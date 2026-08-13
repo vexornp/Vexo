@@ -120,6 +120,7 @@ pub mod core;
 pub mod editor;
 pub mod input;
 pub mod gestures;
+pub use gestures::EdgePanRecognizer;
 pub mod layout;
 mod mouse_tracker;
 pub use mouse_tracker::MouseTracker;
@@ -309,11 +310,12 @@ pub use stateful_widget::{Component, ComponentState, LifecycleContext, RenderCon
 pub use style::{BoxShadow, Style};
 pub use update_result::UpdateResult;
 pub use widgets::{
-    Brightness, ChildPush, ClipRRect, DecoratedBox, FadeTransition, FractionalTranslation,
-    GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData, MediaQueryMutator,
-    MultiChild, NetworkImage, Offstage, Opacity, Orientation, Positioned, RemoveEdges, SafeArea, ScrollController,
-    ScrollView, Shared, SlideDirection, SlideTransition, Spacer, Stack, Text, TextEdit, TextEditState,
-    TextEditingController, Theme, ThemeData, Transform, Widget, WithLayout,
+    Brightness, ChildPush, ClipRRect, DecoratedBox, EdgePanDetector, FadeTransition,
+    FractionalTranslation, GestureDetector, Grid, Image, IndexedStack, MediaQuery, MediaQueryData,
+    MediaQueryMutator, MultiChild, NetworkImage, Offstage, Opacity, Orientation, Positioned,
+    RemoveEdges, SafeArea, ScrollController, ScrollView, Shared, SlideDirection, SlideTransition,
+    Spacer, Stack, Text, TextEdit, TextEditState, TextEditingController, Theme, ThemeData,
+    Transform, Widget, WithLayout,
 };
 
 extern crate alloc;

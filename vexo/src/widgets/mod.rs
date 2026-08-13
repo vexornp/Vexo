@@ -6,6 +6,7 @@
 mod clip_rrect;
 mod container;
 mod decorated_box;
+mod edge_pan_detector;
 mod fractional_translation;
 pub mod gesture_detector;
 mod grid;
@@ -63,6 +64,7 @@ pub use theme::{Brightness, Theme, ThemeData};
 use crate::input::MouseCursor;
 pub use clip_rrect::ClipRRect;
 pub use decorated_box::DecoratedBox;
+pub use edge_pan_detector::EdgePanDetector;
 pub use fractional_translation::FractionalTranslation;
 pub use gesture_detector::GestureDetector;
 pub use indexed_stack::IndexedStack;
