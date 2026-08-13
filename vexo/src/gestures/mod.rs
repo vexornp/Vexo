@@ -6,6 +6,7 @@
 
 pub mod arena;
 pub mod arena_event;
+pub mod edge_pan;
 pub mod long_press;
 pub mod recognizer;
 pub mod tap;
@@ -14,6 +15,7 @@ pub mod vertical_drag;
 
 pub use arena::{ArenaOutcome, GestureArena};
 pub use arena_event::ArenaEvent;
+pub use edge_pan::EdgePanRecognizer;
 pub use long_press::LongPressRecognizer;
 pub use recognizer::{ArenaContext, GestureRecognizer, RecognizerResolution};
 pub use tap::TapRecognizer;
@@ -31,11 +33,19 @@ pub(crate) const VERTICAL_DRAG_SLOP: f32 = 18.0;
 /// Duration the pointer must remain pressed (without exceeding slop)
 /// before a long-press is recognized. Matches iOS
 /// `UILongPressGestureRecognizer`'s default `minimumPressDuration`.
-pub(crate) const LONG_PRESS_DURATION: std::time::Duration =
-    std::time::Duration::from_millis(500);
+pub(crate) const LONG_PRESS_DURATION: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Movement threshold (in logical pixels) beyond which a long-press is
 /// rejected. Same value as TAP_SLOP and VERTICAL_DRAG_SLOP — one slop
 /// for all three keeps the feel consistent and avoids surprising
 /// "I moved 17px and got a long-press instead of a scroll" edge cases.
 pub(crate) const LONG_PRESS_SLOP: f32 = 18.0;
+
+/// Distance from the leading (left) screen edge within which an edge-pan
+/// gesture may begin. Matches iOS `UIScreenEdgePanGestureRecognizer`'s
+/// default edge zone.
+pub(crate) const EDGE_WIDTH: f32 = 20.0;
+
+/// Cumulative horizontal movement threshold beyond which an edge-pan is
+/// recognized. Matches `VERTICAL_DRAG_SLOP` for consistent feel.
+pub(crate) const HORIZONTAL_DRAG_SLOP: f32 = 18.0;
