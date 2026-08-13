@@ -109,9 +109,40 @@ impl ComponentState for ChatScreenState {
             map.get(&conv_id).cloned().unwrap_or_default()
         }));
     }
-    fn on_update(&mut self, _old_widget: &dyn Any, ctx: &mut LifecycleContext) {
+    fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
         if let Some(tc) = self.text_controller.as_ref() {
             tc.set_dirty_callback(ctx.dirty_callback());
+        }
+
+        // Recreate the derived per-conversation Signal when conv_id changes.
+        // ChatScreen sits in a single-child slot (inside `titled_container`),
+        // and the framework's `can_update` checks the widget TYPE, not the
+        // key — so switching conversations takes the update path, NOT a
+        // remount. That means `on_mount` does NOT re-run, and without this
+        // `derived_messages` would stay bound to the OLD conv_id forever
+        // (render() would keep showing the first-opened conversation). The
+        // `key()` is ineffective for single-child slots (keys only drive
+        // sibling reconciliation in multi-child containers). See "Signal
+        // field rule" in docs/rebuild-skipping-patterns.md.
+        let old = old_widget
+            .downcast_ref::<ChatScreen>()
+            .expect("ChatScreenState::on_update: old widget must be ChatScreen");
+        let new = ctx
+            .widget()
+            .downcast_ref::<ChatScreen>()
+            .expect("ChatScreenState::on_update: widget must be ChatScreen");
+        if old.conv_id != new.conv_id {
+            let conv_id = new.conv_id.clone();
+            let root = new.messages.clone();
+            self.derived_messages = Some(Signal::derive(root, move |map| {
+                map.get(&conv_id).cloned().unwrap_or_default()
+            }));
+            // Clear draft text so the previous conversation's unsent input
+            // doesn't leak into the newly-selected one.
+            if let Some(tc) = self.text_controller.as_ref() {
+                let mut fs = vexo::resource::new_font_system();
+                tc.set_text("", &mut fs);
+            }
         }
     }
     fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
@@ -464,6 +495,73 @@ mod tests {
         assert!(
             find_text_in_tree(ro_reg, root, new_message_text),
             "new message text should appear in render tree after signal set + rebuild"
+        );
+    }
+
+    /// Regression for "clicking a different conversation row doesn't update
+    /// the chat screen — it keeps showing the first-clicked conversation's
+    /// messages."
+    ///
+    /// ChatScreen lives in a single-child slot, so switching conversations
+    /// takes the UPDATE path (`can_update` checks type, not key). `on_mount`
+    /// does NOT re-run, so `on_update` must recreate the derived per-
+    /// conversation Signal when `conv_id` changes — otherwise `render()`
+    /// keeps reading the stale derived bound to the OLD `conv_id`.
+    #[test]
+    fn test_chat_screen_updates_messages_when_conv_id_changes() {
+        let messages_signal = seed_messages_signal();
+
+        // Mount with conv 1.
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal.clone(),
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+        }
+        .boxed();
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+
+        let conv1_marker = "Hey! Are we still on for tomorrow?";
+        let conv2_marker = "Did you get the file?";
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root after mount");
+        assert!(
+            find_text_in_tree(ro_reg, root, conv1_marker),
+            "conv 1 message should render after mount"
+        );
+
+        // Switch to conv 2 — same single-child slot, same type → update path
+        // (this is the path the bug broke: on_update must rebind derived).
+        let new_view = ChatScreen {
+            conv_id: ConvId(2),
+            messages: messages_signal.clone(),
+            avatar: seed_avatar(ConvId(2)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+        }
+        .boxed();
+        pipeline.update(new_view);
+        pipeline.perform_rebuilds();
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root after update");
+        assert!(
+            find_text_in_tree(ro_reg, root, conv2_marker),
+            "conv 2 message should render after switching conversations"
+        );
+        assert!(
+            !find_text_in_tree(ro_reg, root, conv1_marker),
+            "conv 1 message should NOT render after switching to conv 2 \
+             (derived Signal must be rebound to the new conv_id in on_update)"
         );
     }
 
