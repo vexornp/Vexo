@@ -48,6 +48,23 @@ fn apply_rubber_band(raw_new: f32, viewport: f32, max: f32) -> f32 {
     base + resisted_excess
 }
 
+/// Inverse of `apply_rubber_band`: given a rubber-banded (displayed) offset,
+/// recover the unresisted offset that produces it. Used to initialize the
+/// drag's unresisted tracking offset from the current displayed offset when
+/// a drag starts — including from overscroll (e.g. after interrupting a
+/// spring), so the first drag delta doesn't cause a visual jump.
+fn invert_rubber_band(displayed: f32, viewport: f32, max: f32) -> f32 {
+    let v = viewport.max(1.0);
+    if displayed < 0.0 {
+        displayed * v / (v + displayed)
+    } else if displayed > max {
+        let e_d = displayed - max;
+        max + e_d * v / (v - e_d)
+    } else {
+        displayed
+    }
+}
+
 /// Wire a `ScrollController`'s dirty callback to the pipeline's mpsc channel.
 ///
 /// Matches the `StatefulElement` dirty-callback pattern
@@ -92,6 +109,16 @@ pub struct ScrollViewElement {
     /// Tracks the last y position from the drag recognizer, to compute
     /// per-move scroll deltas. Set when the drag recognizer wins.
     last_drag_y: f32,
+    /// Unresisted scroll offset during a drag — accumulates the full finger
+    /// delta 1:1. The displayed offset is `apply_rubber_band(unresisted)`.
+    /// Tracking the unresisted value separately (rather than rubber-banding
+    /// the accumulated `scroll_offset + delta`) ensures that dragging back
+    /// past an edge exactly reverses the rubber-band, instead of jumping
+    /// forward — the old approach double-resisted outward movement but let
+    /// return movement through at 1:1, so the content overshot its expected
+    /// position mid-drag (looked like a "bounce back" with the finger still
+    /// down).
+    drag_unresisted_offset: f32,
     /// Windowed least-squares pointer-velocity estimate. Sampled on every
     /// drag Move; read on Up to seed the momentum simulation's v0.
     velocity_tracker: VelocityTracker,
@@ -131,6 +158,7 @@ impl ScrollViewElement {
             viewport_height: 0.0,
             controller: None,
             last_drag_y: 0.0,
+            drag_unresisted_offset: 0.0,
             velocity_tracker: VelocityTracker::new(),
             drive: ScrollDrive::Idle,
             physics: ScrollPhysics::default(),
@@ -449,16 +477,18 @@ impl Element for ScrollViewElement {
                 let now = Instant::now();
                 self.velocity_tracker.add(now, position.y);
                 self.last_move_time = Some(now);
-                // Compute scroll delta from the previous tracked position to
-                // the current event position. We use `event.position` (not
-                // `drag.last_position()`) because once the arena closes the
-                // recognizer is no longer fed Move events, so its
-                // `last_position` would be stale.
+                // Accumulate the full finger delta into the unresisted offset
+                // (1:1 tracking), then rubber-band it to get the displayed
+                // offset. This ensures dragging back past an edge exactly
+                // reverses the rubber-band instead of jumping forward.
                 let delta = self.last_drag_y - position.y;
                 self.last_drag_y = position.y;
-                let raw_new = self.scroll_offset + delta;
-                let new_offset =
-                    apply_rubber_band(raw_new, self.viewport_height, self.max_scroll());
+                self.drag_unresisted_offset += delta;
+                let new_offset = apply_rubber_band(
+                    self.drag_unresisted_offset,
+                    self.viewport_height,
+                    self.max_scroll(),
+                );
                 self.apply_scroll_offset(new_offset, ctx);
             }
             ArenaEvent::Down { .. } => {
@@ -470,6 +500,14 @@ impl Element for ScrollViewElement {
                 self.drive = ScrollDrive::Idle;
                 self.velocity_tracker.clear();
                 self.last_move_time = None;
+                // Initialize the unresisted tracking offset from the current
+                // DISPLAYED offset by inverting the rubber-band. This handles
+                // both the common case (offset in bounds → identity) and the
+                // edge case of starting a drag from overscroll (e.g.
+                // interrupting a spring mid-bounce) without a visual jump.
+                self.refresh_sizes(ctx);
+                self.drag_unresisted_offset =
+                    invert_rubber_band(self.scroll_offset, self.viewport_height, self.max_scroll());
                 // Drag just won (on the move that crossed slop). Initialize
                 // last_drag_y from the recognizer's DOWN position so the
                 // first Move delta captures the full movement from press-down
@@ -916,6 +954,50 @@ mod tests {
     }
 
     #[test]
+    fn test_invert_rubber_band_identity_in_bounds() {
+        assert_eq!(invert_rubber_band(50.0, 400.0, 1000.0), 50.0);
+        assert_eq!(invert_rubber_band(0.0, 400.0, 1000.0), 0.0);
+        assert_eq!(invert_rubber_band(1000.0, 400.0, 1000.0), 1000.0);
+    }
+
+    #[test]
+    fn test_invert_rubber_band_roundtrips_past_top() {
+        for &raw in &[-10.0, -50.0, -100.0, -300.0, -399.0] {
+            let displayed = apply_rubber_band(raw, 400.0, 1000.0);
+            let recovered = invert_rubber_band(displayed, 400.0, 1000.0);
+            assert!(
+                (recovered - raw).abs() < 0.01,
+                "roundtrip failed: raw={} displayed={} recovered={}",
+                raw,
+                displayed,
+                recovered
+            );
+        }
+    }
+
+    #[test]
+    fn test_invert_rubber_band_roundtrips_past_bottom() {
+        for &raw in &[1010.0, 1050.0, 1100.0, 1300.0, 1399.0] {
+            let displayed = apply_rubber_band(raw, 400.0, 1000.0);
+            let recovered = invert_rubber_band(displayed, 400.0, 1000.0);
+            assert!(
+                (recovered - raw).abs() < 0.01,
+                "roundtrip failed: raw={} displayed={} recovered={}",
+                raw,
+                displayed,
+                recovered
+            );
+        }
+    }
+
+    #[test]
+    fn test_invert_rubber_band_zero_viewport_guarded() {
+        let displayed = apply_rubber_band(-100.0, 0.0, 1000.0);
+        let recovered = invert_rubber_band(displayed, 0.0, 1000.0);
+        assert!(recovered <= 0.0, "should be past top; got {}", recovered);
+    }
+
+    #[test]
     fn test_drag_past_top_goes_negative() {
         use crate::core::Point;
         use crate::core::ScaleSource;
@@ -1032,6 +1114,132 @@ mod tests {
             offset > -600.0,
             "should not exceed ~viewport past edge (rubber-band); got {}",
             offset
+        );
+    }
+
+    #[test]
+    fn test_drag_past_edge_and_back_returns_to_start() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+
+        // Press at y=300.
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 300.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &press,
+        );
+
+        // Drag DOWN 200px (past top edge → overscroll with rubber-band).
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 500.0),
+            &InputEvent::PointerMoved {
+                position: Point::new(200.0, 500.0),
+            },
+        );
+        let overscrolled = ctrl.current_offset();
+        assert!(
+            overscrolled < 0.0,
+            "should be in overscroll after dragging past top; got {}",
+            overscrolled
+        );
+
+        // Drag back UP 200px (finger returns to the press position).
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 300.0),
+            &InputEvent::PointerMoved {
+                position: Point::new(200.0, 300.0),
+            },
+        );
+        let after_return = ctrl.current_offset();
+
+        // The finger returned to its starting position, so the offset should
+        // be back at ~0 (the top edge). Before the fix, the rubber-band
+        // compounded on the accumulated (already-resisted) offset, so the
+        // return delta was applied 1:1 while the outward delta was resisted —
+        // the content jumped forward past 0 instead of returning.
+        assert!(
+            after_return.abs() < 1.0,
+            "dragging past edge and back should return to start (~0), not jump forward; got {}",
+            after_return
+        );
+
+        // Suppress unused warning for ticker in case setup changes.
+        drop(ticker);
+    }
+
+    #[test]
+    fn test_drag_past_bottom_edge_and_back_returns_to_start() {
+        use crate::core::Point;
+        use crate::input::{ButtonState, InputEvent, PointerButton};
+        use crate::widgets::ScrollController;
+
+        let ctrl = ScrollController::new();
+        let (ticker, mut pipeline, mut font_system) = setup_scroll_view(&ctrl);
+        let max_scroll = max_scroll_of(&pipeline);
+
+        // Pre-scroll to the bottom edge.
+        ctrl.jump_to(max_scroll);
+        for _ in 0..5 {
+            pump(&ticker, &mut pipeline);
+        }
+        assert_eq!(ctrl.current_offset(), max_scroll);
+
+        // Press + drag UP 200px (past bottom edge → overscroll).
+        let press = InputEvent::PointerButton {
+            position: Point::new(200.0, 400.0),
+            button: PointerButton::Primary,
+            state: ButtonState::Pressed,
+        };
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 400.0),
+            &press,
+        );
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 200.0),
+            &InputEvent::PointerMoved {
+                position: Point::new(200.0, 200.0),
+            },
+        );
+        let overscrolled = ctrl.current_offset();
+        assert!(
+            overscrolled > max_scroll,
+            "should be in overscroll past bottom; got {}",
+            overscrolled
+        );
+
+        // Drag back DOWN 200px (finger returns to press position).
+        dispatch(
+            &mut pipeline,
+            &mut font_system,
+            Point::new(200.0, 400.0),
+            &InputEvent::PointerMoved {
+                position: Point::new(200.0, 400.0),
+            },
+        );
+        let after_return = ctrl.current_offset();
+        assert!(
+            (after_return - max_scroll).abs() < 1.0,
+            "dragging past bottom edge and back should return to max_scroll, not jump; got {} (max={})",
+            after_return,
+            max_scroll
         );
     }
 
