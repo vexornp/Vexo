@@ -42,6 +42,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use vexo::animation::{SpringDescription, SpringSimulation};
+use vexo::EdgePanDetector;
+use vexo::VelocityTracker;
 use vexo::{
     children, AlignItems, AnimationController, Component, ComponentState, CubicBezierCurve, Curve,
     DecoratedBox, FractionalTranslation, IndexedStack, JustifyContent, Layout, LifecycleContext,
@@ -447,6 +450,29 @@ struct NavTransition<Dest: Hash + Eq + Clone + 'static> {
     to_path: Vec<Dest>,
 }
 
+/// In-flight interactive (gesture-driven) pop. Lives behind an
+/// `Rc<RefCell<Option<InteractivePop>>>` on `NavigationStackViewState` so the
+/// gesture closures (built in `render`, fired outside `render`) can mutate it.
+/// Mirrors `ContextMenuState`'s shared `Rc<RefCell<...>>` pattern.
+struct InteractivePop<Dest: Hash + Eq + Clone + 'static> {
+    controller: AnimationController,
+    from_path: Vec<Dest>,
+    to_path: Vec<Dest>,
+    phase: InteractivePopPhase,
+    velocity_tracker: VelocityTracker,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InteractivePopPhase {
+    Dragging,
+    Committing,
+    Cancelling,
+}
+
+/// Release past 50% progress commits; below cancels. A rightward flick above
+/// this velocity also commits even if progress < 50%.
+const FLICK_THRESHOLD: f32 = 0.5;
+
 /// State for the NavigationStackView component.
 ///
 /// Owns the in-flight transition's `AnimationController`. The controller lives
@@ -459,6 +485,13 @@ struct NavTransition<Dest: Hash + Eq + Clone + 'static> {
 pub struct NavigationStackViewState<Dest: Hash + Eq + Clone + 'static> {
     _marker: PhantomData<Dest>,
     transition: Option<NavTransition<Dest>>,
+    /// Shared cell holding the in-flight interactive pop. `Rc<RefCell<...>>` so
+    /// the gesture closures (built in `render`, fired outside `render`) can
+    /// mutate it. Mirrors `ContextMenuState`'s shared-cell pattern.
+    interactive_pop: Rc<RefCell<Option<InteractivePop<Dest>>>>,
+    /// Cached content width from the last `render()`. Read by gesture closures
+    /// to convert finger delta_x → progress (0..1).
+    content_width: f32,
     /// Cached ticker from `on_mount`. Used to wire transition controllers.
     ticker: Option<Arc<vexo::AnimationTicker>>,
     /// Cached dirty callback from `on_mount`. Used to wire transition controllers.
@@ -470,6 +503,8 @@ impl<Dest: Hash + Eq + Clone + 'static> Default for NavigationStackViewState<Des
         Self {
             _marker: PhantomData,
             transition: None,
+            interactive_pop: Rc::new(RefCell::new(None)),
+            content_width: 0.0,
             ticker: None,
             dirty_callback: None,
         }
@@ -512,6 +547,10 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
             t.controller.stop();
         }
         self.transition = None;
+        if let Some(ip) = self.interactive_pop.borrow_mut().as_mut() {
+            ip.controller.stop();
+        }
+        *self.interactive_pop.borrow_mut() = None;
         self.ticker = None;
         self.dirty_callback = None;
     }
@@ -522,6 +561,9 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
             // Completion is detected in render() (which has access to the
             // navigation controller to clear its pending op). Here we just
             // advance the controller.
+        }
+        if let Some(ip) = self.interactive_pop.borrow_mut().as_mut() {
+            ip.controller.advance(now);
         }
     }
 
@@ -546,7 +588,7 @@ impl<Dest: Hash + Eq + Clone + 'static> ComponentState for NavigationStackViewSt
         // this rebuild pass), and `FocusManager::unfocus()` is a no-op when
         // nothing is focused, so this is harmless for pushes from an
         // unfocused list.
-        if self.transition.is_none() {
+        if self.transition.is_none() && self.interactive_pop.borrow().is_none() {
             if let Some(nav) = ctx.widget().downcast_ref::<NavigationStackView<Dest>>() {
                 if nav.controller.pending().is_some() {
                     ctx.clear_focus();
@@ -612,12 +654,48 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             state.transition = None;
         }
 
+        // 2b. If an interactive pop is in flight, check if its spring has
+        //     settled (phase != Dragging and controller stopped). On settle:
+        //     commit or cancel the pop on the controller, clear the cell, and
+        //     fire dirty to trigger a steady-state re-render.
+        {
+            let ip_cell = state.interactive_pop.borrow_mut();
+            if let Some(ip) = ip_cell.as_ref() {
+                if ip.phase != InteractivePopPhase::Dragging && !ip.controller.is_animating() {
+                    let phase = ip.phase;
+                    drop(ip_cell);
+                    match phase {
+                        InteractivePopPhase::Committing => {
+                            self.controller.commit_interactive_pop();
+                        }
+                        InteractivePopPhase::Cancelling => {
+                            self.controller.cancel_interactive_pop();
+                        }
+                        InteractivePopPhase::Dragging => {}
+                    }
+                    *state.interactive_pop.borrow_mut() = None;
+                    // Fire dirty to re-render steady state (cancel doesn't fire
+                    // dirty itself; commit does but a redundant fire is idempotent).
+                    if let Some(cb) = &state.dirty_callback {
+                        cb();
+                    }
+                }
+            }
+        }
+
         // 3. Determine the "current" path for nav-bar title / can_pop.
         //    During transition, use the to_path (the destination) so the
         //    nav bar reflects where the user is going.
         let (title, can_pop) = if let Some(t) = state.transition.as_ref() {
             // Use to_path's top for the title.
             if let Some(top) = t.to_path.last() {
+                ((self.title)(top), true)
+            } else {
+                (self.root_title.clone().unwrap_or_default(), false)
+            }
+        } else if let Some(ip) = state.interactive_pop.borrow().as_ref() {
+            // Interactive pop: title reflects where the user is going (to_path).
+            if let Some(top) = ip.to_path.last() {
                 ((self.title)(top), true)
             } else {
                 (self.root_title.clone().unwrap_or_default(), false)
@@ -631,7 +709,9 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             }
         };
 
-        let safe_insets = MediaQuery::of(ctx).padding;
+        let mq = MediaQuery::of(ctx);
+        state.content_width = mq.size.width;
+        let safe_insets = mq.padding;
         let nav = tokens::navigation::colors(&Theme::of(ctx));
         let nav_bar = self.build_nav_bar(&title, can_pop, &safe_insets, &nav);
 
@@ -678,7 +758,10 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
 
         // The base index: point at the "underneath" page.
         let base_index = match state.transition.as_ref() {
-            None => path.len(),
+            None => match state.interactive_pop.borrow().as_ref() {
+                None => path.len(),
+                Some(ip) => ip.to_path.len(),
+            },
             Some(t) => match t.direction {
                 TransitionDir::Push => t.from_path.len(),
                 TransitionDir::Pop | TransitionDir::PopToRoot => t.to_path.len(),
@@ -720,7 +803,14 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         //   Desktop       : base_fx = 0.0 always (no slide); alpha fades as before.
         //   Steady        : base_fx = 0.0, alpha = 1.0 (no-op wrappers).
         let (base_fx, base_alpha): (f32, f32) = match state.transition.as_ref() {
-            None => (0.0, 1.0),
+            None => match state.interactive_pop.borrow().as_ref() {
+                None => (0.0, 1.0),
+                Some(ip) => {
+                    let raw_t = ip.controller.value();
+                    let eased = self.transition_curve.transform(raw_t);
+                    base_fx_alpha(TransitionDir::Pop, self.effective_platform(), eased)
+                }
+            },
             Some(t) => {
                 let raw_t = t.controller.value();
                 let eased = self.transition_curve.transform(raw_t);
@@ -788,6 +878,42 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             );
         }
 
+        if state.transition.is_none() {
+            if let Some(ip) = state.interactive_pop.borrow().as_ref() {
+                let raw_t = ip.controller.value();
+                let eased = self.transition_curve.transform(raw_t);
+                let platform = self.effective_platform();
+
+                let transition_fn: Rc<dyn Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget>> =
+                    self.transition
+                        .clone()
+                        .unwrap_or_else(|| Rc::new(|ctx, child| default_transition(ctx, child)));
+
+                // Outgoing page slides away to the right, revealing the
+                // destination underneath. Same default_mobile_transition as a
+                // button pop, driven by the finger/spring eased value.
+                let outgoing_page = if let Some(top) = ip.from_path.last() {
+                    (self.destination)(top)
+                } else {
+                    self.root.clone_boxed()
+                };
+                let outgoing_ctx = TransitionCtx {
+                    t: eased,
+                    is_incoming: false,
+                    direction: TransitionDir::Pop,
+                    platform,
+                };
+                let overlay = transition_fn(&outgoing_ctx, outgoing_page);
+                content_stack = content_stack.push(
+                    Positioned::new(overlay)
+                        .top(0.0)
+                        .right(0.0)
+                        .bottom(0.0)
+                        .left(0.0),
+                );
+            }
+        }
+
         // Wrap the content `Stack` in a clipping `DecoratedBox` so the
         // moving page's full-perimeter shadow (attached in
         // `default_mobile_transition`) is clipped to the nav content area —
@@ -824,14 +950,124 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
         // Without this, a page taller than the available space (e.g. 8
         // contacts inside a TabBarView on a short window) pushes the tab bar
         // off screen. The page's own ScrollView handles the overflow.
-        MultiChild::new(
+        let column = MultiChild::new(
             children![nav_bar, content],
             Layout::column()
                 .flex_grow(1.0)
                 .flex_basis(0.0)
                 .min_height(0.0),
-        )
-        .boxed()
+        );
+
+        // Wrap in EdgePanDetector (always present — stable widget type so the
+        // reconciler updates in place when `enabled` toggles between root and
+        // non-root). Enabled only on mobile when a pop is possible and no
+        // transition/interactive-pop is already in flight.
+        let platform = self.effective_platform();
+        let can_swipe = platform == Platform::Mobile
+            && self.controller.depth() > 0
+            && state.transition.is_none()
+            && state.interactive_pop.borrow().is_none()
+            && self.controller.pending().is_none();
+
+        // Captures for the gesture closures. These are Rc clones / copies —
+        // the closures are `move` and fire outside render(), mutating the
+        // shared cell and firing dirty to trigger a rebuild.
+        let controller = self.controller.clone();
+        let ip_cell = state.interactive_pop.clone();
+        let dirty_cb = state.dirty_callback.clone();
+        let ticker = state.ticker.clone();
+        let content_width = state.content_width;
+
+        EdgePanDetector::new(column, can_swipe)
+            .on_start({
+                let controller = controller.clone();
+                let ticker = ticker.clone();
+                let dirty_cb = dirty_cb.clone();
+                let ip_cell = ip_cell.clone();
+                move || {
+                    let Some(from_path) = controller.begin_interactive_pop() else {
+                        return;
+                    };
+                    let to_path = if from_path.len() > 1 {
+                        from_path[..from_path.len() - 1].to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    let mut controller_anim =
+                        AnimationController::new(DEFAULT_MOBILE_TRANSITION_DURATION);
+                    if let Some(ticker) = &ticker {
+                        controller_anim.set_ticker(ticker.clone());
+                    }
+                    if let Some(cb) = &dirty_cb {
+                        controller_anim.set_dirty_callback(cb.clone());
+                    }
+                    *ip_cell.borrow_mut() = Some(InteractivePop {
+                        controller: controller_anim,
+                        from_path,
+                        to_path,
+                        phase: InteractivePopPhase::Dragging,
+                        velocity_tracker: VelocityTracker::new(),
+                    });
+                    if let Some(cb) = &dirty_cb {
+                        cb();
+                    }
+                }
+            })
+            .on_update({
+                let dirty_cb = dirty_cb.clone();
+                let ip_cell = ip_cell.clone();
+                move |delta_x| {
+                    let mut ip_cell = ip_cell.borrow_mut();
+                    let Some(ip) = ip_cell.as_mut() else {
+                        return;
+                    };
+                    let progress = if content_width > 0.0 {
+                        (delta_x / content_width).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    ip.controller.set_value(progress as f64);
+                    ip.velocity_tracker.add(Instant::now(), progress);
+                    drop(ip_cell);
+                    if let Some(cb) = &dirty_cb {
+                        cb();
+                    }
+                }
+            })
+            .on_end({
+                let dirty_cb = dirty_cb.clone();
+                let ip_cell = ip_cell.clone();
+                move |_final_delta_x| {
+                    let mut ip_cell = ip_cell.borrow_mut();
+                    let Some(ip) = ip_cell.as_mut() else {
+                        return;
+                    };
+                    let progress = ip.controller.value() as f32;
+                    let velocity = ip.velocity_tracker.velocity();
+                    let phase = if progress > 0.5 || velocity > FLICK_THRESHOLD {
+                        InteractivePopPhase::Committing
+                    } else {
+                        InteractivePopPhase::Cancelling
+                    };
+                    ip.phase = phase;
+                    let target = if phase == InteractivePopPhase::Committing {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    ip.controller.animate_with(Box::new(SpringSimulation::new(
+                        SpringDescription::ios(340.0, 1.0),
+                        progress as f64,
+                        target,
+                        velocity as f64,
+                    )));
+                    drop(ip_cell);
+                    if let Some(cb) = &dirty_cb {
+                        cb();
+                    }
+                }
+            })
+            .boxed()
     }
 }
 

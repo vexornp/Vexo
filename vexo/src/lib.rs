@@ -120,6 +120,8 @@ pub mod core;
 pub mod editor;
 pub mod input;
 pub mod gestures;
+/// Re-exported for `vexo_uikit` gesture-driven widgets (e.g. swipe-to-pop).
+pub use gestures::VelocityTracker;
 pub mod layout;
 mod mouse_tracker;
 pub use mouse_tracker::MouseTracker;

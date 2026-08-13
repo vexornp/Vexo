@@ -196,7 +196,7 @@ fn stack_view_state_default_compiles() {
 }
 
 use vexo::inherited_registry::{InheritedMap, InheritedRegistry};
-use vexo::{BuildOwner, ElementKey, MultiChild, RenderContext};
+use vexo::{BuildOwner, EdgePanDetector, ElementKey, MultiChild, RenderContext};
 
 fn make_element_key() -> ElementKey {
     let mut sm: slotmap::SlotMap<ElementKey, ()> = slotmap::SlotMap::with_key();
@@ -293,10 +293,17 @@ fn stack_root_top_level_is_multi_child_column_with_two_children() {
     let mut state = vexo_uikit::NavigationStackViewState::<&'static str>::default();
     let tree = render_stack(view, &mut state);
 
-    let multi = tree
+    // The render output is wrapped in an EdgePanDetector (stable wrapper type
+    // for swipe-to-pop); the nav column lives inside it.
+    let detector = tree
+        .as_any()
+        .downcast_ref::<EdgePanDetector>()
+        .expect("top-level widget should be an EdgePanDetector");
+    let multi = detector
+        .child()
         .as_any()
         .downcast_ref::<MultiChild>()
-        .expect("top-level widget should be a MultiChild");
+        .expect("EdgePanDetector child should be a MultiChild");
     assert_eq!(
         multi.children().len(),
         2,
@@ -340,10 +347,16 @@ fn stack_navbar_title_is_empty_when_root_title_unset() {
     let tree = render_stack(view, &mut state);
 
     // Should not panic and should still have 2 children (NavBar with empty title + root).
-    let multi = tree
+    // The render output is wrapped in an EdgePanDetector; the nav column is inside.
+    let detector = tree
+        .as_any()
+        .downcast_ref::<EdgePanDetector>()
+        .expect("top-level should be an EdgePanDetector");
+    let multi = detector
+        .child()
         .as_any()
         .downcast_ref::<MultiChild>()
-        .expect("top-level should be MultiChild");
+        .expect("EdgePanDetector child should be a MultiChild");
     assert_eq!(multi.children().len(), 2);
 }
 
