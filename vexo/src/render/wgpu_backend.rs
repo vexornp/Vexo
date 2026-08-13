@@ -840,7 +840,7 @@ impl WgpuBackend {
         scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
-    ) {
+    ) -> Result<(), RenderError> {
         // ── Scan markers for top-level SaveLayer groups in this range ──
         // Nested groups (a Begin inside another Begin within this range)
         // are NOT recorded here — they're handled by the recursive call
@@ -924,15 +924,18 @@ impl WgpuBackend {
         // ── Phase 2: Text ──
         render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
         if group_text_renderer_idx == 0 {
-            let _ = self.text_renderer.render(&self.atlas, &self.viewport, render_pass);
+            self.text_renderer
+                .render(&self.atlas, &self.viewport, render_pass)
+                .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
         } else {
             // Group pass — use the pooled group text renderer. The slot
             // must already exist (created lazily in render_save_layer_group
             // before recursing). If it doesn't, skip text for safety.
             let idx = group_text_renderer_idx - 1;
             if idx < self.group_text_renderers.len() && idx < self.group_viewports.len() {
-                let _ = self.group_text_renderers[idx]
-                    .render(&self.atlas, &self.group_viewports[idx], render_pass);
+                self.group_text_renderers[idx]
+                    .render(&self.atlas, &self.group_viewports[idx], render_pass)
+                    .map_err(|e| RenderError::TextPrepareFailed(format!("{:?}", e)))?;
             }
         }
 
@@ -964,10 +967,16 @@ impl WgpuBackend {
 
             // Render the group offscreen. `group_text_renderer_idx` for the
             // recursive call is `gi + 1` (1-based; 0 = main pass). Each
-            // top-level group in this pass gets its own pool slot; nested
-            // groups inside the recursive call reuse the same slot indexing
-            // scheme — collisions are acceptable in v1 since group text
-            // preparation isn't wired up yet.
+            // top-level group in this pass gets its own pool slot.
+            //
+            // v1 limitation: nested SaveLayer groups with text in BOTH groups
+            // have a pool-index mismatch — the prepare side assigns slots by
+            // flat group list position (innermost-first), while the render side
+            // assigns slots by per-pass enumeration (first group in each pass
+            // gets slot 0). For single-level groups (the only case in
+            // production — nav dim) the mapping is correct. Nested Opacity with
+            // text is not exercised by any screen and is deferred to a future
+            // fix that assigns a stable group id at FrameBuilder time.
             let group_text_idx = gi + 1;
             let group_view = self.render_save_layer_group(
                 gstart,
@@ -977,7 +986,7 @@ impl WgpuBackend {
                 scale_factor,
                 viewport_width,
                 viewport_height,
-            );
+            )?;
 
             // Composite the offscreen result into this pass at the group's
             // paint-order z-depth.
@@ -1006,6 +1015,7 @@ impl WgpuBackend {
                 viewport_height,
             );
         }
+        Ok(())
     }
 
     /// Render a SaveLayer group offscreen and return the color view holding
@@ -1029,10 +1039,8 @@ impl WgpuBackend {
         scale_factor: f32,
         viewport_width: u32,
         viewport_height: u32,
-    ) -> wgpu::TextureView {
-        // Ensure the group's text renderer + viewport slots exist. The
-        // slot is created even though v1 doesn't prepare group text —
-        // this keeps the pool indexed consistently for future tasks.
+    ) -> Result<wgpu::TextureView, RenderError> {
+        // Ensure the group's text renderer + viewport slots exist.
         if group_text_idx > 0 {
             let _ = self.group_text_renderer(group_text_idx - 1);
             let _ = self.group_viewport(group_text_idx - 1);
@@ -1077,7 +1085,7 @@ impl WgpuBackend {
                 scale_factor,
                 viewport_width,
                 viewport_height,
-            );
+            )?;
         }
         self.queue.submit(std::iter::once(encoder.finish()));
 
@@ -1093,7 +1101,7 @@ impl WgpuBackend {
             _depth_view: depth_view,
         });
 
-        returned_view
+        Ok(returned_view)
     }
 
     /// Draw a composite quad: sample the offscreen texture view and blend
@@ -1831,7 +1839,7 @@ impl WgpuBackend {
                 scale_factor,
                 viewport_width,
                 viewport_height,
-            );
+            )?;
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
