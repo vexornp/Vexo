@@ -7,7 +7,9 @@
 //!    otherwise the recognizer rejects immediately (a non-edge drag never
 //!    competes, so a future horizontal-scroll recognizer isn't starved).
 //! 2. Only rightward movement (positive Δx) accepts — a leftward drag from
-//!    the edge rejects, letting content (e.g. a scroll view) handle it.
+//!    the edge stays Pending (does not accept), so it doesn't start a pop;
+//!    on Up without any rightward slop it rejects, letting content (e.g. a
+//!    scroll view) handle it.
 //!
 //! `total_delta_x` is the NET signed displacement (`last.x - down.x`), not
 //! cumulative magnitude. This is what swipe-to-pop needs for finger-tracking
@@ -94,7 +96,7 @@ impl GestureRecognizer for EdgePanRecognizer {
             ArenaEvent::Cancel => {
                 self.resolution = RecognizerResolution::Rejected;
             }
-            ArenaEvent::Tick { .. } => {}
+            ArenaEvent::Tick { .. } => {} // EdgePan is purely event-driven; ignore the clock tick.
         }
     }
 
