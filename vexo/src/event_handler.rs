@@ -348,6 +348,9 @@ impl EventHandler {
                             r.as_any()
                                 .downcast_ref::<crate::gestures::VerticalDragRecognizer>()
                                 .is_some()
+                                || r.as_any()
+                                    .downcast_ref::<crate::gestures::EdgePanRecognizer>()
+                                    .is_some()
                         })
                         .unwrap_or(false);
                     drag_won = is_drag_winner;
