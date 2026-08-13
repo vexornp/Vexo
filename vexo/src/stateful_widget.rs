@@ -812,7 +812,23 @@ impl<W: Component + Clone> Element for StatefulElement<W> {
     }
 
     fn can_update(&self, widget: &dyn Any) -> bool {
-        widget.downcast_ref::<W>().is_some()
+        // Honor Widget::can_update's documented contract: same type AND
+        // same key. The type check is the downcast itself; the key check
+        // compares the NEW widget's key against the CURRENT (old) widget's
+        // key. A key mismatch routes through `replace_element` (remount),
+        // which is critical for StatefulElement because State is often
+        // derived from widget fields in `on_mount` — without a remount on
+        // key change, that derivation never re-runs and State goes stale.
+        //
+        // We compare `self.widget.key()` (not `self.key`) because
+        // `self.widget` is always the authoritative current widget, whereas
+        // `self.key` is only set at creation and may lag behind after
+        // updates. The keyboard-animation hot path is unaffected: those
+        // cascades keep the same key (or `None`), so `can_update` stays
+        // `true` and `should_rebuild` gates the expensive render.
+        widget
+            .downcast_ref::<W>()
+            .map_or(false, |new_widget| new_widget.key() == self.widget.key())
     }
 
     fn child_mounted(
@@ -945,7 +961,13 @@ impl<W: Component + Clone + 'static> Widget for W {
     }
 
     fn create_element(&self) -> Box<dyn Element> {
-        Box::new(StatefulElement::new(self.clone()))
+        let mut elem = StatefulElement::new(self.clone());
+        // Store the widget's key so `widget_key()` returns it for
+        // multi-child key-based reconciliation. Without this, keys on
+        // Component types would be silently lost (StatefulElement::new
+        // hard-codes `key: None`).
+        elem.set_stored_key(self.key());
+        Box::new(elem)
     }
 
     fn create_render_object(&self) -> Box<dyn RenderObject> {

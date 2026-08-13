@@ -763,3 +763,160 @@ mod global_key_tests {
         );
     }
 }
+
+// ============================================================================
+// Keyed Component Reconciliation Tests
+// ============================================================================
+
+#[cfg(test)]
+mod keyed_component_tests {
+    use super::*;
+    use crate::animation::AnimationTicker;
+    use crate::key::{Key, WidgetKey};
+    use crate::{
+        Component, ComponentState, LifecycleContext, RenderContext, Text, ThreeTreePipeline, Widget,
+    };
+    use std::sync::Arc;
+
+    /// A minimal Component with an explicit `key()` derived from `id`.
+    #[derive(Clone)]
+    struct KeyedWidget {
+        id: String,
+    }
+
+    struct KeyedState {
+        mount_count: u32,
+        update_count: u32,
+    }
+
+    impl Default for KeyedState {
+        fn default() -> Self {
+            Self {
+                mount_count: 0,
+                update_count: 0,
+            }
+        }
+    }
+
+    impl ComponentState for KeyedState {
+        fn on_mount(&mut self, _ctx: &mut LifecycleContext) {
+            self.mount_count += 1;
+        }
+        fn on_update(&mut self, _old: &dyn std::any::Any, _ctx: &mut LifecycleContext) {
+            self.update_count += 1;
+        }
+    }
+
+    impl Component for KeyedWidget {
+        type State = KeyedState;
+
+        fn key(&self) -> Option<WidgetKey> {
+            Some(WidgetKey::Local(Key::new(self.id.clone())))
+        }
+
+        fn render(&self, state: &mut Self::State, _ctx: &mut RenderContext) -> Box<dyn Widget> {
+            // Include mount/update counts in the rendered text so tests can
+            // verify whether State was fresh (remount) or preserved (update)
+            // by walking the render tree — without relying on shared globals.
+            Box::new(Text::new(format!(
+                "{} m={} u={}",
+                self.id, state.mount_count, state.update_count
+            )))
+        }
+    }
+
+    /// Walk the render tree to find a TextRenderObject containing `needle`.
+    fn find_text(reg: &RenderObjectRegistry, key: RenderObjectKey, needle: &str) -> bool {
+        let ro = match reg.get(key) {
+            Some(ro) => ro,
+            None => return false,
+        };
+        if ro
+            .as_any()
+            .downcast_ref::<TextRenderObject>()
+            .map_or(false, |t| t.content().contains(needle))
+        {
+            return true;
+        }
+        for &child in ro.children() {
+            if find_text(reg, child, needle) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn test_keyed_component_remounts_on_key_change() {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // Mount with key "A".
+        pipeline.update(Box::new(KeyedWidget {
+            id: "A".to_string(),
+        }));
+        let root_after_mount = pipeline
+            .element_registry()
+            .root()
+            .expect("root after mount");
+
+        // Update with key "B" — different key should trigger a REMOUNT
+        // (fresh on_mount with fresh State), not an in-place update.
+        pipeline.update(Box::new(KeyedWidget {
+            id: "B".to_string(),
+        }));
+        let root_after_update = pipeline
+            .element_registry()
+            .root()
+            .expect("root after update");
+
+        assert_ne!(
+            root_after_mount, root_after_update,
+            "key change must trigger remount (different element key), not in-place update"
+        );
+
+        // After remount, State is fresh: mount_count=1, update_count=0.
+        let ro_reg = pipeline.render_objects();
+        let root_ro = ro_reg.root().expect("render root");
+        assert!(
+            find_text(ro_reg, root_ro, "B m=1 u=0"),
+            "remounted component should have fresh State (m=1 u=0)"
+        );
+    }
+
+    #[test]
+    fn test_keyed_component_updates_in_place_on_same_key() {
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+
+        // Mount with key "A".
+        pipeline.update(Box::new(KeyedWidget {
+            id: "A".to_string(),
+        }));
+        let root_after_mount = pipeline
+            .element_registry()
+            .root()
+            .expect("root after mount");
+
+        // Update with same key "A" — should UPDATE in place (same element,
+        // State preserved, on_update fires).
+        pipeline.update(Box::new(KeyedWidget {
+            id: "A".to_string(),
+        }));
+        let root_after_update = pipeline
+            .element_registry()
+            .root()
+            .expect("root after update");
+
+        assert_eq!(
+            root_after_mount, root_after_update,
+            "same key must update in place, not remount"
+        );
+
+        // After update, State is preserved: mount_count=1, update_count=1.
+        let ro_reg = pipeline.render_objects();
+        let root_ro = ro_reg.root().expect("render root");
+        assert!(
+            find_text(ro_reg, root_ro, "A m=1 u=1"),
+            "updated component should preserve State (m=1 u=1), not remount"
+        );
+    }
+}
