@@ -863,9 +863,13 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
             None => match state.interactive_pop.borrow().as_ref() {
                 None => (0.0, 1.0),
                 Some(ip) => {
+                    // Interactive pop: use raw_t (linear) — the finger (or
+                    // the spring on release) drives progress directly.
+                    // Applying the ease-out transition curve here would
+                    // amplify small values (~2x at 10% progress), making the
+                    // page jump ahead of the finger.
                     let raw_t = ip.controller.value();
-                    let eased = self.transition_curve.transform(raw_t);
-                    base_fx_alpha(TransitionDir::Pop, self.effective_platform(), eased)
+                    base_fx_alpha(TransitionDir::Pop, self.effective_platform(), raw_t)
                 }
             },
             Some(t) => {
@@ -937,8 +941,9 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
 
         if state.transition.is_none() {
             if let Some(ip) = state.interactive_pop.borrow().as_ref() {
+                // Use raw_t (linear) — see base_fx_alpha branch above for
+                // why the ease-out curve must not be applied here.
                 let raw_t = ip.controller.value();
-                let eased = self.transition_curve.transform(raw_t);
                 let platform = self.effective_platform();
 
                 let transition_fn: Rc<dyn Fn(&TransitionCtx, Box<dyn Widget>) -> Box<dyn Widget>> =
@@ -948,14 +953,14 @@ impl<Dest: Hash + Eq + Clone + 'static> Component for NavigationStackView<Dest> 
 
                 // Outgoing page slides away to the right, revealing the
                 // destination underneath. Same default_mobile_transition as a
-                // button pop, driven by the finger/spring eased value.
+                // button pop, driven by the finger/spring raw value.
                 let outgoing_page = if let Some(top) = ip.from_path.last() {
                     (self.destination)(top)
                 } else {
                     self.root.clone_boxed()
                 };
                 let outgoing_ctx = TransitionCtx {
-                    t: eased,
+                    t: raw_t,
                     is_incoming: false,
                     direction: TransitionDir::Pop,
                     platform,
