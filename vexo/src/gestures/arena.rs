@@ -83,10 +83,27 @@ impl GestureArena {
         self.closed
     }
 
-    /// Feed an event to every recognizer, then resolve.
+    /// Feed an event to every recognizer, then resolve. When the arena is
+    /// already closed, feeds the event to the winning recognizer only (losers
+    /// were fed Cancel by `declare_winner`) so the winner's state stays
+    /// current — e.g. `EdgePanRecognizer::last_position` must update on each
+    /// Move so `total_delta_x` tracks the finger after the arena closes.
     pub fn handle_event(&mut self, event: ArenaEvent) -> ArenaOutcome {
         if self.closed {
-            // Already resolved; a closed arena stays closed with its winner.
+            if let Some(i) = self.winner {
+                let current_position = match &event {
+                    ArenaEvent::Down { position } => *position,
+                    ArenaEvent::Move { position } => *position,
+                    ArenaEvent::Up { position } => *position,
+                    ArenaEvent::Cancel => self.down_position,
+                    ArenaEvent::Tick { .. } => self.down_position,
+                };
+                let ctx = ArenaContext {
+                    down_position: self.down_position,
+                    current_position,
+                };
+                self.entries[i].recognizer.handle_event(&event, &ctx);
+            }
             return match self.winner {
                 Some(i) => ArenaOutcome::Resolved { winner_index: i },
                 None => ArenaOutcome::ClosedNoWinner,
@@ -282,6 +299,43 @@ mod tests {
         let len_before = arena.len();
         arena.add(Box::new(TapRecognizer::new()), dummy_element_key());
         assert_eq!(arena.len(), len_before, "add is no-op on closed arena");
+    }
+
+    #[test]
+    fn arena_feeds_winner_after_closed() {
+        // Regression: after the arena closes (winner declared on first
+        // accepting Move), subsequent Move events must still be fed to the
+        // winning recognizer so its state stays current. Without this,
+        // EdgePanRecognizer's last_position (and thus total_delta_x) freezes
+        // at the first accepting Move, and swipe-to-pop stops tracking the
+        // finger after ~slop distance.
+        use crate::gestures::EdgePanRecognizer;
+
+        let mut arena = GestureArena::new(Point::new(10.0, 50.0));
+        arena.add(Box::new(EdgePanRecognizer::new()), dummy_element_key());
+        let down = Point::new(10.0, 50.0);
+        arena.handle_event(ArenaEvent::Down { position: down });
+
+        let outcome = arena.handle_event(ArenaEvent::Move {
+            position: Point::new(40.0, 50.0),
+        });
+        assert_eq!(outcome, ArenaOutcome::Resolved { winner_index: 0 });
+
+        let winner = arena.winner_recognizer().unwrap();
+        let ep = winner.as_any().downcast_ref::<EdgePanRecognizer>().unwrap();
+        assert_eq!(ep.total_delta_x(), 30.0);
+
+        // Second Move — arena already closed. Winner MUST still be fed.
+        arena.handle_event(ArenaEvent::Move {
+            position: Point::new(100.0, 50.0),
+        });
+        let winner = arena.winner_recognizer().unwrap();
+        let ep = winner.as_any().downcast_ref::<EdgePanRecognizer>().unwrap();
+        assert_eq!(
+            ep.total_delta_x(),
+            90.0,
+            "winner's total_delta_x must update on subsequent Moves after arena closes"
+        );
     }
 
     #[test]
