@@ -744,6 +744,24 @@ impl Reconciler {
                         );
                     }
                     ChildOp::Unmount { child } => {
+                        // Notify the parent RO to drop its child reference and
+                        // invalidate any cached child layout node BEFORE unmounting.
+                        // Without this, the parent RO retains a stale RenderObjectKey
+                        // and a stale child_layout_node, causing the next layout pass
+                        // to recurse into a removed RO and/or use a stale Taffy node.
+                        let parent_elem = element_registry.parent(child);
+                        let child_ro = render_objects.render_object_for_element(child);
+                        if let (Some(parent_elem), Some(child_ro)) = (parent_elem, child_ro) {
+                            if let Some(parent_ro) =
+                                render_objects.render_object_for_element(parent_elem)
+                            {
+                                if let Some(ro) = render_objects.get_mut(parent_ro) {
+                                    ro.remove_child(child_ro);
+                                }
+                                dirty.mark_needs_layout(parent_ro);
+                            }
+                        }
+
                         // Unmount the child element tree
                         Self::unmount_element_tree(
                             element_registry,

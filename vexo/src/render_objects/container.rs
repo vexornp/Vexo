@@ -181,6 +181,10 @@ impl RenderObject for ContainerRenderObject {
         }
     }
 
+    fn remove_child(&mut self, child: RenderObjectKey) {
+        self.children.retain(|&c| c != child);
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }

@@ -170,6 +170,13 @@ impl RenderObject for OffstageRenderObject {
         }
     }
 
+    fn remove_child(&mut self, child: RenderObjectKey) {
+        if self.child == Some(child) {
+            self.child = None;
+            self.child_layout_node = None;
+        }
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         if self.offstage {
             self.owned_node

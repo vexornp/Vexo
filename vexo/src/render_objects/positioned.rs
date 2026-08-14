@@ -183,6 +183,12 @@ impl RenderObject for PositionedRenderObject {
         }
     }
 
+    fn remove_child(&mut self, child: RenderObjectKey) {
+        if self.child == Some(child) {
+            self.child = None;
+        }
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.layout_node
     }

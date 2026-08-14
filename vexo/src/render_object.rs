@@ -297,6 +297,18 @@ pub trait RenderObject {
         // Default: no-op (leaf nodes and single-child modifiers don't use this)
     }
 
+    /// Remove a child render object reference.
+    ///
+    /// Called when a child element unmounts. The parent RO must drop its
+    /// reference to the child's `RenderObjectKey` and invalidate any cached
+    /// child layout node, so the next layout pass doesn't try to read a
+    /// removed RO or use a stale Taffy node.
+    ///
+    /// Default implementation does nothing (leaf nodes have no children).
+    fn remove_child(&mut self, _child: RenderObjectKey) {
+        // Default: no-op (leaf nodes don't have children)
+    }
+
     /// Clear all children.
     ///
     /// Only relevant for container render objects (e.g., Flex).

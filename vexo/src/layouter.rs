@@ -75,6 +75,20 @@ impl Layouter {
             // Return value intentionally ignored — propagation happens internally
         }
 
+        // Phase 1.5 (debug only): Verify pass-through RO cache invariant.
+        //
+        // After layout_dirty_recursive, every pass-through RO's cached
+        // `child_layout_node` must match its child's actual `layout_node()`.
+        // A mismatch means the cache went stale — the child's Taffy node
+        // changed but the parent wasn't notified, which orphans the new
+        // node and causes 0×0 bounds (the "avatar never renders" bug class).
+        //
+        // Also verify that every child key in `children()` refers to an RO
+        // that still exists in the registry — a stale key means `remove_child`
+        // wasn't called during unmount.
+        #[cfg(debug_assertions)]
+        Self::assert_ro_tree_consistency(render_objects, root_id);
+
         // Phase 2: Compute layout with Taffy (only dirty nodes are recomputed)
         if let Some(root_node) = Self::get_layout_node(render_objects, root_id) {
             // Set root to fill available space (CSS html { width: 100%; height: 100% })
@@ -181,5 +195,61 @@ impl Layouter {
         for child_id in children {
             Self::apply_layout_recursive(render_objects, child_id, ctx);
         }
+    }
+
+    /// Debug-only assertion: verify the RO tree is internally consistent.
+    ///
+    /// Checks two invariants:
+    ///
+    /// 1. **No stale child references:** Every child key returned by `children()`
+    ///    must refer to an RO that exists in the registry. A stale key means
+    ///    `remove_child` wasn't called when the child was unmounted.
+    ///
+    /// 2. **Pass-through cache consistency:** For pass-through ROs (those with
+    ///    `is_pass_through() == true`), the cached `layout_node()` must match
+    ///    the child's actual `layout_node()`. A mismatch means the child's
+    ///    Taffy node changed but the parent's cache wasn't invalidated —
+    ///    the "avatar never renders" bug class.
+    #[cfg(debug_assertions)]
+    fn assert_ro_tree_consistency(render_objects: &RenderObjectRegistry, root_id: RenderObjectKey) {
+        fn check(reg: &RenderObjectRegistry, id: RenderObjectKey, path: &mut Vec<RenderObjectKey>) {
+            path.push(id);
+            let ro = match reg.get(id) {
+                Some(ro) => ro,
+                None => {
+                    panic!(
+                        "RO tree consistency: RO {:?} referenced as child but not in registry. Path: {:?}",
+                        id, path
+                    );
+                }
+            };
+
+            let children: Vec<RenderObjectKey> = ro.children().to_vec();
+
+            // Check pass-through cache consistency
+            if ro.is_pass_through() {
+                let cached_node = ro.layout_node();
+                let child_node = children
+                    .first()
+                    .and_then(|&c| reg.get(c).and_then(|child_ro| child_ro.layout_node()));
+                assert_eq!(
+                    cached_node, child_node,
+                    "RO tree consistency: pass-through RO {:?} has stale layout_node cache. \
+                     Cached={:?}, child's actual={:?}. Path: {:?}. \
+                     This means the child's Taffy node changed but the parent wasn't notified \
+                     — the new node will be orphaned (0×0 bounds).",
+                    id, cached_node, child_node, path
+                );
+            }
+
+            // Recurse into children
+            for &child_id in &children {
+                check(reg, child_id, path);
+            }
+            path.pop();
+        }
+
+        let mut path = Vec::new();
+        check(render_objects, root_id, &mut path);
     }
 }

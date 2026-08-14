@@ -127,6 +127,10 @@ impl RenderObject for IndexedStackRenderObject {
         }
     }
 
+    fn remove_child(&mut self, child: RenderObjectKey) {
+        self.children.retain(|&c| c != child);
+    }
+
     fn clear_children(&mut self) {
         self.children.clear();
     }

@@ -107,6 +107,13 @@ impl RenderObject for ClipRRectRenderObject {
         }
     }
 
+    fn remove_child(&mut self, child: crate::id::RenderObjectKey) {
+        if self.child == Some(child) {
+            self.child = None;
+            self.child_layout_node = None;
+        }
+    }
+
     fn layout_node(&self) -> Option<LayoutNodeKey> {
         self.child_layout_node
     }
