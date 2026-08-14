@@ -113,16 +113,6 @@ pub trait Widget: Any {
     /// and are only updated when marked dirty.
     fn create_render_object(&self) -> Box<dyn RenderObject>;
 
-    /// Check if this widget can update an existing element.
-    ///
-    /// Default implementation checks type and key match.
-    /// Two widgets can update each other if:
-    /// 1. They have the same type (TypeId)
-    /// 2. They have matching keys (both None or both Some with equal values)
-    fn can_update(&self, other: &dyn Widget) -> bool {
-        Any::type_id(self) == Any::type_id(other) && self.key() == other.key()
-    }
-
     /// Get as Any for downcasting.
     ///
     /// This enables downcasting to the concrete widget type for type-specific operations.
@@ -317,10 +307,6 @@ impl Widget for Box<dyn Widget> {
         (**self).create_render_object()
     }
 
-    fn can_update(&self, other: &dyn Widget) -> bool {
-        (**self).can_update(other)
-    }
-
     fn as_any(&self) -> &dyn Any {
         (**self).as_any()
     }
@@ -484,22 +470,6 @@ mod tests {
     fn test_widget_key() {
         let widget = TestWidget::new(Some("test"));
         assert_eq!(widget.key(), Some(WidgetKey::Local(Key::new("test"))));
-    }
-
-    #[test]
-    fn test_widget_can_update_same_type() {
-        let w1 = TestWidget::new(Some("test"));
-        let w2 = TestWidget::new(Some("test"));
-
-        assert!(w1.can_update(&w2));
-    }
-
-    #[test]
-    fn test_widget_can_update_different_key() {
-        let w1 = TestWidget::new(Some("test1"));
-        let w2 = TestWidget::new(Some("test2"));
-
-        assert!(!w1.can_update(&w2));
     }
 
     #[test]

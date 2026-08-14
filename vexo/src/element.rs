@@ -34,7 +34,27 @@ pub trait Element {
     /// Get the widget key (local or global).
     fn widget_key(&self) -> Option<WidgetKey>;
 
-    /// Check if this element can be updated with the given widget.
+    /// Check if this element can be updated with the given widget (reused in
+    /// place) instead of being unmounted and remounted.
+    ///
+    /// This is the **authoritative** reconciliation check — the reconciler
+    /// calls this (not any `Widget`-side method) on every `ChildOp::Update`
+    /// and at the root. Implementations decide their own policy:
+    ///
+    /// - Stateless pass-through elements (`ClipRRect`, `Opacity`, `Positioned`,
+    ///   `Offstage`, `Container`, `Leaf`, `DecoratedBox`, `Focus`, `ScrollView`)
+    ///   check **type only**. They have no state derived from widget fields, so
+    ///   a remount on key change would be wasted work; `rebuild()` fully syncs
+    ///   props and the child subtree. Note: this means widget keys are
+    ///   **ineffective in single-child slots** — keys only drive sibling
+    ///   reconciliation in multi-child containers. Production code relies on
+    ///   this (see `shared_app/src/chats/chat_screen.rs` and
+    ///   `docs/rebuild-skipping-patterns.md`).
+    /// - `StatefulElement` checks **type AND key**, because its `State` is
+    ///   often derived from widget fields in `on_mount`; without a remount on
+    ///   key change, that derivation never re-runs and `State` goes stale.
+    ///
+    /// Returns `false` to force `replace_element` (unmount old + mount new).
     fn can_update(&self, widget: &dyn Any) -> bool;
 
     /// Handle an input event.

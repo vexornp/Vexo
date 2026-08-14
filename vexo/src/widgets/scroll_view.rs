@@ -114,10 +114,6 @@ impl Widget for ScrollView {
         Some(self.child.as_ref())
     }
 
-    fn can_update(&self, other: &dyn Widget) -> bool {
-        other.as_any().downcast_ref::<ScrollView>().is_some()
-    }
-
     fn update_render_object(&self, _render_object: &mut dyn RenderObject) -> UpdateResult {
         // Always request paint because the scroll offset may have changed
         // via Cell::set in apply_scroll_offset, which bypasses the normal

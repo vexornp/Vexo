@@ -95,10 +95,6 @@ impl Widget for Focus {
         Box::new(ProxyRenderObject::new())
     }
 
-    fn can_update(&self, other: &dyn Widget) -> bool {
-        other.as_any().downcast_ref::<Focus>().is_some()
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -392,13 +388,6 @@ mod tests {
         let focus = Focus::new(Text::new("Hello"));
         let child = focus.child().unwrap();
         assert!(child.as_any().downcast_ref::<Text>().is_some());
-    }
-
-    #[test]
-    fn test_focus_can_update_same_type() {
-        let f1 = Focus::new(Text::new("Hello"));
-        let f2 = Focus::new(Text::new("World"));
-        assert!(f1.can_update(&f2));
     }
 
     #[test]
