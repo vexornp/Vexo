@@ -103,6 +103,18 @@ pub trait RenderObjectElement: Element {
     /// - Single-child (ProxyRenderObject, etc.) override `set_child_id`
     /// - Multi-child (ContainerRenderObject) override `add_child`
     /// The other method is a no-op by default, so calling both is safe.
+    ///
+    /// Also marks the parent render object as needing layout. This is
+    /// critical when a child is **replaced** (e.g. NetworkImage swaps its
+    /// child from Spacer to Image when the fetch completes): without this
+    /// mark, the parent's `layout()` is never called, the new child's
+    /// Taffy node is never linked into the parent, and the new child is
+    /// invisible. For pass-through ROs (ProxyRenderObject, etc.),
+    /// `set_child_id` also invalidates `child_layout_node` so that
+    /// `layout_node()` returns `None`, which makes the incremental layout
+    /// traversal call `layout()` even if the parent is not in the dirty
+    /// set (e.g. when the subtree becomes visible again after being
+    /// offstage).
     fn insert_child_render_object(
         &mut self,
         child_ro: RenderObjectKey,
@@ -113,6 +125,9 @@ pub trait RenderObjectElement: Element {
                 parent_obj.set_child_id(child_ro);
                 parent_obj.add_child(child_ro);
             }
+            // Mark the parent as needing layout so its `layout()` re-runs
+            // and links the new child's Taffy node.
+            context.mark_needs_layout(parent_ro);
         }
     }
 

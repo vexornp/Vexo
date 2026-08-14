@@ -126,11 +126,22 @@ impl RenderObject for ProxyRenderObject {
 
     fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
+        // Invalidate the cached child layout node — the new child has a
+        // different (or not-yet-created) Taffy node. Without this, the
+        // layout traversal sees `layout_node() == Some(stale)` and skips
+        // `layout()`, so the new child's node is never linked into the
+        // parent's Taffy tree. This is the root cause of the "avatar never
+        // renders after push/pop" bug: when NetworkImage swaps its child
+        // from Spacer to Image while offstage, the ProxyRenderObject's
+        // stale `child_layout_node` prevents the Image from ever being
+        // laid out.
+        self.child_layout_node = None;
     }
 
     fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
         if self.child == Some(old) {
             self.child = Some(new);
+            self.child_layout_node = None;
         }
     }
 

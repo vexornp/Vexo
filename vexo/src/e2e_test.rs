@@ -7,7 +7,7 @@ use crate::layout::{
 };
 use crate::render::RenderCommand;
 use crate::render_objects::DecoratedBoxRenderObject;
-use crate::widgets::{ClipRRect, DecoratedBox, Transform, WithLayout};
+use crate::widgets::{ClipRRect, DecoratedBox, Offstage, Transform, WithLayout};
 use crate::{
     children, Grid, MultiChild, RenderObjectKey, RenderObjectRegistry, Style, Text,
     ThreeTreePipeline, Widget,
@@ -1227,6 +1227,112 @@ fn test_replace_child_under_pass_through_ro_relinks_layout() {
     assert!(
         (bounds.height() - 100.0).abs() < 2.0,
         "DecoratedBox height should be ~100 (new child fixed height), got {}",
+        bounds.height()
+    );
+}
+
+/// Cross-frame child swap under an Offstage pass-through RO.
+///
+/// This is the exact scenario of the "avatar never renders after push/pop"
+/// bug. The key insight is that the bug spans **two layout frames**:
+///
+/// 1. **Frame 1 (offstage):** The child is swapped (Spacer→Image) while the
+///    subtree is hidden by `Offstage`. `replace_element` calls
+///    `replace_child` on the pass-through RO (DecoratedBox), but the dirty
+///    mark is **drained and wasted** — `layout_dirty_recursive` never visits
+///    the subtree because `OffstageRenderObject.children()` returns `&[]`.
+///
+/// 2. **Frame 2 (onstage):** `Offstage` flips back to onstage. Only the
+///    `OffstageRenderObject` is marked dirty (from the flag flip). The
+///    pass-through RO beneath it is **not** in the dirty set. The only way
+///    its `layout()` gets called is via condition (b): `layout_node().is_none()`.
+///
+/// **Before the fix:** `replace_child` did not invalidate `child_layout_node`,
+/// so `layout_node()` returned `Some(stale_node)`, condition (b) was false,
+/// and `layout()` was never called. The new child's Taffy node was never
+/// linked into the tree → invisible.
+///
+/// **After the fix:** `replace_child` sets `child_layout_node = None`,
+/// condition (b) is true, `layout()` is called, the new child's node is
+/// linked → visible.
+///
+/// This test cannot be caught by the single-frame
+/// `test_replace_child_under_pass_through_ro_relinks_layout` test because
+/// that test doesn't use Offstage and doesn't span multiple layout passes.
+#[test]
+fn test_child_swap_while_offstage_then_reveal_relinks_layout() {
+    let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+    let mut engine = TaffyLayoutEngine::new();
+    let mut font_system = create_test_font_system();
+
+    // Helper to build the tree: MultiChild → Offstage → DecoratedBox → child
+    let build = |offstage: bool, child: Box<dyn Widget>| -> Box<dyn Widget> {
+        MultiChild::new(
+            children![Offstage::new(
+                DecoratedBox::with_style(child, Style::default().background(Color::RED)),
+                offstage,
+            )],
+            Layout::column().width_percent(1.0).height_percent(1.0),
+        )
+        .boxed()
+    };
+
+    // ── Frame 1: onstage, child = Text ──
+    pipeline.update(build(false, Text::new("initial").boxed()));
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    // ── Frame 2: flip offstage (child hidden, layout skips subtree) ──
+    pipeline.update(build(true, Text::new("initial").boxed()));
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    // ── Frame 3: swap child Text → WithLayout(100×100) WHILE OFFSTAGE ──
+    //   replace_element fires, replace_child is called on DecoratedBox,
+    //   but layout_dirty_recursive never visits the subtree (offstage).
+    //   The dirty mark is drained and wasted.
+    pipeline.update(build(
+        true,
+        WithLayout::new(
+            MultiChild::empty(Layout::default()),
+            Layout::default().width(100.0).height(100.0),
+        )
+        .boxed(),
+    ));
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    // ── Frame 4: flip back onstage ──
+    //   Only OffstageRenderObject is marked dirty (from the flag flip).
+    //   The DecoratedBox beneath it is NOT in the dirty set.
+    //   Its layout() is called only if layout_node() returns None (condition b).
+    pipeline.update(build(
+        false,
+        WithLayout::new(
+            MultiChild::empty(Layout::default()),
+            Layout::default().width(100.0).height(100.0),
+        )
+        .boxed(),
+    ));
+    pipeline.layout(Size::new(400.0, 400.0), &mut engine, &mut font_system);
+
+    // ── Assert: DecoratedBox should have 100×100 bounds from the new child ──
+    let ro_reg = pipeline.render_objects();
+    let root = ro_reg.root().expect("root RO");
+    let db_ro = find_decorated_box_ro(ro_reg, root).expect("DecoratedBox RO exists");
+
+    let bounds = ro_reg
+        .get(db_ro)
+        .and_then(|ro| ro.computed_bounds())
+        .expect("DecoratedBox should have computed bounds after reveal");
+
+    assert!(
+        (bounds.width() - 100.0).abs() < 2.0,
+        "DecoratedBox width should be ~100 (new child fixed width), got {} — \
+         child_layout_node was not invalidated in replace_child",
+        bounds.width()
+    );
+    assert!(
+        (bounds.height() - 100.0).abs() < 2.0,
+        "DecoratedBox height should be ~100 (new child fixed height), got {} — \
+         child_layout_node was not invalidated in replace_child",
         bounds.height()
     );
 }

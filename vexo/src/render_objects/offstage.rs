@@ -160,11 +160,13 @@ impl RenderObject for OffstageRenderObject {
 
     fn set_child_id(&mut self, child: RenderObjectKey) {
         self.child = Some(child);
+        self.child_layout_node = None;
     }
 
     fn replace_child(&mut self, old: RenderObjectKey, new: RenderObjectKey) {
         if self.child == Some(old) {
             self.child = Some(new);
+            self.child_layout_node = None;
         }
     }
 

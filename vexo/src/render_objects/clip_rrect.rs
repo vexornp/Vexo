@@ -97,11 +97,13 @@ impl RenderObject for ClipRRectRenderObject {
 
     fn set_child_id(&mut self, child: crate::id::RenderObjectKey) {
         self.child = Some(child);
+        self.child_layout_node = None;
     }
 
     fn replace_child(&mut self, old: crate::id::RenderObjectKey, new: crate::id::RenderObjectKey) {
         if self.child == Some(old) {
             self.child = Some(new);
+            self.child_layout_node = None;
         }
     }
 

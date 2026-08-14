@@ -72,6 +72,7 @@ impl Layouter {
             let mut ctx = LayoutContext::new(engine, font_system);
             let dirty_keys: Vec<RenderObjectKey> = dirty.drain_layout().collect();
             Self::layout_dirty_recursive(render_objects, root_id, &dirty_keys, &mut ctx);
+            // Return value intentionally ignored — propagation happens internally
         }
 
         // Phase 2: Compute layout with Taffy (only dirty nodes are recomputed)
@@ -94,16 +95,27 @@ impl Layouter {
     /// Recursively layout dirty render objects in bottom-up order.
     ///
     /// Walks the entire render object tree but only calls `layout()`
-    /// on objects that are in the dirty set or that don't yet have
-    /// Taffy nodes. This ensures bottom-up ordering (children before
-    /// parents) which is required because parent containers need
-    /// their children's LayoutNodeKeys.
+    /// on objects that are in the dirty set, that don't yet have
+    /// Taffy nodes, or whose children's layout nodes changed.
+    /// This ensures bottom-up ordering (children before parents)
+    /// which is required because parent containers need their
+    /// children's LayoutNodeKeys.
+    ///
+    /// Returns `true` if this RO's `layout_node()` changed (was created
+    /// or replaced). Pass-through ROs (ProxyRenderObject, etc.) return
+    /// the child's node from `layout()`, so when the child's node changes,
+    /// the pass-through's `layout_node()` also changes. The parent must
+    /// then call `layout()` to pick up the new node and re-link. Without
+    /// this propagation, a child swap deep in a chain of pass-through ROs
+    /// (e.g. Component→Component→NetworkImage→Image) orphans the new
+    /// child's Taffy node — the node exists but is never linked into
+    /// the root tree, so Taffy computes 0×0 bounds for it.
     fn layout_dirty_recursive(
         render_objects: &mut RenderObjectRegistry,
         id: RenderObjectKey,
         dirty_keys: &[RenderObjectKey],
         ctx: &mut LayoutContext,
-    ) {
+    ) -> bool {
         // First, collect children so we can recurse without borrowing
         let children: Vec<RenderObjectKey> = render_objects
             .get(id)
@@ -111,19 +123,21 @@ impl Layouter {
             .unwrap_or_default();
 
         // Recurse into children first (bottom-up)
+        let mut child_node_changed = false;
         for child_id in &children {
-            Self::layout_dirty_recursive(render_objects, *child_id, dirty_keys, ctx);
+            if Self::layout_dirty_recursive(render_objects, *child_id, dirty_keys, ctx) {
+                child_node_changed = true;
+            }
         }
 
+        // Snapshot the layout node before layout() so we can detect changes
+        let old_node = render_objects.get(id).and_then(|obj| obj.layout_node());
+
         // Check if this render object needs layout
-        let needs_layout = dirty_keys.contains(&id)
-            || render_objects
-                .get(id)
-                .map(|obj| obj.layout_node().is_none())
-                .unwrap_or(false);
+        let needs_layout = dirty_keys.contains(&id) || old_node.is_none() || child_node_changed;
 
         if !needs_layout {
-            return;
+            return false;
         }
 
         // Collect child layout nodes (now that children have been processed)
@@ -135,6 +149,10 @@ impl Layouter {
         if let Some(obj) = render_objects.get_mut(id) {
             obj.layout(ctx, &child_nodes);
         }
+
+        // Return true if our layout_node changed — parent must re-link
+        let new_node = render_objects.get(id).and_then(|obj| obj.layout_node());
+        old_node != new_node
     }
 
     /// Get the layout node ID from a render object.

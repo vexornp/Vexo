@@ -876,6 +876,7 @@ impl Reconciler {
             Some(p) => p,
             None => return,
         };
+
         let slot = element_registry
             .children(parent)
             .iter()
@@ -935,6 +936,11 @@ impl Reconciler {
                 if let Some(parent_obj) = render_objects.get_mut(parent_ro) {
                     parent_obj.replace_child(old_ro, new_ro);
                 }
+                // Mark the parent as needing layout so its `layout()`
+                // re-runs and links the new child's Taffy node. Without
+                // this, the replaced child's stale layout node remains
+                // linked and the new child is invisible.
+                dirty.mark_needs_layout(parent_ro);
             }
         }
 
