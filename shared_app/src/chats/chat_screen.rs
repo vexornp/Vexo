@@ -88,9 +88,12 @@ impl ChatScreenState {
 impl ComponentState for ChatScreenState {
     fn on_mount(&mut self, ctx: &mut LifecycleContext) {
         self.sync_controller();
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.set_dirty_callback(ctx.dirty_callback());
-        }
+        // Deliberately do NOT wire the controller's dirty callback here.
+        // The controller is Rc-shared with the child TextEdit, whose
+        // on_mount sets the callback to its own element's dirty callback.
+        // If ChatScreen overwrites it (here or in on_update), every keystroke
+        // rebuilds the ENTIRE ChatScreen (all message bubbles) instead of
+        // just the TextEdit. See docs/rebuild-skipping-patterns.md.
 
         // Create the derived per-conversation Signal from the root messages
         // Signal + conv_id. This must live in State (not Widget) so the
@@ -110,9 +113,9 @@ impl ComponentState for ChatScreenState {
         }));
     }
     fn on_update(&mut self, old_widget: &dyn Any, ctx: &mut LifecycleContext) {
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.set_dirty_callback(ctx.dirty_callback());
-        }
+        // Deliberately do NOT wire the controller's dirty callback here —
+        // see on_mount for why. The callback is owned by the child TextEdit
+        // for the element's lifetime.
 
         // Recreate the derived per-conversation Signal when conv_id changes.
         // ChatScreen sits in a single-child slot (inside `titled_container`),
@@ -146,11 +149,15 @@ impl ComponentState for ChatScreenState {
         }
     }
     fn on_unmount(&mut self, _ctx: &mut LifecycleContext) {
-        if let Some(tc) = self.text_controller.as_ref() {
-            tc.clear_dirty_callback();
-        }
+        // Deliberately do NOT clear the controller's dirty callback —
+        // TextEdit::on_unmount owns that. We only drop our Rc reference.
         self.text_controller = None;
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static CHAT_SCREEN_RENDER_COUNT: std::cell::Cell<u32> = std::cell::Cell::new(0);
 }
 
 impl Component for ChatScreen {
@@ -173,6 +180,9 @@ impl Component for ChatScreen {
     }
 
     fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        #[cfg(test)]
+        CHAT_SCREEN_RENDER_COUNT.with(|c| c.set(c.get() + 1));
+
         let theme = Theme::of(ctx);
 
         // Read the State-owned derived Signal (not the root). The derived
@@ -1613,5 +1623,132 @@ mod tests {
             "message 1 final reactions should be [Like, Haha] after the \
              sequence",
         );
+    }
+
+    /// Regression for "every keystroke in the input bar rebuilds the entire
+    /// ChatScreen (all message bubbles) instead of just the TextEdit."
+    ///
+    /// ChatScreen::on_update used to re-set the TextEditingController's dirty
+    /// callback to ChatScreen's own dirty callback on every parent cascade.
+    /// Since the controller is Rc-shared with the child TextEdit, and
+    /// TextEdit::on_update only re-sets when the controller Rc changes (which
+    /// it never does — same State-owned controller), ChatScreen's callback
+    /// permanently won after the first cascade. Every keystroke then marked
+    /// ChatScreen dirty, triggering a full re-render of all message bubbles.
+    ///
+    /// The fix: don't touch the controller's dirty callback in ChatScreen at
+    /// all — let TextEdit own it. This test verifies that a keystroke does
+    /// NOT trigger ChatScreen.render().
+    #[test]
+    fn test_keystroke_does_not_rebuild_chat_screen() {
+        let messages_signal = seed_messages_signal();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        pipeline.perform_rebuilds();
+
+        // Simulate a keyboard-animation frame: cascade with identical
+        // conv_id. should_rebuild returns false, so render() is skipped.
+        // But on_update DOES run — and before the fix, it overwrote the
+        // controller's dirty callback with ChatScreen's callback.
+        let same_view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: seed_messages_signal(),
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+        }
+        .boxed();
+        pipeline.update(same_view);
+        pipeline.perform_rebuilds();
+
+        // Click on the TextEdit to focus it. The input bar is at the bottom
+        // of the 600px view (8px padding); x=50 is inside the TextEdit.
+        let click_pos = vexo::core::Point::new(50.0, 580.0);
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        let press = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let release = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        pipeline.handle_event(
+            click_pos,
+            &press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            click_pos,
+            &release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // Reset the counter — we only care about the keystroke below.
+        CHAT_SCREEN_RENDER_COUNT.with(|c| c.set(0));
+
+        // Type a character. The controller's notify() should fire TextEdit's
+        // dirty callback (not ChatScreen's), so only TextEdit rebuilds.
+        let key_event = vexo::input::InputEvent::Keyboard {
+            key: vexo::input::Key::Character("a".to_string()),
+            text: Some("a".to_string()),
+            state: vexo::input::ButtonState::Pressed,
+            modifiers: vexo::input::Modifiers::default(),
+        };
+        pipeline.handle_event(
+            click_pos,
+            &key_event,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // ChatScreen.render() should NOT have been called — only TextEdit
+        // should have rebuilt.
+        CHAT_SCREEN_RENDER_COUNT.with(|c| {
+            assert_eq!(
+                c.get(),
+                0,
+                "ChatScreen.render() should NOT run on keystroke — only \
+                 TextEdit should rebuild. If this fails, ChatScreen is \
+                 overwriting the controller's dirty callback in on_mount \
+                 or on_update."
+            );
+        });
     }
 }
