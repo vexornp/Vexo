@@ -3,7 +3,7 @@
 //! This module provides a `LayoutEngine` implementation using the Taffy
 //! layout library (CSS Flexbox-style layout).
 
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::SlotMap;
 
 use crate::core::Logical;
 use crate::core::{Bounds, Size};
@@ -20,6 +20,18 @@ use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 // TAFFY LAYOUT ENGINE
 // ============================================================================
 
+/// Per-node metadata stored alongside Taffy's tree.
+///
+/// Co-locating `taffy_id` and `children` in one entry keeps identity and
+/// topology in sync structurally: removing the slot frees both fields
+/// atomically, so there is no second map that can drift out of sync.
+struct NodeEntry {
+    /// The corresponding Taffy node id.
+    taffy_id: TaffyNodeId,
+    /// Children of this node, in our own key space.
+    children: Vec<LayoutNodeKey>,
+}
+
 /// Layout engine implementation using Taffy.
 ///
 /// This engine wraps the Taffy library and provides a `LayoutEngine`
@@ -29,10 +41,8 @@ use taffy::prelude::{AvailableSpace, NodeId as TaffyNodeId};
 pub struct TaffyLayoutEngine {
     /// The underlying Taffy tree with measure context support.
     inner: taffy::TaffyTree<MeasureContext>,
-    /// Mapping from our LayoutNodeKey to Taffy's NodeId.
-    node_map: SlotMap<LayoutNodeKey, TaffyNodeId>,
-    /// Mapping from LayoutNodeKey to its children (for traversal).
-    children_map: SecondaryMap<LayoutNodeKey, Vec<LayoutNodeKey>>,
+    /// Per-node metadata: Taffy id + children, keyed by LayoutNodeKey.
+    nodes: SlotMap<LayoutNodeKey, NodeEntry>,
     /// Cache for text measurement results.
     cache: MeasureCache,
 }
@@ -42,8 +52,7 @@ impl TaffyLayoutEngine {
     pub fn new() -> Self {
         Self {
             inner: taffy::TaffyTree::new(),
-            node_map: SlotMap::with_key(),
-            children_map: SecondaryMap::new(),
+            nodes: SlotMap::with_key(),
             cache: MeasureCache::new(),
         }
     }
@@ -63,7 +72,10 @@ impl LayoutEngine for TaffyLayoutEngine {
     fn create_leaf(&mut self, layout: &Layout) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
         let taffy_id = self.inner.new_leaf(style).unwrap();
-        self.node_map.insert(taffy_id)
+        self.nodes.insert(NodeEntry {
+            taffy_id,
+            children: Vec::new(),
+        })
     }
 
     fn create_leaf_with_context(
@@ -73,7 +85,10 @@ impl LayoutEngine for TaffyLayoutEngine {
     ) -> LayoutNodeKey {
         let style = layout.to_taffy_style();
         let taffy_id = self.inner.new_leaf_with_context(style, context).unwrap();
-        self.node_map.insert(taffy_id)
+        self.nodes.insert(NodeEntry {
+            taffy_id,
+            children: Vec::new(),
+        })
     }
 
     fn create_container(&mut self, layout: &Layout, children: &[LayoutNodeKey]) -> LayoutNodeKey {
@@ -81,16 +96,17 @@ impl LayoutEngine for TaffyLayoutEngine {
 
         let child_taffy_ids: Vec<TaffyNodeId> = children
             .iter()
-            .filter_map(|k| self.node_map.get(*k).copied())
+            .filter_map(|k| self.nodes.get(*k).map(|e| e.taffy_id))
             .collect();
 
         let taffy_id = self
             .inner
             .new_with_children(style, &child_taffy_ids)
             .unwrap();
-        let key = self.node_map.insert(taffy_id);
-        self.children_map.insert(key, children.to_vec());
-        key
+        self.nodes.insert(NodeEntry {
+            taffy_id,
+            children: children.to_vec(),
+        })
     }
 
     // ========================================================================
@@ -98,73 +114,85 @@ impl LayoutEngine for TaffyLayoutEngine {
     // ========================================================================
 
     fn set_style(&mut self, node: LayoutNodeKey, layout: &Layout) {
-        if let Some(taffy_id) = self.node_map.get(node).copied() {
-            let style = layout.to_taffy_style();
-            let _ = self.inner.set_style(taffy_id, style);
-            // Taffy's set_style() internally calls mark_dirty
-        }
+        let taffy_id = match self.nodes.get(node).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let style = layout.to_taffy_style();
+        let _ = self.inner.set_style(taffy_id, style);
+        // Taffy's set_style() internally calls mark_dirty
     }
 
     fn set_context(&mut self, node: LayoutNodeKey, context: MeasureContext) {
-        if let Some(taffy_id) = self.node_map.get(node).copied() {
-            let _ = self.inner.set_node_context(taffy_id, Some(context));
-            // Taffy's set_node_context() internally calls mark_dirty
-        }
+        let taffy_id = match self.nodes.get(node).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let _ = self.inner.set_node_context(taffy_id, Some(context));
+        // Taffy's set_node_context() internally calls mark_dirty
     }
 
     fn add_child(&mut self, parent: LayoutNodeKey, child: LayoutNodeKey) {
-        if let (Some(parent_id), Some(child_id)) = (
-            self.node_map.get(parent).copied(),
-            self.node_map.get(child).copied(),
-        ) {
-            let _ = self.inner.add_child(parent_id, child_id);
-            if let Some(children) = self.children_map.get_mut(parent) {
-                children.push(child);
-            }
+        let parent_id = match self.nodes.get(parent).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let child_id = match self.nodes.get(child).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let _ = self.inner.add_child(parent_id, child_id);
+        if let Some(entry) = self.nodes.get_mut(parent) {
+            entry.children.push(child);
         }
     }
 
     fn remove_child(&mut self, parent: LayoutNodeKey, child: LayoutNodeKey) {
-        if let (Some(parent_id), Some(child_id)) = (
-            self.node_map.get(parent).copied(),
-            self.node_map.get(child).copied(),
-        ) {
-            let _ = self.inner.remove_child(parent_id, child_id);
-            if let Some(children) = self.children_map.get_mut(parent) {
-                children.retain(|&k| k != child);
-            }
+        let parent_id = match self.nodes.get(parent).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let child_id = match self.nodes.get(child).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let _ = self.inner.remove_child(parent_id, child_id);
+        if let Some(entry) = self.nodes.get_mut(parent) {
+            entry.children.retain(|&k| k != child);
         }
     }
 
     fn set_children(&mut self, parent: LayoutNodeKey, children: &[LayoutNodeKey]) {
-        if let Some(parent_id) = self.node_map.get(parent).copied() {
-            let child_taffy_ids: Vec<TaffyNodeId> = children
-                .iter()
-                .filter_map(|k| self.node_map.get(*k).copied())
-                .collect();
-            let _ = self.inner.set_children(parent_id, &child_taffy_ids);
-            self.children_map.insert(parent, children.to_vec());
+        let parent_id = match self.nodes.get(parent).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let child_taffy_ids: Vec<TaffyNodeId> = children
+            .iter()
+            .filter_map(|k| self.nodes.get(*k).map(|e| e.taffy_id))
+            .collect();
+        let _ = self.inner.set_children(parent_id, &child_taffy_ids);
+        if let Some(entry) = self.nodes.get_mut(parent) {
+            entry.children = children.to_vec();
         }
     }
 
     fn remove_node(&mut self, node: LayoutNodeKey) {
-        if let Some(taffy_id) = self.node_map.remove(node) {
-            let _ = self.inner.remove(taffy_id);
+        if let Some(entry) = self.nodes.remove(node) {
+            let _ = self.inner.remove(entry.taffy_id);
         }
-        self.children_map.remove(node);
     }
 
     fn mark_dirty(&mut self, node: LayoutNodeKey) {
-        if let Some(taffy_id) = self.node_map.get(node).copied() {
+        if let Some(taffy_id) = self.nodes.get(node).map(|e| e.taffy_id) {
             let _ = self.inner.mark_dirty(taffy_id);
         }
     }
 
     fn is_dirty(&self, node: LayoutNodeKey) -> bool {
-        if let Some(taffy_id) = self.node_map.get(node).copied() {
-            self.inner.dirty(taffy_id).unwrap_or(true)
-        } else {
-            true
+        match self.nodes.get(node).map(|e| e.taffy_id) {
+            Some(taffy_id) => self.inner.dirty(taffy_id).unwrap_or(true),
+            None => true,
         }
     }
 
@@ -173,17 +201,19 @@ impl LayoutEngine for TaffyLayoutEngine {
     // ========================================================================
 
     fn set_root_size(&mut self, root: LayoutNodeKey) {
-        if let Some(taffy_id) = self.node_map.get(root).copied() {
-            if let Ok(existing_style) = self.inner.style(taffy_id).cloned() {
-                let root_style = taffy::Style {
-                    size: taffy::geometry::Size {
-                        width: taffy::style::LengthPercentage::percent(1.0).into(),
-                        height: taffy::style::LengthPercentage::percent(1.0).into(),
-                    },
-                    ..existing_style
-                };
-                let _ = self.inner.set_style(taffy_id, root_style);
-            }
+        let taffy_id = match self.nodes.get(root).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        if let Ok(existing_style) = self.inner.style(taffy_id).cloned() {
+            let root_style = taffy::Style {
+                size: taffy::geometry::Size {
+                    width: taffy::style::LengthPercentage::percent(1.0).into(),
+                    height: taffy::style::LengthPercentage::percent(1.0).into(),
+                },
+                ..existing_style
+            };
+            let _ = self.inner.set_style(taffy_id, root_style);
         }
     }
 
@@ -193,30 +223,32 @@ impl LayoutEngine for TaffyLayoutEngine {
         available_size: Size<Logical>,
         font_system: &mut FontSystem,
     ) {
-        if let Some(root_taffy_id) = self.node_map.get(root) {
-            let cache = &mut self.cache;
-            let _ = self.inner.compute_layout_with_measure(
-                *root_taffy_id,
-                taffy::Size {
-                    width: AvailableSpace::Definite(available_size.width),
-                    height: AvailableSpace::Definite(available_size.height),
-                },
-                |known_dimensions, available_space, _node_id, node_context, _style| {
-                    measure_text_node(
-                        known_dimensions,
-                        available_space,
-                        node_context,
-                        font_system,
-                        cache,
-                    )
-                },
-            );
-        }
+        let root_taffy_id = match self.nodes.get(root).map(|e| e.taffy_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let cache = &mut self.cache;
+        let _ = self.inner.compute_layout_with_measure(
+            root_taffy_id,
+            taffy::Size {
+                width: AvailableSpace::Definite(available_size.width),
+                height: AvailableSpace::Definite(available_size.height),
+            },
+            |known_dimensions, available_space, _node_id, node_context, _style| {
+                measure_text_node(
+                    known_dimensions,
+                    available_space,
+                    node_context,
+                    font_system,
+                    cache,
+                )
+            },
+        );
     }
 
     fn get_layout(&self, node: LayoutNodeKey) -> Option<ComputedLayout> {
-        let taffy_id = self.node_map.get(node)?;
-        let layout = self.inner.layout(*taffy_id).ok()?;
+        let taffy_id = self.nodes.get(node)?.taffy_id;
+        let layout = self.inner.layout(taffy_id).ok()?;
 
         Some(ComputedLayout::new(
             node,
@@ -230,13 +262,15 @@ impl LayoutEngine for TaffyLayoutEngine {
     }
 
     fn children(&self, node: LayoutNodeKey) -> Vec<LayoutNodeKey> {
-        self.children_map.get(node).cloned().unwrap_or_default()
+        self.nodes
+            .get(node)
+            .map(|e| e.children.clone())
+            .unwrap_or_default()
     }
 
     fn clear(&mut self) {
         self.inner.clear();
-        self.node_map.clear();
-        self.children_map.clear();
+        self.nodes.clear();
         self.cache.clear();
     }
 }
@@ -317,11 +351,10 @@ mod tests {
         let mut engine = TaffyLayoutEngine::new();
 
         let _node = engine.create_leaf(&Layout::default());
-        assert!(!engine.node_map.is_empty());
+        assert!(!engine.nodes.is_empty());
 
         engine.clear();
-        assert!(engine.node_map.is_empty());
-        assert!(engine.children_map.is_empty());
+        assert!(engine.nodes.is_empty());
     }
 
     #[test]
@@ -538,7 +571,7 @@ mod tests {
 
         // The child should no longer be accessible
         assert!(engine.get_layout(child).is_none());
-        assert!(engine.node_map.get(child).is_none());
+        assert!(engine.nodes.get(child).is_none());
 
         // Parent's children map should not contain the removed child
         // (But note: Taffy may still hold the node in its tree until
