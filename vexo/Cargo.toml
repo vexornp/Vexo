@@ -10,6 +10,7 @@ repository = "https://github.com/vexornp/Vexo"
 wgpu = { workspace = true }
 winit = { workspace = true }
 slotmap = { workspace = true }
+lru = { workspace = true }
 taffy = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }

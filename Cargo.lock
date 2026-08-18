@@ -1579,6 +1579,9 @@ name = "lru"
 version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+dependencies = [
+ "hashbrown 0.16.1",
+]
 
 [[package]]
 name = "memchr"
@@ -3164,6 +3167,7 @@ dependencies = [
  "glyphon-vexo",
  "image",
  "log",
+ "lru",
  "objc2",
  "objc2-foundation",
  "objc2-quartz-core",

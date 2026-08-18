@@ -3,10 +3,11 @@
 //! This module provides types for measuring text dimensions using
 //! glyphon/cosmic-text shaping, integrated with Taffy's measure callback.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 
 use glyphon::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
+use lru::LruCache;
 
 use crate::core::{Logical, Size};
 
@@ -153,32 +154,39 @@ impl MeasureCacheKey {
 }
 
 /// Cache for measurement results to avoid redundant text shaping.
+///
+/// Backed by `lru::LruCache` so overflow evicts the least-recently-used
+/// entry instead of clearing the whole cache. Text-heavy UIs that exceed
+/// the capacity thus keep their hot entries across the eviction boundary,
+/// rather than cycling fill → clear → fill as the previous clear-all
+/// strategy did.
 pub struct MeasureCache {
-    entries: HashMap<MeasureCacheKey, Size<Logical>>,
-    max_entries: usize,
+    entries: LruCache<MeasureCacheKey, Size<Logical>>,
 }
 
 impl MeasureCache {
-    /// Create a new empty cache.
+    /// Create a new cache with the default capacity (1000 entries).
     pub fn new() -> Self {
+        Self::with_capacity(NonZeroUsize::new(1000).expect("1000 > 0"))
+    }
+
+    /// Create a new cache with an explicit capacity.
+    pub fn with_capacity(capacity: NonZeroUsize) -> Self {
         Self {
-            entries: HashMap::new(),
-            max_entries: 1000,
+            entries: LruCache::new(capacity),
         }
     }
 
-    /// Get a cached measurement.
-    pub fn get(&self, key: &MeasureCacheKey) -> Option<Size<Logical>> {
+    /// Get a cached measurement. Touches the entry so it becomes
+    /// most-recently-used.
+    pub fn get(&mut self, key: &MeasureCacheKey) -> Option<Size<Logical>> {
         self.entries.get(key).copied()
     }
 
-    /// Insert a measurement into the cache.
+    /// Insert a measurement into the cache. Evicts the LRU entry if at
+    /// capacity.
     pub fn insert(&mut self, key: MeasureCacheKey, size: Size<Logical>) {
-        if self.entries.len() >= self.max_entries {
-            // Simple eviction: clear all entries
-            self.entries.clear();
-        }
-        self.entries.insert(key, size);
+        self.entries.put(key, size);
     }
 
     /// Clear all cached entries.
@@ -316,10 +324,14 @@ pub fn measure_text_node(
                 };
             }
 
-            // Determine if we need to constrain and remeasure for wrapping
+            // Determine if we need to constrain and remeasure for wrapping.
+            // `Definite(0.0)` falls through to `None`: a zero-width container
+            // can't wrap meaningfully, and forcing a 1px width would trigger
+            // an expensive character-by-character shape whose result gets
+            // capped to 0 anyway. Treating it as unconstrained lets the final
+            // cap (below) reduce the natural width to 0 at zero cost.
             let definite_width = match available_space.width {
                 AvailableSpace::Definite(w) if w > 0.0 => Some(w),
-                AvailableSpace::Definite(_) => Some(1.0), // Minimum width
                 _ => None,
             };
 
@@ -489,8 +501,10 @@ mod tests {
 
     #[test]
     fn test_cache_eviction() {
-        let mut cache = MeasureCache::new();
-        cache.max_entries = 2;
+        // LRU semantics: when at capacity, inserting a new entry evicts the
+        // least-recently-used entry. With cap=2 and three inserts, the first
+        // inserted ("a") is evicted; "b" and "c" remain.
+        let mut cache = MeasureCache::with_capacity(NonZeroUsize::new(2).unwrap());
 
         cache.insert(
             MeasureCacheKey::new("a", 24.0, 1.2, None, None, None, None),
@@ -505,8 +519,26 @@ mod tests {
             Size::new(3.0, 3.0),
         );
 
-        // Cache should have been cleared when exceeding max_entries
-        assert_eq!(cache.entries.len(), 1);
+        // "a" should be evicted; "b" and "c" remain.
+        assert_eq!(
+            cache.get(&MeasureCacheKey::new(
+                "a", 24.0, 1.2, None, None, None, None
+            )),
+            None,
+            "oldest entry should have been evicted"
+        );
+        assert_eq!(
+            cache.get(&MeasureCacheKey::new(
+                "b", 24.0, 1.2, None, None, None, None
+            )),
+            Some(Size::new(2.0, 2.0))
+        );
+        assert_eq!(
+            cache.get(&MeasureCacheKey::new(
+                "c", 24.0, 1.2, None, None, None, None
+            )),
+            Some(Size::new(3.0, 3.0))
+        );
     }
 
     #[test]
