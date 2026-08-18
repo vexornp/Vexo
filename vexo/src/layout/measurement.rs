@@ -328,40 +328,41 @@ pub fn measure_text_node(
                     // Natural width fits — no wrapping needed
                     natural_size
                 } else {
-                    // Natural width exceeds available space — remeasure with constraint
-                    let available_height = match available_space.height {
-                        AvailableSpace::Definite(h) => Some(h),
-                        _ => None,
-                    };
-                    measurer.measure(
+                    // Natural width exceeds available space — remeasure with constraint.
+                    // Check the constrained cache first to avoid re-shaping on every
+                    // frame (e.g. during scroll or animation).
+                    let constrained_key = MeasureCacheKey::new(
                         &text_ctx.content,
                         text_ctx.font_size,
                         text_ctx.line_height,
                         text_ctx.font_family.as_deref(),
                         Some(max_w),
-                        available_height,
-                    )
+                        None,
+                        text_ctx.max_lines,
+                    );
+                    if let Some(cached) = cache.get(&constrained_key) {
+                        cached
+                    } else {
+                        let available_height = match available_space.height {
+                            AvailableSpace::Definite(h) => Some(h),
+                            _ => None,
+                        };
+                        let size = measurer.measure(
+                            &text_ctx.content,
+                            text_ctx.font_size,
+                            text_ctx.line_height,
+                            text_ctx.font_family.as_deref(),
+                            Some(max_w),
+                            available_height,
+                        );
+                        cache.insert(constrained_key, size);
+                        size
+                    }
                 }
             } else {
                 // No width constraint (MaxContent/MinContent) — use natural size
                 natural_size
             };
-
-            // Cache with the effective constraint key
-            let cache_key = MeasureCacheKey::new(
-                &text_ctx.content,
-                text_ctx.font_size,
-                text_ctx.line_height,
-                text_ctx.font_family.as_deref(),
-                if measured_size.width < natural_size.width {
-                    definite_width
-                } else {
-                    None
-                },
-                None,
-                text_ctx.max_lines,
-            );
-            cache.insert(cache_key, measured_size);
 
             // Resolve final dimensions: prefer known_dimensions (explicit size
             // from style or parent cross-axis), but cap at the available space
