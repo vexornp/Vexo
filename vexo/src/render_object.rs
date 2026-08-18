@@ -14,7 +14,7 @@
 //! RenderObjects persist across frames and are only updated when marked dirty.
 //! They are created during element inflation and destroyed during element unmounting.
 
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::SlotMap;
 
 use crate::core::{Point, Size};
 use crate::input::MouseTrackerAnnotation;
@@ -437,15 +437,29 @@ pub trait RenderObject {
 // RENDER OBJECT REGISTRY
 // ============================================================================
 
+/// Per-render-object metadata stored alongside the object itself.
+///
+/// Co-locating `object`, `owner`, and `cursor_annotation` in one entry
+/// keeps identity and per-object side data in sync structurally: `remove`
+/// drops a single slot and all three fields die atomically, so there is
+/// no parallel set of SecondaryMaps that can drift out of sync.
+struct RenderObjectEntry {
+    object: Box<dyn RenderObject>,
+    /// The element that owns this render object (cross-tree link).
+    owner: ElementKey,
+    /// Cursor annotation, present only for MouseRegion render objects.
+    /// `None` for the vast majority of entries — equivalent to the old
+    /// SecondaryMap's implicit-absent behavior.
+    cursor_annotation: Option<MouseTrackerAnnotation>,
+}
+
 /// Registry that manages render objects using generational keys.
 ///
 /// Uses SlotMap for primary storage (provides ABA protection via generational
-/// indices) and SecondaryMap for the cross-tree element mapping (automatically
-/// returns None for removed keys).
+/// indices). The cross-tree element mapping and per-object cursor annotation
+/// are co-located with each object in `RenderObjectEntry`.
 pub struct RenderObjectRegistry {
-    objects: SlotMap<RenderObjectKey, Box<dyn RenderObject>>,
-    element_map: SecondaryMap<RenderObjectKey, ElementKey>,
-    cursor_annotations: SecondaryMap<RenderObjectKey, MouseTrackerAnnotation>,
+    objects: SlotMap<RenderObjectKey, RenderObjectEntry>,
     root: Option<RenderObjectKey>,
     /// Layout node keys orphaned by removed render objects.
     /// Drained during layout to remove nodes from the Taffy engine.
@@ -461,8 +475,6 @@ impl RenderObjectRegistry {
     pub fn new() -> Self {
         Self {
             objects: SlotMap::with_key(),
-            element_map: SecondaryMap::new(),
-            cursor_annotations: SecondaryMap::new(),
             root: None,
             orphaned_layout_nodes: Vec::new(),
             orphaned_image_keys: Vec::new(),
@@ -475,23 +487,25 @@ impl RenderObjectRegistry {
     /// This association is used during reconciliation to find render objects
     /// that correspond to elements.
     pub fn create(&mut self, object: Box<dyn RenderObject>, owner: ElementKey) -> RenderObjectKey {
-        let key = self.objects.insert(object);
-        self.element_map.insert(key, owner);
-        key
+        self.objects.insert(RenderObjectEntry {
+            object,
+            owner,
+            cursor_annotation: None,
+        })
     }
 
     /// Get a render object by key.
     ///
     /// Returns None if the key is stale (element was removed).
     pub fn get(&self, key: RenderObjectKey) -> Option<&dyn RenderObject> {
-        self.objects.get(key).map(|b| b.as_ref())
+        self.objects.get(key).map(|e| e.object.as_ref())
     }
 
     /// Get a mutable render object by key.
     ///
     /// Returns None if the key is stale (element was removed).
     pub fn get_mut(&mut self, key: RenderObjectKey) -> Option<&mut Box<dyn RenderObject>> {
-        self.objects.get_mut(key)
+        self.objects.get_mut(key).map(|e| &mut e.object)
     }
 
     /// Remove a render object by key.
@@ -503,7 +517,8 @@ impl RenderObjectRegistry {
     /// The render object's layout node key (if any) is collected for later
     /// cleanup during the layout pass.
     pub fn remove(&mut self, key: RenderObjectKey) {
-        if let Some(obj) = self.objects.get(key) {
+        if let Some(entry) = self.objects.get(key) {
+            let obj = &entry.object;
             if !obj.is_pass_through() {
                 if let Some(node) = obj.layout_node() {
                     self.orphaned_layout_nodes.push(node);
@@ -516,9 +531,8 @@ impl RenderObjectRegistry {
                 self.orphaned_image_keys.push(img_key);
             }
         }
+        // Single removal frees object, owner, and cursor_annotation atomically.
         self.objects.remove(key);
-        self.element_map.remove(key);
-        self.cursor_annotations.remove(key);
     }
 
     /// Set the root render object.
@@ -533,13 +547,13 @@ impl RenderObjectRegistry {
 
     /// Get the element that owns a render object.
     pub fn element_for(&self, key: RenderObjectKey) -> Option<ElementKey> {
-        self.element_map.get(key).copied()
+        self.objects.get(key).map(|e| e.owner)
     }
 
     /// Get the render object owned by an element.
     pub fn render_object_for_element(&self, element_key: ElementKey) -> Option<RenderObjectKey> {
-        for (ro_key, &e_key) in &self.element_map {
-            if e_key == element_key {
+        for (ro_key, entry) in &self.objects {
+            if entry.owner == element_key {
                 return Some(ro_key);
             }
         }
@@ -565,14 +579,12 @@ impl RenderObjectRegistry {
     pub fn iter_mut(
         &mut self,
     ) -> impl Iterator<Item = (RenderObjectKey, &mut Box<dyn RenderObject>)> {
-        self.objects.iter_mut()
+        self.objects.iter_mut().map(|(k, e)| (k, &mut e.object))
     }
 
     /// Clear all render objects.
     pub fn clear(&mut self) {
         self.objects.clear();
-        self.element_map.clear();
-        self.cursor_annotations.clear();
         self.orphaned_layout_nodes.clear();
         self.orphaned_image_keys.clear();
         self.root = None;
@@ -604,9 +616,9 @@ impl RenderObjectRegistry {
     /// method is a no-op by default, so calling both is safe. This mirrors
     /// `RenderObjectElement::insert_child_render_object`.
     pub fn set_child(&mut self, parent: RenderObjectKey, child: RenderObjectKey) {
-        if let Some(obj) = self.objects.get_mut(parent) {
-            obj.set_child_id(child);
-            obj.add_child(child);
+        if let Some(entry) = self.objects.get_mut(parent) {
+            entry.object.set_child_id(child);
+            entry.object.add_child(child);
         }
     }
 
@@ -619,7 +631,9 @@ impl RenderObjectRegistry {
         key: RenderObjectKey,
         annotation: MouseTrackerAnnotation,
     ) {
-        self.cursor_annotations.insert(key, annotation);
+        if let Some(entry) = self.objects.get_mut(key) {
+            entry.cursor_annotation = Some(annotation);
+        }
     }
 
     /// Get the cursor annotation for a render object.
@@ -627,7 +641,9 @@ impl RenderObjectRegistry {
     /// Returns None if no annotation was registered (most render objects
     /// have no annotation — only MouseRegion render objects carry one).
     pub fn cursor_annotation(&self, key: RenderObjectKey) -> Option<&MouseTrackerAnnotation> {
-        self.cursor_annotations.get(key)
+        self.objects
+            .get(key)
+            .and_then(|e| e.cursor_annotation.as_ref())
     }
 
     /// Get the cursor annotation for an element.
@@ -638,10 +654,9 @@ impl RenderObjectRegistry {
         &self,
         element_key: ElementKey,
     ) -> Option<&MouseTrackerAnnotation> {
-        // Walk the element→render-object map to find the annotation
-        for (ro_key, &e_key) in &self.element_map {
-            if e_key == element_key {
-                return self.cursor_annotations.get(ro_key);
+        for (_ro_key, entry) in &self.objects {
+            if entry.owner == element_key {
+                return entry.cursor_annotation.as_ref();
             }
         }
         None
@@ -651,7 +666,9 @@ impl RenderObjectRegistry {
     ///
     /// MouseRegion elements call this during unmount.
     pub fn remove_cursor_annotation(&mut self, key: RenderObjectKey) {
-        self.cursor_annotations.remove(key);
+        if let Some(entry) = self.objects.get_mut(key) {
+            entry.cursor_annotation = None;
+        }
     }
 }
 
