@@ -3,7 +3,7 @@
 //! Elements are the middle tree in the three-tree architecture.
 //! They bridge Widget (configuration) and RenderObject (layout/paint).
 
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::SlotMap;
 use std::any::Any;
 
 use super::element_context::ElementContext;
@@ -124,14 +124,24 @@ pub trait Element {
     }
 }
 
+/// Per-element metadata stored alongside the element itself.
+///
+/// Co-locating `element`, `parent`, and `children` in one entry keeps
+/// identity and topology in sync structurally: `unmount` removes a single
+/// slot and all three fields die atomically, so there is no parallel set
+/// of SecondaryMaps that can drift out of sync.
+struct ElementEntry {
+    element: Box<dyn Element>,
+    parent: Option<ElementKey>,
+    children: Vec<ElementKey>,
+}
+
 /// Central registry for all live elements using generational keys.
 ///
 /// Elements are stored in a SlotMap with generational keys for ABA protection.
-/// Parent-child relationships are tracked via SecondaryMaps.
+/// Parent-child relationships are co-located with each element in `ElementEntry`.
 pub struct ElementRegistry {
-    slots: SlotMap<ElementKey, Box<dyn Element>>,
-    parent_map: SecondaryMap<ElementKey, Option<ElementKey>>,
-    children_map: SecondaryMap<ElementKey, Vec<ElementKey>>,
+    slots: SlotMap<ElementKey, ElementEntry>,
     root: Option<ElementKey>,
 }
 
@@ -140,8 +150,6 @@ impl ElementRegistry {
     pub fn new() -> Self {
         Self {
             slots: SlotMap::with_key(),
-            parent_map: SecondaryMap::new(),
-            children_map: SecondaryMap::new(),
             root: None,
         }
     }
@@ -150,8 +158,11 @@ impl ElementRegistry {
     /// Does NOT call element.mount() — the pipeline handles lifecycle.
     /// Does NOT add to parent's children list — the pipeline calls add_child() separately.
     pub fn insert(&mut self, element: Box<dyn Element>, parent: Option<ElementKey>) -> ElementKey {
-        let key = self.slots.insert(element);
-        self.parent_map.insert(key, parent);
+        let key = self.slots.insert(ElementEntry {
+            element,
+            parent,
+            children: Vec::new(),
+        });
         if parent.is_none() {
             self.root = Some(key);
         }
@@ -161,11 +172,11 @@ impl ElementRegistry {
     /// Add a child to a parent's children list at the given slot position.
     /// Called by the reconciler after executing a ChildOp::Inflate.
     pub fn add_child(&mut self, parent: ElementKey, child: ElementKey, slot: Option<usize>) {
-        let children = self
-            .children_map
-            .entry(parent)
-            .expect("entry for existing parent key")
-            .or_default();
+        let entry = match self.slots.get_mut(parent) {
+            Some(e) => e,
+            None => return,
+        };
+        let children = &mut entry.children;
         if let Some(idx) = slot {
             if idx >= children.len() {
                 children.resize(idx + 1, child);
@@ -187,14 +198,17 @@ impl ElementRegistry {
     ///
     /// Also sets the new child's parent.
     pub fn replace_child_at(&mut self, parent: ElementKey, slot: usize, new_child: ElementKey) {
-        if let Some(siblings) = self.children_map.get_mut(parent) {
+        if let Some(entry) = self.slots.get_mut(parent) {
+            let siblings = &mut entry.children;
             if slot < siblings.len() {
                 siblings[slot] = new_child;
             } else {
                 siblings.resize(slot + 1, new_child);
             }
         }
-        self.parent_map.insert(new_child, Some(parent));
+        if let Some(entry) = self.slots.get_mut(new_child) {
+            entry.parent = Some(parent);
+        }
     }
 
     /// Call a closure with mutable access to an element and an external context.
@@ -210,8 +224,8 @@ impl ElementRegistry {
         context: &mut C,
         f: impl FnOnce(&mut Box<dyn Element>, &mut C) -> R,
     ) -> Option<R> {
-        let element = self.slots.get_mut(key)?;
-        Some(f(element, context))
+        let entry = self.slots.get_mut(key)?;
+        Some(f(&mut entry.element, context))
     }
 
     /// Unmount an element and all its descendants.
@@ -219,33 +233,39 @@ impl ElementRegistry {
     /// Uses `SlotMap::remove()` which bumps the generation, invalidating
     /// any stale keys held elsewhere (ABA protection).
     pub fn unmount(&mut self, key: ElementKey) {
-        // Recursively unmount children first
-        let children: Vec<ElementKey> = self.children_map.get(key).cloned().unwrap_or_default();
+        // Recursively unmount children first. Clone the children list so we
+        // can borrow `self` mutably for the recursive call without holding
+        // a borrow on the slot.
+        let children: Vec<ElementKey> = self
+            .slots
+            .get(key)
+            .map(|e| e.children.clone())
+            .unwrap_or_default();
         for child in children {
             self.unmount(child);
         }
 
-        // Remove from parent's children list
-        if let Some(Some(parent)) = self.parent_map.get(key) {
-            if let Some(siblings) = self.children_map.get_mut(*parent) {
-                siblings.retain(|&s| s != key);
+        // Remove from parent's children list.
+        let parent = self.slots.get(key).and_then(|e| e.parent);
+        if let Some(parent) = parent {
+            if let Some(entry) = self.slots.get_mut(parent) {
+                entry.children.retain(|&s| s != key);
             }
         }
 
-        // True removal — bumps generation, invalidates stale keys
+        // True removal — bumps generation, invalidates stale keys. Frees
+        // element, parent, and children atomically.
         self.slots.remove(key);
-        self.parent_map.remove(key);
-        self.children_map.remove(key);
     }
 
     /// Get an element by key.
     pub fn get(&self, key: ElementKey) -> Option<&dyn Element> {
-        self.slots.get(key).map(|b| b.as_ref())
+        self.slots.get(key).map(|e| e.element.as_ref())
     }
 
     /// Get a mutable element by key.
     pub fn get_mut(&mut self, key: ElementKey) -> Option<&mut Box<dyn Element>> {
-        self.slots.get_mut(key)
+        self.slots.get_mut(key).map(|e| &mut e.element)
     }
 
     /// Check if an element exists in the registry.
@@ -255,20 +275,22 @@ impl ElementRegistry {
 
     /// Get the parent of an element.
     pub fn parent(&self, key: ElementKey) -> Option<ElementKey> {
-        self.parent_map.get(key).and_then(|p| *p)
+        self.slots.get(key).and_then(|e| e.parent)
     }
 
     /// Get the children of an element.
     pub fn children(&self, key: ElementKey) -> &[ElementKey] {
-        self.children_map
+        self.slots
             .get(key)
-            .map(|v| v.as_slice())
+            .map(|e| e.children.as_slice())
             .unwrap_or_default()
     }
 
     /// Set the children of an element.
     pub fn set_children(&mut self, key: ElementKey, children: Vec<ElementKey>) {
-        self.children_map.insert(key, children);
+        if let Some(entry) = self.slots.get_mut(key) {
+            entry.children = children;
+        }
     }
 
     /// Get the root element key.
@@ -295,9 +317,9 @@ impl ElementRegistry {
     pub fn depth(&self, key: ElementKey) -> usize {
         let mut depth = 0;
         let mut current = key;
-        while let Some(Some(parent)) = self.parent_map.get(current) {
+        while let Some(parent) = self.slots.get(current).and_then(|e| e.parent) {
             depth += 1;
-            current = *parent;
+            current = parent;
         }
         depth
     }
