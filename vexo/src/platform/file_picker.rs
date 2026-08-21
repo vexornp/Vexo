@@ -107,13 +107,18 @@ fn mime_from_extension(path: &std::path::Path) -> String {
 /// Construct the platform-default file picker as `Arc<dyn FilePicker>`.
 ///
 /// - Desktop (macOS/Linux/Windows): `RfdFilePicker` (blocks on `rfd`).
-/// - iOS/Android: `NoopFilePicker` (always returns `None`).
+/// - iOS: `IosFilePicker` (presents `UIDocumentPickerViewController`).
+/// - Android: `NoopFilePicker` (always returns `None`).
 pub fn default_file_picker() -> Arc<dyn FilePicker> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         Arc::new(RfdFilePicker)
     }
-    #[cfg(any(target_os = "ios", target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        Arc::new(crate::platform::file_picker_ios::IosFilePicker)
+    }
+    #[cfg(target_os = "android")]
     {
         Arc::new(NoopFilePicker)
     }

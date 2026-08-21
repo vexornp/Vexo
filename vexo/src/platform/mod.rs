@@ -12,6 +12,8 @@ pub mod clipboard;
 pub mod display_link_ios;
 pub mod file_picker;
 #[cfg(target_os = "ios")]
+pub mod file_picker_ios;
+#[cfg(target_os = "ios")]
 pub mod ios_clipboard;
 #[cfg(target_os = "ios")]
 pub mod keyboard_ios;

@@ -75,6 +75,7 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
     "UIResponder",
     "UIWindow",
     "objc2-uniform-type-identifiers",
+    "block2",
 ] }
 objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false, features = [
     "UTType",
