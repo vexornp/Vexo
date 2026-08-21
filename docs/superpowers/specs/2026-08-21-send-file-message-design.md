@@ -102,12 +102,15 @@ pub fn default_file_picker() -> Box<dyn FilePicker> {
 
 ### Injection chain
 
-1. `desktop_demo/src/main.rs` — call `vexo::platform::default_file_picker()`, wrap in `Arc<dyn FilePicker>`, pass to a new `ImState` constructor arg.
+`Application::new() -> Self::State` (`vexo/src/lib.rs:324`) takes no args and `State: ComponentState + Default`, so `main.rs` cannot inject the picker through `run_desktop_demo`. Instead, `seed()` constructs the picker internally:
+
+1. `shared_app/src/data.rs:162` — `seed()` calls `vexo::platform::default_file_picker()`, wraps in `Arc<dyn FilePicker>`, stores on `ImState`.
 2. `shared_app/src/data.rs:144` — add `pub file_picker: Arc<dyn FilePicker>` to `ImState` (mirrors `context_menu` field).
-3. `shared_app/src/app.rs:63` — `ImState::new(...)` call site updated.
-4. `shared_app/src/chats/mod.rs:85` & `desktop.rs:95` — `ChatScreen { ... file_picker: state.file_picker.clone(), ... }`.
-5. `shared_app/src/chats/chat_screen.rs:20-40` — add `file_picker: Arc<dyn FilePicker>` field + `Clone` impl update (`:42-55`).
-6. `should_rebuild` (`:178-180`) stays comparing only `conv_id` — `file_picker` is `Arc` (identity-stable), doesn't participate in rebuild decision (same rationale as `on_send`/`on_react` being excluded today).
+3. `shared_app/src/chats/mod.rs:85` & `desktop.rs:95` — `ChatScreen { ... file_picker: state.file_picker.clone(), ... }`.
+4. `shared_app/src/chats/chat_screen.rs:20-40` — add `file_picker: Arc<dyn FilePicker>` field + `Clone` impl update (`:42-55`).
+5. `should_rebuild` (`:178-180`) stays comparing only `conv_id` — `file_picker` is `Arc` (identity-stable), doesn't participate in rebuild decision (same rationale as `on_send`/`on_react` being excluded today).
+
+`desktop_demo/src/main.rs` is **unchanged** — it still calls `run_desktop_demo::<ImState>(Arc::new(UrefHttpFetch::new()))`. The picker is constructed inside `seed()` via `default_file_picker()`, which returns `RfdFilePicker` on desktop / `NoopFilePicker` on iOS/Android. Tests that construct `ChatScreen` directly pass their own `Arc<dyn FilePicker>` (mock or `NoopFilePicker`), bypassing `seed()`.
 
 ### Attach button & input bar (`chat_screen.rs:357-382`)
 
@@ -117,18 +120,22 @@ pub fn default_file_picker() -> Box<dyn FilePicker> {
 [ AttachButton ] [ TextEdit (flex_grow 1) ] [ Send Button ]
 ```
 
-- **AttachButton**: composed inline in `build_input_bar` (no new `IconButton` widget — YAGNI). Pattern matches `desktop_shell.rs:172-192` (Icon in `GestureDetector` + `DecoratedBox`):
+- **AttachButton**: composed inline in `build_input_bar` (no new `IconButton` widget — YAGNI). Pattern matches `desktop_shell.rs:172-192` (Icon in `GestureDetector` + `DecoratedBox`). Note `GestureDetector::on_tap` takes `impl FnMut() + 'static` directly (not `Rc`):
   ```rust
-  DecoratedBox::with_style(
-      GestureDetector::new(
-          Icon::new(Icons::Paperclip).with_color(theme.on_surface),
-          Rc::new(move || on_attach()),
-      ),
-      Style::default()
-          .corner_radius(8.0)
-          .background(theme.surface)
-          .border(theme.outline, 1.0),
+  GestureDetector::new(
+      DecoratedBox::with_style(
+          WithLayout::new(
+              Icon::new(Icons::Paperclip).with_color(theme.on_surface),
+              Layout::default().padding(10.0),
+          ),
+          Style::default()
+              .corner_radius(8.0)
+              .background(theme.surface)
+              .border(theme.outline, 1.0),
+      )
+      .boxed(),
   )
+  .on_tap(on_attach)
   .boxed()
   ```
 - **Sizing**: no explicit height — lets flexbox size to the Icon's intrinsic size + DecoratedBox padding. Inner content uses `Layout::default().padding(10.0)` (matches `BUBBLE_CONTENT_PADDING`).
@@ -183,22 +190,26 @@ fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
 1. **`build_text_content`** — today's `Text::new(msg.text.as_str())` block extracted verbatim (the `WithLayout` wrapping the `Text` at `:285-299`), parameterized on `&str` instead of reading `msg.text`.
 
 2. **`build_file_content`** — NEW. Two visual modes based on whether the file is an image:
-   - **Image** (`mime.starts_with("image/")` AND decode succeeds): a thumbnail `Image` widget. Decode via `ImageData::from_bytes(&file.bytes)` (synchronous — same call as `avatar.rs:80-84` for `AvatarSource::Bytes`). Wrap in `WithLayout` with `max_width(180.0)` + `max_height(180.0)`. If decode fails, fall through to file-card.
+   - **Image** (`mime.starts_with("image/")` AND decode succeeds): a thumbnail `Image` widget. Decode via `Image::from_bytes(&file.bytes)` (returns `Result<Image, ImageDataError>` — same underlying `ImageData::from_bytes` call as `avatar.rs:83`, but wrapped as a convenience by `image.rs:23`). Wrap in `WithLayout` with `max_width(180.0)` + `max_height(180.0)`. If decode fails, fall through to file-card.
    - **Non-image or failed decode**: a file card — a `column!` of `Icon::new(Icons::File)` (or `Icons::FileImage` if `mime.starts_with("image/")` but decode failed) + `Text::new(file.name)` + `Text::new(format_file_size(file.size))`. Width capped via `max_width(220.0)` to match text bubbles.
 
 ```rust
 fn build_file_content(file: &FileAttachment, is_me: bool, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     if file.mime.starts_with("image/") {
-        if let Some(image_data) = ImageData::from_bytes(&file.bytes) {
+        if let Ok(image) = vexo::Image::from_bytes(&file.bytes) {
             return WithLayout::new(
-                Image::new(image_data),
+                image,
                 Layout::default()
                     .max_width(180.0)
                     .max_height(180.0)
                     .flex_shrink(0.0),
             ).boxed();
         }
+        // decode failed → fall through to card
     }
+    let icon_color = if is_me { theme.on_primary } else { theme.on_surface };
+    let text_color = icon_color;
+    let muted_color = icon_color.with_alpha(0.6);
     column! {
         Icon::new(Icons::FileImage).with_color(icon_color),
         Text::new(file.name.as_str()).with_font_size(14.0).with_color(text_color),
@@ -239,8 +250,7 @@ Changing `Message.text: String` → `Message.kind: MessageKind` ripples through:
 | `vexo/src/platform/mod.rs` | + `pub mod file_picker;` + `default_file_picker` re-export |
 | `vexo/src/platform/file_picker.rs` | NEW — trait, `PickedFile`, `RfdFilePicker`, `NoopFilePicker`, `MAX_FILE_BYTES` |
 | `vexo/src/lib.rs:165-167` | re-export `file_picker` module |
-| `shared_app/src/data.rs` | + `MessageKind`, `FileAttachment`; change `Message.text`→`kind`; update `seed()` + `ImState` field |
-| `shared_app/src/app.rs` | update `ImState` construction |
+| `shared_app/src/data.rs` | + `MessageKind`, `FileAttachment`; change `Message.text`→`kind`; update `seed()` (constructs picker) + `ImState` field |
 | `shared_app/src/chats/mod.rs:85` | + `file_picker` field on `ChatScreen` |
 | `shared_app/src/chats/desktop.rs:95` | + `file_picker` field on `ChatScreen` |
 | `shared_app/src/chats/chat_screen.rs` | + field, `on_send`→`Fn(MessageKind)`, `build_input_bar`+attach button, `build_bubble` branch, `build_file_content`, ~15 test site updates + new tests |
