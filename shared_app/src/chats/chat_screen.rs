@@ -6,9 +6,9 @@ use std::rc::Rc;
 use vexo::platform::file_picker::FilePicker;
 use vexo::{
     column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, Image, Key, Layout, LifecycleContext, RenderContext, ScrollController,
-    ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
-    WidgetKey, WithLayout,
+    FlexDirection, GestureDetector, Image, Key, Layout, LifecycleContext, RenderContext,
+    ScrollController, ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController,
+    Theme, Widget, WidgetKey, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
@@ -248,7 +248,23 @@ impl Component for ChatScreen {
             }
         };
 
-        let input_bar = build_input_bar(tc, on_send_closure, &theme);
+        let file_picker_for_attach = self.file_picker.clone();
+        let on_send_for_attach = Rc::clone(&self.on_send);
+        let scroll_for_attach = self.scroll_controller.clone();
+        let on_attach = move || {
+            if let Some(picked) = file_picker_for_attach.pick_file() {
+                let attachment = crate::data::FileAttachment {
+                    name: picked.name,
+                    mime: picked.mime,
+                    size: picked.bytes.len() as u64,
+                    bytes: std::sync::Arc::from(picked.bytes.as_slice()),
+                };
+                on_send_for_attach(MessageKind::File(attachment));
+                scroll_for_attach.jump_to_bottom();
+            }
+        };
+
+        let input_bar = build_input_bar(tc, on_send_closure, on_attach, &theme);
 
         // Build the content WITHOUT reading MediaQuery — ChatScreen is NOT a
         // MediaQuery dependent, so it does NOT rebuild on keyboard animation
@@ -416,9 +432,28 @@ fn assemble_row(
 fn build_input_bar(
     controller: TextEditingController,
     on_send: impl FnMut() + 'static,
+    on_attach: impl FnMut() + 'static,
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
+    let attach_button = GestureDetector::new(
+        DecoratedBox::with_style(
+            WithLayout::new(
+                Icon::new(Icons::Paperclip).with_color(theme.on_surface),
+                Layout::default().padding(10.0),
+            )
+            .boxed(),
+            Style::default()
+                .corner_radius(8.0)
+                .background(theme.surface)
+                .border(theme.outline, 1.0),
+        )
+        .boxed(),
+    )
+    .on_tap(on_attach)
+    .boxed();
+
     row! {
+        attach_button,
         WithLayout::new(
             TextEdit::new(controller)
                 .with_background(theme.surface)
@@ -877,7 +912,7 @@ mod tests {
         let controller = vexo::TextEditingController::new(&long_text, &mut fs);
         let theme = vexo::ThemeData::light();
 
-        let input_bar = build_input_bar(controller.clone(), || {}, &theme);
+        let input_bar = build_input_bar(controller.clone(), || {}, || {}, &theme);
 
         // Mirror ChatScreen::render's structure faithfully.
         let content = column! {
@@ -989,7 +1024,7 @@ mod tests {
         let controller = vexo::TextEditingController::new("", &mut fs);
         let theme = vexo::ThemeData::light();
 
-        let input_bar = build_input_bar(controller.clone(), || {}, &theme);
+        let input_bar = build_input_bar(controller.clone(), || {}, || {}, &theme);
 
         let content = column! {
             WithLayout::new(
@@ -1958,6 +1993,191 @@ mod tests {
             find_text_in_tree(ro_reg, root, &file_name),
             "file card should render the filename '{}' as text",
             file_name
+        );
+    }
+
+    /// Tapping the attach button calls the mock FilePicker, which returns
+    /// canned PNG bytes. The `on_send` callback fires with
+    /// `MessageKind::File(...)`, and the file message appears in the
+    /// render tree (the filename "test.png" renders as text in the
+    /// file-card OR the thumbnail Image renders — we assert the filename
+    /// appears via the file-card path by using a small PNG that decodes
+    /// as a thumbnail, so we assert the message count grew instead).
+    #[test]
+    fn test_attach_button_sends_file_message() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let messages_signal = seed_messages_signal();
+        let send_count = Arc::new(AtomicUsize::new(0));
+        let send_count_for_closure = send_count.clone();
+        let msgs_for_send = messages_signal.clone();
+
+        let picker = crate::test_util::mock_png_picker();
+        let picker_arc: std::sync::Arc<dyn vexo::platform::file_picker::FilePicker> =
+            picker.clone();
+
+        let on_send: Rc<dyn Fn(MessageKind)> = Rc::new(move |kind| {
+            send_count_for_closure.fetch_add(1, Ordering::SeqCst);
+            let mut map = msgs_for_send.get_cloned();
+            if let Some(vec) = map.get_mut(&ConvId(1)) {
+                vec.push(Message {
+                    author: MessageAuthor::Me,
+                    kind,
+                    timestamp: 1732348000,
+                    reactions: vec![],
+                });
+            }
+            msgs_for_send.set_from(&map);
+        });
+
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal.clone(),
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: on_send.clone(),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: picker_arc,
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let baseline_msgs = messages_signal.get_cloned().get(&ConvId(1)).unwrap().len();
+
+        // The attach button is at the left of the input bar, which is at
+        // the bottom of the 600px view. The input bar has 8px padding.
+        // Click at x=20 (left side, where the attach button lives), y=580.
+        let click_pos = vexo::core::Point::new(20.0, 580.0);
+        let press = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let release = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            click_pos,
+            &press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            click_pos,
+            &release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            send_count.load(Ordering::SeqCst),
+            1,
+            "on_send should fire exactly once after tapping attach"
+        );
+        let after_msgs = messages_signal.get_cloned().get(&ConvId(1)).unwrap().len();
+        assert_eq!(
+            after_msgs,
+            baseline_msgs + 1,
+            "a new message should be appended after tapping attach"
+        );
+    }
+
+    /// When the FilePicker returns `None` (user cancels), tapping the
+    /// attach button does NOT send a message.
+    #[test]
+    fn test_attach_button_picker_none_does_not_send() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let messages_signal = seed_messages_signal();
+        let send_count = Arc::new(AtomicUsize::new(0));
+        let send_count_for_closure = send_count.clone();
+
+        let on_send: Rc<dyn Fn(MessageKind)> = Rc::new(move |_kind| {
+            send_count_for_closure.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send,
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let click_pos = vexo::core::Point::new(20.0, 580.0);
+        let press = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let release = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        pipeline.handle_event(
+            click_pos,
+            &press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            click_pos,
+            &release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        assert_eq!(
+            send_count.load(Ordering::SeqCst),
+            0,
+            "on_send should NOT fire when picker returns None (cancel)"
         );
     }
 }
