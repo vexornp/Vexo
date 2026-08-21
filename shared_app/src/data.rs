@@ -65,7 +65,6 @@ pub(crate) enum ReactionType {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum MessageKind {
     Text(String),
-    #[allow(dead_code)]
     File(FileAttachment),
 }
 

@@ -257,7 +257,7 @@ impl Component for ChatScreen {
                     name: picked.name,
                     mime: picked.mime,
                     size: picked.bytes.len() as u64,
-                    bytes: std::sync::Arc::from(picked.bytes.as_slice()),
+                    bytes: std::sync::Arc::from(picked.bytes),
                 };
                 on_send_for_attach(MessageKind::File(attachment));
                 scroll_for_attach.jump_to_bottom();
@@ -358,8 +358,13 @@ fn build_file_content(
     };
     let text_color = icon_color;
     let muted_color = icon_color.with_alpha(0.6);
+    let icon = if file.mime.starts_with("image/") {
+        Icons::FileImage
+    } else {
+        Icons::File
+    };
     column! {
-        Icon::new(Icons::FileImage).with_color(icon_color),
+        Icon::new(icon).with_color(icon_color),
         Text::new(file.name.as_str()).with_font_size(14.0).with_color(text_color),
         Text::new(format_file_size(file.size).as_str()).with_font_size(12.0).with_color(muted_color),
     }
