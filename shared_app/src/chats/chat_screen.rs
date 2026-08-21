@@ -252,16 +252,20 @@ impl Component for ChatScreen {
         let on_send_for_attach = Rc::clone(&self.on_send);
         let scroll_for_attach = self.scroll_controller.clone();
         let on_attach = move || {
-            if let Some(picked) = file_picker_for_attach.pick_file() {
-                let attachment = crate::data::FileAttachment {
-                    name: picked.name,
-                    mime: picked.mime,
-                    size: picked.bytes.len() as u64,
-                    bytes: std::sync::Arc::from(picked.bytes),
-                };
-                on_send_for_attach(MessageKind::File(attachment));
-                scroll_for_attach.jump_to_bottom();
-            }
+            let on_send_for_attach = Rc::clone(&on_send_for_attach);
+            let scroll_for_attach = scroll_for_attach.clone();
+            file_picker_for_attach.pick_file(Box::new(move |picked| {
+                if let Some(picked) = picked {
+                    let attachment = crate::data::FileAttachment {
+                        name: picked.name,
+                        mime: picked.mime,
+                        size: picked.bytes.len() as u64,
+                        bytes: std::sync::Arc::from(picked.bytes),
+                    };
+                    on_send_for_attach(MessageKind::File(attachment));
+                    scroll_for_attach.jump_to_bottom();
+                }
+            }));
         };
 
         let input_bar = build_input_bar(tc, on_send_closure, on_attach, &theme);
