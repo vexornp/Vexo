@@ -139,38 +139,7 @@ impl FilePicker for MockFilePicker {
 }
 ```
 
-- [ ] **Step 8: Run `cargo build -p vexo` (host) — expect RfdFilePicker failure**
-
-Run: `cargo build -p vexo`
-Expected: COMPILE ERROR on `RfdFilePicker::pick_file` — it still has the old signature. This is expected; Task 2 fixes it.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add vexo/src/platform/file_picker.rs shared_app/src/test_util.rs
-git commit -m "refactor(file_picker): change trait to callback-based
-
-pick_file now takes Box<dyn FnOnce(Option<PickedFile>)>. Desktop calls
-back synchronously (re-entrant); iOS will call back from the picker
-delegate. Extracts cfg-free mime_from_extension_str shared by both.
-
-NoopFilePicker + MockFilePicker updated to call on_done synchronously.
-RfdFilePicker is broken until the next commit."
-```
-
----
-
-### Task 2: Update `RfdFilePicker` to the callback signature
-
-Fix the desktop picker so the host build compiles and all existing tests pass. This restores green before any iOS work begins.
-
-**Files:**
-- Modify: `vexo/src/platform/file_picker.rs` (the `RfdFilePicker` impl, lines ~52-78)
-
-**Interfaces:**
-- Produces: `RfdFilePicker::pick_file` calls `on_done(Some(...))` or `on_done(None)` synchronously inside the `pick_file` call (re-entrant, same call stack as before).
-
-- [ ] **Step 1: Update `RfdFilePicker::pick_file`**
+- [ ] **Step 8: Update `RfdFilePicker` to the callback signature**
 
 In `vexo/src/platform/file_picker.rs`, replace the `RfdFilePicker` impl (lines ~52-78):
 
@@ -200,30 +169,33 @@ impl FilePicker for RfdFilePicker {
 
 Note: the closure `(|| { ... })()` preserves the early-return `?` ergonomics of the old code. The `on_done(result)` call is the LAST statement — it fires synchronously, re-entrant into the caller's stack, exactly as before.
 
-- [ ] **Step 2: Run `cargo build -p vexo` (host)**
+- [ ] **Step 9: Run `cargo build -p vexo` (host)**
 
 Run: `cargo build -p vexo`
-Expected: PASS — no errors.
+Expected: PASS — no errors (all three impls updated in this task).
 
-- [ ] **Step 3: Run `cargo test -p vexo`**
+- [ ] **Step 10: Run `cargo test -p vexo`**
 
 Run: `cargo test -p vexo`
 Expected: PASS — all 5 existing file_picker tests pass (`test_file_within_limit_*`, `test_noop_file_picker_returns_none`, `test_default_file_picker_returns_send_sync_arc`).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add vexo/src/platform/file_picker.rs
-git commit -m "fix(file_picker): update RfdFilePicker to callback signature
+git add vexo/src/platform/file_picker.rs shared_app/src/test_util.rs
+git commit -m "refactor(file_picker): change trait to callback-based
 
-Wraps the rfd+read+size-gate logic in an IIFE that preserves ?-ergonomics,
-then calls on_done(result) synchronously. Re-entrant into the caller's
-stack — same call stack as before the trait change."
+pick_file now takes Box<dyn FnOnce(Option<PickedFile>)>. Desktop calls
+back synchronously (re-entrant); iOS will call back from the picker
+delegate. Extracts cfg-free mime_from_extension_str shared by both.
+
+NoopFilePicker + MockFilePicker + RfdFilePicker all updated in one
+commit to keep the build green."
 ```
 
 ---
 
-### Task 3: Update `chat_screen.rs` `on_attach` closure
+### Task 2: Update `chat_screen.rs` `on_attach` closure
 
 Move the file-send logic into the `on_done` callback. After this task, desktop file-send works exactly as before (the `RfdFilePicker` fires the callback synchronously), and iOS file-send is wired but the picker is still `NoopFilePicker` (returns `None`).
 
@@ -231,7 +203,7 @@ Move the file-send logic into the `on_done` callback. After this task, desktop f
 - Modify: `shared_app/src/chats/chat_screen.rs` (the `on_attach` closure, lines ~251-265)
 
 **Interfaces:**
-- Consumes: `FilePicker::pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>)` from Task 1
+- Consumes: `FilePicker::pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>)` from Task 1 Step 2
 - Produces: `on_attach: impl FnMut() + 'static` that calls `pick_file(Box::new(move |picked| { ... }))`
 
 - [ ] **Step 1: Read the current `on_attach` closure to confirm exact lines**
@@ -286,7 +258,7 @@ stack as before. iOS: will fire from the picker delegate (next tasks)."
 
 ---
 
-### Task 4: Add iOS objc2 dependencies to `vexo/Cargo.toml`
+### Task 3: Add iOS objc2 dependencies to `vexo/Cargo.toml`
 
 Add the objc2 feature flags and the `objc2-uniform-type-identifiers` crate needed by `IosFilePicker`. This is a pure config change — no code, no test. The iOS target won't compile yet (the module doesn't exist), but the host build stays green.
 
@@ -376,9 +348,9 @@ No host-build impact — iOS deps are cfg(target_os = \"ios\")."
 
 ---
 
-### Task 5: Implement `IosFilePicker` + `DocumentPickerDelegate`
+### Task 4: Implement `IosFilePicker` + `DocumentPickerDelegate`
 
-Create the iOS file picker module. This is the largest task — it builds the `UIDocumentPickerViewController`, a `define_class!` delegate subclass that stores the callback in its ivars, and the security-scoped URL reading. Cannot be unit-tested headlessly (UIKit); verified by iOS build in Task 6.
+Create the iOS file picker module. This is the largest task — it builds the `UIDocumentPickerViewController`, a `define_class!` delegate subclass that stores the callback in its ivars, and the security-scoped URL reading. Cannot be unit-tested headlessly (UIKit); verified by iOS build in Task 5.
 
 **Key design decisions baked into the code below:**
 1. **Callback storage:** The `on_done` callback is wrapped in `Rc<RefCell<Option<...>>>` (a `PendingCallback` slot) and cloned into the delegate's ivars. The delegate's `fire` method takes the callback out of the slot and invokes it — exactly-once delivery.
@@ -639,7 +611,7 @@ NoopFilePicker."
 
 ---
 
-### Task 6: Verify iOS target compiles
+### Task 5: Verify iOS target compiles
 
 Build the `vexo` and `shared_app` crates for the iOS simulator target to confirm the iOS code compiles end-to-end. This is the only verification possible for iOS-only code without a human tapping the button.
 
@@ -698,7 +670,7 @@ The iOS picker UI cannot be verified headlessly. Ask the user:
 
 ---
 
-### Task 7: Update spec doc to reflect ivars refinement (optional)
+### Task 6: Update spec doc to reflect ivars refinement (optional)
 
 The spec describes a `thread_local` pending-callback slot; the implementation uses `define_class!` ivars + a `thread_local LIVE_DELEGATE` for delegate retention. This is a minor refinement. Update the spec's "Why this is safe" and "Risk check" sections to match the shipped implementation, so the doc stays accurate.
 
@@ -756,26 +728,27 @@ Cleaner: each delegate instance holds its own callback; no raw pointers."
 **1. Spec coverage:**
 - ✅ Trait change to callback-based → Task 1
 - ✅ `NoopFilePicker` updated → Task 1 Step 3
-- ✅ `RfdFilePicker` updated (synchronous callback) → Task 2
+- ✅ `RfdFilePicker` updated (synchronous callback) → Task 1 Step 8
 - ✅ `mime_from_extension_str` extracted (cfg-free, shared) → Task 1 Steps 4-5
-- ✅ `IosFilePicker` pure-Rust objc2 impl → Task 5
-- ✅ `UIDocumentPickerViewController` + `UTType.item` (any file) → Task 5 Step 2
-- ✅ `define_class!` delegate subclass → Task 5 Step 2
-- ✅ Security-scoped URL read → Task 5 Step 2
-- ✅ `default_file_picker` iOS branch → Task 5 Step 3
-- ✅ `Cargo.toml` objc2 deps → Task 4
-- ✅ `chat_screen.rs` `on_attach` callback wiring → Task 3
+- ✅ `IosFilePicker` pure-Rust objc2 impl → Task 4
+- ✅ `UIDocumentPickerViewController` + `UTType.item` (any file) → Task 4 Step 2
+- ✅ `define_class!` delegate subclass → Task 4 Step 2
+- ✅ Security-scoped URL read → Task 4 Step 2
+- ✅ `default_file_picker` iOS branch → Task 4 Step 3
+- ✅ `Cargo.toml` objc2 deps → Task 3
+- ✅ `chat_screen.rs` `on_attach` callback wiring → Task 2
 - ✅ `test_util.rs` mock updates → Task 1 Steps 6-7
-- ✅ iOS target build verification → Task 6
-- ✅ Spec doc refinement → Task 7
+- ✅ iOS target build verification → Task 5
+- ✅ Spec doc refinement → Task 6
 
-**2. Placeholder scan:** No "TBD", "TODO", "implement later". All code blocks are complete — Task 5 shows the full module in one step (no intermediate broken code).
+**2. Placeholder scan:** No "TBD", "TODO", "implement later". All code blocks are complete — Task 4 shows the full module in one step (no intermediate broken code).
 
 **3. Type consistency:**
-- `PendingCallback = Rc<RefCell<Option<Box<dyn FnOnce(Option<PickedFile>)>>>>` — defined Task 5, used in `pick_file` (slot creation), `DelegateIvars`, `fire`. ✅
-- `FilePicker::pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>)` — defined Task 1, used Task 2 (Rfd), Task 3 (chat_screen), Task 5 (iOS). ✅
-- `mime_from_extension_str(ext: &str) -> String` — defined Task 1 Step 4, used Task 1 Step 5 (desktop wrapper), Task 5 Step 2 (iOS `read_url`). ✅
-- `LIVE_DELEGATE: RefCell<Option<Retained<NSObject>>>` — declared Task 5 Step 2 (module scope), set in `pick_file`, cleared in `fire`. ✅
-- `LIVE_DELEGATE: RefCell<Option<Retained<NSObject>>>` — declared Task 5 Step 7 (module scope), set in `pick_file` (Step 7 revision), cleared in `fire` (Step 7 revision). ✅
+- `PendingCallback = Rc<RefCell<Option<Box<dyn FnOnce(Option<PickedFile>)>>>>` — defined Task 4, used in `pick_file` (slot creation), `DelegateIvars`, `fire`. ✅
+- `FilePicker::pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>)` — defined Task 1, used Task 1 Step 8 (Rfd), Task 2 (chat_screen), Task 4 (iOS). ✅
+- `mime_from_extension_str(ext: &str) -> String` — defined Task 1 Step 4, used Task 1 Step 5 (desktop wrapper), Task 4 Step 2 (iOS `read_url`). ✅
+- `LIVE_DELEGATE: RefCell<Option<Retained<NSObject>>>` — declared Task 4 Step 2 (module scope), set in `pick_file`, cleared in `fire`. ✅
+
+**4. Scope check:** Single subsystem (file picker). No decomposition needed. ✅
 
 **4. Scope check:** Single subsystem (file picker). No decomposition needed. ✅
