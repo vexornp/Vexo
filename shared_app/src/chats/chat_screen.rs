@@ -3,6 +3,7 @@
 use std::any::Any;
 use std::rc::Rc;
 
+use vexo::platform::file_picker::FilePicker;
 use vexo::{
     column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
     FlexDirection, Key, Layout, LifecycleContext, RenderContext, ScrollController, ScrollView,
@@ -14,7 +15,7 @@ use vexo_uikit::{
 };
 
 use crate::chats::message_menu;
-use crate::data::{AvatarSource, ConvId, Message, MessageAuthor, ReactionType};
+use crate::data::{AvatarSource, ConvId, Message, MessageAuthor, MessageKind, ReactionType};
 use crate::widgets::avatar::Avatar;
 
 pub(crate) struct ChatScreen {
@@ -28,7 +29,7 @@ pub(crate) struct ChatScreen {
     pub(crate) messages: Signal<std::collections::HashMap<ConvId, Vec<Message>>>,
     pub(crate) avatar: AvatarSource,
     pub(crate) me_avatar: AvatarSource,
-    pub(crate) on_send: Rc<dyn Fn(&str)>,
+    pub(crate) on_send: Rc<dyn Fn(MessageKind)>,
     /// Toggle-callback for reactions. `(index, rt)` where `index` is the
     /// message's position in the conversation `Vec<Message>`. Wired in
     /// `mod.rs`/`desktop.rs` to call `data::apply_reaction` against the root
@@ -37,6 +38,7 @@ pub(crate) struct ChatScreen {
     pub(crate) on_react: Rc<dyn Fn(usize, ReactionType)>,
     pub(crate) scroll_controller: ScrollController,
     pub(crate) context_menu: ContextMenuController,
+    pub(crate) file_picker: std::sync::Arc<dyn FilePicker>,
 }
 
 impl Clone for ChatScreen {
@@ -50,6 +52,7 @@ impl Clone for ChatScreen {
             on_react: Rc::clone(&self.on_react),
             scroll_controller: self.scroll_controller.clone(),
             context_menu: self.context_menu.clone(),
+            file_picker: self.file_picker.clone(),
         }
     }
 }
@@ -237,7 +240,7 @@ impl Component for ChatScreen {
         let on_send_closure = move || {
             let text = tc_for_clear.text();
             if !text.trim().is_empty() {
-                on_send(&text);
+                on_send(MessageKind::Text(text));
                 let mut fs = vexo::resource::new_font_system();
                 tc_for_clear.set_text("", &mut fs);
                 scroll_for_send.jump_to_bottom();
@@ -281,15 +284,17 @@ pub(crate) const BUBBLE_CONTENT_PADDING: f32 = 10.0;
 /// trigger's bounds match the bubble, not the full-width row.
 fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let is_me = msg.author == MessageAuthor::Me;
+    let text = match &msg.kind {
+        MessageKind::Text(t) => t.as_str(),
+        MessageKind::File(_) => "",
+    };
     DecoratedBox::with_style(
         WithLayout::new(
-            Text::new(msg.text.as_str())
-                .with_font_size(15.0)
-                .with_color(if is_me {
-                    theme.on_primary
-                } else {
-                    theme.on_surface
-                }),
+            Text::new(text).with_font_size(15.0).with_color(if is_me {
+                theme.on_primary
+            } else {
+                theme.on_surface
+            }),
             Layout::default()
                 .flex_direction(FlexDirection::Row)
                 .padding(BUBBLE_CONTENT_PADDING)
@@ -446,6 +451,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -469,6 +475,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -488,7 +495,7 @@ mod tests {
         let new_message_text = "LIVE_UPDATE_TEST_MESSAGE";
         updated_map.get_mut(&ConvId(1)).unwrap().push(Message {
             author: MessageAuthor::Me,
-            text: new_message_text.to_string(),
+            kind: MessageKind::Text(new_message_text.to_string()),
             timestamp: 1732348000,
             reactions: vec![],
         });
@@ -531,6 +538,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
         let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
@@ -557,6 +565,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
         pipeline.update(new_view);
@@ -589,6 +598,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         };
 
         let view = column! { chat }.height(600.0).boxed();
@@ -661,6 +671,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         };
         let dark_theme = vexo::ThemeData::dark();
         let themed = vexo::Theme::new(dark_theme.clone(), view);
@@ -1042,6 +1053,7 @@ mod tests {
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller.clone(),
         )
@@ -1119,6 +1131,7 @@ mod tests {
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller.clone(),
         )
@@ -1190,6 +1203,7 @@ mod tests {
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller.clone(),
         )
@@ -1247,6 +1261,7 @@ mod tests {
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller.clone(),
         )
@@ -1351,6 +1366,7 @@ mod tests {
                 on_react: Rc::new(|_, _| ()),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller,
         )
@@ -1410,6 +1426,7 @@ mod tests {
                 on_react: on_react.clone(),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller,
         )
@@ -1504,6 +1521,7 @@ mod tests {
                 on_react: on_react.clone(),
                 scroll_controller: ScrollController::new(),
                 context_menu: controller.clone(),
+                file_picker: crate::test_util::test_file_picker(),
             },
             controller,
         )
@@ -1651,6 +1669,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
 
@@ -1679,6 +1698,7 @@ mod tests {
             on_react: Rc::new(|_, _| ()),
             scroll_controller: ScrollController::new(),
             context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
         }
         .boxed();
         pipeline.update(same_view);

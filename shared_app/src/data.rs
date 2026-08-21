@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use url::Url;
+use vexo::platform::file_picker::FilePicker;
 use vexo::{ComponentState, Signal};
 use vexo_uikit::{ContextMenuController, NavigationController, TabController};
 
@@ -60,10 +61,30 @@ pub(crate) enum ReactionType {
     Angry,
 }
 
+/// What a message carries. Mirrors the `on_send` payload exactly.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum MessageKind {
+    Text(String),
+    #[allow(dead_code)]
+    File(FileAttachment),
+}
+
+/// A picked file read into memory. `bytes` is `Arc<[u8]>` to share with
+/// image decode without copying — `Arc` (not `Rc`) because `Message` lives
+/// inside `Signal<HashMap<..>>`, which requires `Send + Sync`. Mirrors the
+/// zero-copy intent of `AvatarSource::Bytes(Rc<[u8]>)` but thread-safe.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FileAttachment {
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub bytes: std::sync::Arc<[u8]>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Message {
     pub author: MessageAuthor,
-    pub text: String,
+    pub kind: MessageKind,
     pub timestamp: u64, // unix seconds (mocked)
     /// `Me`'s reactions on this message, in click order. Each click on a
     /// reaction icon either appends (new) or removes (already present) — see
@@ -142,6 +163,7 @@ pub struct ImState {
     /// Stack-local coords == window-logical coords). `ChatScreen` clones this
     /// for its `context_menu_trigger` wrappers on each bubble.
     pub(crate) context_menu: ContextMenuController,
+    pub(crate) file_picker: std::sync::Arc<dyn FilePicker>,
 }
 
 /// Generate a 64x64 solid-color PNG for an avatar. Uses the `image` crate
@@ -404,19 +426,19 @@ pub(crate) fn seed() -> ImState {
         vec![
             Message {
                 author: MessageAuthor::Them,
-                text: "Hey! Are we still on for tomorrow?".into(),
+                kind: MessageKind::Text("Hey! Are we still on for tomorrow?".into()),
                 timestamp: 1732347000,
                 reactions: vec![ReactionType::Like],
             },
             Message {
                 author: MessageAuthor::Me,
-                text: "Yes, definitely!".into(),
+                kind: MessageKind::Text("Yes, definitely!".into()),
                 timestamp: 1732347300,
                 reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Them,
-                text: "See you tomorrow!".into(),
+                kind: MessageKind::Text("See you tomorrow!".into()),
                 timestamp: 1732347520,
                 reactions: vec![ReactionType::Love],
             },
@@ -427,13 +449,13 @@ pub(crate) fn seed() -> ImState {
         vec![
             Message {
                 author: MessageAuthor::Them,
-                text: "Did you get the file?".into(),
+                kind: MessageKind::Text("Did you get the file?".into()),
                 timestamp: 1732346800,
                 reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Me,
-                text: "Got it, thanks".into(),
+                kind: MessageKind::Text("Got it, thanks".into()),
                 timestamp: 1732347050,
                 reactions: vec![],
             },
@@ -443,7 +465,7 @@ pub(crate) fn seed() -> ImState {
         ConvId(3),
         vec![Message {
             author: MessageAuthor::Them,
-            text: "Charlie: sounds good".into(),
+            kind: MessageKind::Text("Charlie: sounds good".into()),
             timestamp: 1732346700,
             reactions: vec![],
         }],
@@ -523,6 +545,7 @@ pub(crate) fn seed() -> ImState {
         selected_conv: Signal::new(None),
         is_dark: Signal::new(false),
         context_menu: ContextMenuController::new(),
+        file_picker: vexo::platform::default_file_picker(),
     }
 }
 
@@ -589,19 +612,19 @@ mod tests {
         let mut vec = vec![
             Message {
                 author: MessageAuthor::Them,
-                text: "a".into(),
+                kind: MessageKind::Text("a".into()),
                 timestamp: 1,
                 reactions: vec![],
             },
             Message {
                 author: MessageAuthor::Me,
-                text: "b".into(),
+                kind: MessageKind::Text("b".into()),
                 timestamp: 2,
                 reactions: vec![ReactionType::Like],
             },
             Message {
                 author: MessageAuthor::Them,
-                text: "c".into(),
+                kind: MessageKind::Text("c".into()),
                 timestamp: 3,
                 reactions: vec![ReactionType::Love],
             },

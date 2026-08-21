@@ -27,7 +27,7 @@ use vexo::{
 use vexo_uikit::platform::Platform;
 use vexo_uikit::theme::tokens::navigation::{self, ROW_INSET, ROW_PILL_RADIUS};
 
-use crate::data::{AvatarSource, ConvId, Conversation, Message};
+use crate::data::{AvatarSource, ConvId, Conversation, Message, MessageKind};
 use crate::widgets::avatar::Avatar;
 
 pub(crate) struct ConversationList {
@@ -235,7 +235,13 @@ fn latest_preview(conv: &Conversation, messages: &HashMap<ConvId, Vec<Message>>)
     messages
         .get(&conv.id)
         .and_then(|v| v.last())
-        .map(|m| (m.text.clone(), m.timestamp))
+        .map(|m| {
+            let preview = match &m.kind {
+                MessageKind::Text(t) => t.clone(),
+                MessageKind::File(f) => f.name.clone(),
+            };
+            (preview, m.timestamp)
+        })
         .unwrap_or_else(|| (conv.last_preview.clone(), conv.last_timestamp))
 }
 
@@ -250,7 +256,7 @@ fn format_timestamp(ts: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::{Message, MessageAuthor};
+    use crate::data::{Message, MessageAuthor, MessageKind};
     use std::sync::Arc;
     use vexo::animation::AnimationTicker;
     use vexo::ThreeTreePipeline;
@@ -285,7 +291,7 @@ mod tests {
         let mut messages = state.messages.get_cloned();
         messages.get_mut(&ConvId(1)).unwrap().push(Message {
             author: MessageAuthor::Me,
-            text: "New latest message".into(),
+            kind: MessageKind::Text("New latest message".into()),
             timestamp: 1732399999,
             reactions: vec![],
         });

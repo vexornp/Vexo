@@ -112,6 +112,7 @@ impl Application for ImState {
                 let contacts_nav_for_tab = contacts_nav.clone();
                 let profile_for_tab = profile.clone();
                 let me_nav_for_tab = me_nav.clone();
+                let file_picker = state.file_picker.clone();
 
                 let shell = DesktopShell {
                     controller: tab_controller,
@@ -123,6 +124,7 @@ impl Application for ImState {
                             me_avatar_for_chats.clone(),
                             selected_conv.clone(),
                             context_menu.clone(),
+                            file_picker.clone(),
                         ),
                         ImTab::Contacts => build_contacts_tab(
                             contacts_for_tab.clone(),

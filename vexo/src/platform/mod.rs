@@ -17,6 +17,7 @@ pub mod ios_clipboard;
 pub mod keyboard_ios;
 pub mod stub_clipboard;
 pub use clipboard::Clipboard;
+pub use file_picker::default_file_picker;
 
 use std::sync::Arc;
 

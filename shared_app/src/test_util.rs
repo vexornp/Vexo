@@ -29,3 +29,12 @@ pub(crate) fn install_test_image_cache(pipeline: &mut ThreeTreePipeline) {
     ));
     pipeline.set_image_cache(cache);
 }
+
+use vexo::platform::file_picker::{FilePicker, NoopFilePicker};
+
+/// Return a no-op `FilePicker` for tests that construct `ChatScreen`
+/// directly but don't exercise the attach button. `pick_file()` always
+/// returns `None`.
+pub(crate) fn test_file_picker() -> std::sync::Arc<dyn FilePicker> {
+    std::sync::Arc::new(NoopFilePicker)
+}

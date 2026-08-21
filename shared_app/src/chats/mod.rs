@@ -15,7 +15,7 @@ use vexo_uikit::{ContextMenuController, NavigationController, NavigationStackVie
 use crate::chats::conversation_list::ConversationList;
 use crate::data::{
     apply_reaction, AvatarSource, ChatsRoute, ConvId, Conversation, Message, MessageAuthor,
-    ReactionType,
+    MessageKind, ReactionType,
 };
 
 /// Mobile Chats page. Renders the conversation list via the unified
@@ -87,12 +87,12 @@ impl Component for MobileChatsPage {
                         messages,
                         avatar,
                         me_avatar: me_avatar_for_dest.clone(),
-                        on_send: Rc::new(move |text: &str| {
+                        on_send: Rc::new(move |kind: MessageKind| {
                             let mut map = msgs_for_send.get_cloned();
                             if let Some(vec) = map.get_mut(&id_for_send) {
                                 vec.push(Message {
                                     author: MessageAuthor::Me,
-                                    text: text.to_string(),
+                                    kind,
                                     timestamp: 1732348000,
                                     reactions: vec![],
                                 });
@@ -108,6 +108,7 @@ impl Component for MobileChatsPage {
                         }),
                         scroll_controller: vexo::ScrollController::new(),
                         context_menu: context_menu.clone(),
+                        file_picker: vexo::platform::default_file_picker(),
                     }
                     .boxed()
                 }

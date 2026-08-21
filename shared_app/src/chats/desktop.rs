@@ -16,7 +16,8 @@ use vexo_uikit::ContextMenuController;
 use crate::chats::chat_screen::ChatScreen;
 use crate::chats::conversation_list::ConversationList;
 use crate::data::{
-    apply_reaction, AvatarSource, ConvId, Conversation, Message, MessageAuthor, ReactionType,
+    apply_reaction, AvatarSource, ConvId, Conversation, Message, MessageAuthor, MessageKind,
+    ReactionType,
 };
 use crate::widgets::titled_container::titled_container;
 
@@ -29,6 +30,7 @@ pub(crate) struct DesktopChatsPage {
     pub me_avatar: AvatarSource,
     pub selected_conv: vexo::Signal<Option<ConvId>>,
     pub context_menu: ContextMenuController,
+    pub file_picker: std::sync::Arc<dyn vexo::platform::file_picker::FilePicker>,
 }
 
 impl Clone for DesktopChatsPage {
@@ -39,6 +41,7 @@ impl Clone for DesktopChatsPage {
             me_avatar: self.me_avatar.clone(),
             selected_conv: self.selected_conv.clone(),
             context_menu: self.context_menu.clone(),
+            file_picker: self.file_picker.clone(),
         }
     }
 }
@@ -97,12 +100,12 @@ impl Component for DesktopChatsPage {
                     messages,
                     avatar,
                     me_avatar: self.me_avatar.clone(),
-                    on_send: Rc::new(move |text: &str| {
+                    on_send: Rc::new(move |kind: MessageKind| {
                         let mut map = msgs_for_send.get_cloned();
                         if let Some(vec) = map.get_mut(&id_for_send) {
                             vec.push(Message {
                                 author: MessageAuthor::Me,
-                                text: text.to_string(),
+                                kind,
                                 timestamp: 1732348000,
                                 reactions: vec![],
                             });
@@ -118,6 +121,7 @@ impl Component for DesktopChatsPage {
                     }),
                     scroll_controller: ScrollController::new(),
                     context_menu: self.context_menu.clone(),
+                    file_picker: self.file_picker.clone(),
                 };
 
                 titled_container(conv_name, chat.boxed(), &nav_colors)
@@ -186,6 +190,7 @@ pub(crate) fn build_chats_tab_desktop(
     me_avatar: AvatarSource,
     selected_conv: vexo::Signal<Option<ConvId>>,
     context_menu: ContextMenuController,
+    file_picker: std::sync::Arc<dyn vexo::platform::file_picker::FilePicker>,
 ) -> Box<dyn Widget> {
     DesktopChatsPage {
         conversations,
@@ -193,6 +198,7 @@ pub(crate) fn build_chats_tab_desktop(
         me_avatar,
         selected_conv,
         context_menu,
+        file_picker,
     }
     .boxed()
 }
