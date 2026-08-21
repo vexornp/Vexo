@@ -34,19 +34,25 @@ vexo_macros = { version = "0.1.0", path = "vexo_macros" }
 arboard = { workspace = true }
 rfd = "0.14"
 
-# iOS UIKit / Foundation adapters: clipboard (UIPasteboard) and keyboard
-# notifications (UIResponder via NSNotificationCenter). Versions pinned to
-# what the workspace already resolves transitively (objc2 0.6.x,
-# objc2-foundation/ui-kit 0.3.2, block2 0.6.x) so this adds no lock churn.
+# iOS UIKit / Foundation adapters: clipboard (UIPasteboard), keyboard
+# notifications (NSNotificationCenter), and file picker
+# (UIDocumentPickerViewController). Versions pinned to what the workspace
+# already resolves transitively (objc2 0.6.x, objc2-foundation/ui-kit 0.3.2,
+# block2 0.6.x) so this adds no lock churn.
 #
 # Feature notes:
 #  - `NSNotification` exposes NSNotificationCenter + NSNotification.
 #  - `NSOperation` + `block2` are required by NSNotificationCenter's
 #    block-based `addObserverForName:object:queue:usingBlock:` API.
-#  - objc2-ui-kit doesn't generate typed accessors for the keyboard
-#    notification names / userInfo keys (they're NS_TYPED_EXTENSIBLE_ENUM
-#    NSString constants), so we construct them as plain NSStrings and don't
-#    need `UIResponder` / `UIApplication` features here.
+#  - `NSURL` + `NSArray` are needed by UIDocumentPickerViewController
+#    (initForOpeningContentTypes takes &NSArray<UTType>; the delegate
+#    callback receives &NSArray<NSURL>).
+#  - `UIDocumentPickerViewController` pulls in `UIResponder` +
+#    `UIViewController` transitively, but listing them explicitly is
+#    clearer. `UIApplication` + `UIWindow` are needed for
+#    topmost_view_controller (keyWindow.rootViewController walk).
+#  - `objc2-uniform-type-identifiers` (UTType + UTCoreTypes) exposes
+#    `UTTypeItem` — the "any file" content type.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = { version = ">=0.6.2, <0.8.0", default-features = false, features = ["std"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
@@ -58,8 +64,22 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSOperation",
     "NSRunLoop",
     "block2",
+    "NSURL",
+    "NSArray",
 ] }
-objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["UIPasteboard"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
+    "UIPasteboard",
+    "UIDocumentPickerViewController",
+    "UIApplication",
+    "UIViewController",
+    "UIResponder",
+    "UIWindow",
+    "objc2-uniform-type-identifiers",
+] }
+objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false, features = [
+    "UTType",
+    "UTCoreTypes",
+] }
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["CADisplayLink"] }
 block2 = { version = "0.6.2", default-features = false }
 
