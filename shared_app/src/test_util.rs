@@ -47,12 +47,12 @@ pub(crate) struct MockFilePicker {
 }
 
 impl FilePicker for MockFilePicker {
-    fn pick_file(&self) -> Option<PickedFile> {
-        self.picked.as_ref().map(|p| PickedFile {
+    fn pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>) {
+        on_done(self.picked.as_ref().map(|p| PickedFile {
             name: p.name.clone(),
             mime: p.mime.clone(),
             bytes: p.bytes.clone(),
-        })
+        }));
     }
 }
 

@@ -20,10 +20,14 @@ pub struct PickedFile {
 /// Object-safe file-picker trait. Implementations must be `Send + Sync`
 /// so the trait can be used as `Arc<dyn FilePicker>`.
 pub trait FilePicker: Send + Sync {
-    /// Open the native file dialog and block until the user confirms or
-    /// cancels. Returns `None` on cancel or if the chosen file exceeds
-    /// `MAX_FILE_BYTES`.
-    fn pick_file(&self) -> Option<PickedFile>;
+    /// Open the native file dialog. `on_done` is invoked exactly once:
+    /// - `Some(PickedFile)` on confirm
+    /// - `None` on cancel, error, or file exceeding `MAX_FILE_BYTES`
+    ///
+    /// Desktop implementations call `on_done` synchronously (re-entrant into
+    /// the caller's stack). iOS calls `on_done` later from the picker
+    /// delegate (main thread). Either way, exactly-once delivery.
+    fn pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>);
 }
 
 /// Pure helper for testable size gating. Returns `true` if `len` is within
@@ -38,8 +42,8 @@ pub fn file_within_limit(len: u64) -> bool {
 pub struct NoopFilePicker;
 
 impl FilePicker for NoopFilePicker {
-    fn pick_file(&self) -> Option<PickedFile> {
-        None
+    fn pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>) {
+        on_done(None);
     }
 }
 
@@ -51,47 +55,46 @@ struct RfdFilePicker;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl FilePicker for RfdFilePicker {
-    fn pick_file(&self) -> Option<PickedFile> {
-        // Deliberately add NO file-type filters. On macOS, `rfd` flattens all
-        // filters into a single `NSOpenPanel:setAllowedFileTypes:` array
-        // (there is no dropdown), and `"*"` is treated as a literal extension,
-        // not a wildcard — so any filter restricts the panel to those
-        // extensions only, graying out everything else (e.g. .zip). When
-        // `filters` is empty, `rfd` skips `setAllowedFileTypes:` and the panel
-        // allows all files. A chat attach button should accept any file type.
-        let path = rfd::FileDialog::new().pick_file()?;
+    fn pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>) {
+        let result = (|| {
+            let path = rfd::FileDialog::new().pick_file()?;
+            let metadata = std::fs::metadata(&path).ok()?;
+            if !file_within_limit(metadata.len()) {
+                return None;
+            }
+            let bytes = std::fs::read(&path).ok()?;
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let mime = mime_from_extension(&path);
+            Some(PickedFile { name, mime, bytes })
+        })();
+        on_done(result);
+    }
+}
 
-        let metadata = std::fs::metadata(&path).ok()?;
-        if !file_within_limit(metadata.len()) {
-            return None;
-        }
-
-        let bytes = std::fs::read(&path).ok()?;
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let mime = mime_from_extension(&path);
-        Some(PickedFile { name, mime, bytes })
+/// Pure helper mapping a file extension (lowercase, no leading dot) to a
+/// MIME type string. Returns `""` for unknown extensions. Cfg-free so both
+/// desktop (`RfdFilePicker`) and iOS (`IosFilePicker`) share one mapping.
+pub fn mime_from_extension_str(ext: &str) -> String {
+    match ext {
+        "png" => "image/png".into(),
+        "jpg" | "jpeg" => "image/jpeg".into(),
+        "gif" => "image/gif".into(),
+        "bmp" => "image/bmp".into(),
+        "webp" => "image/webp".into(),
+        _ => String::new(),
     }
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn mime_from_extension(path: &std::path::Path) -> String {
-    match path
-        .extension()
+    path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .as_deref()
-    {
-        Some("png") => "image/png".into(),
-        Some("jpg") | Some("jpeg") => "image/jpeg".into(),
-        Some("gif") => "image/gif".into(),
-        Some("bmp") => "image/bmp".into(),
-        Some("webp") => "image/webp".into(),
-        _ => String::new(),
-    }
+        .map(|e| mime_from_extension_str(&e.to_lowercase()))
+        .unwrap_or_default()
 }
 
 /// Construct the platform-default file picker as `Arc<dyn FilePicker>`.
@@ -131,7 +134,9 @@ mod tests {
     #[test]
     fn test_noop_file_picker_returns_none() {
         let picker = NoopFilePicker;
-        assert!(picker.pick_file().is_none());
+        picker.pick_file(Box::new(|picked| {
+            assert!(picked.is_none());
+        }));
     }
 
     #[test]
