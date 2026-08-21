@@ -37,7 +37,7 @@ A run-loop pump inside `pick_file` is rejected as fragile (re-entrancy into wini
 | iOS picker impl | Pure Rust via `objc2-ui-kit` (`UIDocumentPickerViewController` + `define_class!` delegate) | Matches `ios_clipboard.rs` / `keyboard_ios.rs` precedent. Self-contained, no Swift/UniFFI plumbing. |
 | File scope on iOS | `UTType.item` (any file) | Matches desktop's accept-any-file behavior exactly. |
 | Callback `Send` bound | None — `Box<dyn FnOnce>` without `Send` | Framework is single-threaded; both desktop and iOS fire the callback on the main thread. Avoids forcing `Arc`/`Mutex` on `Rc`-based closures. |
-| Pending callback storage on iOS | `thread_local!(RefCell<Option<Box<dyn FnOnce...>>>)` on the main thread | Single picker can be presented at a time; slot overwritten on next pick. Delegate references it via raw pointer (not `Rc` — FFI boundary / ObjC retain concerns). |
+| Pending callback storage on iOS | `Rc<RefCell<Option<Box<dyn FnOnce...>>>>` cloned into `define_class!` delegate ivars; delegate retained by module-scope `thread_local LIVE_DELEGATE` | Each delegate instance holds its own `Rc` to the callback slot. `setDelegate:` is a weak property, so `LIVE_DELEGATE` stashes the `Retained<NSObject>` until `fire` clears it. No raw pointers across the FFI boundary. |
 | `default_file_picker()` return type | Stays `Arc<dyn FilePicker>` (unchanged from original spec) | Only the trait *method* changed, not the field types. `ImState.file_picker`, `ChatScreen.file_picker`, builder args all unchanged. |
 
 ## Architecture
@@ -76,9 +76,9 @@ impl FilePicker for IosFilePicker {
 
 **Flow:**
 
-1. `pick_file` stashes `on_done` into a `thread_local!(RefCell<Option<Box<dyn FnOnce(Option<PickedFile>)>>>)` — the "pending callback slot" on the main thread. If a slot already exists (user tapped attach twice fast), the old box is dropped — only one picker is presented at a time.
+1. `pick_file` wraps `on_done` in `Rc<RefCell<Option<Box<dyn FnOnce...>>>>` (a `PendingCallback` slot). The slot is cloned into the delegate's ivars (so the delegate owns one `Rc`, `pick_file` drops its `Rc` after presenting). The delegate's `fire` method takes the callback out of the slot and invokes it — exactly-once delivery.
 2. Builds a `UIDocumentPickerViewController` configured with `UTType.item` (any file) via `forOpeningContentTypes:`.
-3. Creates a delegate instance via `define_class!` — a subclass of `NSObject` conforming to `UIDocumentPickerDelegate`. The delegate holds a raw pointer back to the pending-callback slot's thread-local cell (not a Rust `Rc` — ObjC retain-cycle / FFI boundary concerns; pointer + thread-local lookup is the idiomatic `objc2` pattern, same approach as `keyboard_ios.rs`'s block-based observers).
+3. Creates a delegate instance via `define_class!` — a subclass of `NSObject` conforming to `UIDocumentPickerDelegate`. The delegate stores the `PendingCallback` slot (`Rc<RefCell<Option<...>>>`) in its ivars. The delegate `Retained<NSObject>` is stashed in a module-scope `thread_local LIVE_DELEGATE` because `setDelegate:` is a **weak** property (the delegate would be deallocated immediately without external retention). The delegate's `fire` method clears `LIVE_DELEGATE` after invoking the callback, releasing the retain.
 4. Resolves the topmost `UIViewController` via `UIApplication.sharedApplication` → key window → `rootViewController`, walking `presentedViewController` to the topmost presented VC.
 5. Presents the picker `animated:true`. `pick_file` returns immediately.
 6. **`documentPicker:didPickDocumentsAtURLs:`** (delegate method): takes the first URL, calls `startAccessingSecurityScopedResource` (returns `bool`; if false, the read will fail and we surface `None`), reads bytes via `std::fs::read` (works because the security-scope start makes the path accessible to standard Rust file APIs — avoids an `NSData` dependency), infers name from the URL's `lastPathComponent` and MIME from the extension via the same `mime_from_extension` helper the desktop picker uses (extracted to a shared `fn`), enforces `MAX_FILE_BYTES` via `file_within_limit`, builds `PickedFile`, invokes the stashed callback with `Some`, clears the slot. A RAII guard struct pairs the security-scope start/stop so `stopAccessingSecurityScopedResource` is guaranteed even on read error.
@@ -90,7 +90,7 @@ impl FilePicker for IosFilePicker {
 
 - `IosFilePicker` is zero-sized, trivially `Send + Sync`.
 - The callback is boxed on the main thread, invoked on the main thread, dropped on the main thread — no cross-thread moves.
-- The delegate object is retained by the presented VC; we do **not** hold a `Retained<…>` in Rust (avoids retain-cycle / use-after-free). The delegate references the slot via raw pointer; if the user backgrounds the app mid-pick and never returns, the slot's box leaks until the next `pick_file` call overwrites it — acceptable for a demo app, and single-entry by construction.
+- **Delegate retention:** `UIDocumentPickerDelegate`'s `setDelegate:` is a weak property, so the delegate must be kept alive externally. A module-scope `thread_local LIVE_DELEGATE: RefCell<Option<Retained<NSObject>>>` stashes the delegate `Retained` on the main thread when `pick_file` presents the picker. The delegate's `fire` method clears `LIVE_DELEGATE` after invoking the callback, releasing the retain. If the user backgrounds the app mid-pick and never returns, the delegate leaks until the next `pick_file` call overwrites the slot — acceptable for a demo, and single-entry by construction.
 - Security-scoped resource access is wrapped in a guard struct so `stopAccessingSecurityScopedResource` always runs.
 
 ### `default_file_picker()` update (`vexo/src/platform/mod.rs`)
@@ -171,7 +171,7 @@ The two existing attach tests (`test_attach_button_sends_file_message`, `test_at
 | File | Change |
 |---|---|
 | `vexo/src/platform/file_picker.rs` | Trait signature: `pick_file` takes `Box<dyn FnOnce(Option<PickedFile>)>`. `NoopFilePicker`, `RfdFilePicker` impls updated. Extract cfg-free `mime_from_extension_str` shared by desktop + iOS. |
-| `vexo/src/platform/file_picker_ios.rs` | **NEW** — `IosFilePicker` + `define_class!` delegate subclass + `thread_local` pending-callback slot. |
+| `vexo/src/platform/file_picker_ios.rs` | **NEW** — `IosFilePicker` + `define_class!` delegate subclass with `Rc<RefCell<Option<...>>>` callback in ivars + `thread_local LIVE_DELEGATE` for delegate retention. |
 | `vexo/src/platform/mod.rs` | Register `file_picker_ios` module under `#[cfg(target_os = "ios")]`; iOS branch of `default_file_picker()` returns `IosFilePicker`. |
 | `vexo/Cargo.toml` | Extend objc2-ui-kit / objc2-foundation feature lists for `UIDocumentPickerViewController` etc. |
 | `shared_app/src/chats/chat_screen.rs` | `on_attach` closure moves send logic into `on_done` callback (lines ~251-265). |
@@ -195,6 +195,6 @@ The two existing attach tests (`test_attach_button_sends_file_message`, `test_at
 ## Risk check
 
 - **Re-entrancy on desktop:** `RfdFilePicker` calls `on_done` synchronously inside `pick_file`. The `on_done` closure calls `on_send`, which mutates the messages `Signal`, which triggers framework rebuilds. This happens inside `GestureDetector`'s tap handler — same stack as before the trait change. No new re-entrancy surface.
-- **Callback lifetime on iOS:** Stashed in `thread_local`. If the user never picks/cancels (e.g. backgrounds the app), the box leaks until the next `pick_file` call overwrites the slot. Acceptable for a demo; the slot is single-entry (only one picker can be presented at a time).
+- **Callback lifetime on iOS:** The callback lives in the delegate's ivars (`Rc<RefCell<Option<...>>>`). The delegate is kept alive by `LIVE_DELEGATE` (module-scope `thread_local`) until `fire` clears it. If the user never picks/cancels (e.g. backgrounds the app), the delegate + callback leak until the next `pick_file` call overwrites `LIVE_DELEGATE`. Acceptable for a demo; single-entry by construction (only one picker presented at a time).
 - **Security-scoped resources:** iOS-picked URLs require `startAccessingSecurityScopedResource()` before reading. Paired with `stopAccessingSecurityScopedResource()` in a RAII guard struct to guarantee release even on read error.
 - **Presenting VC lookup:** `keyWindow.rootViewController` is deprecated on iOS 13+ in favor of connected scenes. For a single-window demo app this works; a multi-scene app would need scene-iteration. Documented as a known limitation; not a blocker for the demo.
