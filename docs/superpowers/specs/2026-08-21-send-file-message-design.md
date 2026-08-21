@@ -95,10 +95,10 @@ pub fn default_file_picker() -> Box<dyn FilePicker> {
 }
 ```
 
-- **`RfdFilePicker`** (cfg `not(ios/android)`): wraps `rfd::FileDialog::new().add_filter(images).add_filter(all).pick_file()`. Derives `name` from path filename, `mime` from extension via a tiny inline map (`png`→`image/png`, `jpg`/`jpeg`→`image/jpeg`, `gif`→`image/gif`, else `""`). Reads bytes via `std::fs::read`. Enforces `MAX_FILE_BYTES` by `metadata().len()` before reading — returns `None` if exceeded.
+- **`RfdFilePicker`** (cfg `not(ios/android)`): wraps `rfd::FileDialog::new().add_filter(images).add_filter(all).pick_file()`. Derives `name` from path filename, `mime` from extension via a tiny inline map (`png`→`image/png`, `jpg`/`jpeg`→`image/jpeg`, `gif`→`image/gif`, else `""`). Reads bytes via `std::fs::read`. Enforces `MAX_FILE_BYTES` by `metadata().len()` before reading — returns `None` if exceeded. The size check is extracted into a pure helper `fn file_within_limit(len: u64) -> bool { len <= MAX_FILE_BYTES }` so it's unit-testable without invoking rfd.
 - **`NoopFilePicker`** (cfg `ios/android`): `pick_file()` → `None`. Mirrors `stub_clipboard.rs` pattern. Keeps `shared_app` compiling for iOS without file-picking deps.
 - **`rfd` dependency**: added to `vexo/Cargo.toml` under the `cfg(not(any(target_os = "ios", target_os = "android")))` target section (alongside `arboard`), version `0.14`. `rfd` only links on desktop builds.
-- **Synchronous API**: `pick_file` blocks. Rfd's sync API is simplest and we're desktop-only; the attach button's `on_tap` runs off the render thread anyway.
+- **Synchronous API**: `pick_file` blocks the calling thread. The attach button's `on_tap` runs on the render/event-loop thread, so the GUI event loop pauses while the dialog is open. This is acceptable for the desktop demo because native modal dialogs (macOS `NSOpenPanel`) run their own message pump, keeping the window visually responsive; winit's event loop resumes once the dialog closes. If this becomes a problem, an async `rfd` variant + a `Signal<Option<PickedFile>>` subscription is the upgrade path (out of scope).
 
 ### Injection chain
 
@@ -211,7 +211,7 @@ fn build_file_content(file: &FileAttachment, is_me: bool, theme: &vexo::ThemeDat
 ```
 
 - **No thumbnail caching across renders**: `ImageData::from_bytes` is called fresh in `build_bubble` on every rebuild. For a chat with few file messages this is fine; if it becomes a hot path, the `AvatarState` pattern (cache decoded `ImageData` in State, invalidate on source change) is the documented escape hatch. Out of scope here.
-- **Color rules** mirror today's text bubble: `theme.on_primary` for "me", `theme.on_surface` for "them". The muted size label uses `theme.on_surface.with_alpha(0.6)`.
+- **Color rules** mirror today's text bubble: `theme.on_primary` for "me", `theme.on_surface` for "them" — applied to the icon and filename text. The muted size label uses the SAME base color (on_primary for me, on_surface for them) at `with_alpha(0.6)`.
 - **`format_file_size`**: tiny helper (e.g. `<1 KB`, `2.3 MB`). Inlined in `chat_screen.rs`.
 
 ## Construction-site updates (~20 sites)
@@ -229,7 +229,7 @@ Changing `Message.text: String` → `Message.kind: MessageKind` ripples through:
 - **New**: `test_file_message_renders_image_thumbnail` — seed a `Message { kind: File(FileAttachment{ bytes: png, ... }) }`; assert an `ImageRenderObject` appears in the render tree via the `find_text_in_tree`-style recursion.
 - **New**: `test_file_message_renders_file_card_for_non_image` — seed `Message { kind: File(... non-image ...) }`; assert the filename + size text appears in the render tree.
 - **New**: `test_picker_returns_none_does_not_send` — mock returns `None`; assert no new message.
-- **New**: `test_picker_rejects_oversize_file` — in `vexo/src/platform/file_picker.rs` unit tests, assert `pick_file` returns `None` for a >10MiB file (test `MAX_FILE_BYTES` gating directly).
+- **New**: `test_picker_rejects_oversize_file` — in `vexo/src/platform/file_picker.rs` unit tests, assert `file_within_limit(MAX_FILE_BYTES)` is true and `file_within_limit(MAX_FILE_BYTES + 1)` is false (pure helper, no rfd invocation needed).
 
 ## Files touched summary
 
