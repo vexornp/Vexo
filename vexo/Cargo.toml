@@ -32,6 +32,7 @@ vexo_macros = { version = "0.1.0", path = "vexo_macros" }
 # `arboard` does not build for them.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 arboard = { workspace = true }
+rfd = "0.14"
 
 # iOS UIKit / Foundation adapters: clipboard (UIPasteboard) and keyboard
 # notifications (UIResponder via NSNotificationCenter). Versions pinned to
