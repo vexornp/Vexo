@@ -2096,11 +2096,22 @@ mod tests {
             1,
             "on_send should fire exactly once after tapping attach"
         );
-        let after_msgs = messages_signal.get_cloned().get(&ConvId(1)).unwrap().len();
+        let after_msgs_map = messages_signal.get_cloned();
+        let after_msgs = after_msgs_map.get(&ConvId(1)).unwrap().len();
         assert_eq!(
             after_msgs,
             baseline_msgs + 1,
             "a new message should be appended after tapping attach"
+        );
+        let last_msg = after_msgs_map
+            .get(&ConvId(1))
+            .unwrap()
+            .last()
+            .expect("at least one message after attach");
+        assert!(
+            matches!(&last_msg.kind, MessageKind::File(_)),
+            "the sent message should be MessageKind::File, got {:?}",
+            last_msg.kind
         );
     }
 
