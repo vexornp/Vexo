@@ -57,6 +57,13 @@ struct RfdFilePicker;
 impl FilePicker for RfdFilePicker {
     fn pick_file(&self, on_done: Box<dyn FnOnce(Option<PickedFile>)>) {
         let result = (|| {
+            // Deliberately add NO file-type filters. On macOS, `rfd` flattens all
+            // filters into a single `NSOpenPanel:setAllowedFileTypes:` array
+            // (there is no dropdown), and `"*"` is treated as a literal extension,
+            // not a wildcard — so any filter restricts the panel to those
+            // extensions only, graying out everything else (e.g. .zip). When
+            // `filters` is empty, `rfd` skips `setAllowedFileTypes:` and the panel
+            // allows all files. A chat attach button should accept any file type.
             let path = rfd::FileDialog::new().pick_file()?;
             let metadata = std::fs::metadata(&path).ok()?;
             if !file_within_limit(metadata.len()) {
