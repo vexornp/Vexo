@@ -6,10 +6,11 @@ use std::rc::Rc;
 use vexo::platform::file_picker::FilePicker;
 use vexo::{
     column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, Key, Layout, LifecycleContext, RenderContext, ScrollController, ScrollView,
-    Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget, WidgetKey,
-    WithLayout,
+    FlexDirection, Image, Key, Layout, LifecycleContext, RenderContext, ScrollController,
+    ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController, Theme, Widget,
+    WidgetKey, WithLayout,
 };
+use vexo_fontawesome::{Icon, Icons};
 use vexo_uikit::{
     context_menu_trigger, Button, ButtonVariant, ContextMenuController, KeyboardAvoider,
 };
@@ -279,35 +280,88 @@ impl Component for ChatScreen {
 /// `message_menu::reaction_chip_row`.
 pub(crate) const BUBBLE_CONTENT_PADDING: f32 = 10.0;
 
-/// Build just the message bubble (DecoratedBox + text), without the avatar
+/// Build just the message bubble (DecoratedBox + content), without the avatar
 /// or row layout. This is what gets wrapped in `context_menu_trigger` so the
-/// trigger's bounds match the bubble, not the full-width row.
+/// trigger's bounds match the bubble, not the full-width row. Branches on
+/// `msg.kind`: text renders as a text bubble, files render as an image
+/// thumbnail (for images) or an icon+name+size card (for non-images).
 fn build_bubble(msg: &Message, theme: &vexo::ThemeData) -> Box<dyn Widget> {
     let is_me = msg.author == MessageAuthor::Me;
-    let text = match &msg.kind {
-        MessageKind::Text(t) => t.as_str(),
-        MessageKind::File(_) => "",
+    let content = match &msg.kind {
+        MessageKind::Text(text) => build_text_content(text, is_me, theme),
+        MessageKind::File(file) => build_file_content(file, is_me, theme),
     };
     DecoratedBox::with_style(
-        WithLayout::new(
-            Text::new(text).with_font_size(15.0).with_color(if is_me {
-                theme.on_primary
-            } else {
-                theme.on_surface
-            }),
-            Layout::default()
-                .flex_direction(FlexDirection::Row)
-                .padding(BUBBLE_CONTENT_PADDING)
-                .max_width(220.0)
-                .align_self(AlignSelf::Start)
-                .flex_shrink(0.0),
-        ),
+        content,
         Style::default()
             .corner_radius(12.0)
             .background(if is_me { theme.primary } else { theme.surface })
             .border(theme.outline, 1.0),
     )
     .boxed()
+}
+
+fn build_text_content(text: &str, is_me: bool, theme: &vexo::ThemeData) -> Box<dyn Widget> {
+    WithLayout::new(
+        Text::new(text).with_font_size(15.0).with_color(if is_me {
+            theme.on_primary
+        } else {
+            theme.on_surface
+        }),
+        Layout::default()
+            .flex_direction(FlexDirection::Row)
+            .padding(BUBBLE_CONTENT_PADDING)
+            .max_width(220.0)
+            .align_self(AlignSelf::Start)
+            .flex_shrink(0.0),
+    )
+    .boxed()
+}
+
+fn build_file_content(
+    file: &crate::data::FileAttachment,
+    is_me: bool,
+    theme: &vexo::ThemeData,
+) -> Box<dyn Widget> {
+    if file.mime.starts_with("image/") {
+        if let Ok(image) = Image::from_bytes(&file.bytes) {
+            return WithLayout::new(
+                image,
+                Layout::default()
+                    .max_width(180.0)
+                    .max_height(180.0)
+                    .flex_shrink(0.0),
+            )
+            .boxed();
+        }
+    }
+    let icon_color = if is_me {
+        theme.on_primary
+    } else {
+        theme.on_surface
+    };
+    let text_color = icon_color;
+    let muted_color = icon_color.with_alpha(0.6);
+    column! {
+        Icon::new(Icons::FileImage).with_color(icon_color),
+        Text::new(file.name.as_str()).with_font_size(14.0).with_color(text_color),
+        Text::new(format_file_size(file.size).as_str()).with_font_size(12.0).with_color(muted_color),
+    }
+    .gap(4.0)
+    .padding(BUBBLE_CONTENT_PADDING)
+    .boxed()
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    if bytes < KB {
+        format!("{} B", bytes)
+    } else if bytes < MB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    }
 }
 
 /// Assemble the full message row: avatar + (bubble + optional reaction chip)
@@ -1770,5 +1824,140 @@ mod tests {
                  or on_update."
             );
         });
+    }
+
+    /// A file message with image bytes renders an `ImageRenderObject` in the
+    /// render tree (the thumbnail), not just text.
+    #[test]
+    fn test_file_message_renders_image_thumbnail() {
+        let png_bytes: Arc<[u8]> = Arc::from(crate::data::make_avatar_png(255, 100, 50).to_vec());
+        let mut messages_map: std::collections::HashMap<ConvId, Vec<Message>> =
+            std::collections::HashMap::new();
+        messages_map.insert(
+            ConvId(1),
+            vec![Message {
+                author: MessageAuthor::Them,
+                kind: MessageKind::File(crate::data::FileAttachment {
+                    name: "photo.png".into(),
+                    mime: "image/png".into(),
+                    size: png_bytes.len() as u64,
+                    bytes: png_bytes,
+                }),
+                timestamp: 1732347000,
+                reactions: vec![],
+            }],
+        );
+        let messages_signal = vexo::Signal::new(messages_map);
+
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+
+        fn find_image_ro(reg: &RenderObjectRegistry, key: RenderObjectKey) -> bool {
+            let ro = match reg.get(key) {
+                Some(ro) => ro,
+                None => return false,
+            };
+            if ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::ImageRenderObject>()
+                .is_some()
+            {
+                return true;
+            }
+            for &child in ro.children() {
+                if find_image_ro(reg, child) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        assert!(
+            find_image_ro(ro_reg, root),
+            "file message with image bytes should render an ImageRenderObject (thumbnail)"
+        );
+    }
+
+    /// A file message with non-image bytes renders the filename and size
+    /// as text in the render tree (the file card), not an image thumbnail.
+    #[test]
+    fn test_file_message_renders_file_card_for_non_image() {
+        let file_bytes: Arc<[u8]> = Arc::from(b"%PDF-1.4 fake pdf content".to_vec());
+        let mut messages_map: std::collections::HashMap<ConvId, Vec<Message>> =
+            std::collections::HashMap::new();
+        let file_name = "report.pdf".to_string();
+        messages_map.insert(
+            ConvId(1),
+            vec![Message {
+                author: MessageAuthor::Them,
+                kind: MessageKind::File(crate::data::FileAttachment {
+                    name: file_name.clone(),
+                    mime: String::new(),
+                    size: file_bytes.len() as u64,
+                    bytes: file_bytes,
+                }),
+                timestamp: 1732347000,
+                reactions: vec![],
+            }],
+        );
+        let messages_signal = vexo::Signal::new(messages_map);
+
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        vexo_fontawesome::register_fonts(&mut font_system);
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert!(
+            find_text_in_tree(ro_reg, root, &file_name),
+            "file card should render the filename '{}' as text",
+            file_name
+        );
     }
 }
