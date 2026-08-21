@@ -341,14 +341,17 @@ fn build_file_content(
 ) -> Box<dyn Widget> {
     if file.mime.starts_with("image/") {
         if let Ok(image) = Image::from_bytes(&file.bytes) {
-            return WithLayout::new(
-                image,
-                Layout::default()
-                    .max_width(180.0)
-                    .max_height(180.0)
-                    .flex_shrink(0.0),
-            )
-            .boxed();
+            // The Image render object fills its parent (flex_grow) and
+            // measures 0x0 intrinsically (see ImageRenderObject::layout), so
+            // the WithLayout wrapper MUST carry explicit width+height.
+            // max_width/max_height alone collapse to 0x0 and `paint` then
+            // skips the zero-sized result — the image renders nothing.
+            // Fit the decoded dimensions within a 180x180 box, preserving
+            // aspect ratio (mirrors Avatar's `.width().height()` pattern).
+            let data = image.image_data();
+            let (w, h) = fit_image_within(data.width, data.height, 180.0, 180.0);
+            return WithLayout::new(image, Layout::default().width(w).height(h).flex_shrink(0.0))
+                .boxed();
         }
     }
     let icon_color = if is_me {
@@ -383,6 +386,19 @@ fn format_file_size(bytes: u64) -> String {
     } else {
         format!("{:.1} MB", bytes as f64 / MB as f64)
     }
+}
+
+/// Compute (width, height) that fit an image of intrinsic size `(iw, ih)`
+/// within a `max_w` x `max_h` box, preserving aspect ratio. Never upscales
+/// (scale capped at 1.0) so small images render at their natural size.
+fn fit_image_within(iw: u32, ih: u32, max_w: f32, max_h: f32) -> (f32, f32) {
+    let iw = iw as f32;
+    let ih = ih as f32;
+    if iw <= 0.0 || ih <= 0.0 {
+        return (max_w, max_h);
+    }
+    let scale = (max_w / iw).min(max_h / ih).min(1.0);
+    (iw * scale, ih * scale)
 }
 
 /// Assemble the full message row: avatar + (bubble + optional reaction chip)
@@ -1917,29 +1933,37 @@ mod tests {
         let ro_reg = pipeline.render_objects();
         let root = ro_reg.root().expect("root");
 
-        fn find_image_ro(reg: &RenderObjectRegistry, key: RenderObjectKey) -> bool {
-            let ro = match reg.get(key) {
-                Some(ro) => ro,
-                None => return false,
-            };
-            if ro
+        // Return the ImageRenderObject's computed bounds if one exists in the
+        // tree. We assert not just presence but NON-ZERO bounds: a 0x0 image
+        // renders nothing (ImageRenderObject::paint guards on width>0 &&
+        // height>0), which is the regression where the WithLayout wrapper
+        // collapsed because it had no explicit width/height.
+        fn find_image_bounds(
+            reg: &RenderObjectRegistry,
+            key: RenderObjectKey,
+        ) -> Option<vexo::core::Bounds<vexo::core::Logical>> {
+            let ro = reg.get(key)?;
+            if let Some(img) = ro
                 .as_any()
                 .downcast_ref::<vexo::render_objects::ImageRenderObject>()
-                .is_some()
             {
-                return true;
+                return img.computed_bounds();
             }
             for &child in ro.children() {
-                if find_image_ro(reg, child) {
-                    return true;
+                if let Some(b) = find_image_bounds(reg, child) {
+                    return Some(b);
                 }
             }
-            false
+            None
         }
 
+        let img_bounds = find_image_bounds(ro_reg, root)
+            .expect("file message with image bytes should render an ImageRenderObject (thumbnail)");
         assert!(
-            find_image_ro(ro_reg, root),
-            "file message with image bytes should render an ImageRenderObject (thumbnail)"
+            img_bounds.width() > 0.0 && img_bounds.height() > 0.0,
+            "image thumbnail must have non-zero bounds to actually paint; \
+             got {:?}",
+            img_bounds
         );
     }
 
