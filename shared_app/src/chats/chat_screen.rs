@@ -1,6 +1,8 @@
 //! Chat screen — the pushed destination when a conversation is tapped.
 
 use std::any::Any;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use vexo::platform::file_picker::FilePicker;
@@ -344,9 +346,9 @@ fn build_file_content(
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
     if file.mime.starts_with("image/") {
-        if let Some(data) = decode_thumbnail(&file.bytes, THUMBNAIL_MAX_DIM) {
+        if let Some(data) = decode_thumbnail_cached(file) {
             let (w, h) = fit_image_within(data.width, data.height, 180.0, 180.0);
-            let image = Image::new(data);
+            let image = Image::new((*data).clone());
             return WithLayout::new(image, Layout::default().width(w).height(h).flex_shrink(0.0))
                 .boxed();
         }
@@ -389,6 +391,36 @@ fn format_file_size(bytes: u64) -> String {
 /// within a `max_w` x `max_h` box, preserving aspect ratio. Never upscales
 /// (scale capped at 1.0) so small images render at their natural size.
 const THUMBNAIL_MAX_DIM: u32 = 256;
+
+thread_local! {
+    static THUMB_CACHE: RefCell<HashMap<(String, u64), Rc<vexo::ImageData>>> =
+        RefCell::new(HashMap::new());
+}
+
+fn thumb_key(file: &crate::data::FileAttachment) -> (String, u64) {
+    (file.name.clone(), file.size)
+}
+
+fn decode_thumbnail_cached(file: &crate::data::FileAttachment) -> Option<Rc<vexo::ImageData>> {
+    let key = thumb_key(file);
+    if let Some(cached) = THUMB_CACHE.with(|c| c.borrow().get(&key).cloned()) {
+        return Some(cached);
+    }
+    let start = std::time::Instant::now();
+    let data = decode_thumbnail(&file.bytes, THUMBNAIL_MAX_DIM)?;
+    let elapsed = start.elapsed();
+    log::debug!(
+        "[THMB] decoded '{}' ({} bytes) in {:.1}ms → {}x{}",
+        file.name,
+        file.size,
+        elapsed.as_secs_f32() * 1000.0,
+        data.width,
+        data.height
+    );
+    let data = Rc::new(data);
+    THUMB_CACHE.with(|c| c.borrow_mut().insert(key, data.clone()));
+    Some(data)
+}
 
 fn decode_thumbnail(bytes: &[u8], max_dim: u32) -> Option<vexo::ImageData> {
     let img = image::load_from_memory(bytes).ok()?;
