@@ -616,6 +616,13 @@ impl<A: Application + 'static> WindowState<A> {
         // is a no-op, so this is the only place cursor blink is checked on iOS.
         self.check_cursor_blink();
 
+        // Drain the dirty channel so that elements whose dirty callbacks
+        // fired outside the event loop (e.g. iOS file-picker delegate,
+        // keyboard notifications) are visible to has_pending_rebuilds()
+        // below. Without this, the early-return skips the rebuild and the
+        // screen doesn't update until the next input event drains the channel.
+        self.three_tree_pipeline.drain_dirty_to_build_owner();
+
         let (has_dirty, needs_reconcile) = {
             let pipeline = &self.three_tree_pipeline;
 
