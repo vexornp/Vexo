@@ -344,16 +344,9 @@ fn build_file_content(
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
     if file.mime.starts_with("image/") {
-        if let Ok(image) = Image::from_bytes(&file.bytes) {
-            // The Image render object fills its parent (flex_grow) and
-            // measures 0x0 intrinsically (see ImageRenderObject::layout), so
-            // the WithLayout wrapper MUST carry explicit width+height.
-            // max_width/max_height alone collapse to 0x0 and `paint` then
-            // skips the zero-sized result — the image renders nothing.
-            // Fit the decoded dimensions within a 180x180 box, preserving
-            // aspect ratio (mirrors Avatar's `.width().height()` pattern).
-            let data = image.image_data();
+        if let Some(data) = decode_thumbnail(&file.bytes, THUMBNAIL_MAX_DIM) {
             let (w, h) = fit_image_within(data.width, data.height, 180.0, 180.0);
+            let image = Image::new(data);
             return WithLayout::new(image, Layout::default().width(w).height(h).flex_shrink(0.0))
                 .boxed();
         }
@@ -395,6 +388,28 @@ fn format_file_size(bytes: u64) -> String {
 /// Compute (width, height) that fit an image of intrinsic size `(iw, ih)`
 /// within a `max_w` x `max_h` box, preserving aspect ratio. Never upscales
 /// (scale capped at 1.0) so small images render at their natural size.
+const THUMBNAIL_MAX_DIM: u32 = 256;
+
+fn decode_thumbnail(bytes: &[u8], max_dim: u32) -> Option<vexo::ImageData> {
+    let img = image::load_from_memory(bytes).ok()?;
+    let resized = if img.width() > max_dim || img.height() > max_dim {
+        img.thumbnail(max_dim, max_dim)
+    } else {
+        img
+    };
+    let rgba = resized.to_rgba8();
+    let width = rgba.width();
+    let height = rgba.height();
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some(vexo::ImageData {
+        pixels: rgba.into_raw(),
+        width,
+        height,
+    })
+}
+
 fn fit_image_within(iw: u32, ih: u32, max_w: f32, max_h: f32) -> (f32, f32) {
     let iw = iw as f32;
     let ih = ih as f32;
