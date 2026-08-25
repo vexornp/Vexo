@@ -505,21 +505,25 @@ fn build_input_bar(
     on_attach: impl FnMut() + 'static,
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
-    let attach_button = GestureDetector::new(
-        DecoratedBox::with_style(
+    let attach_button = WithLayout::new(
+        GestureDetector::new(
             WithLayout::new(
-                Icon::new(Icons::Paperclip).with_color(theme.on_surface),
-                Layout::default().padding(10.0),
+                Icon::new(Icons::Paperclip)
+                    .with_size(20.0)
+                    .with_color(theme.outline),
+                Layout::default()
+                    .width(36.0)
+                    .height(36.0)
+                    .flex_direction(FlexDirection::Row)
+                    .justify(JustifyContent::Center)
+                    .align(AlignItems::Center),
             )
             .boxed(),
-            Style::default()
-                .corner_radius(8.0)
-                .background(theme.surface)
-                .border(theme.outline, 1.0),
         )
+        .on_tap(on_attach)
         .boxed(),
+        Layout::default().align_self(AlignSelf::Center),
     )
-    .on_tap(on_attach)
     .boxed();
 
     row! {
