@@ -510,7 +510,7 @@ fn build_input_bar(
             WithLayout::new(
                 Icon::new(Icons::Paperclip)
                     .with_size(20.0)
-                    .with_color(theme.outline),
+                    .with_color(theme.on_background),
                 Layout::default()
                     .width(36.0)
                     .height(36.0)
