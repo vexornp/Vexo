@@ -8,7 +8,7 @@ use std::rc::Rc;
 use vexo::platform::file_picker::FilePicker;
 use vexo::{
     column, row, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, FlexDirection,
-    GestureDetector, Image, JustifyContent, Key, Layout, LifecycleContext, RenderContext,
+    GestureDetector, Image, JustifyContent, Key, Layout, LifecycleContext, Opacity, RenderContext,
     ScrollController, ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController,
     Theme, Widget, WidgetKey, WithLayout,
 };
@@ -499,12 +499,138 @@ fn assemble_row(
     }
 }
 
+/// Send button for the chat input bar. Renders an enabled or disabled state
+/// based on whether the input has non-empty text content (whitespace-only
+/// counts as empty, matching the `on_send` guard).
+///
+/// `has_text` is a derived Signal (`!text.trim().is_empty()`) created in
+/// `on_mount` from the controller's `text_signal`. It lives in State (not the
+/// Widget) so its Arc identity is stable — see "Signal field rule" in
+/// `docs/rebuild-skipping-patterns.md`. SendButton calls
+/// `depend_on_signal(has_text)` in `render`, so only SendButton rebuilds on
+/// empty↔non-empty transitions; ChatScreen stays out of the per-keystroke path
+/// entirely (it's a level-3 rebuild-skipper — see ChatScreen::should_rebuild).
+///
+/// Disabled state: full-color `primary` bg + `on_primary` icon wrapped in
+/// `Opacity::new(_, 0.38)` — the bg+icon composite at full opacity FIRST,
+/// then the result is dimmed uniformly, preserving icon-on-background
+/// contrast (Material's canonical 0.38 disabled opacity). `on_tap` is an
+/// inert no-op closure. Enabled state: `primary` bg + `on_primary` icon,
+/// real `on_send` closure, no Opacity wrapper.
+struct SendButton {
+    text_signal: Signal<String>,
+    on_send: Rc<dyn Fn()>,
+}
+
+impl Clone for SendButton {
+    fn clone(&self) -> Self {
+        Self {
+            text_signal: self.text_signal.clone(),
+            on_send: Rc::clone(&self.on_send),
+        }
+    }
+}
+
+impl SendButton {
+    fn new(text_signal: Signal<String>, on_send: Rc<dyn Fn()>) -> Self {
+        Self {
+            text_signal,
+            on_send,
+        }
+    }
+}
+
+struct SendButtonState {
+    /// Derived `has_text` Signal, created once in `on_mount` from
+    /// `text_signal`. Lives in State so its Arc identity is stable across
+    /// widget replacements — see the "Signal field rule" in
+    /// `docs/rebuild-skipping-patterns.md`.
+    has_text: Option<Signal<bool>>,
+}
+
+impl Default for SendButtonState {
+    fn default() -> Self {
+        Self { has_text: None }
+    }
+}
+
+impl ComponentState for SendButtonState {
+    fn on_mount(&mut self, ctx: &mut LifecycleContext) {
+        let widget = ctx
+            .widget()
+            .downcast_ref::<SendButton>()
+            .expect("SendButtonState::on_mount: widget must be SendButton");
+        let text_signal = widget.text_signal.clone();
+        self.has_text = Some(Signal::derive(text_signal, |t| !t.trim().is_empty()));
+    }
+}
+
+impl Component for SendButton {
+    type State = SendButtonState;
+
+    fn render(&self, state: &mut Self::State, ctx: &mut RenderContext) -> Box<dyn Widget> {
+        let theme = Theme::of(ctx);
+        let has_text = ctx.depend_on_signal(
+            state
+                .has_text
+                .as_ref()
+                .expect("has_text must be set in on_mount before render"),
+        );
+
+        // Full-color content: bg and icon composite at full opacity. When
+        // disabled we wrap the whole subtree in Opacity(0.38) so the
+        // icon-on-background contrast is preserved through a single
+        // uniform dimming pass, rather than pre-dimming each color
+        // (which composites bg→background then icon→bg, washing out the
+        // icon — see systematic-debugging notes in CLAUDE.md).
+        let bg = theme.primary;
+        let icon_color = theme.on_primary;
+
+        let on_tap: Rc<dyn Fn()> = if has_text {
+            Rc::clone(&self.on_send)
+        } else {
+            Rc::new(|| {})
+        };
+
+        let content = WithLayout::new(
+            GestureDetector::new(
+                DecoratedBox::with_style(
+                    WithLayout::new(
+                        Icon::new(Icons::PaperPlane)
+                            .with_size(20.0)
+                            .with_color(icon_color),
+                        Layout::default()
+                            .width(36.0)
+                            .height(36.0)
+                            .flex_direction(FlexDirection::Row)
+                            .justify(JustifyContent::Center)
+                            .align(AlignItems::Center),
+                    )
+                    .boxed(),
+                    Style::default().corner_radius(18.0).background(bg),
+                )
+                .boxed(),
+            )
+            .on_tap(move || on_tap())
+            .boxed(),
+            Layout::default().align_self(AlignSelf::Center),
+        );
+
+        if has_text {
+            content.boxed()
+        } else {
+            Opacity::new(content, 0.38).boxed()
+        }
+    }
+}
+
 fn build_input_bar(
     controller: TextEditingController,
-    on_send: impl FnMut() + 'static,
+    on_send: impl Fn() + 'static,
     on_attach: impl FnMut() + 'static,
     theme: &vexo::ThemeData,
 ) -> Box<dyn Widget> {
+    let text_signal = controller.text_signal();
     let attach_button = WithLayout::new(
         GestureDetector::new(
             WithLayout::new(
@@ -535,31 +661,7 @@ fn build_input_bar(
                 .with_border_color(theme.outline),
             Layout::default().flex_grow(1.0),
         ),
-        WithLayout::new(
-            GestureDetector::new(
-                DecoratedBox::with_style(
-                    WithLayout::new(
-                        Icon::new(Icons::PaperPlane)
-                            .with_size(20.0)
-                            .with_color(theme.on_primary),
-                        Layout::default()
-                            .width(36.0)
-                            .height(36.0)
-                            .flex_direction(FlexDirection::Row)
-                            .justify(JustifyContent::Center)
-                            .align(AlignItems::Center),
-                    )
-                    .boxed(),
-                    Style::default()
-                        .corner_radius(18.0)
-                        .background(theme.primary),
-                )
-                .boxed(),
-            )
-            .on_tap(on_send)
-            .boxed(),
-            Layout::default().align_self(AlignSelf::Center),
-        ),
+        SendButton::new(text_signal, Rc::new(on_send)).boxed(),
     }
     .gap(8.0)
     .padding(8.0)
@@ -1886,7 +1988,7 @@ mod tests {
 
         // Click on the TextEdit to focus it. The input bar is at the bottom
         // of the 600px view (8px padding); x=50 is inside the TextEdit.
-        let click_pos = vexo::core::Point::new(50.0, 580.0);
+        let click_pos = vexo::core::Point::new(200.0, 575.0);
         let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
             std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
         let press = vexo::input::InputEvent::PointerButton {
@@ -1950,6 +2052,352 @@ mod tests {
                  or on_update."
             );
         });
+    }
+
+    /// Find the first DecoratedBox render object with the given corner radius.
+    /// Used to locate the send button (corner_radius 18.0) in the render tree.
+    fn find_decorated_by_corner_radius(
+        reg: &RenderObjectRegistry,
+        key: RenderObjectKey,
+        radius: f32,
+    ) -> Option<RenderObjectKey> {
+        let ro = reg.get(key)?;
+        if ro
+            .as_any()
+            .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+            .map_or(false, |d| {
+                d.style()
+                    .corner_radius
+                    .as_ref()
+                    .map_or(false, |cr| (cr.radius - radius).abs() < 0.01)
+            })
+        {
+            return Some(key);
+        }
+        for &child in ro.children() {
+            if let Some(found) = find_decorated_by_corner_radius(reg, child, radius) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Helper: extract the background color of the send button (the
+    /// DecoratedBox with corner_radius 18.0) from the render tree.
+    fn send_button_background(
+        reg: &RenderObjectRegistry,
+        root: RenderObjectKey,
+    ) -> vexo::core::Color {
+        let btn = find_decorated_by_corner_radius(reg, root, 18.0)
+            .expect("send button DecoratedBox (corner_radius 18.0) should exist");
+        reg.get(btn)
+            .and_then(|ro| {
+                ro.as_any()
+                    .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+            })
+            .expect("downcast DecoratedBoxRenderObject")
+            .style()
+            .background
+            .expect("send button should have a background")
+    }
+
+    /// Helper: return the opacity applied to the send button's subtree.
+    ///
+    /// Walks the render tree depth-first, tracking opacity inherited from
+    /// `OpacityRenderObject` ancestors. When the send button DecoratedBox
+    /// (corner_radius 18.0) is found, returns the inherited opacity at that
+    /// point: 0.38 when disabled (wrapped in `Opacity`), 1.0 when enabled
+    /// (no `Opacity` wrapper).
+    fn send_button_opacity(reg: &RenderObjectRegistry, root: RenderObjectKey) -> f32 {
+        fn search(reg: &RenderObjectRegistry, key: RenderObjectKey, inherited: f32) -> Option<f32> {
+            let ro = reg.get(key)?;
+            // Is this the send button DecoratedBox?
+            if ro
+                .as_any()
+                .downcast_ref::<vexo::render_objects::DecoratedBoxRenderObject>()
+                .map_or(false, |d| {
+                    d.style()
+                        .corner_radius
+                        .as_ref()
+                        .map_or(false, |cr| (cr.radius - 18.0).abs() < 0.01)
+                })
+            {
+                return Some(inherited);
+            }
+            // Update inherited opacity if this is an OpacityRenderObject.
+            let child_inherited = ro.opacity().unwrap_or(inherited);
+            for &child in ro.children() {
+                if let Some(op) = search(reg, child, child_inherited) {
+                    return Some(op);
+                }
+            }
+            None
+        }
+        search(reg, root, 1.0).unwrap_or(1.0)
+    }
+
+    /// Send button is disabled (wrapped in `Opacity(0.38)`) when the input
+    /// bar is empty on mount — before any user interaction. The DecoratedBox
+    /// background stays full `primary`; the dimming is applied uniformly via
+    /// an `Opacity` wrapper so icon-on-background contrast is preserved.
+    #[test]
+    fn test_send_button_disabled_when_input_empty() {
+        let messages_signal = seed_messages_signal();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+
+        let theme = vexo::ThemeData::light();
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        // Background is full primary — dimming comes from the Opacity wrapper.
+        assert_eq!(
+            send_button_background(ro_reg, root),
+            theme.primary,
+            "send button background should be full primary; dimming is via Opacity wrapper"
+        );
+        // The Opacity wrapper applies 0.38.
+        assert!(
+            (send_button_opacity(ro_reg, root) - 0.38).abs() < 0.01,
+            "send button should be wrapped in Opacity(0.38) when input is empty"
+        );
+    }
+
+    /// Send button enables (full alpha) on the first keystroke, AND the
+    /// keystroke does NOT rebuild ChatScreen — only SendButton rebuilds via
+    /// the `has_text` Signal. This is the critical test: it proves the
+    /// reactivity chain (controller.notify → text_signal.set_from → has_text
+    /// derive → depend_on_signal → SendButton rebuild) is localized to
+    /// SendButton and doesn't leak into ChatScreen's render path.
+    #[test]
+    fn test_send_button_enables_on_keystroke_without_rebuilding_chat_screen() {
+        let messages_signal = seed_messages_signal();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        pipeline.perform_rebuilds();
+
+        // Click the TextEdit to focus it. x=50 is inside the TextEdit;
+        // y=580 is in the input bar at the bottom of the 600px view.
+        let click_pos = vexo::core::Point::new(200.0, 575.0);
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        let press = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let release = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        pipeline.handle_event(
+            click_pos,
+            &press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            click_pos,
+            &release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // Reset the counter — we only care about the keystroke below.
+        CHAT_SCREEN_RENDER_COUNT.with(|c| c.set(0));
+
+        // Type a character. The controller's notify() fires, syncing
+        // text_signal → has_text derive fires (false→true) → SendButton
+        // rebuilds. ChatScreen must NOT rebuild.
+        let key_event = vexo::input::InputEvent::Keyboard {
+            key: vexo::input::Key::Character("a".to_string()),
+            text: Some("a".to_string()),
+            state: vexo::input::ButtonState::Pressed,
+            modifiers: vexo::input::Modifiers::default(),
+        };
+        pipeline.handle_event(
+            click_pos,
+            &key_event,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // ChatScreen.render() should NOT have been called.
+        CHAT_SCREEN_RENDER_COUNT.with(|c| {
+            assert_eq!(
+                c.get(),
+                0,
+                "ChatScreen.render() should NOT run on keystroke — only \
+                 SendButton should rebuild via the has_text Signal"
+            );
+        });
+
+        // Send button should now be enabled (full opacity, no Opacity wrapper).
+        let theme = vexo::ThemeData::light();
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert_eq!(
+            send_button_background(ro_reg, root),
+            theme.primary,
+            "send button should be full primary color when input has text"
+        );
+        assert!(
+            (send_button_opacity(ro_reg, root) - 1.0).abs() < 0.01,
+            "send button should have no Opacity wrapper (opacity 1.0) when enabled"
+        );
+    }
+
+    /// Send button disables again when text is cleared via backspace.
+    /// Verifies the false→true→false transition cycle.
+    #[test]
+    fn test_send_button_disables_when_text_cleared() {
+        let messages_signal = seed_messages_signal();
+        let view = ChatScreen {
+            conv_id: ConvId(1),
+            messages: messages_signal,
+            avatar: seed_avatar(ConvId(1)),
+            me_avatar: seed_me_avatar(),
+            on_send: Rc::new(|_| ()),
+            on_react: Rc::new(|_, _| ()),
+            scroll_controller: ScrollController::new(),
+            context_menu: ContextMenuController::new(),
+            file_picker: crate::test_util::test_file_picker(),
+        }
+        .boxed();
+
+        let mut pipeline = ThreeTreePipeline::new(Arc::new(AnimationTicker::new()));
+        crate::test_util::install_test_image_cache(&mut pipeline);
+        pipeline.update(view);
+        let mut engine = TaffyLayoutEngine::new();
+        let mut font_system = vexo::resource::new_font_system();
+        pipeline.layout(
+            vexo::core::Size::new(400.0, 600.0),
+            &mut engine,
+            &mut font_system,
+        );
+        pipeline.perform_rebuilds();
+
+        // Click + type a char to enable the button.
+        let click_pos = vexo::core::Point::new(200.0, 575.0);
+        let clipboard: std::sync::Arc<dyn vexo::platform::Clipboard> =
+            std::sync::Arc::new(vexo::platform::stub_clipboard::StubClipboard);
+        let press = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Pressed,
+        };
+        let release = vexo::input::InputEvent::PointerButton {
+            position: click_pos,
+            button: vexo::input::PointerButton::Primary,
+            state: vexo::input::ButtonState::Released,
+        };
+        pipeline.handle_event(
+            click_pos,
+            &press,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.handle_event(
+            click_pos,
+            &release,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        let key_event = vexo::input::InputEvent::Keyboard {
+            key: vexo::input::Key::Character("a".to_string()),
+            text: Some("a".to_string()),
+            state: vexo::input::ButtonState::Pressed,
+            modifiers: vexo::input::Modifiers::default(),
+        };
+        pipeline.handle_event(
+            click_pos,
+            &key_event,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // Backspace to clear the text.
+        let backspace = vexo::input::InputEvent::Keyboard {
+            key: vexo::input::Key::Named(vexo::input::NamedKey::Backspace),
+            text: None,
+            state: vexo::input::ButtonState::Pressed,
+            modifiers: vexo::input::Modifiers::default(),
+        };
+        pipeline.handle_event(
+            click_pos,
+            &backspace,
+            vexo::input::Modifiers::default(),
+            &mut font_system,
+            &vexo::core::ScaleSource::default(),
+            &clipboard,
+        );
+        pipeline.perform_rebuilds();
+
+        // Send button should be disabled again (wrapped in Opacity(0.38)).
+        let theme = vexo::ThemeData::light();
+        let ro_reg = pipeline.render_objects();
+        let root = ro_reg.root().expect("root");
+        assert_eq!(
+            send_button_background(ro_reg, root),
+            theme.primary,
+            "send button background should be full primary; dimming is via Opacity wrapper"
+        );
+        assert!(
+            (send_button_opacity(ro_reg, root) - 0.38).abs() < 0.01,
+            "send button should be wrapped in Opacity(0.38) again after text is cleared"
+        );
     }
 
     /// A file message with image bytes renders an `ImageRenderObject` in the

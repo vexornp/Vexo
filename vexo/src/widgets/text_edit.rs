@@ -14,6 +14,7 @@ use glyphon::{cosmic_text::Motion, Action, Attrs, Buffer, Edit, Metrics, Shaping
 
 use crate::editor::Editor;
 use crate::input::{ButtonState, InputEvent, Key, MouseCursor, NamedKey, SystemCursorKind};
+use crate::reactive::Signal;
 
 use super::super::key::WidgetKey;
 use super::super::stateful_widget::{Component, ComponentState, LifecycleContext, RenderContext};
@@ -41,6 +42,15 @@ pub struct TextEditingController {
     editor: Rc<RefCell<Editor>>,
     dirty_callback: Rc<RefCell<Option<Arc<dyn Fn() + Send + Sync>>>>,
     font_size: f32,
+    /// Reactive mirror of the editor's text content. Updated in `notify()`
+    /// (the single choke point called by every mutation method) via
+    /// `set_from`, which short-circuits when the text is unchanged — so
+    /// cursor-only mutations (move, click, select) pay one String clone but
+    /// trigger no subscriber notifications. `Signal::derive` consumers (e.g.
+    /// `SendButton`'s `has_text`) further dedup, rebuilding only on
+    /// empty↔non-empty transitions. Arc-shared across controller clones,
+    /// matching `editor`/`dirty_callback`'s sharing model.
+    text_signal: Signal<String>,
 }
 
 impl TextEditingController {
@@ -71,6 +81,7 @@ impl TextEditingController {
             editor: Rc::new(RefCell::new(Editor::new(raw_editor))),
             dirty_callback: Rc::new(RefCell::new(None)),
             font_size,
+            text_signal: Signal::new(initial_text.to_string()),
         }
     }
 
@@ -116,6 +127,15 @@ impl TextEditingController {
         self.editor.clone()
     }
 
+    /// Get the reactive text Signal. Clones are Arc-shared with the
+    /// controller, so all clones observe mutations from any clone. Use
+    /// `Signal::derive` to project to a derived state (e.g. "is non-empty")
+    /// and `RenderContext::depend_on_signal` inside a Component's `render`
+    /// to subscribe.
+    pub fn text_signal(&self) -> Signal<String> {
+        self.text_signal.clone()
+    }
+
     /// Set the dirty callback (wired to BuildOwner during mount).
     pub fn set_dirty_callback(&self, callback: Arc<dyn Fn() + Send + Sync>) {
         *self.dirty_callback.borrow_mut() = Some(callback);
@@ -127,7 +147,14 @@ impl TextEditingController {
     }
 
     /// Notify the BuildOwner that this controller's state has changed.
+    ///
+    /// Also syncs `text_signal` via `set_from` (short-circuits when text is
+    /// unchanged, so cursor-only mutations pay one clone but no subscriber
+    /// notification). Syncing here — the single choke point called by every
+    /// mutation method — guarantees the signal can never diverge from the
+    /// editor buffer. See the `text_signal` field doc for the full rationale.
     pub fn notify(&self) {
+        self.text_signal.set_from(&self.text());
         if let Some(callback) = self.dirty_callback.borrow().as_ref() {
             callback();
         }
@@ -268,6 +295,7 @@ impl Clone for TextEditingController {
             editor: self.editor.clone(),
             dirty_callback: Rc::clone(&self.dirty_callback),
             font_size: self.font_size,
+            text_signal: self.text_signal.clone(),
         }
     }
 }
