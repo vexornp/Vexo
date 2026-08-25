@@ -7,15 +7,13 @@ use std::rc::Rc;
 
 use vexo::platform::file_picker::FilePicker;
 use vexo::{
-    column, row, AlignItems, AlignSelf, BoxShadow, Color, Component, ComponentState, DecoratedBox,
-    FlexDirection, GestureDetector, Image, Key, Layout, LifecycleContext, RenderContext,
+    column, row, AlignItems, AlignSelf, Component, ComponentState, DecoratedBox, FlexDirection,
+    GestureDetector, Image, JustifyContent, Key, Layout, LifecycleContext, RenderContext,
     ScrollController, ScrollView, Signal, Spacer, Style, Text, TextEdit, TextEditingController,
     Theme, Widget, WidgetKey, WithLayout,
 };
 use vexo_fontawesome::{Icon, Icons};
-use vexo_uikit::{
-    context_menu_trigger, Button, ButtonVariant, ContextMenuController, KeyboardAvoider,
-};
+use vexo_uikit::{context_menu_trigger, ContextMenuController, KeyboardAvoider};
 
 use crate::chats::message_menu;
 use crate::data::{AvatarSource, ConvId, Message, MessageAuthor, MessageKind, ReactionType};
@@ -533,14 +531,31 @@ fn build_input_bar(
                 .with_border_color(theme.outline),
             Layout::default().flex_grow(1.0),
         ),
-        Button::new("Send")
-            .variant(ButtonVariant::Primary)
-            .shadow(
-                BoxShadow::new(Color::BLACK.with_alpha(0.25))
-                    .blur(6.0)
-                    .offset(0.0, 2.0),
+        WithLayout::new(
+            GestureDetector::new(
+                DecoratedBox::with_style(
+                    WithLayout::new(
+                        Icon::new(Icons::PaperPlane)
+                            .with_size(20.0)
+                            .with_color(theme.on_primary),
+                        Layout::default()
+                            .width(36.0)
+                            .height(36.0)
+                            .flex_direction(FlexDirection::Row)
+                            .justify(JustifyContent::Center)
+                            .align(AlignItems::Center),
+                    )
+                    .boxed(),
+                    Style::default()
+                        .corner_radius(18.0)
+                        .background(theme.primary),
+                )
+                .boxed(),
             )
-            .on_tap(on_send),
+            .on_tap(on_send)
+            .boxed(),
+            Layout::default().align_self(AlignSelf::Center),
+        ),
     }
     .gap(8.0)
     .padding(8.0)
